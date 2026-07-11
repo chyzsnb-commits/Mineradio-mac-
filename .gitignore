@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+
+# Electron-builder cache
+*.app/
+electron-builder-cache/
+
+# Runtime update area
+updates/
+backups/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Tool caches (must never be committed)
+build/.omc/
+.omc/
+
+# Local secrets / env
+.env
+.env.local
+*.p12
+*.pfx

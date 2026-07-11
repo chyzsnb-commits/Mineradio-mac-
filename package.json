@@ -1,0 +1,98 @@
+{
+  "name": "mineradio-beat-internal",
+  "productName": "Mineradio",
+  "version": "1.1.3",
+  "description": "沉浸式音乐播放器，融合天气电台、歌词舞台、粒子视觉和 3D 歌单架。",
+  "author": "Mineradio",
+  "main": "desktop/main.js",
+  "private": true,
+  "mineradio": {
+    "update": {
+      "provider": "none",
+      "owner": "XxHuberrr",
+      "repo": "Mineradio",
+      "preview": false,
+      "preferMirrors": false,
+      "mirrors": [
+        "https://gh.llkk.cc/",
+        "https://ghfast.top/",
+        "https://gh-proxy.com/"
+      ],
+      "disabled": true
+    },
+    "internalBeta": true,
+    "runtimeName": "Mineradio",
+    "appUserModelId": "com.mineradio.beat.internal"
+  },
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check server.js && node --check desktop/main.js",
+    "build:mac:dir": "electron-builder --mac --arm64 --dir",
+    "build:mac": "electron-builder --mac dmg --arm64",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "gsap": "^3.15.0",
+    "mpg123-decoder": "^1.0.3",
+    "NeteaseCloudMusicApi": "^4.32.0"
+  },
+  "devDependencies": {
+    "electron": "42.4.1",
+    "electron-builder": "^26.0.18"
+  },
+  "build": {
+    "appId": "com.mineradio.beat.internal",
+    "productName": "Mineradio",
+    "copyright": "Copyright © 2026 Mineradio",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "desktop/**/*",
+      "public/**/*",
+      "build/after-pack.js",
+      "server.js",
+      "dj-analyzer.js",
+      "kugou-api.js",
+      "qishui-api.js",
+      "qq-qrc.js",
+      "spotify-api.js",
+      "qishui-audio-decryptor/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64"]
+        }
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "darkModeSupport": true,
+      "minimumSystemVersion": "12.0",
+      "icon": "build/icon.icns",
+      "extendInfo": {
+        "NSHighResolutionCapable": true,
+        "NSSupportsAutomaticGraphicsSwitching": true,
+        "LSMinimumSystemVersion": "12.0"
+      }
+    },
+    "dmg": {
+      "title": "${productName} ${version}",
+      "format": "APFS",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "afterPack": "build/after-pack.js",
+    "publish": {
+      "provider": "generic",
+      "url": "https://github.com/chyzsnb-commits/Mineradio-mac-/releases/latest/download/",
+      "channel": "latest"
+    }
+  }
+}
