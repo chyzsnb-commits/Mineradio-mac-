@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       release_type:
-        description: '发布类型（stable=正式版，发到 Mineradio-mac-；beta=测试版，发本仓库）'
+        description: '发布类型（stable=正式版；beta=测试版。两者都发到本仓库 mr）'
         required: true
         default: 'beta'
         type: choice
@@ -90,7 +90,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --mac dmg --arm64 --publish always
 
-      - name: Build & publish (stable → this repo, then sync to Mineradio-mac-)
+      - name: Build & publish (stable → this repo)
         if: steps.reltype.outputs.is_release == 'true' && steps.reltype.outputs.release_type == 'stable'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -100,16 +100,6 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --mac dmg --arm64 --publish always
-
-      - name: Sync stable assets to public release repo (Mineradio-mac-)
-        if: steps.reltype.outputs.is_release == 'true' && steps.reltype.outputs.release_type == 'stable'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SYNC_TOKEN: ${{ secrets.RELEASE_SYNC_TOKEN }}
-        run: |
-          # 正式版资产同步到公开仓库 Mineradio-mac-，供用户端自动更新
-          # 需要 RELEASE_SYNC_TOKEN secret（对 Mineradio-mac- 有写权限的 PAT）
-          bash scripts/sync-release.sh || echo "同步脚本待实现或 token 未配置，跳过"
 
       - name: Upload build artifacts
         if: always()

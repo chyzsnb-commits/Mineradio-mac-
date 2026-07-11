@@ -80,7 +80,7 @@ npm run check
 1. **`telemetry.js`**：1.1.3 里每 5 分钟强制上报。正式版必须改为 **opt-in**（首启询问，默认关闭），测试版可保留。
 2. **`system-memory.js`**：Windows 专用。Mac 上应 **完全跳过 require**，不要让它的状态机常驻主进程。
 3. **`internalBeta` 标记**（package.json `mineradio.internalBeta`）：**只在测试版构建时为 true**。正式版必须 false，且 `appId` 用 `com.mineradio.desktop` 而非 `com.mineradio.beat.internal`。
-4. **自动更新**：`mineradio.update.provider` 在正式版应为 `github`（指向公开发布仓库 `chyzsnb-commits/Mineradio-mac-`），测试版才是 `none`/`disabled`。
+4. **自动更新**：`mineradio.update.provider` 在正式版应为 `github`（指向本仓库 `chyzsnb-commits/mr`），测试版才是 `none`/`disabled`。注意：本仓库私有，用户端自动更新需授权 token，否则只能手动下载 dmg。
 5. **不要提交** `build/.omc/`（工具缓存）、`node_modules/`、`dist/`。已在 `.gitignore`。
 
 ## Review Guidelines
@@ -101,15 +101,14 @@ Codex / reviewer 审 PR 时检查：
 3. `npm run check`。
 4. `npm run build:mac` → 产出 `dist/Mineradio-<ver>-arm64.dmg`。
 5. CI（`.github/workflows/build-mac.yml`）在打 tag `v*` 时自动构建并发布到 Release。
-   - **测试版** → 本仓库（`chyzsnb-commits/mr`，私有）的 pre-release。
-   - **正式版** → 同步到 `chyzsnb-commits/Mineradio-mac-`（公开）的 latest release，供用户自动更新。
+   - **测试版** → 本仓库（`chyzsnb-commits/mr`）的 pre-release。
+   - **正式版** → 本仓库（`chyzsnb-commits/mr`）的 latest release。
 
-## 双仓库架构（A 方案）
+## 单仓库架构（私有）
 
-- **`chyzsnb-commits/mr`（私有，本仓库）**：源码 + CI + 测试版发布。所有开发、Codex 协作都在这里。
-- **`chyzsnb-commits/Mineradio-mac-`（公开）**：只放正式版 Release 资产（dmg + latest-mac.yml），不放源码。用户端从这里拉自动更新。
-
-这样实现"源码私密开发 + 正式版能联网自动更新"。
+- **`chyzsnb-commits/mr`（私有，本仓库）**：源码 + CI + 所有版本发布（测试版和正式版都发这里）。所有开发、Codex 协作都在这里。
+- **正式版用户自动更新**：因本仓库私有，用户端 electron-updater 拉取 Release 资产需要授权 token。无 token 时用户需手动从 Release 下载 dmg。
+- ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目工作流，不要碰**。
 
 ## 与 Codex 协作
 

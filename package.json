@@ -90,9 +90,11 @@
     },
     "afterPack": "build/after-pack.js",
     "publish": {
-      "provider": "generic",
-      "url": "https://github.com/chyzsnb-commits/Mineradio-mac-/releases/latest/download/",
-      "channel": "latest"
+      "provider": "github",
+      "owner": "chyzsnb-commits",
+      "repo": "mr",
+      "channel": "latest",
+      "private": true
     }
   }
 }

@@ -4,8 +4,8 @@
 
 ## 当前权威入口（2026-07-12）
 
-- **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 测试版）。
-- **正式版发布仓库**：`chyzsnb-commits/Mineradio-mac-`（**公开**，只放 Release 资产）。
+- **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 测试版 + 正式版发布，全在这里）。
+- ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，不要碰**。
 - **当前基线**：从 `Mineradio-1.1.3-arm64.dmg` 提取的源码。1.1.3 是**内部测试版**（`package.json` 标记 `internalBeta: true`）。
 - **构建配置**：1.1.3 的 DMG 里只有运行时目录（无 `scripts`/`build`/`devDependencies`），已由 ZCode 反推补齐到 `package.json` 的 `build` 字段。Electron 42.4.1 + electron-builder ^26，mac arm64 dmg。
 - **源码已通过** `node --check`（server.js + desktop/main.js + 所有顶层 JS）。
@@ -42,7 +42,7 @@
 
 - [ ] **装 Codex GitHub App**：去 [Codex 设置](https://chatgpt.com/codex)（或 ChatGPT → Settings → Codex）连 GitHub 账号，授权 "OpenAI Codex" GitHub App 访问 `mr` 仓库。装好后就能在 issue/PR 评论 `@codex` 让 Codex 接任务。
 - [ ] **加 `OPENAI_API_KEY` secret**：mr 仓库 → Settings → Secrets and variables → Actions → New repository secret，名称 `OPENAI_API_KEY`，值是你的 OpenAI API key。配好后 `codex-review.yml` 才能在 PR 时自动审查。
-- [ ] **（可选）加 `RELEASE_SYNC_TOKEN` secret**：正式版发布时自动把资产同步到 Mineradio-mac- 需要一个对 Mineradio-mac- 有写权限的 PAT。mr → Settings → Secrets → New secret，名称 `RELEASE_SYNC_TOKEN`。
+- [ ] **（可选）加 `RELEASE_SYNC_TOKEN` secret**：~~已废弃~~。正式版只发本仓库，不再跨仓库同步，此 secret 不再需要。
 - [ ] **（可选）Apple 签名证书**：当前 CI 用 adhoc（用户需右键打开）。有 Developer ID 证书后，加 secrets `CSC_LINK`（base64 p12）、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`，CI 自动切换到正式签名+公证。
 
 ### 待验证
