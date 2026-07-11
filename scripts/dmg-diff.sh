@@ -69,9 +69,21 @@ NEW_BUNDLE_ID=$(plist_get "$NEW_APP" CFBundleIdentifier)
 OLD_ELECTRON=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$OLD_APP/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/Info.plist" 2>/dev/null || echo "?")
 NEW_ELECTRON=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$NEW_APP/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/Info.plist" 2>/dev/null || echo "?")
 
-# 签名
-OLD_SIG=$(codesign -dv --verbose=2 "$OLD_APP" 2>&1 | grep -E "^Identifier=|^Signature=" | tr '\n' ' ')
-NEW_SIG=$(codesign -dv --verbose=2 "$NEW_APP" 2>&1 | grep -E "^Identifier=|^Signature=" | tr '\n' ' ')
+# 签名（含 Authority 链，能区分 adhoc / Apple Development / Developer ID）
+sig_summary() {
+  local app="$1"
+  local id sig authority
+  id=$(codesign -dv --verbose=2 "$app" 2>&1 | grep "^Identifier=" | head -1 | cut -d= -f2)
+  sig=$(codesign -dv --verbose=2 "$app" 2>&1 | grep "^Signature=" | head -1 | cut -d= -f2)
+  authority=$(codesign -dvvv "$app" 2>&1 | grep "^Authority=" | head -1 | sed 's/Authority=//' | cut -c1-40)
+  if [ "$sig" = "adhoc" ]; then
+    echo "adhoc (id=$id)"
+  else
+    echo "$sig — $authority"
+  fi
+}
+OLD_SIG=$(sig_summary "$OLD_APP")
+NEW_SIG=$(sig_summary "$NEW_APP")
 
 # 代码规模
 OLD_SERVER=$(line_count "$OLD_APP/Contents/Resources/app/server.js")
@@ -79,9 +91,16 @@ NEW_SERVER=$(line_count "$NEW_APP/Contents/Resources/app/server.js")
 OLD_MAIN=$(line_count "$OLD_APP/Contents/Resources/app/desktop/main.js")
 NEW_MAIN=$(line_count "$NEW_APP/Contents/Resources/app/desktop/main.js")
 
-# 模块清单（Resources/app 顶层）
-OLD_MODULES=$(ls "$OLD_APP/Contents/Resources/app/" 2>/dev/null | grep -E '\.js$' | sort | tr '\n' ' ')
-NEW_MODULES=$(ls "$NEW_APP/Contents/Resources/app/desktop/" 2>/dev/null | grep -E '\.js$' | sort | tr '\n' ' ')
+# 模块清单（统一对比：根 JS + desktop JS，对称）
+list_modules() {
+  local approot="$1"
+  local root_js desktop_js
+  root_js=$(ls "$approot/" 2>/dev/null | grep -E '\.js$' | sort | sed 's/^/根:/' | tr '\n' ' ')
+  desktop_js=$(ls "$approot/desktop/" 2>/dev/null | grep -E '\.js$' | sort | sed 's/^/desktop:/' | tr '\n' ' ')
+  echo "${root_js}${desktop_js}"
+}
+OLD_MODULES=$(list_modules "$OLD_APP/Contents/Resources/app")
+NEW_MODULES=$(list_modules "$NEW_APP/Contents/Resources/app")
 
 # package.json 关键字段
 mr_field() {

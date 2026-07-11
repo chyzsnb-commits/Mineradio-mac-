@@ -43,12 +43,16 @@
 - [ ] **装 Codex GitHub App**：去 [Codex 设置](https://chatgpt.com/codex)（或 ChatGPT → Settings → Codex）连 GitHub 账号，授权 "OpenAI Codex" GitHub App 访问 `mr` 仓库。装好后就能在 issue/PR 评论 `@codex` 让 Codex 接任务。
 - [ ] **加 `OPENAI_API_KEY` secret**：mr 仓库 → Settings → Secrets and variables → Actions → New repository secret，名称 `OPENAI_API_KEY`，值是你的 OpenAI API key。配好后 `codex-review.yml` 才能在 PR 时自动审查。
 - [ ] **（可选）加 `RELEASE_SYNC_TOKEN` secret**：~~已废弃~~。正式版只发本仓库，不再跨仓库同步，此 secret 不再需要。
-- [ ] **（可选）Apple 签名证书**：当前 CI 用 adhoc（用户需右键打开）。有 Developer ID 证书后，加 secrets `CSC_LINK`（base64 p12）、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`，CI 自动切换到正式签名+公证。
+- [ ] **（可选）Apple 公证**：⚠️ **重要发现**——本机 Keychain 里有 Apple Development 证书 `15157288212@163.com (U3ZLVKALTC)`，TeamIdentifier `CF7B45H83Y`，**和原始 1.1.3 DMG 的签名是同一个**。本地构建已自动用它签名（非 adhoc）。但这是 "Apple Development" 证书（开发用），Gatekeeper 仍会拦（`spctl` rejected），用户需右键打开。要实现"双击直跑"需要升级到 "Developer ID Application" 证书 + notarization。有该证书后，加 secrets `CSC_LINK`/`CSC_KEY_PASSWORD`/`APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`，CI 自动切换。
 
-### 待验证
+### ✅ 已验证（2026-07-12 本地构建测试）
 
-- [ ] **首次 CI 构建**：打一个测试 tag（如 `v1.1.3-beta.1`）推送，触发 build-mac.yml，验证 electron-builder 配置（反推的）能否成功产出 dmg。如有配置细节问题，看 Actions 日志调 `package.json` 的 `build` 字段。
-- [ ] **codex-review.yml 首次触发**：开一个测试 PR，确认 Codex 能审查（依赖上面的 OPENAI_API_KEY）。
+- [x] **本地构建链路完全跑通**：`npm install`（418 包）→ `npm run check`（语法 OK）→ `npm run build:mac` 成功产出 `dist/Mineradio-1.1.3-arm64.dmg`（134MB，含 latest-mac.yml + blockmap）。
+- [x] **修复了一个配置 bug**：`dmg.format` 不能写 `"APFS"`，改为 `"ULFO"`（hdiutil 的 APFS 代号）。已提交。
+- [x] **产物验证**：dmg 能挂载，app 版本/appId 正确（1.1.3 / com.mineradio.beat.internal），签名有效（Apple Development，非 adhoc）。
+- [x] **意外收获**：DMG 自动生成了视觉包装（.VolumeIcon.icns + .background.tiff + 布局），issue #4 的 DMG 视觉部分已部分解决。
+- [ ] **codex-review.yml 首次触发**：仍待验证（依赖上面的 OPENAI_API_KEY）。
+- [ ] **CI 首次触发**：仍待验证（需打 tag，但本地构建已证明配置正确，CI 大概率能过）。
 
 ### 网络说明
 
