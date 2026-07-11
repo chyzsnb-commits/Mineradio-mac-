@@ -38,7 +38,23 @@
 
 ## 未完成事项 / 下一步
 
-- [ ] 用户手动：在 Codex 设置里连 GitHub，给 `mr` 仓库装 "OpenAI Codex" GitHub App。
-- [ ] 用户手动：在 `mr` 仓库 Settings → Secrets 加 `OPENAI_API_KEY`。
-- [ ] 首次 CI 触发验证 `npm run build:mac` 能否成功产出 dmg（electron-builder 配置是反推的，可能有细节要调）。
-- [ ] 后续用户提供更多优化版本时，按同样流程提取合并。
+### 用户需要手动完成（ZCode 无法代办，涉及账号授权）
+
+- [ ] **装 Codex GitHub App**：去 [Codex 设置](https://chatgpt.com/codex)（或 ChatGPT → Settings → Codex）连 GitHub 账号，授权 "OpenAI Codex" GitHub App 访问 `mr` 仓库。装好后就能在 issue/PR 评论 `@codex` 让 Codex 接任务。
+- [ ] **加 `OPENAI_API_KEY` secret**：mr 仓库 → Settings → Secrets and variables → Actions → New repository secret，名称 `OPENAI_API_KEY`，值是你的 OpenAI API key。配好后 `codex-review.yml` 才能在 PR 时自动审查。
+- [ ] **（可选）加 `RELEASE_SYNC_TOKEN` secret**：正式版发布时自动把资产同步到 Mineradio-mac- 需要一个对 Mineradio-mac- 有写权限的 PAT。mr → Settings → Secrets → New secret，名称 `RELEASE_SYNC_TOKEN`。
+- [ ] **（可选）Apple 签名证书**：当前 CI 用 adhoc（用户需右键打开）。有 Developer ID 证书后，加 secrets `CSC_LINK`（base64 p12）、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`，CI 自动切换到正式签名+公证。
+
+### 待验证
+
+- [ ] **首次 CI 构建**：打一个测试 tag（如 `v1.1.3-beta.1`）推送，触发 build-mac.yml，验证 electron-builder 配置（反推的）能否成功产出 dmg。如有配置细节问题，看 Actions 日志调 `package.json` 的 `build` 字段。
+- [ ] **codex-review.yml 首次触发**：开一个测试 PR，确认 Codex 能审查（依赖上面的 OPENAI_API_KEY）。
+
+### 网络说明
+
+⚠️ 本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI 走的通道）正常。**后续推送代码用 gh API（Git Database API 或 contents API），不要用 `git push`**。示例见本次 commit `e4b9062a` 的推送方式。
+
+### 后续版本合并
+
+- 后续用户提供更多"已优化的版本"时，按同样流程：挂载 DMG → 提取 `Resources/app/` → 与当前基线 diff → 合并改动 → 通过 gh API 推送。
+- 用 `scripts/dmg-diff.sh <old.dmg> <new.dmg>` 快速产出版本对比报告。
