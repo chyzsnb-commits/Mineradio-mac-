@@ -1,0 +1,123 @@
+name: Build macOS (arm64)
+
+# 触发条件：推送 v* tag（发版）、手动、PR（仅验证不发布）
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: '发布类型（stable=正式版，发到 Mineradio-mac-；beta=测试版，发本仓库）'
+        required: true
+        default: 'beta'
+        type: choice
+        options:
+          - beta
+          - stable
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'public/**'
+      - '*.js'
+      - 'package.json'
+
+jobs:
+  build:
+    runs-on: macos-14  # Apple Silicon arm64 runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Syntax check
+        run: npm run check
+
+      - name: Prepare signing (adhoc fallback when no certificate)
+        # 有证书 → 正式签名+公证；无证书 → adhoc（用户需右键打开）
+        # 证书相关 secrets 配齐后自动启用，无需改 workflow
+        run: |
+          if [ -z "${{ secrets.CSC_LINK }}" ]; then
+            echo "CSC_LINK 未配置，使用 adhoc 签名（CSC_IDENTITY_AUTO_DISCOVERY=false 时 electron-builder 自动 adhoc）"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> $GITHUB_ENV
+          else
+            echo "CSC_LINK 已配置，启用正式签名"
+          fi
+
+      - name: Determine release type
+        id: reltype
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "release_type=none" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "is_release=true" >> $GITHUB_OUTPUT
+            echo "release_type=${{ inputs.release_type }}" >> $GITHUB_OUTPUT
+          else
+            # tag 触发：tag 含 beta/内部/beat 视为测试版，否则正式版
+            if echo "${{ github.ref_name }}" | grep -qiE "beta|internal|beat|测试"; then
+              echo "is_release=true" >> $GITHUB_OUTPUT
+              echo "release_type=beta" >> $GITHUB_OUTPUT
+            else
+              echo "is_release=true" >> $GITHUB_OUTPUT
+              echo "release_type=stable" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Build (no publish for PR)
+        if: steps.reltype.outputs.is_release != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build:mac:dir
+
+      - name: Build & publish (beta → this repo)
+        if: steps.reltype.outputs.is_release == 'true' && steps.reltype.outputs.release_type == 'beta'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Apple 签名/公证（配置 secrets 后自动生效）
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder --mac dmg --arm64 --publish always
+
+      - name: Build & publish (stable → this repo, then sync to Mineradio-mac-)
+        if: steps.reltype.outputs.is_release == 'true' && steps.reltype.outputs.release_type == 'stable'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder --mac dmg --arm64 --publish always
+
+      - name: Sync stable assets to public release repo (Mineradio-mac-)
+        if: steps.reltype.outputs.is_release == 'true' && steps.reltype.outputs.release_type == 'stable'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SYNC_TOKEN: ${{ secrets.RELEASE_SYNC_TOKEN }}
+        run: |
+          # 正式版资产同步到公开仓库 Mineradio-mac-，供用户端自动更新
+          # 需要 RELEASE_SYNC_TOKEN secret（对 Mineradio-mac- 有写权限的 PAT）
+          bash scripts/sync-release.sh || echo "同步脚本待实现或 token 未配置，跳过"
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mineradio-mac-build
+          path: |
+            dist/*.dmg
+            dist/latest-mac.yml
+            dist/*.blockmap
+          if-no-files-found: ignore

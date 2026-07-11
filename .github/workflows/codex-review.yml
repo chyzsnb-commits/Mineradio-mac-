@@ -1,0 +1,41 @@
+name: Codex PR Review
+
+# PR 时让 OpenAI Codex 自动审查代码。
+# 前置条件（用户手动，见 AI_HANDOFF.md）：
+#   1. 在 Codex 设置连 GitHub，给本仓库装 "OpenAI Codex" GitHub App
+#   2. 仓库 Settings → Secrets 加 OPENAI_API_KEY
+# 配齐后，本 workflow 会在每个 PR 上运行 codex review 并把结果发回 PR 评论。
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'desktop/**'
+      - 'public/**'
+      - '*.js'
+      - 'package.json'
+
+jobs:
+  codex-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Codex review
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          # codex 会自动读取仓库根的 AGENTS.md（含 ## Review guidelines）
+          prompt: |
+            审查这个 PR。重点检查（来自 AGENTS.md 的 Review Guidelines）：
+            1. 改动是否影响 Mac 运行（Windows 代码在 Mac 上是否仍安全跳过）
+            2. 是否误删了 package.json 的 mineradio 自定义字段
+            3. 新增 require 是否引入 Mac 不必要的模块
+            4. 是否新增网络请求/定时器（评估启动和常驻开销）
+            5. CHANGELOG.md 是否更新
+            6. node --check 能否通过
+            用中文给出结论。

@@ -1,0 +1,65 @@
+name: Version Diff on Release
+
+# 正式版发版时，自动对比新版本与上一版的包体差异，结果贴到 Release notes。
+# 依赖 scripts/dmg-diff.sh。在 mac runner 上跑（因为要用 hdiutil）。
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  diff:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps (for build)
+        run: npm ci || npm install
+
+      - name: Build current version dmg
+        run: npm run build:mac
+
+      - name: Download previous release dmg
+        id: prev
+        run: |
+          PREV_TAG=$(gh release list -R "$GITHUB_REPOSITORY" -L 2 --json tagName -q '.[1].tagName' 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "${{ github.event.release.tag_name }}" ]; then
+            echo "无上一版，跳过 diff"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "上一版: $PREV_TAG"
+          mkdir -p /tmp/prev
+          gh release download "$PREV_TAG" -R "$GITHUB_REPOSITORY" -D /tmp/prev --pattern "*.dmg" || echo "下载旧版失败"
+          echo "skip=false" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run dmg-diff
+        if: steps.prev.outputs.skip != 'true'
+        id: diff
+        run: |
+          PREV_DMG=$(find /tmp/prev -name "*.dmg" | head -1)
+          NEW_DMG=$(find dist -name "*.dmg" | head -1)
+          if [ -z "$PREV_DMG" ] || [ -z "$NEW_DMG" ]; then
+            echo "找不到 dmg，跳过"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          bash scripts/dmg-diff.sh "$PREV_DMG" "$NEW_DMG" /tmp/diff-report.md
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+      - name: Append diff to release notes
+        if: steps.diff.outputs.skip != 'true'
+        run: |
+          BODY=$(cat /tmp/diff-report.md)
+          gh release edit "${{ github.event.release.tag_name }}" -R "$GITHUB_REPOSITORY" \
+            --notes "$(printf '%s\n\n---\n\n%s' "${{ github.event.release.body }}" "$BODY")"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
