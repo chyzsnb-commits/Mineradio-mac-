@@ -199,11 +199,27 @@ var mainFrameGates = {
   stageLyrics: createFrameGate('main.stageLyrics', 45),
   skullParticles: createFrameGate('main.skullParticles', 45),
   homeAudio: createFrameGate('main.homeAudio', 15),
-  desktopOverlay: createFrameGate('main.desktopOverlay', 12)
+  desktopOverlay: createFrameGate('main.desktopOverlay', 12),
+  idleRender: createFrameGate('main.idleRender', 2)   // 空闲降频：不播放+无交互时 renderer.render 降到 2 FPS（发烫优化）
 };
 window.__mineradioMainFrameGates = mainFrameGates;
 var mainLoopBackgroundTimer = 0;
 var mainLoopAnimationRequested = false;
+
+// 判断前台是否处于"空闲"状态：不播放 + 无交互 + 歌单架未打开/预览。
+// 空闲时 renderer.render 降到极低帧率（uTime 仍累积，粒子不会冻住，只是低帧更新）。
+function isForegroundIdleForRender(now) {
+  // 正在播放 → 不算空闲（音频驱动的视觉必须跟帧）
+  if (playing && audio && !audio.paused) return false;
+  // 最近有交互（鼠标/键盘）→ 不算空闲
+  if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive(now)) return false;
+  // 歌单架打开或预览中 → 歌单架有持续动效，不算空闲
+  if (typeof shelfManager !== 'undefined' && shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return false;
+  if (typeof shelfPreviewIsVisible === 'function' && shelfPreviewIsVisible()) return false;
+  // 桌面歌词/壁纸模式激活 → 这些需要持续渲染
+  if (fx && (fx.desktopLyrics || fx.wallpaperMode)) return false;
+  return true;
+}
 function mainLoopDeepBackgroundSleeping() {
   return typeof isDeepBackgroundMode === 'function'
     && isDeepBackgroundMode()
@@ -663,7 +679,16 @@ function animate() {
   }
 
   var rendererPerfStart = performance.now();
-  renderer.render(scene, camera);
+  // 空闲降频：前台不播放+无交互时，renderer.render 降到 2 FPS（发烫优化）。
+  // uTime 仍在每帧累积，粒子/shader 动画不会冻住，只是低帧率更新；有交互/播放立即恢复满帧。
+  var idleRenderSkip = false;
+  if (isForegroundIdleForRender(now)) {
+    var idleDt = consumeFrameGate(mainFrameGates.idleRender, now, dt, 2, false, 'idle-render');
+    idleRenderSkip = (idleDt <= 0);
+  }
+  if (!idleRenderSkip) {
+    renderer.render(scene, camera);
+  }
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('renderer.render', rendererPerfStart);
   var frameCostMs = performance.now() - framePerfStart;
   if (typeof sampleAdaptiveFrameCost === 'function') {
