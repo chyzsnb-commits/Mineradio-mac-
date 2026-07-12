@@ -3234,7 +3234,24 @@ ipcMain.handle('mineradio-memory-purge-system', async (_event, payload = {}) => 
       };
     }
     const elevatedBefore = await systemMemory.isProcessElevated();
+    // purge 前暂停音频（避免内存回收导致音频缓冲错乱产生爆音"噗"声），purge 后恢复
+    let wasPlayingBeforePurge = false;
+    try {
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+        wasPlayingBeforePurge = await mainWindow.webContents.executeJavaScript(
+          'typeof playing !== "undefined" && typeof audio !== "undefined" && playing && audio && !audio.paused'
+        );
+      }
+    } catch (e) {}
+    if (wasPlayingBeforePurge) {
+      try { sendGlobalHotkeyAction('togglePlay'); } catch (e) {}
+      await new Promise((r) => setTimeout(r, 300));
+    }
     const result = await systemMemory.purgeSystemMemorySmart(mask, { autoElevate, manual: true });
+    if (wasPlayingBeforePurge) {
+      await new Promise((r) => setTimeout(r, 200));
+      try { sendGlobalHotkeyAction('togglePlay'); } catch (e) {}
+    }
     return {
       ok: true,
       result,

@@ -143,17 +143,30 @@ async function getMemorySnapshotExtended() {
 }
 
 // 清理系统内存：调用 purge（腾讯柠檬的做法）。需要管理员权限。
+// 优先用 sudo 免密（需一次性配置 sudoers），失败回退 osascript 弹授权框。
 async function purgeSystemMemorySmart(_mask, _opts) {
-  return new Promise((resolve) => {
-    // purge 需要 root 权限。直接 execFile 会因权限失败，用 osascript 弹授权框。
-    // 用 AppleScript 包装：do shell script "purge" with administrator privileges
-    const script = 'do shell script "/usr/sbin/purge" with administrator privileges';
-    execFile('/usr/bin/osascript', ['-e', script], (err, stdout, stderr) => {
+  // 方式 1：sudo purge（免密，靠 sudoers 配置。配置方法见 mac-porting 或下方注释）
+  var sudoResult = await new Promise(function (resolve) {
+    execFile('/usr/bin/sudo', ['-n', '/usr/sbin/purge'], function (err, stdout, stderr) {
+      if (err) {
+        resolve({ ok: false, error: err });
+        return;
+      }
+      resolve({ ok: true });
+    });
+  });
+  if (sudoResult.ok) {
+    return { ok: true, purged: true, method: 'sudo-nopass' };
+  }
+  // 方式 2（回退）：osascript 弹管理员授权框
+  return new Promise(function (resolve) {
+    var script = 'do shell script "/usr/sbin/purge" with administrator privileges';
+    execFile('/usr/bin/osascript', ['-e', script], function (err, stdout, stderr) {
       if (err) {
         resolve({ ok: false, reason: 'purge-failed-or-cancelled', error: (err.stderr || err.message || '').slice(0, 200) });
         return;
       }
-      resolve({ ok: true, purged: true });
+      resolve({ ok: true, purged: true, method: 'osascript-prompt' });
     });
   });
 }
