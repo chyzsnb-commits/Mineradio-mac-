@@ -6,7 +6,22 @@ const fs = require('fs');
 const crypto = require('crypto');
 const os = require('os');
 const { execFile, spawn } = require('child_process');
-const systemMemory = require('./system-memory');
+// Windows 内存清理模块（PowerShell + Win32 API）。Mac 上完全跳过加载，
+// 用 stub 替代——所有方法返回"不可用"，避免 Windows 死代码常驻主进程。
+// 见 issue #2 和 AGENTS.md 关键约束 #2。
+const systemMemory = process.platform === 'win32'
+  ? require('./system-memory')
+  : {
+      MEMORY_MASK_DEFAULT: 0,
+      SYSTEM_PURGE_AVAILABLE: false,
+      SYSTEM_PURGE_ENABLED: false,
+      getMemorySnapshot: () => ({ ok: false, reason: 'mac-unsupported' }),
+      getMemorySnapshotExtended: async () => ({ ok: false, reason: 'mac-unsupported' }),
+      trimAppWorkingSets: async () => ({ ok: false, reason: 'mac-unsupported' }),
+      purgeSystemMemorySmart: async () => ({ ok: false, reason: 'mac-unsupported' }),
+      normalizeMask: (m) => m || 0,
+      isProcessElevated: async () => false,
+    };
 const { extractKugouAuth } = require('../kugou-api');
 const {
   getQishuiOAuthConfig,

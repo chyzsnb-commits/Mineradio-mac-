@@ -2,6 +2,16 @@
 
 ## 待发布（基于 v1.1.3 基线的优化）
 
+### Mac 跳过 Windows 内存清理模块（issue #2）
+
+- `desktop/main.js`：`require('./system-memory')` 改为按平台判断——Mac 上不加载真实模块，用 stub 替代（所有方法返回 `mac-unsupported`）。
+- Windows 上照常加载真实模块，功能不受影响。
+- 好处：Mac 上不再把 760 行 Windows 死代码（PowerShell + Win32 API）读进主进程；内存相关 IPC 在 Mac 上优雅降级，不报错。
+
+### 补漏：qishui-api.js 未入库
+
+- 修复基线入库时漏拷 `qishui-api.js` 的问题（main.js `require('../qishui-api')` 会报 `Cannot find module`，app 无法启动）。
+
 ### 遥测改为 opt-in（issue #1）
 
 - `desktop/telemetry.js` 重写：
