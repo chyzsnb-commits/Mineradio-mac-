@@ -1,0 +1,309 @@
+diff --git a/desktop/main.js b/desktop/main.js
+index 7e4837e..a4ce04d 100644
+--- a/desktop/main.js
++++ b/desktop/main.js
+@@ -6,22 +6,12 @@ const fs = require('fs');
+ const crypto = require('crypto');
+ const os = require('os');
+ const { execFile, spawn } = require('child_process');
+-// Windows 内存清理模块（PowerShell + Win32 API）。Mac 上完全跳过加载，
+-// 用 stub 替代——所有方法返回"不可用"，避免 Windows 死代码常驻主进程。
+-// 见 issue #2 和 AGENTS.md 关键约束 #2。
++// 内存清理模块：Windows 用 system-memory.js（PowerShell + Win32 API），
++// Mac 用 system-memory-mac.js（vm_stat + purge，参考腾讯柠檬清理逻辑）。
++// 见 AGENTS.md 关键约束 #2、issue #2。
+ const systemMemory = process.platform === 'win32'
+   ? require('./system-memory')
+-  : {
+-      MEMORY_MASK_DEFAULT: 0,
+-      SYSTEM_PURGE_AVAILABLE: false,
+-      SYSTEM_PURGE_ENABLED: false,
+-      getMemorySnapshot: () => ({ ok: false, reason: 'mac-unsupported' }),
+-      getMemorySnapshotExtended: async () => ({ ok: false, reason: 'mac-unsupported' }),
+-      trimAppWorkingSets: async () => ({ ok: false, reason: 'mac-unsupported' }),
+-      purgeSystemMemorySmart: async () => ({ ok: false, reason: 'mac-unsupported' }),
+-      normalizeMask: (m) => m || 0,
+-      isProcessElevated: async () => false,
+-    };
++  : require('./system-memory-mac');
+ const { extractKugouAuth } = require('../kugou-api');
+ const {
+   getQishuiOAuthConfig,
+@@ -3224,7 +3214,8 @@ ipcMain.handle('mineradio-memory-purge-system', async (_event, payload = {}) =>
+   const mask = systemMemory.normalizeMask(payload && payload.mask);
+   const autoElevate = payload && payload.autoElevate === true;
+   try {
+-    if (isMainWindowForegroundVisible()) {
++    // Windows：窗口可见时跳过 purge（会卡顿）。Mac：purge 不卡顿，随时可清（参考腾讯柠檬）。
++    if (process.platform === 'win32' && isMainWindowForegroundVisible()) {
+       return {
+         ok: true,
+         result: { ok: false, skipped: true, reason: 'foreground-visible', message: 'System memory purge is skipped while Mineradio is visible.' },
+diff --git a/desktop/system-memory-mac.js b/desktop/system-memory-mac.js
+new file mode 100644
+index 0000000..ee86f22
+--- /dev/null
++++ b/desktop/system-memory-mac.js
+@@ -0,0 +1,191 @@
++// macOS 内存监控与清理（参考腾讯柠檬清理逻辑）。
++//
++// 与 Windows 版（system-memory.js）提供相同接口，但用 Mac 原生机制：
++//   - vm_stat：页面统计（free/active/inactive/wired/speculative/purgeable）
++//   - sysctl hw.memsize：物理内存总量
++//   - purge：释放系统未使用内存（需管理员权限，会弹授权）
++//   - process.memoryUsage()：Node/Electron 进程自身内存
++//
++// 注意：Mac 没有 Windows 的"工作集/修改页/待机页"概念，面板上的那些开关
++// 在 Mac 上映射为：inactive(待激活) + purgeable(可清除) + free(空闲)。
++// 清理动作统一用 purge 命令（粗粒度系统级释放，腾讯柠檬也是这么做的）。
++'use strict';
++
++const { execFile } = require('child_process');
++const os = require('os');
++
++// Mac 的 purge 命令在（/usr/sbin/purge），需要管理员权限
++const SYSTEM_PURGE_AVAILABLE = true;
++// 是否启用自动清理：默认关，由面板开关控制（和 Windows 行为对齐）
++const SYSTEM_PURGE_ENABLED = false;
++
++// MEMORY_MASK 在 Mac 上没有实际语义（那是 Windows 的），保留接口兼容
++const MEMORY_MASK = {
++  workingSet: 1,
++  modifiedList: 4,
++  standbyList: 8,
++  standbyLow: 16,
++};
++const MEMORY_MASK_DEFAULT = MEMORY_MASK.workingSet | MEMORY_MASK.modifiedList | MEMORY_MASK.standbyList | MEMORY_MASK.standbyLow;
++
++// 缓存页面大小（vm_stat 输出里有，运行时从输出第一行解析，这里只是 fallback）
++function getPageSize() {
++  return 16384;  // Mac arm64 默认 16384；实际用 vm_stat 输出里的值为准
++}
++
++// 解析 vm_stat 输出，返回各类型页数。page size 从输出第一行提取。
++function parseVmStat(output) {
++  const lines = output.split('\n');
++  let pageSize = 16384;
++  const m = lines[0].match(/page size of (\d+)/);
++  if (m) pageSize = parseInt(m[1], 10);
++
++  const result = { pageSize };
++  // Mac vm_stat 的字段名（注意 wired down、occupied by compressor）
++  const fieldPatterns = [
++    ['free', /Pages\s+free:\s+(\d+)/],
++    ['active', /Pages\s+active:\s+(\d+)/],
++    ['inactive', /Pages\s+inactive:\s+(\d+)/],
++    ['speculative', /Pages\s+speculative:\s+(\d+)/],
++    ['wired', /Pages\s+wired\s+down:\s+(\d+)/],
++    ['purgeable', /Pages\s+purgeable:\s+(\d+)/],
++    ['throttled', /Pages\s+throttled:\s+(\d+)/],
++    // 被压缩存储的页（数据被压缩了）+ 压缩器自身占用的页
++    ['storedInCompressor', /Pages\s+stored\s+in\s+compressor:\s+(\d+)/],
++    ['occupiedByCompressor', /Pages\s+occupied\s+by\s+compressor:\s+(\d+)/],
++  ];
++  fieldPatterns.forEach(([key]) => { result[key] = 0; });
++
++  lines.forEach((line) => {
++    fieldPatterns.forEach(([key, re]) => {
++      const mm = line.match(re);
++      if (mm) result[key] = parseInt(mm[1], 10);
++    });
++  });
++  return result;
++}
++
++// 把页数转成 MB
++function pagesToMB(pages, pageSize) {
++  return Math.round((pages * pageSize) / 1024 / 1024);
++}
++
++// 同步快照：进程自身内存（不等系统命令，立即可用）
++function getMemorySnapshot() {
++  try {
++    const mu = process.memoryUsage();
++    return {
++      ok: true,
++      platform: 'darwin',
++      process: {
++        rssMB: Math.round(mu.rss / 1024 / 1024),
++        heapUsedMB: Math.round(mu.heapUsed / 1024 / 1024),
++        heapTotalMB: Math.round(mu.heapTotal / 1024 / 1024),
++        externalMB: Math.round(mu.external / 1024 / 1024),
++      },
++    };
++  } catch (e) {
++    return { ok: false, reason: 'snapshot-failed', error: e.message };
++  }
++}
++
++// 异步扩展快照：系统内存（调 vm_stat + sysctl，有命令开销）
++async function getMemorySnapshotExtended() {
++  return new Promise((resolve) => {
++    let vmOutput = '';
++    let totalBytes = os.totalmem();  // fallback 用 Node 的 os.totalmem()
++
++    const vmStat = execFile('/usr/bin/vm_stat', [], (err, stdout) => {
++      if (err) {
++        resolve({ ok: false, reason: 'vm_stat-failed', error: err.message, totalMB: Math.round(totalBytes / 1024 / 1024) });
++        return;
++      }
++      const stat = parseVmStat(stdout.trim());
++      const ps = stat.pageSize;
++      const freeMB = pagesToMB(stat.free, ps);
++      const activeMB = pagesToMB(stat.active, ps);
++      const inactiveMB = pagesToMB(stat.inactive, ps);
++      const speculativeMB = pagesToMB(stat.speculative, ps);
++      const wiredMB = pagesToMB(stat.wired, ps);
++      const purgeableMB = pagesToMB(stat.purgeable, ps);
++      // 被压缩的内存：只算"压缩器实际占用的物理页"（occupiedByCompressor）。
++      // storedInCompressor 是压缩前的逻辑大小，会虚高（压缩率 2-3 倍），不算入物理占用。
++      const compressedMB = pagesToMB(stat.occupiedByCompressor, ps);
++      const totalMB = Math.round(totalBytes / 1024 / 1024);
++      // Mac 的物理内存占用 = wired（内核锁定）+ active（活跃）+ compressed（压缩器占用）
++      // "可用"≈ free + inactive + speculative + purgeable（这些可被回收/重用）
++      const usedMB = wiredMB + activeMB + compressedMB;
++      const availableMB = freeMB + inactiveMB + speculativeMB + purgeableMB;
++      const usedPercent = totalMB > 0 ? Math.round((usedMB / totalMB) * 100) : 0;
++
++      resolve({
++        ok: true,
++        platform: 'darwin',
++        totalMB,
++        usedMB,
++        availableMB,
++        // freeMB：前端面板"可用 X MB"读的就是这个字段。
++        // 语义上等于 availableMB（free + inactive + speculative + purgeable，即可被回收重用的内存）。
++        // 注意：不要和 detail.freeMB 混淆——后者是 vm_stat 的 Pages free（完全空闲），数值很小。
++        freeMB: availableMB,
++        usedPercent,
++        detail: {
++          freeMB, activeMB, inactiveMB, speculativeMB, wiredMB, purgeableMB, compressedMB,
++          // 面板兼容字段（映射到 Windows 概念，让前端不用改）
++          workingSetMB: activeMB + wiredMB,        // 活跃占用 ≈ 工作集
++          modifiedListMB: compressedMB,             // 压缩 ≈ 修改页
++          standbyListMB: inactiveMB + purgeableMB,  // 待激活/可清除 ≈ 待办页
++        },
++        process: getMemorySnapshot().process,
++      });
++    });
++  });
++}
++
++// 清理系统内存：调用 purge（腾讯柠檬的做法）。需要管理员权限。
++async function purgeSystemMemorySmart(_mask, _opts) {
++  return new Promise((resolve) => {
++    // purge 需要 root 权限。直接 execFile 会因权限失败，用 osascript 弹授权框。
++    // 用 AppleScript 包装：do shell script "purge" with administrator privileges
++    const script = 'do shell script "/usr/sbin/purge" with administrator privileges';
++    execFile('/usr/bin/osascript', ['-e', script], (err, stdout, stderr) => {
++      if (err) {
++        resolve({ ok: false, reason: 'purge-failed-or-cancelled', error: (err.stderr || err.message || '').slice(0, 200) });
++        return;
++      }
++      resolve({ ok: true, purged: true });
++    });
++  });
++}
++
++// Mac 上没有"修剪工作集"概念，但提供接口兼容。返回进程内存信息。
++async function trimAppWorkingSets() {
++  // Electron 没有 Windows 的 SetProcessWorkingSetSize 等价物。
++  // 近似做法：触发垃圾回收（仅在显式调用时，不频繁）
++  if (global.gc) {
++    try { global.gc(); } catch (e) {}
++  }
++  return { ok: true, reason: 'mac-gc-only', snapshot: getMemorySnapshot() };
++}
++
++function normalizeMask(mask) {
++  return mask || MEMORY_MASK_DEFAULT;
++}
++
++async function isProcessElevated() {
++  // Mac 上 purge 通过 osascript 弹框授权，不关心是否常驻 root
++  return false;
++}
++
++module.exports = {
++  MEMORY_MASK,
++  MEMORY_MASK_DEFAULT,
++  SYSTEM_PURGE_AVAILABLE,
++  SYSTEM_PURGE_ENABLED,
++  getMemorySnapshot,
++  getMemorySnapshotExtended,
++  trimAppWorkingSets,
++  purgeSystemMemorySmart,
++  normalizeMask,
++  isProcessElevated,
++};
+diff --git a/public/js/modules/00-state/08-desktop-render-power.js b/public/js/modules/00-state/08-desktop-render-power.js
+index 027429f..b230931 100644
+--- a/public/js/modules/00-state/08-desktop-render-power.js
++++ b/public/js/modules/00-state/08-desktop-render-power.js
+@@ -153,7 +153,14 @@ function isHiddenForBackgroundOptimization() {
+   return !!(document.hidden && !isLiveBackgroundKeepMode());
+ }
+ function isVisibleBackgroundMode() {
+-  return false;
++  // 恢复 1.1.0 的逻辑：窗口可见 + 没最小化 + 没聚焦（用户在用别的软件）→ 进低帧模式。
++  // 1.1.3 曾把这里改成 return false，导致切到别的软件时仍满帧渲染 → 发烫。
++  // 现在恢复：失去焦点即降到 RENDER_BACKGROUND_FPS（15 FPS），大幅降温。
++  if (isLiveBackgroundKeepMode()) return false;
++  return !!(!document.hidden
++    && !desktopRuntimeState.minimized
++    && desktopRuntimeState.visible !== false
++    && !desktopRuntimeState.focused);
+ }
+ function updateRenderPowerClasses() {
+   document.body.classList.toggle('render-deep-sleep', isDeepBackgroundMode());
+diff --git a/public/js/modules/11-main-loop.js b/public/js/modules/11-main-loop.js
+index bc55ff3..af85a7c 100644
+--- a/public/js/modules/11-main-loop.js
++++ b/public/js/modules/11-main-loop.js
+@@ -64,6 +64,9 @@ function foregroundFpsGovernorCap() {
+ }
+ function getAdaptiveRenderFps(now) {
+   if (isDeepBackgroundMode()) return 1;
++  // 恢复 1.1.0 的"可见后台模式"：窗口可见但没聚焦（用户在用别的软件）→ 降到 15 FPS。
++  // 1.1.3 曾禁用了 isVisibleBackgroundMode（return false），导致切走仍满帧渲染 → 发烫。
++  if (typeof isVisibleBackgroundMode === 'function' && isVisibleBackgroundMode()) return 15;
+   var mode = (typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive';
+   var fixedFps = (typeof foregroundFixedFpsForMode === 'function') ? foregroundFixedFpsForMode(mode) : null;
+   if (fixedFps !== null) {
+@@ -365,6 +368,18 @@ function animate() {
+   if (shouldSkipAdaptiveRenderFrame(now)) return;
+   var dt = Math.min((now - prevTime) / 1000, 0.05);
+   prevTime = now;
++  // 空闲整体降频（发烫优化）：前台不播放+无交互+歌单架未开+无桌面歌词/壁纸时，
++  // 整个主循环体（所有相机/粒子/歌单架 update + renderer.render）降到 2 FPS。
++  // 比只停 renderer.render 更彻底——dynamic 相机等每帧计算也一并降频。
++  // 注意：uTime 在空闲跳帧时不累积，粒子会停在低帧画面直到下次渲染；有交互/播放立即恢复满帧。
++  var idleLoopSkip = false;
++  if (isForegroundIdleForRender(now)) {
++    var idleLoopDt = consumeFrameGate(mainFrameGates.idleRender, now, dt, 2, false, 'idle-loop');
++    idleLoopSkip = (idleLoopDt <= 0);
++  }
++  if (idleLoopSkip) {
++    return;
++  }
+   sampleRenderPerf(now, dt);
+   uniforms.uTime.value += dt;
+   if (isMainSceneCoveredBySplash()) {
+@@ -679,16 +694,7 @@ function animate() {
+   }
+ 
+   var rendererPerfStart = performance.now();
+-  // 空闲降频：前台不播放+无交互时，renderer.render 降到 2 FPS（发烫优化）。
+-  // uTime 仍在每帧累积，粒子/shader 动画不会冻住，只是低帧率更新；有交互/播放立即恢复满帧。
+-  var idleRenderSkip = false;
+-  if (isForegroundIdleForRender(now)) {
+-    var idleDt = consumeFrameGate(mainFrameGates.idleRender, now, dt, 2, false, 'idle-render');
+-    idleRenderSkip = (idleDt <= 0);
+-  }
+-  if (!idleRenderSkip) {
+-    renderer.render(scene, camera);
+-  }
++  renderer.render(scene, camera);
+   if (perfProbe && perfProbe.markSince) perfProbe.markSince('renderer.render', rendererPerfStart);
+   var frameCostMs = performance.now() - framePerfStart;
+   if (typeof sampleAdaptiveFrameCost === 'function') {

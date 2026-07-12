@@ -1,0 +1,25 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 79075fe..7991d4c 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -2,6 +2,14 @@
+ 
+ ## 待发布（基于 v1.1.3 基线的优化）
+ 
++### 图标瘦身 + DMG 视觉确认（issue #4、#5）
++
++- `build/icon.icns`：851KB → **568KB**（省 33%），无损重压缩所有 PNG entry，视觉零差异。
++- `build/icon.png`：426KB → **272KB**（省 36%），同上。
++- 做法说明：用 `iconutil` 拆 icns 成 iconset，对每个 PNG 用 PIL 无损重压缩（`optimize=True, compress_level=9`），手动重新组装 icns（绕过 iconutil 的强制重压缩）。保留了全部 11 个尺寸 entry（含 1024×1024），没有删任何分辨率。
++- DMG 视觉包装（背景图 `.background.tiff`、卷图标 `.VolumeIcon.icns`）由 electron-builder 自动生成，已在构建中确认。
++- `.omc` 垃圾文件问题已从架构上解决：`build.files` 用白名单模式（只列指定文件），`.omc` 不会被打包；`.gitignore` 也已排除。
++
+ ### Mac 跳过 Windows 内存清理模块（issue #2）
+ 
+ - `desktop/main.js`：`require('./system-memory')` 改为按平台判断——Mac 上不加载真实模块，用 stub 替代（所有方法返回 `mac-unsupported`）。
+diff --git a/build/icon.icns b/build/icon.icns
+index 0ebaf22..53aeaaa 100644
+Binary files a/build/icon.icns and b/build/icon.icns differ
+diff --git a/build/icon.png b/build/icon.png
+index 44ef43b..dfa655a 100644
+Binary files a/build/icon.png and b/build/icon.png differ
