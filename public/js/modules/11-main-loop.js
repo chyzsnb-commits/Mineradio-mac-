@@ -214,6 +214,8 @@ var mainLoopAnimationRequested = false;
 function isForegroundIdleForRender(now) {
   // 正在播放 → 不算空闲（音频驱动的视觉必须跟帧）
   if (playing && audio && !audio.paused) return false;
+  // 正在加载/换源/切歌中 → 不算空闲（避免渲染停-启搞崩 WebGL 上下文导致黑屏）
+  if (typeof playToggleBusy !== 'undefined' && playToggleBusy) return false;
   // 最近有交互（鼠标/键盘）→ 不算空闲
   if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive(now)) return false;
   // 歌单架打开或预览中 → 歌单架有持续动效，不算空闲
