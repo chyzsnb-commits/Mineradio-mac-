@@ -1,5 +1,35 @@
 var firstPlayDone = false;
 
+// 单首歌失败总次数计数器（治本：掐断"降级+换源"反复循环导致的卡死）。
+// 同一首歌 15 秒内失败超过 3 次，直接跳下一首，不再降级/换源。
+var _playbackFailCounter = {};
+function _failKey(song, idx) {
+  var key = songProviderKey(song) + ':' + (song && (song.id || song.name) || '') + '@' + idx;
+  return key;
+}
+function _recordPlaybackFail(song, idx) {
+  var k = _failKey(song, idx);
+  var now = Date.now();
+  var entry = _playbackFailCounter[k];
+  if (entry && now - entry.at < 15000) {
+    entry.n += 1;
+  } else {
+    _playbackFailCounter[k] = { n: 1, at: now };
+  }
+  return _playbackFailCounter[k].n;
+}
+function _playbackFailExceeded(song, idx) {
+  var k = _failKey(song, idx);
+  var entry = _playbackFailCounter[k];
+  if (!entry) return false;
+  // 15 秒窗口外重置
+  if (Date.now() - entry.at > 15000) {
+    delete _playbackFailCounter[k];
+    return false;
+  }
+  return entry.n >= 3;  // 同一首歌 15 秒内失败 3 次即超限
+}
+
 function playbackProviderLabel(song) {
   var provider = songProviderKey(song);
   if (provider === 'qq') return 'QQ 音乐';
@@ -161,6 +191,9 @@ function qqPlaybackRetryQualities(requestedQuality, resolvedLevel) {
 }
 async function retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data, requestedQuality) {
   opts = opts || {};
+  // 失败总次数防护：同一首歌 15 秒内失败超 3 次就不再降级（交由上层 skip 到下一首）
+  if (_playbackFailExceeded(song, idx)) return false;
+  _recordPlaybackFail(song, idx);
   var tried = Array.isArray(opts.qqQualityTried) ? opts.qqQualityTried.slice() : [];
   [requestedQuality, data && data.level].forEach(function (q) {
     q = normalizePlaybackQuality(q || '');
@@ -205,7 +238,15 @@ function removeSourceFallbackCard(card) {
     if (card.parentNode) card.parentNode.removeChild(card);
   }, 260);
 }
+// 节流：同样的通知 800ms 内不重复弹（防止失败链路疯狂创建 DOM 卡死）
+var _lastFallbackNotice = '';
+var _lastFallbackNoticeAt = 0;
 function showSourceFallbackNotice(title, body) {
+  var noticeKey = String(title) + '|' + String(body);
+  var now = Date.now();
+  if (noticeKey === _lastFallbackNotice && now - _lastFallbackNoticeAt < 800) return;
+  _lastFallbackNotice = noticeKey;
+  _lastFallbackNoticeAt = now;
   var stack = ensureSourceFallbackStack();
   if (stack) {
     var card = document.createElement('div');
@@ -329,6 +370,13 @@ function skipFailedQueueItem(idx, token, message, opts) {
 }
 async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
   opts = opts || {};
+  // 失败总次数防护：同一首歌 15 秒内失败超 3 次就跳下一首，不再换源
+  if (_playbackFailExceeded(song, idx)) {
+    var skipOpts0 = opts.startupAutoplay ? { silent: true, playbackOpts: { fallbackDepth: 0, startupAutoplay: true } } : null;
+    skipFailedQueueItem(idx, token, '当前歌曲多次播放失败，已跳过。', skipOpts0);
+    return true;
+  }
+  _recordPlaybackFail(song, idx);
   var skipPlaybackOpts = { fallbackDepth: 0, startupAutoplay: true };
   if (opts.resumeAt != null) skipPlaybackOpts.resumeAt = opts.resumeAt;
   var skipOpts = opts.startupAutoplay ? { silent: true, playbackOpts: skipPlaybackOpts } : null;
@@ -351,7 +399,11 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
       return true;
     }
     alternate.autoFallbackFrom = songProviderKey(song);
-    playQueue[idx] = hydrateCustomCover(alternate);
+    // 保留换源前的失败标记，避免换源后队列项被新对象覆盖导致 18 秒退避失效
+    var prevFailAt = playQueue[idx] && playQueue[idx]._lastPlaybackFailAt;
+    var altHydrated = hydrateCustomCover(alternate);
+    if (prevFailAt) altHydrated._lastPlaybackFailAt = prevFailAt;
+    playQueue[idx] = altHydrated;
     safeRenderQueuePanel('source-fallback', { scrollCurrent: miniQueueOpen });
     safeShelfRebuild('source-fallback');
     if (!opts.startupAutoplay) showSourceFallbackNotice('已自动切换音源', (song.name || '当前歌曲') + ' 已从 ' + fromLabel + ' 切到 ' + targetLabel + '。');

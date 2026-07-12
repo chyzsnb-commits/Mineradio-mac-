@@ -481,7 +481,15 @@ function initIdleGuideCanvas() {
 //  toast
 // ============================================================
 var toastTimer = null;
+// 节流：同一消息 800ms 内不重复弹（防止播放失败链路疯狂刷 toast 导致主线程被 reflow 占满卡死）
+var _lastToastMsg = '';
+var _lastToastAt = 0;
 function showToast(msg) {
+  // 节流防护：同一条消息短时间内不重复触发（避免 void offsetWidth 同步布局刷爆主线程）
+  var now = Date.now();
+  if (msg === _lastToastMsg && now - _lastToastAt < 800) return;
+  _lastToastMsg = msg;
+  _lastToastAt = now;
   var t = document.getElementById('toast');
   if (!t) return;
   t.textContent = msg;
