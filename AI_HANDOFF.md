@@ -2,70 +2,88 @@
 
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**
 
-## 当前权威入口（2026-07-12）
+## 当前权威入口（2026-07-12，转交给 Codex）
 
-- **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 测试版 + 正式版发布，全在这里）。
-- ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，不要碰**。
-- **当前基线**：从 `Mineradio-1.1.3-arm64.dmg` 提取的源码。1.1.3 是**内部测试版**（`package.json` 标记 `internalBeta: true`）。
-- **构建配置**：1.1.3 的 DMG 里只有运行时目录（无 `scripts`/`build`/`devDependencies`），已由 ZCode 反推补齐到 `package.json` 的 `build` 字段。Electron 42.4.1 + electron-builder ^26，mac arm64 dmg。
-- **源码已通过** `node --check`（server.js + desktop/main.js + 所有顶层 JS）。
-- **未验证**：尚未实际 `npm install` + `npm run build:mac` 跑通完整构建（依赖 CI 首次触发）。
+- **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
+- ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
+- **main 最新 commit**：`01629ec2`（fix(memory): purge 免密 + 防爆音）。
+- **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
+- **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
+- **网络注意**：本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI）正常。**用 gh API 推送代码，不要用 git push**。
 
-## 1.1.0 vs 1.1.3 对比结论（优化依据）
+## 用户偏好（重要）
 
-完整分析见仓库 issue / docs。要点：
+- 默认中文沟通，语气直接、偏实干。**希望主动完成任务，不要只给方案**。
+- 视觉方向：黑、玻璃、舞台、音乐可视化。讨厌"默认白框""太素"。
+- **私密开发**：源码不能开源。
+- **不要自动更新功能**（Mac 版从 Windows 迁移，不需要 electron-updater）。
+- Obsidian 笔记库在 `/Users/chy/菜鸡的仓库/菜鸡的仓库`，Mac 开发进度在 `02 知识编译/Mineradio Mac 开发进度.md`。
 
-1. **1.1.3 = 1.1.0 + 4 个音源（酷狗/汽水/QQ/Spotify）+ 手势识别 + 壁纸模式 + 遥测 + Windows 内存清理**。是功能堆叠的测试版，非性能优化版。
-2. **1.1.0 在性能/交互上更优**：体积小 27%、无后台遥测、无平台死代码、有自动更新、DMG 有完整视觉包装。
-3. 优化方向：照着 1.1.0 的克制做 1.1.3 的减法（详见 mr 仓库的 6 个 issue）。
+## 已完成的工作（按时间，21 个 commit / PR）
 
-## 用户偏好
+### 优化类
+1. **telemetry opt-in**（97c8ac3f）：正式版不上报，测试版首启询问
+2. **Mac 跳过 Windows 内存死代码 + 补漏 qishui-api.js**（32b163c4）
+3. **移除自动更新**（7c0254b1）：删 build.publish，build:mac 删 latest-mac.yml
+4. **图标瘦身**（#9）：icns 851KB→568KB 无损，视觉不变
+5. **DMG 视觉确认**（#9）：electron-builder 自动生成背景图+卷图标，.omc 已排除
 
-- 默认中文沟通，语气直接、偏实干。**希望主动完成任务，不要只给方案**。能本地验证就本地验证。
-- 视觉方向：黑、玻璃、舞台、音乐可视化。讨厌"默认白框""太素""没设计感"。
-- **私密开发**：源码不能开源。正式版可公开发布（dmg 资产），但源码私有。
-- 后续会陆续提供更多"已优化的版本"让 ZCode 合并进基线。
+### 发烫优化（用户反馈"1.1.0 不烫、1.1.3 烫"）
+6. **失焦降帧恢复**（#12）：1.1.3 把 `isVisibleBackgroundMode()` 写死 `return false`，导致切走仍满帧。已恢复 1.1.0 逻辑——失焦降到 15FPS。
+7. **空闲降频**（#12→#17→#19）：前台不播放+无交互+加载完时，整个主循环降到 2FPS。**注意**：加载/换源期间必须保持渲染（`playToggleBusy` 判断），否则 GPU 上下文频繁停-启导致黑屏（PR #19 修复了这个）。
 
-## 工作日志
+### 新功能
+8. **Mac 内存面板**（#12）：`desktop/system-memory-mac.js`（vm_stat + purge，模仿腾讯柠檬），显示真实内存数据。
+9. **Touch Bar**（#14）：`desktop/touchbar.js`，老款 Intel MBP 播放控制。独立模块。
+10. **x64 打包**（#13）：`build:mac:arm64` / `:x64` / `:all`，CI matrix 双架构。
 
-### 2026-07-12（发烫优化 + 图标瘦身，main 到 3c8a57f8）
+### Bug 修复
+11. **音源切换死循环卡死**（#16→#17）：toast 无节流导致主线程被 reflow 占满。修：toast 800ms 节流 + `_playbackFailCounter`（同首歌 15 秒失败超 3 次跳下一首）+ 换源保留 `_lastPlaybackFailAt`。
+12. **WebGL 上下文丢失黑屏**（#18）：加 webglcontextlost 监听 + 自动恢复。
+13. **渲染进程崩溃**（#20）：加 `render-process-gone` 监听，崩溃自动 reload。`sendWindowState` 加 webContents.isDestroyed 防护。
+14. **purge 免密 + 防爆音**（#21）：优先 `sudo -n purge`（免密），purge 前暂停音频 purge 后恢复（修喇叭"噗"爆音）。
 
-- **PR #10 发烫优化（重点）**：`public/js/modules/11-main-loop.js` 给 `renderer.render` 加空闲门控。前台不播放+无交互+歌单架未开+无桌面歌词/壁纸时，降到 2 FPS（`mainFrameGates.idleRender`）。`uTime` 仍累积，粒子不冻。恢复条件：播放/交互/开歌单架/桌面歌词/壁纸。这是用户反馈"一直发烫"的核心修复。
-- **PR #9 图标瘦身**：`build/icon.icns` 851KB→568KB，`build/icon.png` 426KB→272KB。iconutil 拆 icns → PIL 无损重压缩 → 手动重组（绕过 iconutil 强制重压缩）。视觉零差异。
-- **issue #1/#2/#3 已关闭**：telemetry opt-in、Mac 跳过 system-memory 死代码、移除自动更新。
-- **协作规则就位**：`.github/AGENT_COLLABORATION.md`（PR #8，含 Codex 初版 + GLM 补的术语解释/rollback/PR 四要素）。
-- ⚠️ **发现 `public/js/modules/.omc/` 有垃圾文件**（工具会话缓存），需要清理 + 加到 build 排除。待处理。
+### 基础设施
+15. **协作规则**（#8）：`.github/AGENT_COLLABORATION.md`（Codex+GLM 协作规则、术语解释、rollback、PR 四要素）
+16. **移植包**（#15）：`mac-porting/`（7 个 patch + MAC_PORTING_GUIDE.md）
 
-### 2026-07-12（ZCode 初始化）
+## 已知问题（待解决）
 
-- 分析了 1.1.0 和 1.1.3 两个 DMG 包体（体积/结构/源码/签名/优化点）。
-- 从 1.1.3 DMG 提取源码到 `chyzsnb-commits/mr`，清理了 `build/.omc/` 垃圾缓存。
-- 补齐 package.json 构建配置（scripts/build/devDependencies/electron-builder config）。
-- 写了 AGENTS.md（Mac 专用）、本文件、issue 模板。
+### 🔴 渲染进程崩溃（exitCode: 5, reason: 'crashed'）—— 最重要
+- **现象**：播放某些不可播的歌（如《你不知道的事》网易云+QQ 都失败）触发 QQ 换源搜索后，渲染进程 segfault 崩溃（`exitCode: 5`）。
+- **已做的**：崩溃后自动 reload 恢复（PR #20），恢复后能正常用。
+- **未做的**：崩溃根因是 **Chromium GPU 进程 segfault**（不是 JS 代码问题）。要精确定位需配 crashReporter 抓 dump。手势识别（`cam: 'off'` 默认关）已排除。
+- **建议**：如果要彻底解决，配 Electron crashReporter 抓 `.dmp`，用 minidump 分析工具看崩溃栈。
 
-## 未完成事项 / 下一步
+### electron-builder 签名阶段偶发卡住
+- 本地构建有时卡在签名阶段（Apple Development 证书 + Keychain 交互）。用 `CSC_IDENTITY_AUTO_DISCOVERY=false` 可跳过。
 
-### 用户需要手动完成（ZCode 无法代办，涉及账号授权）
+## 待办清单
 
-- [ ] **装 Codex GitHub App**：去 [Codex 设置](https://chatgpt.com/codex)（或 ChatGPT → Settings → Codex）连 GitHub 账号，授权 "OpenAI Codex" GitHub App 访问 `mr` 仓库。装好后就能在 issue/PR 评论 `@codex` 让 Codex 接任务。
-- [ ] **加 `OPENAI_API_KEY` secret**：mr 仓库 → Settings → Secrets and variables → Actions → New repository secret，名称 `OPENAI_API_KEY`，值是你的 OpenAI API key。配好后 `codex-review.yml` 才能在 PR 时自动审查。
-- [ ] **（可选）加 `RELEASE_SYNC_TOKEN` secret**：~~已废弃~~。正式版只发本仓库，不再跨仓库同步，此 secret 不再需要。
-- [ ] **（可选）Apple 公证**：⚠️ **重要发现**——本机 Keychain 里有 Apple Development 证书 `15157288212@163.com (U3ZLVKALTC)`，TeamIdentifier `CF7B45H83Y`，**和原始 1.1.3 DMG 的签名是同一个**。本地构建已自动用它签名（非 adhoc）。但这是 "Apple Development" 证书（开发用），Gatekeeper 仍会拦（`spctl` rejected），用户需右键打开。要实现"双击直跑"需要升级到 "Developer ID Application" 证书 + notarization。有该证书后，加 secrets `CSC_LINK`/`CSC_KEY_PASSWORD`/`APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`，CI 自动切换。
+- [ ] **渲染进程崩溃根因**：配 crashReporter 抓 dump 分析（上面详述）
+- [ ] **测试发烫效果**：`./node_modules/.bin/electron .`，切到别的软件看温度（验证失焦降帧 + 空闲降频）
+- [ ] **测试内存清理**：播放时点"系统释放"，确认不弹密码不爆音
+- [ ] **Touch Bar 实测**：找老款 Intel MBP
+- [ ] **x64 CI 验证**：打测试 tag 看 x64 构建
+- [ ] **Touch Bar 歌曲名推送**：前端切歌时推歌名到 Touch Bar（增强项）
+- [ ] **清理 `public/js/modules/.omc/` 垃圾文件** + 加 build 排除
 
-### ✅ 已验证（2026-07-12 本地构建测试）
+## 用户需要手动完成的（账号授权类）
 
-- [x] **本地构建链路完全跑通**：`npm install`（418 包）→ `npm run check`（语法 OK）→ `npm run build:mac` 成功产出 `dist/Mineradio-1.1.3-arm64.dmg`（134MB，含 latest-mac.yml + blockmap）。
-- [x] **修复了一个配置 bug**：`dmg.format` 不能写 `"APFS"`，改为 `"ULFO"`（hdiutil 的 APFS 代号）。已提交。
-- [x] **产物验证**：dmg 能挂载，app 版本/appId 正确（1.1.3 / com.mineradio.beat.internal），签名有效（Apple Development，非 adhoc）。
-- [x] **意外收获**：DMG 自动生成了视觉包装（.VolumeIcon.icns + .background.tiff + 布局），issue #4 的 DMG 视觉部分已部分解决。
-- [ ] **codex-review.yml 首次触发**：仍待验证（依赖上面的 OPENAI_API_KEY）。
-- [ ] **CI 首次触发**：仍待验证（需打 tag，但本地构建已证明配置正确，CI 大概率能过）。
+- [ ] **装 Codex GitHub App**：https://github.com/settings/installations → OpenAI Codex → Configure → 勾 All repositories 或 mr。**用户正在做这个**。
+- [ ] **加 `OPENAI_API_KEY` secret**：mr 仓库 Settings → Secrets → Actions。
 
-### 网络说明
+## 工作规则（给接手 AI）
 
-⚠️ 本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI 走的通道）正常。**后续推送代码用 gh API（Git Database API 或 contents API），不要用 `git push`**。示例见本次 commit `e4b9062a` 的推送方式。
+- **分支命名**：`codex/任务名`（Codex）、`glm/任务名`（GLM/ZCode）。不直接改 main，走 PR。
+- **PR 四要素**：变更 / 验证 / 未验证 / 是否需要用户手动操作。
+- **commit 是存档点**：一任务多小 commit，出问题可 revert。
+- **用英文术语带中文解释**（commit/branch/PR/issue/repo/main/merge/rollback/diff/CI）。
+- 详细规则见 `.github/AGENT_COLLABORATION.md`。
 
-### 后续版本合并
+## 交接说明
 
-- 后续用户提供更多"已优化的版本"时，按同样流程：挂载 DMG → 提取 `Resources/app/` → 与当前基线 diff → 合并改动 → 通过 gh API 推送。
-- 用 `scripts/dmg-diff.sh <old.dmg> <new.dmg>` 快速产出版本对比报告。
+**2026-07-12：GLM 将工作转交给 Codex。**
+- 用户正在装 Codex GitHub App，装好后 Codex 接手待办。
+- 后续用户会把任务转回 GLM（通过同一仓库的 AI_HANDOFF.md 同步）。
+- GLM 和 Codex 都通过 GitHub PR 协作，不维护各自独立的本地代码。
