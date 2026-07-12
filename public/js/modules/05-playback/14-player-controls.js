@@ -167,6 +167,15 @@ async function recoverCurrentTrackPlaybackFromFreshUrl(reason, opts) {
   if (!canRefreshCurrentPlaybackUrlForResume(song)) return false;
   var now = performance.now();
   if (playbackResumeRecovery.pending || now - (playbackResumeRecovery.lastAttemptAt || 0) < 1200) return false;
+  // 失败总次数防护（与 _playbackFailCounter 共享）：同一首歌 15 秒内失败超 3 次就不再恢复，直接跳下一首
+  if (typeof _playbackFailExceeded === 'function' && _playbackFailExceeded(song, currentIdx)) {
+    console.warn('[FB-DIAG] 恢复被失败计数器拦截→跳下一首', song && song.name, 'idx=' + currentIdx);
+    if (typeof skipFailedQueueItem === 'function') {
+      skipFailedQueueItem(currentIdx, (typeof trackSwitchToken !== 'undefined' ? trackSwitchToken : 0), '当前歌曲多次播放失败，已跳过。', null);
+    }
+    return false;
+  }
+  console.warn('[FB-DIAG] 播放恢复保护触发', song && song.name, 'reason=' + reason);
   playbackResumeRecovery.pending = true;
   playbackResumeRecovery.lastAttemptAt = now;
   playbackResumeRecovery.lastReason = reason || 'resume-recovery';

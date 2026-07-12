@@ -192,8 +192,12 @@ function qqPlaybackRetryQualities(requestedQuality, resolvedLevel) {
 async function retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data, requestedQuality) {
   opts = opts || {};
   // 失败总次数防护：同一首歌 15 秒内失败超 3 次就不再降级（交由上层 skip 到下一首）
-  if (_playbackFailExceeded(song, idx)) return false;
-  _recordPlaybackFail(song, idx);
+  if (_playbackFailExceeded(song, idx)) {
+    console.warn('[FB-DIAG] QQ降级被失败计数器拦截', song && song.name, 'idx=' + idx);
+    return false;
+  }
+  var _failN = _recordPlaybackFail(song, idx);
+  console.warn('[FB-DIAG] QQ音质降级', song && song.name, 'idx=' + idx, '第' + _failN + '次');
   var tried = Array.isArray(opts.qqQualityTried) ? opts.qqQualityTried.slice() : [];
   [requestedQuality, data && data.level].forEach(function (q) {
     q = normalizePlaybackQuality(q || '');
@@ -372,11 +376,13 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
   opts = opts || {};
   // 失败总次数防护：同一首歌 15 秒内失败超 3 次就跳下一首，不再换源
   if (_playbackFailExceeded(song, idx)) {
+    console.warn('[FB-DIAG] 换源被失败计数器拦截→跳下一首', song && song.name, 'idx=' + idx);
     var skipOpts0 = opts.startupAutoplay ? { silent: true, playbackOpts: { fallbackDepth: 0, startupAutoplay: true } } : null;
     skipFailedQueueItem(idx, token, '当前歌曲多次播放失败，已跳过。', skipOpts0);
     return true;
   }
-  _recordPlaybackFail(song, idx);
+  var _failN2 = _recordPlaybackFail(song, idx);
+  console.warn('[FB-DIAG] 自动换源', song && song.name, 'idx=' + idx, '第' + _failN2 + '次');
   var skipPlaybackOpts = { fallbackDepth: 0, startupAutoplay: true };
   if (opts.resumeAt != null) skipPlaybackOpts.resumeAt = opts.resumeAt;
   var skipOpts = opts.startupAutoplay ? { silent: true, playbackOpts: skipPlaybackOpts } : null;
