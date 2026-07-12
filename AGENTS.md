@@ -80,7 +80,7 @@ npm run check
 1. **`telemetry.js`**：1.1.3 里每 5 分钟强制上报。正式版必须改为 **opt-in**（首启询问，默认关闭），测试版可保留。
 2. **`system-memory.js`**：Windows 专用。Mac 上应 **完全跳过 require**，不要让它的状态机常驻主进程。
 3. **`internalBeta` 标记**（package.json `mineradio.internalBeta`）：**只在测试版构建时为 true**。正式版必须 false，且 `appId` 用 `com.mineradio.desktop` 而非 `com.mineradio.beat.internal`。
-4. **自动更新**：`mineradio.update.provider` 在正式版应为 `github`（指向本仓库 `chyzsnb-commits/mr`），测试版才是 `none`/`disabled`。注意：本仓库私有，用户端自动更新需授权 token，否则只能手动下载 dmg。
+4. **不要自动更新**：本软件从 Windows 迁移而来，**Mac 版不需要自动更新功能**。`package.json` 不含 `build.publish`；`build:mac` 脚本构建后会删除 `latest-mac.yml`（electron-builder 默认会生成它，但这是 electron-updater 用的，不要）。`mineradio.update.disabled` 保持 `true`（server.js 里有历史更新逻辑会读它，保持禁用即可，不要删该字段以免 server.js 报错）。用户升级 = 手动下载新 dmg 覆盖安装。
 5. **不要提交** `build/.omc/`（工具缓存）、`node_modules/`、`dist/`。已在 `.gitignore`。
 
 ## Review Guidelines
@@ -96,13 +96,14 @@ Codex / reviewer 审 PR 时检查：
 
 ## Release Workflow
 
-1. 确认 `package.json` 的 `version`、`mineradio.internalBeta`、`build.appId`、`build.publish` 符合本次发布类型（正式 vs 测试）。
+1. 确认 `package.json` 的 `version`、`mineradio.internalBeta`、`build.appId` 符合本次发布类型（正式 vs 测试）。**不含 `build.publish`**（Mac 版不自动更新）。
 2. 更新 `CHANGELOG.md` 顶部。
 3. `npm run check`。
-4. `npm run build:mac` → 产出 `dist/Mineradio-<ver>-arm64.dmg`。
-5. CI（`.github/workflows/build-mac.yml`）在打 tag `v*` 时自动构建并发布到 Release。
-   - **测试版** → 本仓库（`chyzsnb-commits/mr`）的 pre-release。
-   - **正式版** → 本仓库（`chyzsnb-commits/mr`）的 latest release。
+4. `npm run build:mac` → 产出 `dist/Mineradio-<ver>-arm64.dmg`（脚本会自动删除 `latest-mac.yml`）。
+5. CI（`.github/workflows/build-mac.yml`）在打 tag `v*` 时自动构建，把 dmg 上传到本仓库 Release（供手动下载，无自动更新通道）。
+   - **测试版** → pre-release。
+   - **正式版** → latest release。
+6. 用户升级方式：手动从 Release 下载新 dmg 覆盖安装。
 
 ## 单仓库架构（私有）
 

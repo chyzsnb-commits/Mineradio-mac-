@@ -28,7 +28,7 @@
     "start": "electron .",
     "check": "node --check server.js && node --check desktop/main.js",
     "build:mac:dir": "electron-builder --mac --arm64 --dir",
-    "build:mac": "electron-builder --mac dmg --arm64",
+    "build:mac": "electron-builder --mac dmg --arm64 && rm -f dist/latest-mac.yml",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -88,13 +88,6 @@
         { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
       ]
     },
-    "afterPack": "build/after-pack.js",
-    "publish": {
-      "provider": "github",
-      "owner": "chyzsnb-commits",
-      "repo": "mr",
-      "channel": "latest",
-      "private": true
-    }
+    "afterPack": "build/after-pack.js"
   }
 }
