@@ -1,5 +1,15 @@
 # Changelog
 
+## 待发布（基于 v1.1.3 基线的优化）
+
+### 遥测改为 opt-in（issue #1）
+
+- `desktop/telemetry.js` 重写：
+  - **正式版**（`mineradio.internalBeta` 非 true）：完全不启动，不发任何网络请求。
+  - **测试版**：首启弹窗询问用户是否允许匿名统计。同意后每次启动上报一次（仅随机 id + 版本号），不再每 5 分钟轮询。
+  - 用户偏好持久化在 `userData/telemetry-consent`（`accepted`/`declined`）。
+  - 移除了原 `setInterval(ping, 5 * 60 * 1000)` 固定间隔定时器。
+
 ## v1.1.3（内部测试版基线 — 2026-07-12 入库）
 
 > 本版本是从 `Mineradio-1.1.3-arm64.dmg` 提取并入库的内部测试版。相对于 v1.1.0 正式版，新增了多音源、手势、壁纸、遥测等功能，但也引入了若干待优化项（见 GitHub Issues）。
