@@ -79,6 +79,8 @@
 - **PR 四要素**：变更 / 验证 / 未验证 / 是否需要用户手动操作。
 - **commit 是存档点**：一任务多小 commit，出问题可 revert。
 - **用英文术语带中文解释**（commit/branch/PR/issue/repo/main/merge/rollback/diff/CI）。
+- **每次完成任务必须同步更新 Obsidian**：笔记库在 `/Users/chy/菜鸡的仓库/菜鸡的仓库/02 知识编译/Mineradio Mac 开发进度.md`。完成新任务后，把成果追加到这个笔记的「已完成的优化」表格和「待办」清单里。这是用户的知识库，代码改了笔记也要跟着更新，不能只改代码不记笔记。
+- **每次完成任务也要更新本文件（AI_HANDOFF.md）**的工作日志和待办清单，让下一个接手的 AI 知道最新状态。
 - 详细规则见 `.github/AGENT_COLLABORATION.md`。
 
 ## 交接说明
