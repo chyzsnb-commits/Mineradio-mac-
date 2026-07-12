@@ -330,7 +330,13 @@ function configureLocalAppPermissions() {
 
 function sendWindowState(win) {
   if (!win || win.isDestroyed()) return;
-  win.webContents.send('desktop-window-state', getWindowState(win));
+  // 防护：渲染进程崩溃/销毁后不再发消息（避免 "Render frame was disposed" 刷屏）
+  try {
+    if (!win.webContents || win.webContents.isDestroyed()) return;
+    win.webContents.send('desktop-window-state', getWindowState(win));
+  } catch (e) {
+    // 渲染进程已 dispose，静默忽略
+  }
 }
 
 function sendGlobalHotkeyAction(action) {
@@ -3684,6 +3690,25 @@ async function createWindow() {
     scheduleAppMemoryTrim('occluded', 2200);
   });
   mainWindow.on('unoccluded', () => sendWindowState(mainWindow));
+  // 渲染进程崩溃恢复：自动重新加载页面（修复"窗口全黑/卡死"）
+  // 渲染进程崩溃（OOM/GPU 异常/原生模块出错）时，页面变黑且无法操作。
+  // 监听 render-process-gone，延迟 1.5 秒重新加载，给系统回收时间。
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('[CrashRecovery] 渲染进程崩溃:', details && details.reason, details);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      // 延迟重新加载，避免崩溃瞬间反复重启
+      setTimeout(() => {
+        try {
+          if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+            console.log('[CrashRecovery] 重新加载页面...');
+            mainWindow.webContents.reload();
+          }
+        } catch (e) {
+          console.error('[CrashRecovery] 重新加载失败:', e.message);
+        }
+      }, 1500);
+    }
+  });
   mainWindow.on('move', () => {
     updateMainWindowMinimumSize(mainWindow);
     scheduleWindowStateSend(mainWindow);
