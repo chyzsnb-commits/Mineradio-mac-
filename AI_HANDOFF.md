@@ -28,13 +28,20 @@
 
 ## 工作日志
 
+### 2026-07-12（发烫优化 + 图标瘦身，main 到 3c8a57f8）
+
+- **PR #10 发烫优化（重点）**：`public/js/modules/11-main-loop.js` 给 `renderer.render` 加空闲门控。前台不播放+无交互+歌单架未开+无桌面歌词/壁纸时，降到 2 FPS（`mainFrameGates.idleRender`）。`uTime` 仍累积，粒子不冻。恢复条件：播放/交互/开歌单架/桌面歌词/壁纸。这是用户反馈"一直发烫"的核心修复。
+- **PR #9 图标瘦身**：`build/icon.icns` 851KB→568KB，`build/icon.png` 426KB→272KB。iconutil 拆 icns → PIL 无损重压缩 → 手动重组（绕过 iconutil 强制重压缩）。视觉零差异。
+- **issue #1/#2/#3 已关闭**：telemetry opt-in、Mac 跳过 system-memory 死代码、移除自动更新。
+- **协作规则就位**：`.github/AGENT_COLLABORATION.md`（PR #8，含 Codex 初版 + GLM 补的术语解释/rollback/PR 四要素）。
+- ⚠️ **发现 `public/js/modules/.omc/` 有垃圾文件**（工具会话缓存），需要清理 + 加到 build 排除。待处理。
+
 ### 2026-07-12（ZCode 初始化）
 
 - 分析了 1.1.0 和 1.1.3 两个 DMG 包体（体积/结构/源码/签名/优化点）。
 - 从 1.1.3 DMG 提取源码到 `chyzsnb-commits/mr`，清理了 `build/.omc/` 垃圾缓存。
 - 补齐 package.json 构建配置（scripts/build/devDependencies/electron-builder config）。
 - 写了 AGENTS.md（Mac 专用）、本文件、issue 模板。
-- 待办：6 个优化 issue、CI workflow、dmg-diff 脚本、Codex 集成。
 
 ## 未完成事项 / 下一步
 
