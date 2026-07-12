@@ -177,6 +177,34 @@ renderer.domElement.style.height = '100%';
 renderer.domElement.tabIndex = 0;
 document.getElementById('canvas-container').appendChild(renderer.domElement);
 
+// WebGL 上下文丢失处理（修复"窗口全黑"bug）。
+// GPU 压力大或驱动异常时会触发 webglcontextlost，画面变黑且不自动恢复。
+// 监听该事件：阻止默认行为，延迟 2 秒尝试恢复；仍失败则刷新页面（最可靠的恢复）。
+var _webglContextLostAt = 0;
+renderer.domElement.addEventListener('webglcontextlost', function (event) {
+  event.preventDefault();  // 阻止默认，允许后续恢复
+  _webglContextLostAt = Date.now();
+  console.error('[WebGL] 上下文丢失，画面将变黑。2 秒后尝试恢复...');
+  if (typeof showToast === 'function') {
+    try { showToast('画面渲染异常，正在恢复...'); } catch (e) {}
+  }
+}, false);
+renderer.domElement.addEventListener('webglcontextrestored', function () {
+  console.log('[WebGL] 上下文已恢复');
+  _webglContextLostAt = 0;
+  try {
+    renderer.setPixelRatio(getRenderPixelRatio());
+    renderer.setSize(innerWidth, innerHeight);
+  } catch (e) {}
+}, false);
+// 兜底：上下文丢失 5 秒还没恢复 → 刷新页面（最可靠的重置）
+setInterval(function () {
+  if (_webglContextLostAt && Date.now() - _webglContextLostAt > 5000) {
+    console.error('[WebGL] 上下文 5 秒未恢复，刷新页面');
+    try { location.reload(); } catch (e) {}
+  }
+}, 1000);
+
 // ============================================================
 //  相机系统 v7.1 — 分离 user offset / cinema offset
 //   - userOrbit: 用户拖拽的目标 (永久保留, 不会被电影模式覆盖)
