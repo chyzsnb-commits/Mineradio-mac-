@@ -26,7 +26,7 @@
   },
   "scripts": {
     "start": "electron .",
-    "check": "node --check server.js && node --check desktop/main.js",
+    "check": "node --check server.js && node --check desktop/main.js && node scripts/check-memory-audio-guard.js",
     "build:mac:dir": "electron-builder --mac --arm64 --dir",
     "build:mac:arm64": "electron-builder --mac dmg --arm64 && rm -f dist/latest-mac.yml",
     "build:mac:x64": "electron-builder --mac dmg --x64 && rm -f dist/latest-mac.yml",

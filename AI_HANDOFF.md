@@ -6,7 +6,7 @@
 
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
-- **main 最新 commit**：`01629ec2`（fix(memory): purge 免密 + 防爆音）。
+- **main 最新 commit**：`b5069d9`（docs: 工作规则补「必须同步 Obsidian」）。
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
 - **网络注意**：本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI）正常。**用 gh API 推送代码，不要用 git push**。
@@ -19,7 +19,7 @@
 - **不要自动更新功能**（Mac 版从 Windows 迁移，不需要 electron-updater）。
 - Obsidian 笔记库在 `/Users/chy/菜鸡的仓库/菜鸡的仓库`，Mac 开发进度在 `02 知识编译/Mineradio Mac 开发进度.md`。
 
-## 已完成的工作（按时间，21 个 commit / PR）
+## 已完成的工作（按时间，22 个 commit / PR）
 
 ### 优化类
 1. **telemetry opt-in**（97c8ac3f）：正式版不上报，测试版首启询问
@@ -42,10 +42,11 @@
 12. **WebGL 上下文丢失黑屏**（#18）：加 webglcontextlost 监听 + 自动恢复。
 13. **渲染进程崩溃**（#20）：加 `render-process-gone` 监听，崩溃自动 reload。`sendWindowState` 加 webContents.isDestroyed 防护。
 14. **purge 免密 + 防爆音**（#21）：优先 `sudo -n purge`（免密），purge 前暂停音频 purge 后恢复（修喇叭"噗"爆音）。
+15. **内存按钮短静音防噗声**（#23）：修复"压缩播放器 / 系统释放 / 提权释放"播放中仍可能噗声；清理前淡出并静音，清理后恢复音量，不再用 `togglePlay` 播放/暂停切状态。
 
 ### 基础设施
-15. **协作规则**（#8）：`.github/AGENT_COLLABORATION.md`（Codex+GLM 协作规则、术语解释、rollback、PR 四要素）
-16. **移植包**（#15）：`mac-porting/`（7 个 patch + MAC_PORTING_GUIDE.md）
+16. **协作规则**（#8）：`.github/AGENT_COLLABORATION.md`（Codex+GLM 协作规则、术语解释、rollback、PR 四要素）
+17. **移植包**（#15）：`mac-porting/`（7 个 patch + MAC_PORTING_GUIDE.md）
 
 ## 已知问题（待解决）
 
@@ -62,7 +63,7 @@
 
 - [ ] **渲染进程崩溃根因**：配 crashReporter 抓 dump 分析（上面详述）
 - [ ] **测试发烫效果**：`./node_modules/.bin/electron .`，切到别的软件看温度（验证失焦降帧 + 空闲降频）
-- [ ] **测试内存清理**：播放时点"系统释放"，确认不弹密码不爆音
+- [ ] **测试内存清理**：播放时分别点"压缩播放器 / 系统释放 / 提权释放"，确认不弹密码、不爆音、不丢播放状态
 - [ ] **Touch Bar 实测**：找老款 Intel MBP
 - [ ] **x64 CI 验证**：打测试 tag 看 x64 构建
 - [ ] **Touch Bar 歌曲名推送**：前端切歌时推歌名到 Touch Bar（增强项）
@@ -89,3 +90,10 @@
 - 用户正在装 Codex GitHub App，装好后 Codex 接手待办。
 - 后续用户会把任务转回 GLM（通过同一仓库的 AI_HANDOFF.md 同步）。
 - GLM 和 Codex 都通过 GitHub PR 协作，不维护各自独立的本地代码。
+
+**2026-07-12：Codex 处理内存按钮播放中噗声。**
+- PR：#23，分支：`codex/memory-buttons-no-pop`。
+- 改动：`desktop/main.js` 新增清理期间短静音保护；`mineradio-memory-trim-app` 和 `mineradio-memory-purge-system` 都经过该保护；系统释放不再用 `sendGlobalHotkeyAction('togglePlay')` 暂停/恢复。
+- CI 补充：PR #23 首轮 arm64 构建失败原因是 `.github/workflows/build-mac.yml` 的 `actions/setup-node` 开了 `cache: npm`，但仓库没有 `package-lock.json`；已移除该缓存配置，让 `npm ci || npm install` 正常执行。第二轮失败原因是 workflow 直接运行 `electron-builder`，GitHub shell 找不到本地 `node_modules/.bin`；已改为 `./node_modules/.bin/electron-builder`，并把 Node 从 20 调到 24 以匹配 Electron 42 的 Node 要求。
+- 验证：`npm run check`、`git diff --check` 通过；新增 `scripts/check-memory-audio-guard.js` 防止回退到播放/暂停式清理。
+- 未验证：还需要用户在真实播放时手动点三个按钮，确认喇叭不再“噗”、播放状态不丢。

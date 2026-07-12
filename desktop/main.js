@@ -541,6 +541,76 @@ async function softTrimAppMemoryMac() {
   return { ok: true, soft: true, scope: 'app', platform: 'darwin', gc, cacheCleared };
 }
 
+async function runWithRendererAudioMuted(operation) {
+  let audioState = null;
+  const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+  const canTouchRenderer = wc && !wc.isDestroyed();
+  if (canTouchRenderer) {
+    try {
+      audioState = await wc.executeJavaScript(`(function () {
+        if (typeof audio === 'undefined' || !audio) return Promise.resolve({ ok: false });
+        var state = {
+          ok: true,
+          paused: !!audio.paused,
+          muted: !!audio.muted,
+          volume: Number(audio.volume),
+          targetVolume: (typeof targetVolume === 'number') ? targetVolume : null,
+          audioFadeEnvelope: (typeof audioFadeEnvelope === 'number') ? audioFadeEnvelope : null
+        };
+        if (state.paused || state.muted) return Promise.resolve(state);
+        try {
+          if (typeof rampAudioOutputGain === 'function') rampAudioOutputGain(0, 120);
+          else audio.volume = 0;
+        } catch (e) {
+          try { audio.volume = 0; } catch (_) {}
+        }
+        return new Promise(function (resolve) {
+          setTimeout(function () {
+            try { audio.muted = true; } catch (e) {}
+            resolve(state);
+          }, 150);
+        });
+      })()`);
+    } catch (e) {
+      audioState = null;
+    }
+  }
+
+  try {
+    return await operation();
+  } finally {
+    if (canTouchRenderer && audioState && audioState.ok && !audioState.paused) {
+      try {
+        await wc.executeJavaScript(`(function (state) {
+          if (!state || typeof audio === 'undefined' || !audio) return false;
+          var restoreGain = (typeof state.targetVolume === 'number' && isFinite(state.targetVolume))
+            ? state.targetVolume
+            : ((typeof state.volume === 'number' && isFinite(state.volume)) ? state.volume : 0.7);
+          if (state.muted) {
+            try { audio.muted = true; } catch (e0) {}
+            try { audio.volume = restoreGain; } catch (e1) {}
+            return true;
+          }
+          try { audio.muted = false; } catch (e) {}
+          try {
+            if (typeof state.audioFadeEnvelope === 'number' && isFinite(state.audioFadeEnvelope)) {
+              audioFadeEnvelope = state.audioFadeEnvelope;
+            }
+            if (typeof rampAudioOutputGain === 'function') rampAudioOutputGain(restoreGain, 180);
+            else audio.volume = restoreGain;
+          } catch (e2) {
+            try { audio.volume = restoreGain; } catch (_) {}
+          }
+          setTimeout(function () {
+            try { audio.muted = !!state.muted; } catch (e3) {}
+          }, 230);
+          return true;
+        })(${JSON.stringify(audioState)})`);
+      } catch (e) {}
+    }
+  }
+}
+
 async function trimAppMemoryNow(reason) {
   if (appMemoryTrimInFlight) {
     return { ok: false, skipped: true, reason: 'in-flight' };
@@ -3215,7 +3285,7 @@ ipcMain.handle('mineradio-memory-configure-auto', async (_event, payload = {}) =
 });
 
 ipcMain.handle('mineradio-memory-trim-app', async (_event, payload = {}) => {
-  return trimAppMemoryNow(payload.reason || 'renderer');
+  return runWithRendererAudioMuted(() => trimAppMemoryNow(payload.reason || 'renderer'));
 });
 
 ipcMain.handle('mineradio-memory-purge-system', async (_event, payload = {}) => {
@@ -3234,24 +3304,8 @@ ipcMain.handle('mineradio-memory-purge-system', async (_event, payload = {}) => 
       };
     }
     const elevatedBefore = await systemMemory.isProcessElevated();
-    // purge 前暂停音频（避免内存回收导致音频缓冲错乱产生爆音"噗"声），purge 后恢复
-    let wasPlayingBeforePurge = false;
-    try {
-      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-        wasPlayingBeforePurge = await mainWindow.webContents.executeJavaScript(
-          'typeof playing !== "undefined" && typeof audio !== "undefined" && playing && audio && !audio.paused'
-        );
-      }
-    } catch (e) {}
-    if (wasPlayingBeforePurge) {
-      try { sendGlobalHotkeyAction('togglePlay'); } catch (e) {}
-      await new Promise((r) => setTimeout(r, 300));
-    }
-    const result = await systemMemory.purgeSystemMemorySmart(mask, { autoElevate, manual: true });
-    if (wasPlayingBeforePurge) {
-      await new Promise((r) => setTimeout(r, 200));
-      try { sendGlobalHotkeyAction('togglePlay'); } catch (e) {}
-    }
+    // purge 会短暂停住音频线程；清理期间只做短静音保护，不触发播放/暂停状态切换。
+    const result = await runWithRendererAudioMuted(() => systemMemory.purgeSystemMemorySmart(mask, { autoElevate, manual: true }));
     return {
       ok: true,
       result,
