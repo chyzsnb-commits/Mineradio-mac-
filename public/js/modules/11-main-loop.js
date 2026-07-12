@@ -64,6 +64,9 @@ function foregroundFpsGovernorCap() {
 }
 function getAdaptiveRenderFps(now) {
   if (isDeepBackgroundMode()) return 1;
+  // 恢复 1.1.0 的"可见后台模式"：窗口可见但没聚焦（用户在用别的软件）→ 降到 15 FPS。
+  // 1.1.3 曾禁用了 isVisibleBackgroundMode（return false），导致切走仍满帧渲染 → 发烫。
+  if (typeof isVisibleBackgroundMode === 'function' && isVisibleBackgroundMode()) return 15;
   var mode = (typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive';
   var fixedFps = (typeof foregroundFixedFpsForMode === 'function') ? foregroundFixedFpsForMode(mode) : null;
   if (fixedFps !== null) {
@@ -365,6 +368,18 @@ function animate() {
   if (shouldSkipAdaptiveRenderFrame(now)) return;
   var dt = Math.min((now - prevTime) / 1000, 0.05);
   prevTime = now;
+  // 空闲整体降频（发烫优化）：前台不播放+无交互+歌单架未开+无桌面歌词/壁纸时，
+  // 整个主循环体（所有相机/粒子/歌单架 update + renderer.render）降到 2 FPS。
+  // 比只停 renderer.render 更彻底——dynamic 相机等每帧计算也一并降频。
+  // 注意：uTime 在空闲跳帧时不累积，粒子会停在低帧画面直到下次渲染；有交互/播放立即恢复满帧。
+  var idleLoopSkip = false;
+  if (isForegroundIdleForRender(now)) {
+    var idleLoopDt = consumeFrameGate(mainFrameGates.idleRender, now, dt, 2, false, 'idle-loop');
+    idleLoopSkip = (idleLoopDt <= 0);
+  }
+  if (idleLoopSkip) {
+    return;
+  }
   sampleRenderPerf(now, dt);
   uniforms.uTime.value += dt;
   if (isMainSceneCoveredBySplash()) {
@@ -679,16 +694,7 @@ function animate() {
   }
 
   var rendererPerfStart = performance.now();
-  // 空闲降频：前台不播放+无交互时，renderer.render 降到 2 FPS（发烫优化）。
-  // uTime 仍在每帧累积，粒子/shader 动画不会冻住，只是低帧率更新；有交互/播放立即恢复满帧。
-  var idleRenderSkip = false;
-  if (isForegroundIdleForRender(now)) {
-    var idleDt = consumeFrameGate(mainFrameGates.idleRender, now, dt, 2, false, 'idle-render');
-    idleRenderSkip = (idleDt <= 0);
-  }
-  if (!idleRenderSkip) {
-    renderer.render(scene, camera);
-  }
+  renderer.render(scene, camera);
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('renderer.render', rendererPerfStart);
   var frameCostMs = performance.now() - framePerfStart;
   if (typeof sampleAdaptiveFrameCost === 'function') {

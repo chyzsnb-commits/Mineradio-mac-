@@ -6,22 +6,12 @@ const fs = require('fs');
 const crypto = require('crypto');
 const os = require('os');
 const { execFile, spawn } = require('child_process');
-// Windows 内存清理模块（PowerShell + Win32 API）。Mac 上完全跳过加载，
-// 用 stub 替代——所有方法返回"不可用"，避免 Windows 死代码常驻主进程。
-// 见 issue #2 和 AGENTS.md 关键约束 #2。
+// 内存清理模块：Windows 用 system-memory.js（PowerShell + Win32 API），
+// Mac 用 system-memory-mac.js（vm_stat + purge，参考腾讯柠檬清理逻辑）。
+// 见 AGENTS.md 关键约束 #2、issue #2。
 const systemMemory = process.platform === 'win32'
   ? require('./system-memory')
-  : {
-      MEMORY_MASK_DEFAULT: 0,
-      SYSTEM_PURGE_AVAILABLE: false,
-      SYSTEM_PURGE_ENABLED: false,
-      getMemorySnapshot: () => ({ ok: false, reason: 'mac-unsupported' }),
-      getMemorySnapshotExtended: async () => ({ ok: false, reason: 'mac-unsupported' }),
-      trimAppWorkingSets: async () => ({ ok: false, reason: 'mac-unsupported' }),
-      purgeSystemMemorySmart: async () => ({ ok: false, reason: 'mac-unsupported' }),
-      normalizeMask: (m) => m || 0,
-      isProcessElevated: async () => false,
-    };
+  : require('./system-memory-mac');
 const { extractKugouAuth } = require('../kugou-api');
 const {
   getQishuiOAuthConfig,
@@ -3224,7 +3214,8 @@ ipcMain.handle('mineradio-memory-purge-system', async (_event, payload = {}) => 
   const mask = systemMemory.normalizeMask(payload && payload.mask);
   const autoElevate = payload && payload.autoElevate === true;
   try {
-    if (isMainWindowForegroundVisible()) {
+    // Windows：窗口可见时跳过 purge（会卡顿）。Mac：purge 不卡顿，随时可清（参考腾讯柠檬）。
+    if (process.platform === 'win32' && isMainWindowForegroundVisible()) {
       return {
         ok: true,
         result: { ok: false, skipped: true, reason: 'foreground-visible', message: 'System memory purge is skipped while Mineradio is visible.' },

@@ -153,7 +153,14 @@ function isHiddenForBackgroundOptimization() {
   return !!(document.hidden && !isLiveBackgroundKeepMode());
 }
 function isVisibleBackgroundMode() {
-  return false;
+  // 恢复 1.1.0 的逻辑：窗口可见 + 没最小化 + 没聚焦（用户在用别的软件）→ 进低帧模式。
+  // 1.1.3 曾把这里改成 return false，导致切到别的软件时仍满帧渲染 → 发烫。
+  // 现在恢复：失去焦点即降到 RENDER_BACKGROUND_FPS（15 FPS），大幅降温。
+  if (isLiveBackgroundKeepMode()) return false;
+  return !!(!document.hidden
+    && !desktopRuntimeState.minimized
+    && desktopRuntimeState.visible !== false
+    && !desktopRuntimeState.focused);
 }
 function updateRenderPowerClasses() {
   document.body.classList.toggle('render-deep-sleep', isDeepBackgroundMode());
