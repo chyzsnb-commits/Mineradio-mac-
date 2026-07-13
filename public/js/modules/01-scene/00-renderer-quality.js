@@ -155,6 +155,7 @@ function markRenderInteraction(reason, holdMs) {
   renderInteractionBoostUntil = Math.max(renderInteractionBoostUntil, now + (holdMs || RENDER_INTERACTION_HOLD_MS));
   renderInteractionReason = reason || renderInteractionReason || 'interaction';
   if (typeof renderPerfState !== 'undefined' && renderPerfState) renderPerfState.lastRenderAt = 0;
+  if (typeof wakeMainLoopFromBackground === 'function') wakeMainLoopFromBackground();
 }
 function isRenderInteractionActive(now) {
   return (now || performance.now()) < renderInteractionBoostUntil;

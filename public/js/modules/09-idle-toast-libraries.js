@@ -8,6 +8,7 @@ var idleGuideStartedAt = performance.now();
 var idleGuideVisible = false;
 var idleGuideLastFrameAt = performance.now();
 var idleGuideDelayTimer = null;
+var idleGuideAnimationFrame = 0;
 // Keep Wallpaper as the only startup idle background.
 var IDLE_GUIDE_BACKGROUND_ENABLED = false;
 var idleGuideInteraction = {
@@ -220,7 +221,39 @@ function drawIdleGuideTrail(ctx, trail, now, alpha, energy) {
   }
   ctx.restore();
 }
+function idleGuideLoopShouldRun() {
+  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) return false;
+  if (IDLE_GUIDE_BACKGROUND_ENABLED) return true;
+  if (typeof shelfHoverCue === 'undefined' || !shelfHoverCue) return false;
+  return !!(shelfHoverCue.guide || shelfHoverCue.zoneActive || shelfHoverCue.target > 0 || shelfHoverCue.value > 0.005);
+}
+function stopIdleGuideLoop(clearSurface) {
+  if (idleGuideDelayTimer) {
+    clearTimeout(idleGuideDelayTimer);
+    idleGuideDelayTimer = null;
+  }
+  if (idleGuideAnimationFrame) {
+    cancelAnimationFrame(idleGuideAnimationFrame);
+    idleGuideAnimationFrame = 0;
+  }
+  if (clearSurface && idleGuideCtx) {
+    idleGuideCtx.clearRect(0, 0, idleGuideW, idleGuideH);
+    resetIdleGuideTrails();
+    setIdleGuideVisible(false, false);
+  }
+}
+function requestIdleGuideAnimationFrame() {
+  if (idleGuideAnimationFrame || !idleGuideLoopShouldRun()) return;
+  idleGuideAnimationFrame = requestAnimationFrame(function () {
+    idleGuideAnimationFrame = 0;
+    drawIdleGuideFrame();
+  });
+}
 function scheduleIdleGuideFrame(delay) {
+  if (!idleGuideLoopShouldRun()) {
+    stopIdleGuideLoop(true);
+    return;
+  }
   if (idleGuideDelayTimer) {
     clearTimeout(idleGuideDelayTimer);
     idleGuideDelayTimer = null;
@@ -228,14 +261,40 @@ function scheduleIdleGuideFrame(delay) {
   if (delay && delay > 0) {
     idleGuideDelayTimer = setTimeout(function () {
       idleGuideDelayTimer = null;
-      requestAnimationFrame(drawIdleGuideFrame);
+      requestIdleGuideAnimationFrame();
     }, delay);
   } else {
-    requestAnimationFrame(drawIdleGuideFrame);
+    requestIdleGuideAnimationFrame();
   }
 }
+function wakeIdleGuideLoop() {
+  if (!idleGuideCanvas || !idleGuideCtx) return;
+  if (!idleGuideLoopShouldRun()) {
+    stopIdleGuideLoop(true);
+    return;
+  }
+  if (idleGuideDelayTimer) {
+    clearTimeout(idleGuideDelayTimer);
+    idleGuideDelayTimer = null;
+  }
+  idleGuideLastFrameAt = performance.now();
+  requestIdleGuideAnimationFrame();
+}
+function syncIdleGuideLoopPowerState() {
+  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) stopIdleGuideLoop(true);
+  else wakeIdleGuideLoop();
+}
+document.addEventListener('visibilitychange', function () {
+  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) stopIdleGuideLoop(true);
+  else wakeIdleGuideLoop();
+});
+window.addEventListener('focus', wakeIdleGuideLoop);
 function drawIdleGuideFrame() {
   if (!idleGuideCanvas || !idleGuideCtx) return;
+  if (!idleGuideLoopShouldRun()) {
+    stopIdleGuideLoop(true);
+    return;
+  }
   var ctx = idleGuideCtx;
   var nowFrame = performance.now();
   var dtFrame = Math.max(1 / 120, Math.min(0.05, (nowFrame - idleGuideLastFrameAt) / 1000 || 1 / 60));
@@ -474,7 +533,7 @@ function initIdleGuideCanvas() {
   idleGuideStartedAt = performance.now();
   resizeIdleGuideCanvas();
   window.addEventListener('resize', resizeIdleGuideCanvas);
-  drawIdleGuideFrame();
+  wakeIdleGuideLoop();
 }
 
 // ============================================================

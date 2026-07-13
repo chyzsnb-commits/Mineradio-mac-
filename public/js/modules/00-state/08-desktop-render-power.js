@@ -165,6 +165,7 @@ function isVisibleBackgroundMode() {
 function updateRenderPowerClasses() {
   document.body.classList.toggle('render-deep-sleep', isDeepBackgroundMode());
   document.body.classList.toggle('render-background-eco', isVisibleBackgroundMode());
+  if (typeof syncIdleGuideLoopPowerState === 'function') syncIdleGuideLoopPowerState();
 }
 function safeObjectKeys(obj) {
   try { return obj ? Object.keys(obj) : []; } catch (e) { return []; }

@@ -140,6 +140,7 @@ function setShelfGuideCueActive(on) {
   } else {
     shelfHoverCue.target = 0;
   }
+  if (typeof wakeIdleGuideLoop === 'function') wakeIdleGuideLoop();
 }
 function updateShelfHoverCueFromPointer(e) {
   if (shelfPlaybackSwitchGuardActive()) {
@@ -170,6 +171,9 @@ function updateShelfHoverCueFromPointer(e) {
   shelfHoverCue.x = e.clientX;
   shelfHoverCue.y = e.clientY;
   shelfHoverCue.lastAt = performance.now();
+  if (typeof idleGuideLoopShouldRun === 'function'
+      && idleGuideLoopShouldRun()
+      && typeof wakeIdleGuideLoop === 'function') wakeIdleGuideLoop();
 }
 function tickShelfHoverCue(dt) {
   if (shelfPlaybackSwitchGuardActive()) {

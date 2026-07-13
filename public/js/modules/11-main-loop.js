@@ -230,11 +230,15 @@ function mainLoopDeepBackgroundSleeping() {
     && isDeepBackgroundMode()
     && !(typeof isLiveBackgroundKeepMode === 'function' && isLiveBackgroundKeepMode());
 }
-function mainLoopBackgroundDelayMs() {
-  if (!mainLoopDeepBackgroundSleeping()) return 0;
-  if (fx && (fx.desktopLyrics || fx.wallpaperMode)) return 250;
-  if (typeof isBackgroundReleaseMode === 'function' && isBackgroundReleaseMode()) return 1500;
-  return 1000;
+function mainLoopFrameDelayMs(now) {
+  if (mainLoopDeepBackgroundSleeping()) {
+    if (fx && (fx.desktopLyrics || fx.wallpaperMode)) return 250;
+    if (typeof isBackgroundReleaseMode === 'function' && isBackgroundReleaseMode()) return 1500;
+    return 1000;
+  }
+  if (typeof isVisibleBackgroundMode === 'function' && isVisibleBackgroundMode()) return 67;
+  if (isForegroundIdleForRender(now || performance.now())) return 500;
+  return 0;
 }
 function requestMainLoopAnimationFrame() {
   if (mainLoopAnimationRequested) return;
@@ -242,7 +246,7 @@ function requestMainLoopAnimationFrame() {
   requestAnimationFrame(animate);
 }
 function scheduleNextMainLoopFrame() {
-  var delay = mainLoopBackgroundDelayMs();
+  var delay = mainLoopFrameDelayMs(performance.now());
   if (delay > 0) {
     if (mainLoopBackgroundTimer) return;
     mainLoopBackgroundTimer = setTimeout(function () {
@@ -270,6 +274,10 @@ document.addEventListener('visibilitychange', function () {
   if (!mainLoopDeepBackgroundSleeping()) wakeMainLoopFromBackground();
 });
 window.addEventListener('focus', wakeMainLoopFromBackground);
+if (typeof audio !== 'undefined' && audio && typeof audio.addEventListener === 'function') {
+  audio.addEventListener('play', wakeMainLoopFromBackground);
+  audio.addEventListener('playing', wakeMainLoopFromBackground);
+}
 function mainLoopInteractionActive(now) {
   return (typeof isRenderInteractionActive === 'function') && isRenderInteractionActive(now);
 }
