@@ -7,7 +7,8 @@
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
 - **main 最新 commit**：`a2d8145`（PR #26 已合并：唱歌模式、倍速、防爆音、歌架与卡死修复）。
-- **当前 Codex 任务**：PR #27，分支 `codex/gpu-mode-fast-splash`；设计存档 `7977185`，功能存档 `e7eb5f4`，审查修复存档 `8b74045`，黑边修复设计存档 `160c560`，黑边修复存档 `bee5c36`。
+- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）仍待合并；PR #29 基于 #27，分支 `codex/gpu-usage-monitor`，新增 Mac 真实显卡占用监视。#29 设计存档 `4efaba2`，功能存档 `3a9f3eb`，审查修复存档 `d342ac6`、`bdfc2b5`。
+- **协作者最新工作**：PR #28，分支 `codex/fix-gesture-latency`，优化双手手势延迟与 GPU 负载；当前仍待合并，本分支未修改其手势文件。
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
 - **网络注意**：本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI）正常。**用 gh API 推送代码，不要用 git push**。
@@ -40,6 +41,7 @@
 - **x64 打包**（#13）：`build:mac:arm64` / `:x64` / `:all`，CI matrix 双架构。
 - **倍速 + 唱歌模式 + 歌架交互**（#26）：可调原唱、频谱去人声、麦克风律动及音频图重建防爆音。
 - **启动页快速进入**（`codex/gpu-mode-fast-splash`）：动画出现后任意时刻点击、回车或空格都能立即进入。
+- **Mac 真实显卡占用监视**（#29）：负载窗口通过 `ioreg` 显示系统 GPU 占用；只在窗口打开时每 2 秒采样，壁纸模式停止采样，失败时显示 `--`。
 
 ### Bug 修复
 11. **音源切换死循环卡死**（#16→#17）：toast 无节流导致主线程被 reflow 占满。修：toast 800ms 节流 + `_playbackFailCounter`（同首歌 15 秒失败超 3 次跳下一首）+ 换源保留 `_lastPlaybackFailAt`。
@@ -68,7 +70,6 @@
 
 - [ ] **渲染进程崩溃根因**：配 crashReporter 抓 dump 分析（上面详述）
 - [ ] **真机对比三种显卡模式**：分别重启到自动/省电/高性能，播放同一首歌 10 分钟，对比温度、CPU 和流畅度。
-- [ ] **负载监视窗口增加显卡占用**：显示方式与现有 CPU 指标一致，先确认 macOS 可稳定读取的指标。
 - [ ] **继续发烫优化**：主循环空闲时从高频 RAF 唤醒改成真正休眠；idle guide 在深后台彻底停止。
 - [ ] **唱歌模式降载**：原唱 100% 时旁路 Worklet；暂停、无歌曲或深后台时停止麦克风采集。
 - [ ] **Mac 内存面板两个开关**：实现安全的系统级定时释放与按需请求管理员，不直接照搬可能增加卡顿和发热的 `/usr/sbin/purge`。
@@ -118,3 +119,11 @@
 - 测试规则：后续自动化实机测试只能使用 `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`，不能调用真实摄像头；用户已明确这不是软件修改任务。
 - PR #27 CI：arm64 构建成功；x64 仍排队。`codex-review` 失败是工作流未生成 `/home/runner/.codex/<run-id>.json`，与本次代码检查无关。
 - 未验证：`powerPreference` 只是 WebGL 偏好，macOS 最终决定实际显卡；三种模式的真实温度和续航差异仍需同机长时间对比。
+
+**2026-07-13：Codex 为负载监视器增加 Mac 真实显卡占用。**
+- PR：#29；分支：`codex/gpu-usage-monitor`；基于 PR #27；设计 commit（代码存档点）`4efaba2`，功能 commit `3a9f3eb`，审查修复 commit `d342ac6`、`bdfc2b5`。
+- 改动：新增 `desktop/gpu-usage.js`，通过 `/usr/sbin/ioreg` 读取 `Device Utilization %`；负载窗口在 CPU 与内存之间增加“显卡”行，读取失败显示 `--`。
+- 开销控制：只在负载监视器打开时每 2 秒采样；关闭监视器或进入壁纸模式时同时停止显卡、CPU 和内存采样，退出壁纸后按原开关恢复。
+- 独立审查：首轮发现壁纸模式只停 HUD 绘制、没有停设备采样，`d342ac6` 已修复；复审又发现退出壁纸的多个通知会触发重复即时采样，`bdfc2b5` 改为幂等恢复，并用真实连续调用测试锁定只采样一次。
+- 验证：`npm run check` 共 11 项通过，`git diff --check` 和相关前端语法检查通过；本机 `ioreg` 约 0.01 秒返回；Electron 使用假摄像头参数实测显卡行从 `--` 更新为真实 `97%`，顺序为 CPU → 显卡 → 自适应 → 内存，测试日志无报错。
+- 未验证：Intel Mac 是否提供同名指标；不支持时会安全显示 `--`。
