@@ -71,7 +71,7 @@ test('GPU 读取器只在 macOS 调用 ioreg 并复用进行中的采样', async
   assert.equal(await readThrew(), null);
 });
 
-test('主进程返回 GPU 指标且 HUD 在 CPU 下方显示对称显卡行', () => {
+test('主进程返回 GPU 指标且 HUD 在 CPU 下方显示对称 GPU 行', () => {
   const main = read('desktop/main.js');
   const hud = read('public/js/modules/07-fx/05-fx-panel-performance.js');
   assert.match(main, /require\(['"]\.\/gpu-usage['"]\)/);
@@ -79,9 +79,9 @@ test('主进程返回 GPU 指标且 HUD 在 CPU 下方显示对称显卡行', ()
   assert.match(main, /out\.sysGpuPct\s*=\s*await\s+readSystemGpuUsage\(\)/);
   assert.match(hud, /var gpuLine\s*=\s*'系统 '\s*\+\s*fmtPct\(d \? d\.sysGpuPct : null\)/);
   const cpuRow = hud.indexOf('<span>CPU</span>');
-  const gpuRow = hud.indexOf('<span>显卡</span>');
+  const gpuRow = hud.indexOf('<span>GPU</span>');
   const memoryRow = hud.indexOf('<span>内存</span>');
-  assert.ok(cpuRow >= 0 && gpuRow > cpuRow && memoryRow > gpuRow, '显卡行必须位于 CPU 与内存之间');
+  assert.ok(cpuRow >= 0 && gpuRow > cpuRow && memoryRow > gpuRow, 'GPU 行必须位于 CPU 与内存之间');
 });
 
 test('壁纸模式隐藏 HUD 时停止全部采样并在退出后恢复', () => {

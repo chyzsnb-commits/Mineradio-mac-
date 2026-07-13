@@ -36,6 +36,7 @@ function currentRenderAdaptiveContext(now) {
 }
 function resolveAdaptiveRenderCadence(now, mode) {
   if (isDeepBackgroundMode()) return null;
+  if (typeof isHomeRecentScrollActive === 'function' && isHomeRecentScrollActive(now)) return null;
   mode = mode || ((typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive');
   if (mode !== 'adaptive' || RENDER_VISIBLE_VSYNC || typeof selectAdaptiveRenderCadence !== 'function') return null;
   var context = currentRenderAdaptiveContext(now);
@@ -69,6 +70,9 @@ function getAdaptiveRenderFps(now) {
   if (typeof isVisibleBackgroundMode === 'function' && isVisibleBackgroundMode()) return 15;
   var mode = (typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive';
   var fixedFps = (typeof foregroundFixedFpsForMode === 'function') ? foregroundFixedFpsForMode(mode) : null;
+  if (typeof isHomeRecentScrollActive === 'function' && isHomeRecentScrollActive(now)) {
+    return fixedFps !== null && fixedFps > 0 ? Math.min(30, fixedFps) : 30;
+  }
   if (fixedFps !== null) {
     if (fixedFps === 0) return foregroundFpsGovernorCap();   // vsync:交给治理器决定上限(45/30/60 钳位)或 0=真 vsync
     return fixedFps;                                          // 用户显式选的固定帧率,原样返回

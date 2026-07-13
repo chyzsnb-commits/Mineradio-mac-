@@ -349,7 +349,7 @@ function updatePerfHud() {
     '<div class="ph-r"><span>帧率</span><b>' + fps + ' FPS</b></div>' +
     '<div class="ph-r"><span>渲染分辨率</span><b>' + resLabel + '</b></div>' +
     '<div class="ph-r"><span>CPU</span><b>' + cpuLine + '</b></div>' +
-    '<div class="ph-r"><span>显卡</span><b>' + gpuLine + '</b></div>' +
+    '<div class="ph-r"><span>GPU</span><b>' + gpuLine + '</b></div>' +
     adaptRow +
     '<div class="ph-r"><span>内存</span><b>' + memLine + '</b></div>' +
     gestureRow +

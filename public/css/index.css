@@ -1900,10 +1900,12 @@ body.home-wallpaper-preview #canvas-container {
 .home-recent-stat{flex:1 1 0;min-width:96px;padding:9px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.050);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
 .home-recent-stat-k{font-size:10px;font-weight:760;letter-spacing:.12em;text-transform:uppercase;color:color-mix(in srgb,var(--home-accent) 60%,rgba(255,255,255,.40))}
 .home-recent-stat-v{margin-top:4px;font-size:16px;font-weight:780;color:rgba(255,255,255,.94);line-height:1.18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.home-recent-list{flex:1;min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:min-content;gap:8px;overflow-y:auto;padding-right:2px;margin-top:2px}
+.home-recent-list{flex:1;min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:min-content;gap:8px;overflow-y:auto;overscroll-behavior:contain;contain:layout paint;will-change:scroll-position;transform:translateZ(0);padding-right:2px;margin-top:2px}
 .home-recent-card{display:flex;align-items:center;gap:10px;padding:7px;border-radius:14px;border:1px solid rgba(255,255,255,.085);background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.022));box-shadow:0 10px 28px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.05);color:#fff;text-align:left;font-family:inherit;cursor:pointer;min-width:0;transition:transform .18s,border-color .18s,background .18s,box-shadow .18s}
 .home-recent-card > *{pointer-events:none}
 .home-recent-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--home-accent) 40%,rgba(255,255,255,.16));background:linear-gradient(145deg,rgba(255,255,255,.085),rgba(255,255,255,.035));box-shadow:0 16px 38px rgba(0,0,0,.26),0 0 22px color-mix(in srgb,var(--home-accent) 12%,transparent)}
+.home-recent-list.is-scrolling .home-recent-card{transition:none}
+.home-recent-list.is-scrolling .home-recent-card:hover{transform:none;box-shadow:0 10px 28px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.05)}
 .home-recent-thumb{flex:none;width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,color-mix(in srgb,var(--home-accent) 64%,#16161b),rgba(36,66,255,.46));background-size:cover;background-position:center;box-shadow:0 8px 20px rgba(0,0,0,.30),inset 0 1px 0 rgba(255,255,255,.14)}
 .home-recent-meta{min-width:0;flex:1}
 .home-recent-name{font-size:12.5px;font-weight:720;color:rgba(255,255,255,.92);line-height:1.22;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

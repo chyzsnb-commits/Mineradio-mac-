@@ -109,6 +109,23 @@ function renderHomeTiles() {
   renderHomeMosaic(tiles);
 }
 // 最近播放(Recently Played)hero —— 移植自主线 Mineradio,数据源与 homeListenSummary 同为 listenStatsState.history
+var homeRecentScrollActiveUntil = 0;
+var homeRecentScrollEndTimer = 0;
+function isHomeRecentScrollActive(now) {
+  return (Number(now) || performance.now()) < homeRecentScrollActiveUntil;
+}
+function markHomeRecentScrollActivity() {
+  homeRecentScrollActiveUntil = performance.now() + 240;
+  var listEl = document.getElementById('home-recent-list');
+  if (listEl) listEl.classList.add('is-scrolling');
+  if (homeRecentScrollEndTimer) clearTimeout(homeRecentScrollEndTimer);
+  homeRecentScrollEndTimer = setTimeout(function () {
+    homeRecentScrollEndTimer = 0;
+    if (performance.now() < homeRecentScrollActiveUntil) return;
+    var currentList = document.getElementById('home-recent-list');
+    if (currentList) currentList.classList.remove('is-scrolling');
+  }, 250);
+}
 function homeRecentPlays() {
   return (listenStatsState.history || []).filter(function (item) { return item && (item.id || item.mid || item.key); }).slice(0, 30);
 }
@@ -131,6 +148,11 @@ function renderHomeRecentBlock() {
     }).join('');
   }
   if (!listEl) return;
+  if (!listEl._recentScrollPerformanceBound) {
+    listEl._recentScrollPerformanceBound = true;
+    listEl.addEventListener('wheel', markHomeRecentScrollActivity, { passive: true });
+    listEl.addEventListener('scroll', markHomeRecentScrollActivity, { passive: true });
+  }
   if (!plays.length) {
     listEl.className = 'home-recent-empty';
     listEl.innerHTML = '<div class="home-recent-empty-title">还没有最近收听</div>' +
