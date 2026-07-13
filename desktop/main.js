@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, crashReporter } = require('electron');
 const net = require('net');
 const http = require('http');
 const path = require('path');
@@ -14,6 +14,7 @@ const systemMemory = process.platform === 'win32'
   : require('./system-memory-mac');
 const { readSystemGpuUsage } = require('./gpu-usage');
 const { createAiStemService } = require('./ai-stem-separator');
+const { createCrashDiagnostics } = require('./crash-diagnostics');
 // macOS Touch Bar 播放控制（2016-2019 Intel MBP）。无 Touch Bar 的机器安全 no-op。
 const touchbar = require('./touchbar');
 const { extractKugouAuth } = require('../kugou-api');
@@ -151,6 +152,13 @@ for (const [name, value, envName] of CHROMIUM_OPT_IN_PERFORMANCE_SWITCHES) {
 }
 // 开发/测试:指定独立 userData,可与正式安装版同时运行(单实例锁按 userData 隔离)
 if (process.env.MINERADIO_USER_DATA_DIR) app.setPath('userData', process.env.MINERADIO_USER_DATA_DIR);
+const crashDiagnostics = createCrashDiagnostics({
+  app,
+  crashReporter,
+  appName: APP_NAME,
+  packageInfo: APP_PACKAGE_INFO,
+});
+crashDiagnostics.configure();
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 const QQ_LOGIN_COOKIE_PRIORITY = [
@@ -3247,6 +3255,10 @@ ipcMain.handle('mineradio-get-gpu-diagnostics', () => {
   return getGpuDiagnostics();
 });
 
+ipcMain.handle('mineradio-get-crash-diagnostics', () => {
+  return crashDiagnostics.snapshot();
+});
+
 // 负载 HUD 设备指标:CPU + macOS 系统 GPU + 内存(HUD 可见时渲染层每 2s 拉一次)
 let __deviceStatsCpuPrev = null; // os.cpus() 上次累计采样,用于系统 CPU 差分
 ipcMain.handle('mineradio-device-stats', async () => {
@@ -3839,8 +3851,19 @@ async function createWindow() {
   // 渲染进程崩溃恢复：自动重新加载页面（修复"窗口全黑/卡死"）
   // 渲染进程崩溃（OOM/GPU 异常/原生模块出错）时，页面变黑且无法操作。
   // 监听 render-process-gone，延迟 1.5 秒重新加载，给系统回收时间。
-  mainWindow.webContents.on('render-process-gone', (event, details) => {
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('[CrashRecovery] 渲染进程崩溃:', details && details.reason, details);
+    crashDiagnostics.capture('render-process-gone', {
+      reason: details && details.reason,
+      exitCode: details && details.exitCode,
+      processType: details && details.processType,
+      url: mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents
+        ? mainWindow.webContents.getURL()
+        : '',
+      gpuFeatureStatus: (() => {
+        try { return app.getGPUFeatureStatus(); } catch (error) { return { error: error.message || String(error) }; }
+      })(),
+    });
     if (mainWindow && !mainWindow.isDestroyed()) {
       // 延迟重新加载，避免崩溃瞬间反复重启
       setTimeout(() => {
@@ -4001,6 +4024,20 @@ if (process.platform === 'darwin') {
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
+  app.on('child-process-gone', (_event, details) => {
+    const processType = details && details.type;
+    const reason = details && details.reason;
+    if (processType !== 'GPU' && reason !== 'crashed' && reason !== 'abnormal-exit') return;
+    console.error('[CrashDiagnostics] 子进程异常:', details);
+    crashDiagnostics.capture('child-process-gone', {
+      type: processType,
+      reason,
+      exitCode: details && details.exitCode,
+      serviceName: details && details.serviceName,
+      name: details && details.name,
+    });
+  });
+
   app.on('second-instance', () => {
     if (!focusMainWindow()) {
       app.whenReady().then(() => createWindow()).catch((e) => console.error('Second instance window restore failed:', e));

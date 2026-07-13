@@ -2,6 +2,14 @@
 
 ## 待发布（基于 v1.1.3 基线的优化）
 
+### 本机崩溃记录（Codex）
+
+- 在最新代码重新接入 Electron `crashReporter`，渲染器和 GPU 子进程崩溃时把 `.dmp` 与诊断 JSON 保存到本机 `userData/CrashDumps`。
+- 明确关闭服务器上传，不发送歌曲、账号或崩溃文件；诊断记录最多保留最近 50 条。
+- 支持扫描 Crashpad 的 `pending/`、`completed/` 等子目录，避免生成了 `.dmp` 却找不到。
+- 保留现有渲染进程崩溃后自动恢复，并补充退出原因、退出码和 GPU 功能状态记录。
+- 隐藏测试窗口真实崩溃验证生成 1 个 `.dmp`，上传开关为关闭；完整自动检查增至 79 项。
+
 ### AI 分轨提速与实时分离精准度（Codex）
 
 - Apple Silicon 且内存不少于 12GB 时，AI 分轨自动使用 `mdx_batch_size=2`；低内存、Intel Mac 和其他平台自动回退为 1，避免内存压力。
