@@ -492,6 +492,14 @@ function armAlbumGaplessMonitor(token) {
   scheduleAlbumGaplessMonitor(token, albumGaplessMonitorDelay(remaining));
 }
 
+function syncAlbumGaplessMonitorForPlaybackEvent(media, name) {
+  if (!albumGaplessState || !albumGaplessState.preload || media !== audio) return false;
+  if (name !== 'play' && name !== 'playing' && name !== 'pause'
+      && name !== 'seeked' && name !== 'loadedmetadata' && name !== 'durationchange') return false;
+  armAlbumGaplessMonitor(trackSwitchToken);
+  return true;
+}
+
 async function scheduleAlbumGaplessPreloadForCurrent(token, reason) {
   if (!albumGaplessQueueCanAdvance(currentIdx) || token !== trackSwitchToken) {
     if (!albumGaplessState.handoff) clearAlbumGaplessPreload(reason || 'album-gapless-not-eligible');

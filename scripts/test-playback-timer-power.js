@@ -82,6 +82,65 @@ test('播放进度不再使用页面启动后永久运行的 200ms interval', ()
   assert.match(source, /syncPlaybackProgressTimerForEvent\(audioEl, name\)/);
 });
 
+test('已经播放的预载媒体在绑定时立即接管进度定时器', () => {
+  const source = read('public/js/modules/06-lyrics/04-progress-seek.js');
+  const names = [
+    'shouldRunPlaybackProgressTimer',
+    'stopPlaybackProgressTimer',
+    'runPlaybackProgressTimerTick',
+    'startPlaybackProgressTimer',
+    'syncPlaybackProgressTimerForCurrentMedia',
+    'syncPlaybackProgressTimerForEvent',
+    'bindPlaybackProgressEvents',
+  ];
+  let nextTimerId = 1;
+  const timers = new Map();
+  const gaplessEvents = [];
+  const listeners = new Map();
+  const media = {
+    src: 'preloaded',
+    paused: false,
+    ended: false,
+    addEventListener(name, fn) {
+      if (!listeners.has(name)) listeners.set(name, []);
+      listeners.get(name).push(fn);
+    },
+  };
+  const sandbox = {
+    PLAYBACK_PROGRESS_TICK_MS: 200,
+    playbackProgressTimer: 0,
+    playbackProgressTimerMedia: null,
+    audio: media,
+    media,
+    setTimeout(fn, delay) {
+      const id = nextTimerId++;
+      timers.set(id, { fn, delay });
+      return id;
+    },
+    clearTimeout(id) { timers.delete(id); },
+    updateListenStatsTick() {},
+    updatePlaybackProgressUi() {},
+    saveLastPlaybackSnapshot() {},
+    syncPlaybackStateFromAudioEvent() {},
+    syncAlbumGaplessMonitorForPlaybackEvent(_media, name) { gaplessEvents.push(name); },
+  };
+  vm.runInNewContext(names.map((name) => readFunction(source, name)).join(';'), sandbox);
+  vm.runInNewContext('bindPlaybackProgressEvents(media)', sandbox);
+  assert.equal(timers.size, 1, '已播放的预载媒体不依赖新的 play 事件也要启动进度更新');
+  assert.equal([...timers.values()][0].delay, 200);
+
+  function emit(name) {
+    (listeners.get(name) || []).forEach((fn) => fn());
+  }
+  media.paused = true;
+  emit('pause');
+  assert.equal(timers.size, 0);
+  media.paused = false;
+  emit('play');
+  assert.equal(timers.size, 1);
+  assert.deepEqual(gaplessEvents, ['pause', 'play']);
+});
+
 test('无缝连播只在最后 9 秒且正在播放时高频检查', () => {
   const source = read('public/js/modules/05-playback/13-playback-start-audio.js');
   const sandbox = {
@@ -109,4 +168,50 @@ test('无缝连播监视改用可变频递归 timeout', () => {
   assert.doesNotMatch(source, /albumGaplessState\.monitorTimer\s*=\s*setInterval/);
   assert.match(readFunction(source, 'scheduleAlbumGaplessMonitor'), /setTimeout/);
   assert.match(readFunction(source, 'runAlbumGaplessMonitorTick'), /albumGaplessMonitorDelay\(remaining\)/);
+});
+
+test('尾段暂停恢复和 seek 会立即重排无缝连播监视器', () => {
+  const source = read('public/js/modules/05-playback/13-playback-start-audio.js');
+  const names = [
+    'albumGaplessMonitorDelay',
+    'scheduleAlbumGaplessMonitor',
+    'armAlbumGaplessMonitor',
+    'syncAlbumGaplessMonitorForPlaybackEvent',
+  ];
+  let nextTimerId = 1;
+  const timers = new Map();
+  const media = { paused: true, ended: false, duration: 180, currentTime: 179.5 };
+  const sandbox = {
+    audio: media,
+    media,
+    oldMedia: { paused: false, ended: false, duration: 180, currentTime: 179.5 },
+    albumGaplessState: { preload: { media: {} }, monitorTimer: 0 },
+    trackSwitchToken: 7,
+    ALBUM_GAPLESS_MONITOR_TAIL_SECONDS: 9,
+    ALBUM_GAPLESS_MONITOR_IDLE_MS: 1000,
+    ALBUM_GAPLESS_MONITOR_TAIL_MS: 70,
+    isFinite,
+    setTimeout(fn, delay) {
+      const id = nextTimerId++;
+      timers.set(id, { fn, delay });
+      return id;
+    },
+    clearTimeout(id) { timers.delete(id); },
+    runAlbumGaplessMonitorTick() { return 0; },
+  };
+  vm.runInNewContext(names.map((name) => readFunction(source, name)).join(';'), sandbox);
+
+  vm.runInNewContext('syncAlbumGaplessMonitorForPlaybackEvent(media, "pause")', sandbox);
+  assert.equal([...timers.values()][0].delay, 1000);
+  media.paused = false;
+  vm.runInNewContext('syncAlbumGaplessMonitorForPlaybackEvent(media, "play")', sandbox);
+  assert.equal(timers.size, 1);
+  assert.equal([...timers.values()][0].delay, 70, '剩余 0.5 秒恢复时必须立即切回尾段频率');
+
+  media.currentTime = 60;
+  vm.runInNewContext('syncAlbumGaplessMonitorForPlaybackEvent(media, "seeked")', sandbox);
+  assert.equal([...timers.values()][0].delay, 1000);
+  vm.runInNewContext('oldResult = syncAlbumGaplessMonitorForPlaybackEvent(oldMedia, "play")', sandbox);
+  assert.equal(sandbox.oldResult, false);
+  assert.equal([...timers.values()][0].delay, 1000, '旧媒体事件不得重排当前无缝监视器');
 });

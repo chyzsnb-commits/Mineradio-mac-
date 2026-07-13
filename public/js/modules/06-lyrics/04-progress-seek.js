@@ -191,6 +191,9 @@ function startPlaybackProgressTimer(media) {
   }, PLAYBACK_PROGRESS_TICK_MS);
   return true;
 }
+function syncPlaybackProgressTimerForCurrentMedia(media) {
+  return shouldRunPlaybackProgressTimer(media) ? startPlaybackProgressTimer(media) : stopPlaybackProgressTimer(media);
+}
 function syncPlaybackProgressTimerForEvent(media, name) {
   if (name === 'play' || name === 'playing') return startPlaybackProgressTimer(media);
   if (name === 'pause' || name === 'ended' || name === 'emptied' || name === 'abort' || name === 'error') {
@@ -199,18 +202,28 @@ function syncPlaybackProgressTimerForEvent(media, name) {
   return false;
 }
 function bindPlaybackProgressEvents(audioEl) {
-  if (!audioEl || audioEl._mineradioProgressBound) return;
+  if (!audioEl) return;
+  if (audioEl._mineradioProgressBound) {
+    syncPlaybackProgressTimerForCurrentMedia(audioEl);
+    return;
+  }
   audioEl._mineradioProgressBound = true;
-  ['loadedmetadata', 'durationchange', 'seeked', 'play', 'pause', 'ended', 'emptied'].forEach(function (name) {
-    audioEl.addEventListener(name, updatePlaybackProgressUi);
+  ['loadedmetadata', 'durationchange', 'seeked'].forEach(function (name) {
+    audioEl.addEventListener(name, function () {
+      updatePlaybackProgressUi();
+      if (typeof syncAlbumGaplessMonitorForPlaybackEvent === 'function') syncAlbumGaplessMonitorForPlaybackEvent(audioEl, name);
+    });
   });
   ['play', 'playing', 'pause', 'ended', 'emptied', 'abort', 'error'].forEach(function (name) {
     audioEl.addEventListener(name, function () {
+      updatePlaybackProgressUi();
       syncPlaybackProgressTimerForEvent(audioEl, name);
+      if (typeof syncAlbumGaplessMonitorForPlaybackEvent === 'function') syncAlbumGaplessMonitorForPlaybackEvent(audioEl, name);
       syncPlaybackStateFromAudioEvent(name);
       saveLastPlaybackSnapshot(name === 'pause' || name === 'ended', name);
     });
   });
+  syncPlaybackProgressTimerForCurrentMedia(audioEl);
 }
 function emitProgressDragParticles(x, y) {
   var now = performance.now();
