@@ -67,11 +67,14 @@ let memoryAutoState = {
   intervalMin: 30,
   thresholdPercent: 78,
   autoElevate: false,
+  pendingSystemPurge: false,
   lastRunAt: 0,
   lastReason: '',
   lastResult: null,
   lastError: '',
 };
+let memoryPlaybackActive = false;
+let memoryPlaybackReason = '';
 let closeBehavior = 'exit';
 let appQuitting = false;
 let mainWindowCloseFlushArmed = false;
@@ -652,14 +655,16 @@ function scheduleAppMemoryTrim(reason, delay = 9000) {
 
 function normalizeMemoryAutoState(payload = {}) {
   const systemEnabled = systemMemory.SYSTEM_PURGE_AVAILABLE === true && systemMemory.SYSTEM_PURGE_ENABLED === true;
+  const enabled = systemEnabled && payload.enabled === true;
   return {
     appTrimEnabled: payload.appTrimEnabled !== false,
     backgroundTrimEnabled: payload.backgroundTrimEnabled !== false,
-    enabled: systemEnabled && payload.enabled === true,
+    enabled,
     mask: systemMemory.normalizeMask(payload.mask != null ? payload.mask : memoryAutoState.mask),
     intervalMin: Math.max(5, Math.min(180, Math.round(Number(payload.intervalMin != null ? payload.intervalMin : memoryAutoState.intervalMin) || 30))),
     thresholdPercent: Math.max(0, Math.min(100, Math.round(Number(payload.thresholdPercent != null ? payload.thresholdPercent : memoryAutoState.thresholdPercent) || 0))),
     autoElevate: payload.autoElevate === true,
+    pendingSystemPurge: enabled && memoryAutoState.pendingSystemPurge === true,
     lastRunAt: memoryAutoState.lastRunAt || 0,
     lastReason: memoryAutoState.lastReason || '',
     lastResult: memoryAutoState.lastResult || null,
@@ -693,6 +698,7 @@ async function runMemoryAutoTick(reason = 'auto') {
   const snapshot = await systemMemory.getMemorySnapshotExtended();
   const threshold = Number(memoryAutoState.thresholdPercent) || 0;
   if (threshold > 0 && snapshot && snapshot.usedPercent < threshold) {
+    memoryAutoState.pendingSystemPurge = false;
     memoryAutoState.lastRunAt = Date.now();
     memoryAutoState.lastReason = reason + ':below-threshold';
     memoryAutoState.lastResult = { ok: true, skipped: true, usedPercent: snapshot.usedPercent, thresholdPercent: threshold };
@@ -700,6 +706,24 @@ async function runMemoryAutoTick(reason = 'auto') {
   }
   memoryAutoState.lastRunAt = Date.now();
   memoryAutoState.lastReason = reason;
+  if (memoryPlaybackActive) {
+    const trim = memoryAutoState.appTrimEnabled === false
+      ? { ok: false, skipped: true, reason: 'app-trim-disabled' }
+      : await trimAppMemoryNow('memory-auto-playing');
+    const result = {
+      ok: true,
+      skipped: true,
+      deferred: true,
+      reason: 'playback-active',
+      message: '播放中只清理播放器内存；系统级释放将在暂停并进入后台后执行。',
+      trim,
+    };
+    memoryAutoState.pendingSystemPurge = true;
+    memoryAutoState.lastResult = result;
+    memoryAutoState.lastError = '';
+    return { ok: true, result, snapshot: await systemMemory.getMemorySnapshotExtended(), state: memoryAutoState };
+  }
+  memoryAutoState.pendingSystemPurge = false;
   try {
     const result = await systemMemory.purgeSystemMemorySmart(memoryAutoState.mask, {
       autoElevate: memoryAutoState.autoElevate === true,
@@ -3286,6 +3310,18 @@ ipcMain.handle('mineradio-memory-configure-auto', async (_event, payload = {}) =
     systemPurgeAvailable: systemMemory.SYSTEM_PURGE_AVAILABLE === true,
     systemPurgeEnabled: systemMemory.SYSTEM_PURGE_ENABLED === true,
   };
+});
+
+ipcMain.on('mineradio-memory-playback-state', (_event, payload = {}) => {
+  const wasPlaying = memoryPlaybackActive;
+  memoryPlaybackActive = payload.playing === true;
+  memoryPlaybackReason = String(payload.reason || '');
+  if (wasPlaying && !memoryPlaybackActive
+      && memoryAutoState.enabled
+      && memoryAutoState.pendingSystemPurge
+      && !isMainWindowForegroundVisible()) {
+    runMemoryAutoTick('playback-idle:' + memoryPlaybackReason).catch(() => {});
+  }
 });
 
 ipcMain.handle('mineradio-memory-trim-app', async (_event, payload = {}) => {

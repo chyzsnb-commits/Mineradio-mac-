@@ -16,8 +16,8 @@ const os = require('os');
 
 // Mac 的 purge 命令在（/usr/sbin/purge），需要管理员权限
 const SYSTEM_PURGE_AVAILABLE = true;
-// 是否启用自动清理：默认关，由面板开关控制（和 Windows 行为对齐）
-const SYSTEM_PURGE_ENABLED = false;
+// 允许面板启用自动清理；用户开关仍默认关闭。
+const SYSTEM_PURGE_ENABLED = true;
 
 // MEMORY_MASK 在 Mac 上没有实际语义（那是 Windows 的），保留接口兼容
 const MEMORY_MASK = {
@@ -145,6 +145,7 @@ async function getMemorySnapshotExtended() {
 // 清理系统内存：调用 purge（腾讯柠檬的做法）。需要管理员权限。
 // 优先用 sudo 免密（需一次性配置 sudoers），失败回退 osascript 弹授权框。
 async function purgeSystemMemorySmart(_mask, _opts) {
+  var opts = _opts || {};
   // 方式 1：sudo purge（免密，靠 sudoers 配置。配置方法见 mac-porting 或下方注释）
   var sudoResult = await new Promise(function (resolve) {
     execFile('/usr/bin/sudo', ['-n', '/usr/sbin/purge'], function (err, stdout, stderr) {
@@ -157,6 +158,14 @@ async function purgeSystemMemorySmart(_mask, _opts) {
   });
   if (sudoResult.ok) {
     return { ok: true, purged: true, method: 'sudo-nopass' };
+  }
+  if (opts.autoElevate !== true) {
+    return {
+      ok: false,
+      needAdmin: true,
+      reason: 'admin-required',
+      message: '需要管理员权限；开启“需要时请求管理员”后才会弹出授权。',
+    };
   }
   // 方式 2（回退）：osascript 弹管理员授权框
   return new Promise(function (resolve) {

@@ -16,6 +16,9 @@ function syncPlaybackStateFromAudioEvent(reason) {
   if (typeof updatePlaybackResumePauseMarker === 'function') updatePlaybackResumePauseMarker(reason);
   var isPlaying = !!(audio && audio.src && !audio.paused && !audio.ended);
   playing = isPlaying;
+  if (window.desktopWindow && typeof window.desktopWindow.setMemoryPlaybackState === 'function') {
+    window.desktopWindow.setMemoryPlaybackState({ playing: isPlaying, reason: reason || '' });
+  }
   setPlayIcon(isPlaying);
   if (!isPlaying) hideLoading();
   if (reason === 'play' || reason === 'playing') {
