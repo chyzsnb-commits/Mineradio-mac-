@@ -7,7 +7,7 @@
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
 - **main 最新 commit**：`a2d8145`（PR #26 已合并：唱歌模式、倍速、防爆音、歌架与卡死修复）。
-- **当前 Codex 任务**：PR #27，分支 `codex/gpu-mode-fast-splash`；设计存档 `7977185`，功能存档 `e7eb5f4`，审查修复存档 `8b74045`。
+- **当前 Codex 任务**：PR #27，分支 `codex/gpu-mode-fast-splash`；设计存档 `7977185`，功能存档 `e7eb5f4`，审查修复存档 `8b74045`，黑边修复设计存档 `160c560`，黑边修复存档 `bee5c36`。
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
 - **网络注意**：本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI）正常。**用 gh API 推送代码，不要用 git push**。
@@ -47,10 +47,11 @@
 13. **渲染进程崩溃**（#20）：加 `render-process-gone` 监听，崩溃自动 reload。`sendWindowState` 加 webContents.isDestroyed 防护。
 14. **purge 免密 + 防爆音**（#21）：优先 `sudo -n purge`（免密），purge 前暂停音频 purge 后恢复（修喇叭"噗"爆音）。
 15. **内存按钮短静音防噗声**（#23）：修复"压缩播放器 / 系统释放 / 提权释放"播放中仍可能噗声；清理前淡出并静音，清理后恢复音量，不再用 `togglePlay` 播放/暂停切状态。
+16. **显卡重启弹窗黑边**（#27）：修复切换显卡模式后点“稍后重启”导致页面横向偏移、右侧出现大块黑边；焦点进入与恢复均使用 `preventScroll`，避免带动页面滚动。
 
 ### 基础设施
-16. **协作规则**（#8）：`.github/AGENT_COLLABORATION.md`（Codex+GLM 协作规则、术语解释、rollback、PR 四要素）
-17. **移植包**（#15）：`mac-porting/`（7 个 patch + MAC_PORTING_GUIDE.md）
+17. **协作规则**（#8）：`.github/AGENT_COLLABORATION.md`（Codex+GLM 协作规则、术语解释、rollback、PR 四要素）
+18. **移植包**（#15）：`mac-porting/`（7 个 patch + MAC_PORTING_GUIDE.md）
 
 ## 已知问题（待解决）
 
@@ -67,7 +68,12 @@
 
 - [ ] **渲染进程崩溃根因**：配 crashReporter 抓 dump 分析（上面详述）
 - [ ] **真机对比三种显卡模式**：分别重启到自动/省电/高性能，播放同一首歌 10 分钟，对比温度、CPU 和流畅度。
-- [ ] **继续发烫优化**：idle guide 深后台彻底停止；空闲主循环从高频 RAF 唤醒改成真正休眠。
+- [ ] **负载监视窗口增加显卡占用**：显示方式与现有 CPU 指标一致，先确认 macOS 可稳定读取的指标。
+- [ ] **继续发烫优化**：主循环空闲时从高频 RAF 唤醒改成真正休眠；idle guide 在深后台彻底停止。
+- [ ] **唱歌模式降载**：原唱 100% 时旁路 Worklet；暂停、无歌曲或深后台时停止麦克风采集。
+- [ ] **Mac 内存面板两个开关**：实现安全的系统级定时释放与按需请求管理员，不直接照搬可能增加卡顿和发热的 `/usr/sbin/purge`。
+- [ ] **摄像头隐私保护（高优先级）**：摄像头默认绝不启动，只允许用户明确手动开启；自动化测试必须使用假摄像头参数。
+- [ ] **音频代理重复写响应头**：修复 `server.js:6463` 上游中断后触发 `ERR_HTTP_HEADERS_SENT`。
 - [ ] **测试内存清理**：播放时分别点"压缩播放器 / 系统释放 / 提权释放"，确认不弹密码、不爆音、不丢播放状态
 - [ ] **Touch Bar 实测**：找老款 Intel MBP
 - [ ] **x64 CI 验证**：打测试 tag 看 x64 构建
@@ -104,9 +110,11 @@
 - 未验证：还需要用户在真实播放时手动点三个按钮，确认喇叭不再“噗”、播放状态不丢。
 
 **2026-07-13：Codex 增加显卡模式并优化启动与首页后台占用。**
-- PR：#27；分支：`codex/gpu-mode-fast-splash`；设计 commit（代码存档点）`7977185`，功能 commit `e7eb5f4`，审查修复 commit `8b74045`。
+- PR：#27；分支：`codex/gpu-mode-fast-splash`；设计 commit（代码存档点）`7977185`，功能 commit `e7eb5f4`，审查修复 commit `8b74045`，黑边修复设计 commit `160c560`，黑边修复 commit `bee5c36`。
 - 改动：显卡模式新增自动/省电/高性能，主界面和启动页 WebGL 统一读取；切换后可稍后或立即重启；启动页无需等 5 秒即可跳过；首页悬浮动画前台完整保留，后台省电状态暂停。
 - 独立审查修复：启动页显示时普通热键先返回，按空格只跳过启动页、不再同时触发播放/暂停；重启弹窗增加焦点进入、Tab 循环、Esc 关闭和焦点恢复。
-- 验证：`npm run check`（7 项新检查）、全部 `public/js` / `mjs` 语法检查、`git diff --check` 通过；Electron 隔离设置目录实测启动页点击立即进入；Playwright 实测空格跳过时 `togglePlay` 调用次数为 `0`；三个按钮桌面尺寸均为 `126×34`、小窗口均为 `206×34`，文字无溢出，重启按钮均为 `150×35`；前台动画为 running，后台/隐藏为 paused；`CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:mac:dir` 打包通过，`app.asar` 已包含 `public/js/gpu-mode.js`。
+- 黑边修复：用户反馈点“稍后重启”后右侧出现大块黑边。原因是弹窗焦点进入和关闭后恢复焦点会带动页面横向滚动，现统一改为 `focus({ preventScroll: true })`。
+- 验证：`npm run check`（7 项新检查）、全部 `public/js` / `mjs` 语法检查、`git diff --check` 通过；Electron 隔离设置目录实测启动页点击立即进入；Playwright 实测空格跳过时 `togglePlay` 调用次数为 `0`；三个按钮桌面尺寸均为 `126×34`、小窗口均为 `206×34`，文字无溢出，重启按钮均为 `150×35`；前台动画为 running，后台/隐藏为 paused；Mac 实际窗口点击“高性能 → 稍后重启”后 `scrollX=0`、窗口宽度保持 `1134`、右侧无黑边；`CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:mac:dir` 打包通过，`app.asar` 已包含 `public/js/gpu-mode.js`。
+- 隐私说明：黑边实机测试期间发现旧手势模块会自动启动摄像头；没有查看、拍摄或保存摄像头画面。后续实机测试只能使用 `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`，并将“摄像头默认关闭、仅手动开启”列为高优先级修复。
 - PR #27 CI：arm64 构建成功；x64 仍排队。`codex-review` 失败是工作流未生成 `/home/runner/.codex/<run-id>.json`，与本次代码检查无关。
 - 未验证：`powerPreference` 只是 WebGL 偏好，macOS 最终决定实际显卡；三种模式的真实温度和续航差异仍需同机长时间对比。
