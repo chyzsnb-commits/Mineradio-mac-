@@ -7,7 +7,7 @@
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
 - **main 最新 commit**：`a2d8145`（PR #26 已合并：唱歌模式、倍速、防爆音、歌架与卡死修复）。
-- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）→ PR #34（最近播放滚动降载与 GPU 文案）→ PR #36（播放定时器降载）→ PR #37（本地 AI 分轨）→ PR #38（AI 提速与实时精准度）→ PR #39（软件 Logo）→ PR #40（歌词选项切换降卡）→ PR #41（音频上游断线保护）→ PR #42（整队不可播保护）→ PR #43（本机崩溃记录）→ PR #44（构建缓存排除）→ PR #45（双架构 CI 运行器）均为叠加关系。
+- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）→ PR #34（最近播放滚动降载与 GPU 文案）→ PR #36（播放定时器降载）→ PR #37（本地 AI 分轨）→ PR #38（AI 提速与实时精准度）→ PR #39（软件 Logo）→ PR #40（歌词选项切换降卡）→ PR #41（音频上游断线保护）→ PR #42（整队不可播保护）→ PR #43（本机崩溃记录）→ PR #44（构建缓存排除）→ PR #45（双架构 CI 运行器）→ `codex/touchbar-track-sync`（Touch Bar 歌曲状态）均为叠加关系；最新分支基于 PR #45。
 - **协作者最新工作**：PR #28，分支 `codex/fix-gesture-latency`，优化双手手势延迟与 GPU 负载；当前仍待合并，本分支未修改其手势文件。
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
@@ -46,7 +46,7 @@
 
 ### 新功能
 - **Mac 内存面板**（#12）：`desktop/system-memory-mac.js`（vm_stat + purge，模仿腾讯柠檬），显示真实内存数据。
-- **Touch Bar**（#14）：`desktop/touchbar.js`，老款 Intel MBP 播放控制。独立模块。
+- **Touch Bar**（#14、`codex/touchbar-track-sync`）：老款 Intel MBP 播放控制；歌曲名、歌手和播放状态现在从渲染进程实时同步。
 - **x64 打包**（#13）：`build:mac:arm64` / `:x64` / `:all`，CI matrix 双架构。
 - **倍速 + 唱歌模式 + 歌架交互**（#26）：可调原唱、频谱去人声、麦克风律动及音频图重建防爆音。
 - **启动页快速进入**（`codex/gpu-mode-fast-splash`）：动画出现后任意时刻点击、回车或空格都能立即进入。
@@ -100,7 +100,7 @@
 - [ ] **测试内存清理**：播放时分别点"压缩播放器 / 系统释放 / 提权释放"，确认不弹密码、不爆音、不丢播放状态
 - [ ] **Touch Bar 实测**：找老款 Intel MBP
 - [x] **x64 CI 验证**：PR #45 使用 macos-15-intel，GitHub 在线 x64 构建 59 秒通过；arm64 41 秒通过。
-- [ ] **Touch Bar 歌曲名推送**：前端切歌时推歌名到 Touch Bar（增强项）
+- [x] **Touch Bar 歌曲名推送**：切歌同步歌名/歌手，播放状态同步图标；窗口重建不重复监听。
 - [x] **清理并永久排除 `.omc`**：仓库无残留；Git 与 electron-builder 全局排除，临时探针打包验证未进入 app.asar。
 
 ## 用户需要手动完成的（账号授权类）
@@ -272,3 +272,10 @@
 - 本地验证：新增 2 项配置回归测试，`npm run check` 共 82 项通过，`git diff --check` 通过。
 - 在线验证：GitHub Actions run `29273985362` 中，arm64 在 41 秒内通过，x64 在 59 秒内通过；x64 已获得真实 Intel 运行器，不再永久排队。`codex-review` 仍因仓库原有 server info 文件缺失而失败，与双架构构建无关。
 - 未验证：尚未打测试 tag 生成两个正式 DMG；PR 的目录包验证已经通过。
+
+**2026-07-14：Codex 补齐 Touch Bar 歌曲名与播放状态同步。**
+- 分支：`codex/touchbar-track-sync`；基于 PR #45。
+- 根因：`desktop/touchbar.js` 已监听 `touchbar-update-track`，但 preload 没有向前端暴露发送方法，前端也从未发送该事件；窗口重建还会重复注册监听。
+- 改动：preload 增加安全发送桥；切歌更新歌曲名/歌手，播放事件更新播放状态；Touch Bar 在页面加载前初始化；窗口重建先解除旧监听，关闭后清理。
+- 验证：3 项专项测试覆盖标题截断、播放图标、完整发送链路、首个状态和重复监听；`npm run check` 共 85 项通过，相关脚本语法与 `git diff --check` 通过。
+- 未验证：仍需在 2016-2019 带 Touch Bar 的 Intel MacBook Pro 上确认真实显示宽度和按钮触感；无对应硬件时为安全 no-op。
