@@ -154,14 +154,59 @@ function updatePlaybackProgressUi() {
   var timeDisplay = document.getElementById('time-display');
   if (timeDisplay) timeDisplay.textContent = formatProgramTime(currentSec) + ' / ' + (durationSec > 0 ? formatProgramTime(durationSec) : '0:00');
 }
+var PLAYBACK_PROGRESS_TICK_MS = 200;
+var playbackProgressTimer = 0;
+var playbackProgressTimerMedia = null;
+function shouldRunPlaybackProgressTimer(media) {
+  return !!(media && media === audio && media.src && !media.paused && !media.ended);
+}
+function stopPlaybackProgressTimer(media) {
+  if (media && playbackProgressTimerMedia && media !== playbackProgressTimerMedia) return false;
+  if (playbackProgressTimer) clearTimeout(playbackProgressTimer);
+  playbackProgressTimer = 0;
+  if (!media || playbackProgressTimerMedia === media) playbackProgressTimerMedia = null;
+  return true;
+}
+function runPlaybackProgressTimerTick(media) {
+  playbackProgressTimer = 0;
+  if (!shouldRunPlaybackProgressTimer(media)) {
+    if (playbackProgressTimerMedia === media) playbackProgressTimerMedia = null;
+    return false;
+  }
+  updateListenStatsTick(false);
+  updatePlaybackProgressUi();
+  saveLastPlaybackSnapshot(false, 'tick');
+  playbackProgressTimer = setTimeout(function () {
+    runPlaybackProgressTimerTick(media);
+  }, PLAYBACK_PROGRESS_TICK_MS);
+  return true;
+}
+function startPlaybackProgressTimer(media) {
+  if (!shouldRunPlaybackProgressTimer(media)) return false;
+  if (playbackProgressTimer && playbackProgressTimerMedia === media) return true;
+  stopPlaybackProgressTimer();
+  playbackProgressTimerMedia = media;
+  playbackProgressTimer = setTimeout(function () {
+    runPlaybackProgressTimerTick(media);
+  }, PLAYBACK_PROGRESS_TICK_MS);
+  return true;
+}
+function syncPlaybackProgressTimerForEvent(media, name) {
+  if (name === 'play' || name === 'playing') return startPlaybackProgressTimer(media);
+  if (name === 'pause' || name === 'ended' || name === 'emptied' || name === 'abort' || name === 'error') {
+    return stopPlaybackProgressTimer(media);
+  }
+  return false;
+}
 function bindPlaybackProgressEvents(audioEl) {
   if (!audioEl || audioEl._mineradioProgressBound) return;
   audioEl._mineradioProgressBound = true;
-  ['loadedmetadata', 'durationchange', 'timeupdate', 'seeked', 'play', 'pause', 'emptied'].forEach(function (name) {
+  ['loadedmetadata', 'durationchange', 'seeked', 'play', 'pause', 'ended', 'emptied'].forEach(function (name) {
     audioEl.addEventListener(name, updatePlaybackProgressUi);
   });
   ['play', 'playing', 'pause', 'ended', 'emptied', 'abort', 'error'].forEach(function (name) {
     audioEl.addEventListener(name, function () {
+      syncPlaybackProgressTimerForEvent(audioEl, name);
       syncPlaybackStateFromAudioEvent(name);
       saveLastPlaybackSnapshot(name === 'pause' || name === 'ended', name);
     });
@@ -384,21 +429,6 @@ function endProgressDrag(e, commit) {
 progressBar.addEventListener('pointerup', function (e) { endProgressDrag(e, true); });
 progressBar.addEventListener('pointercancel', function (e) { endProgressDrag(e, false); });
 progressBar.addEventListener('lostpointercapture', function (e) { endProgressDrag(e, true); });
-setInterval(function () {
-  if (!audio) {
-    if (restoredLastPlaybackSnapshot && pendingPlaybackResumeAt > 0) applyRestoredPlaybackProgressUi(restoredLastPlaybackSnapshot);
-    else updatePlaybackProgressUi();
-    return;
-  }
-  if (progressDragState.active) {
-    updatePlaybackProgressUi();
-    return;
-  }
-  updateListenStatsTick(false);
-  updatePlaybackProgressUi();
-  saveLastPlaybackSnapshot(false, 'tick');
-  if (audio.currentTime) updateLyricsHighlight();
-}, 200);
 
 // ============================================================
 //  文件拖放

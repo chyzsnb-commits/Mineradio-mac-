@@ -56,6 +56,9 @@ var ALBUM_GAPLESS_RESIDUAL_FREQ_AVG = 0.010;
 var ALBUM_GAPLESS_RESIDUAL_FREQ_PEAK = 0.075;
 var ALBUM_GAPLESS_DIRECT_SILENCE_HOLD_MS = 112;
 var ALBUM_GAPLESS_DEEP_SILENCE_HOLD_MS = 56;
+var ALBUM_GAPLESS_MONITOR_TAIL_SECONDS = 9;
+var ALBUM_GAPLESS_MONITOR_IDLE_MS = 1000;
+var ALBUM_GAPLESS_MONITOR_TAIL_MS = 70;
 var albumGaplessTailTimeData = null;
 var albumGaplessTailFreqData = null;
 
@@ -63,7 +66,7 @@ function clearAlbumGaplessPreload(reason) {
   if (!albumGaplessState) return;
   albumGaplessState.serial++;
   if (albumGaplessState.monitorTimer) {
-    clearInterval(albumGaplessState.monitorTimer);
+    clearTimeout(albumGaplessState.monitorTimer);
     albumGaplessState.monitorTimer = 0;
   }
   var preload = albumGaplessState.preload;
@@ -394,7 +397,7 @@ async function resolveAlbumGaplessPlaybackData(song) {
 
 function consumeAlbumGaplessPreload(preload) {
   if (albumGaplessState.monitorTimer) {
-    clearInterval(albumGaplessState.monitorTimer);
+    clearTimeout(albumGaplessState.monitorTimer);
     albumGaplessState.monitorTimer = 0;
   }
   if (albumGaplessState.preload === preload) albumGaplessState.preload = null;
@@ -430,40 +433,63 @@ function startAlbumGaplessHandoff(preload, reason) {
   return true;
 }
 
+function albumGaplessMonitorDelay(remaining) {
+  if (!audio || audio.paused || audio.ended) return ALBUM_GAPLESS_MONITOR_IDLE_MS;
+  if (!isFinite(remaining) || remaining > ALBUM_GAPLESS_MONITOR_TAIL_SECONDS) return ALBUM_GAPLESS_MONITOR_IDLE_MS;
+  return ALBUM_GAPLESS_MONITOR_TAIL_MS;
+}
+
+function scheduleAlbumGaplessMonitor(token, delay) {
+  if (albumGaplessState.monitorTimer) clearTimeout(albumGaplessState.monitorTimer);
+  albumGaplessState.monitorTimer = setTimeout(function () {
+    albumGaplessState.monitorTimer = 0;
+    var nextDelay = runAlbumGaplessMonitorTick(token);
+    if (nextDelay > 0 && albumGaplessState.preload) scheduleAlbumGaplessMonitor(token, nextDelay);
+  }, Math.max(ALBUM_GAPLESS_MONITOR_TAIL_MS, Number(delay) || ALBUM_GAPLESS_MONITOR_IDLE_MS));
+}
+
+function runAlbumGaplessMonitorTick(token) {
+  var preload = albumGaplessState.preload;
+  if (!preload || token !== trackSwitchToken || !albumGaplessQueueCanAdvance(currentIdx)) {
+    clearAlbumGaplessPreload('album-gapless-monitor-invalid');
+    return 0;
+  }
+  if (!audio || !isFinite(audio.duration) || audio.duration <= 0 || !isFinite(audio.currentTime)) {
+    return ALBUM_GAPLESS_MONITOR_IDLE_MS;
+  }
+  var remaining = audio.duration - audio.currentTime;
+  var nextDelay = albumGaplessMonitorDelay(remaining);
+  if (audio.paused || audio.ended || remaining > ALBUM_GAPLESS_MONITOR_TAIL_SECONDS) return nextDelay;
+  if (remaining <= ALBUM_GAPLESS_MUTED_PREROLL_SECONDS) startAlbumGaplessPreroll(preload);
+  if (!preload.media || preload.media.readyState < 2) return nextDelay;
+  var nowMs = performance.now();
+  var tailProbe = albumGaplessTailSilenceProbe(remaining);
+  var longTailSilence = remaining > ALBUM_GAPLESS_LONG_SILENCE_SECONDS;
+  if (tailProbe.smoothedQuiet && (!longTailSilence || !tailProbe.residualTail)) {
+    if (!preload.quietSince) preload.quietSince = nowMs;
+  } else {
+    preload.quietSince = 0;
+  }
+  if (tailProbe.directQuiet) {
+    if (!preload.directQuietSince) preload.directQuietSince = nowMs;
+  } else {
+    preload.directQuietSince = 0;
+  }
+  var silenceHoldMs = longTailSilence ? ALBUM_GAPLESS_FAST_SILENCE_HOLD_MS : ALBUM_GAPLESS_SILENCE_HOLD_MS;
+  var smoothedSilenceReady = !!(preload.quietSince && nowMs - preload.quietSince >= silenceHoldMs);
+  var directHoldMs = tailProbe.deepQuiet ? ALBUM_GAPLESS_DEEP_SILENCE_HOLD_MS : ALBUM_GAPLESS_DIRECT_SILENCE_HOLD_MS;
+  var directSilenceReady = !!(longTailSilence && preload.directQuietSince && nowMs - preload.directQuietSince >= directHoldMs);
+  var silenceReady = smoothedSilenceReady || directSilenceReady;
+  var boundaryReady = remaining <= ALBUM_GAPLESS_BOUNDARY_RELEASE_SECONDS;
+  if (!silenceReady && !boundaryReady) return nextDelay;
+  var mixed = startAlbumGaplessMix(preload, silenceReady ? (directSilenceReady ? 'tail-direct-silence-crossmix' : (longTailSilence ? 'tail-silence-fast-crossmix' : 'tail-silence-preroll-mix')) : 'boundary-crossmix-reset', remaining);
+  return mixed || preload.mixStarted ? 0 : nextDelay;
+}
+
 function armAlbumGaplessMonitor(token) {
-  if (albumGaplessState.monitorTimer) clearInterval(albumGaplessState.monitorTimer);
-  albumGaplessState.monitorTimer = setInterval(function () {
-    var preload = albumGaplessState.preload;
-    if (!preload || token !== trackSwitchToken || !albumGaplessQueueCanAdvance(currentIdx)) {
-      clearAlbumGaplessPreload('album-gapless-monitor-invalid');
-      return;
-    }
-    if (!audio || !isFinite(audio.duration) || audio.duration <= 0 || !isFinite(audio.currentTime)) return;
-    var remaining = audio.duration - audio.currentTime;
-    if (remaining <= ALBUM_GAPLESS_MUTED_PREROLL_SECONDS) startAlbumGaplessPreroll(preload);
-    if (!preload.media || preload.media.readyState < 2) return;
-    var nowMs = performance.now();
-    var tailProbe = albumGaplessTailSilenceProbe(remaining);
-    var longTailSilence = remaining > ALBUM_GAPLESS_LONG_SILENCE_SECONDS;
-    if (tailProbe.smoothedQuiet && (!longTailSilence || !tailProbe.residualTail)) {
-      if (!preload.quietSince) preload.quietSince = nowMs;
-    } else {
-      preload.quietSince = 0;
-    }
-    if (tailProbe.directQuiet) {
-      if (!preload.directQuietSince) preload.directQuietSince = nowMs;
-    } else {
-      preload.directQuietSince = 0;
-    }
-    var silenceHoldMs = longTailSilence ? ALBUM_GAPLESS_FAST_SILENCE_HOLD_MS : ALBUM_GAPLESS_SILENCE_HOLD_MS;
-    var smoothedSilenceReady = !!(preload.quietSince && nowMs - preload.quietSince >= silenceHoldMs);
-    var directHoldMs = tailProbe.deepQuiet ? ALBUM_GAPLESS_DEEP_SILENCE_HOLD_MS : ALBUM_GAPLESS_DIRECT_SILENCE_HOLD_MS;
-    var directSilenceReady = !!(longTailSilence && preload.directQuietSince && nowMs - preload.directQuietSince >= directHoldMs);
-    var silenceReady = smoothedSilenceReady || directSilenceReady;
-    var boundaryReady = remaining <= ALBUM_GAPLESS_BOUNDARY_RELEASE_SECONDS;
-    if (!silenceReady && !boundaryReady) return;
-    startAlbumGaplessMix(preload, silenceReady ? (directSilenceReady ? 'tail-direct-silence-crossmix' : (longTailSilence ? 'tail-silence-fast-crossmix' : 'tail-silence-preroll-mix')) : 'boundary-crossmix-reset', remaining);
-  }, 70);
+  var remaining = audio && isFinite(audio.duration) && audio.duration > 0 && isFinite(audio.currentTime)
+    ? audio.duration - audio.currentTime : Infinity;
+  scheduleAlbumGaplessMonitor(token, albumGaplessMonitorDelay(remaining));
 }
 
 async function scheduleAlbumGaplessPreloadForCurrent(token, reason) {
