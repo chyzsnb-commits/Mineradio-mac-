@@ -7,7 +7,7 @@
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
 - **main 最新 commit**：`a2d8145`（PR #26 已合并：唱歌模式、倍速、防爆音、歌架与卡死修复）。
-- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）→ PR #34（最近播放滚动降载与 GPU 文案）→ PR #36（播放定时器降载）→ PR #37（本地 AI 分轨）→ PR #38（AI 提速与实时精准度）→ PR #39（软件 Logo）→ PR #40（歌词选项切换降卡）→ PR #41（音频上游断线保护）→ PR #42（整队不可播保护）→ `codex/crash-diagnostics-latest`（本机崩溃记录）均为叠加关系；最新分支基于 PR #42。
+- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）→ PR #34（最近播放滚动降载与 GPU 文案）→ PR #36（播放定时器降载）→ PR #37（本地 AI 分轨）→ PR #38（AI 提速与实时精准度）→ PR #39（软件 Logo）→ PR #40（歌词选项切换降卡）→ PR #41（音频上游断线保护）→ PR #42（整队不可播保护）→ PR #43（本机崩溃记录）均为叠加关系。
 - **协作者最新工作**：PR #28，分支 `codex/fix-gesture-latency`，优化双手手势延迟与 GPU 负载；当前仍待合并，本分支未修改其手势文件。
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
@@ -66,7 +66,7 @@
 ### 基础设施
 17. **协作规则**（#8）：`.github/AGENT_COLLABORATION.md`（Codex+GLM 协作规则、术语解释、rollback、PR 四要素）
 18. **移植包**（#15）：`mac-porting/`（7 个 patch + MAC_PORTING_GUIDE.md）
-19. **本机崩溃记录**（`codex/crash-diagnostics-latest`）：最新代码重新接入 crashReporter；`.dmp` 和最多 50 条诊断只存本机，递归查找 Crashpad 子目录，上传开关关闭。
+19. **本机崩溃记录**（PR #43）：最新代码重新接入 crashReporter；`.dmp` 和最多 50 条诊断只存本机，递归查找 Crashpad 子目录，上传开关关闭。
 
 ## 已知问题（待解决）
 
@@ -252,7 +252,7 @@
 - 未验证：仍需用整队不可播的真实歌曲队列观察最终提示和停止跳转行为。
 
 **2026-07-14：Codex 在最新代码重新接入本机崩溃记录。**
-- 分支：`codex/crash-diagnostics-latest`；基于 PR #42；接手已关闭的 PR #22，但按最新代码重新实现。
+- PR：#43；分支：`codex/crash-diagnostics-latest`；基于 PR #42；功能 commit（代码存档点）`9ce0014`；接手已关闭的 PR #22，但按最新代码重新实现。
 - 改动：新增独立 `desktop/crash-diagnostics.js`，在创建渲染进程前启动 Electron crashReporter；记录 `render-process-gone` 与异常 `child-process-gone`，保留最近 50 条 JSON；递归扫描 Crashpad 子目录中的 `.dmp`。
 - 隐私：`uploadToServer: false`，不配置上传地址；崩溃文件、GPU 状态和诊断 JSON 只写入本机 `userData/CrashDumps`。
 - 验证：3 项模块测试覆盖本地保存、子目录扫描、50 条上限和主进程接入；`npm run check` 共 79 项通过；隐藏 Electron 测试窗口调用 `forcefullyCrashRenderer()` 后真实生成 1 个 `.dmp` 和 1 条诊断，上传状态为 false；未签名 arm64 App 打包通过，app.asar 包含诊断模块且不含测试脚本。
