@@ -7,7 +7,7 @@
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
 - **main 最新 commit**：`a2d8145`（PR #26 已合并：唱歌模式、倍速、防爆音、歌架与卡死修复）。
-- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）仍待合并；PR #29 基于 #27，新增 Mac 真实显卡占用监视；当前分支 `codex/true-idle-sleep` 基于 #29，功能存档 `63b6e1d`，审查修复存档 `36ed4d0`，实现主循环真正休眠与 idle guide 停止空转，待创建叠加 PR。
+- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）仍待合并；PR #29 基于 #27，新增 Mac 真实显卡占用监视；PR #30 基于 #29，分支 `codex/true-idle-sleep`，功能存档 `63b6e1d`、审查修复存档 `36ed4d0`，实现主循环真正休眠与 idle guide 停止空转。
 - **协作者最新工作**：PR #28，分支 `codex/fix-gesture-latency`，优化双手手势延迟与 GPU 负载；当前仍待合并，本分支未修改其手势文件。
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
@@ -131,7 +131,7 @@
 - 未验证：Intel Mac 是否提供同名指标；不支持时会安全显示 `--`。
 
 **2026-07-13：Codex 让空闲主循环真正休眠并停止 idle guide 空转。**
-- 分支：`codex/true-idle-sleep`；基于 PR #29；设计 commit（代码存档点）`7e5b4c2`、`c17a098`，功能 commit `63b6e1d`，审查修复 commit `36ed4d0`。
+- PR：#30；分支：`codex/true-idle-sleep`；基于 PR #29；设计 commit（代码存档点）`7e5b4c2`、`c17a098`，功能 commit `63b6e1d`，审查修复 commit `36ed4d0`。
 - 改动：前台聚焦空闲使用 500ms 定时器，窗口可见失焦使用 67ms，深后台保留 250/1000/1500ms；播放、加载、交互、聚焦和音频播放事件会立即唤醒。
 - idle guide：记录并统一取消 timeout 与 rAF；背景禁用且没有歌架提示时不再循环；深后台停止；歌架教程与悬停提示仍可唤醒，淡出后自动停止；普通鼠标移动且没有提示时不会反复清空大画布。
 - 实机验证：Electron 独立设置目录并使用假摄像头参数测试；前台空闲 3.2 秒主循环运行 6 次，约 2 次/秒；交互唤醒约 4.9ms，700ms 内运行 30 帧后重新进入 500ms 休眠；idle guide 的 timeout、rAF 和运行条件均为空/关闭；首页无限悬浮动画保持运行。
