@@ -338,6 +338,11 @@ async function searchAlternatePlatformSong(song) {
   }
   return null;
 }
+// 连续自动跳过计数:整队都不可播时,nextUnblockedQueueIndex 的 18s 时间窗会让
+// 早先失败的曲目重新“解封”,导致无限跳歌把主线程和内存拖到卡死。用一个单调计数
+// 器保证级联最多跑一整圈队列就停;任何一首拿到可播 URL 时(见播放成功路径)清零。
+var playbackSkipCascade = 0;
+function resetPlaybackSkipCascade() { playbackSkipCascade = 0; }
 function markQueueItemPlaybackFailed(idx) {
   if (playQueue[idx]) playQueue[idx]._lastPlaybackFailAt = Date.now();
 }
@@ -366,6 +371,12 @@ function skipFailedQueueItem(idx, token, message, opts) {
   var nextIdx = nextUnblockedQueueIndex(idx);
   if (nextIdx < 0) {
     if (!opts.silent) showSourceFallbackNotice('队列暂时没有可播歌曲', '已尝试绕开受限歌曲，当前队列没有新的可播放项。');
+    return;
+  }
+  playbackSkipCascade++;
+  if (playbackSkipCascade > playQueue.length) {
+    playbackSkipCascade = 0;
+    if (!opts.silent) showSourceFallbackNotice('队列里暂时没有可播放的歌曲', '已连续跳过整轮受限/不可播的歌曲，已停止自动跳转，避免卡顿。可手动选择其它歌曲或稍后重试。');
     return;
   }
   if (!opts.silent) showSourceFallbackNotice('已跳过受限歌曲', message || '未找到同名同歌手的另一个平台版本，正在播放下一首。');

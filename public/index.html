@@ -1086,6 +1086,11 @@
                 <input id="fade-out-slider" type="range" min="0" max="3" step="0.05" value="0.40" aria-label="音乐淡出秒数">
                 <span id="fade-out-value">0.40s</span>
               </div>
+              <div class="fade-control-row">
+                <label for="speed-slider">倍速</label>
+                <input id="speed-slider" type="range" min="0.5" max="3" step="0.05" value="1" aria-label="播放倍速">
+                <span id="speed-value">1.0×</span>
+              </div>
             </div>
           </div>
           <button id="controls-hide-btn" class="ctrl-btn active" onclick="toggleControlsAutoHide()" title="控制条自动隐藏"><svg
@@ -1094,6 +1099,25 @@
               <path d="M8 12h8" />
               <path d="M10 16h4" />
             </svg></button>
+          <div id="singing-control" class="volume-control singing-control">
+            <button id="singing-mode-btn" class="ctrl-btn" onclick="toggleSingingMode()" title="唱歌模式(压低原唱,开麦跟唱)"
+              aria-label="唱歌模式" aria-pressed="false"><svg width="18" height="18" fill="none" stroke="currentColor"
+                stroke-width="2" viewBox="0 0 24 24">
+                <rect x="9" y="3" width="6" height="11" rx="3" />
+                <path d="M6 11a6 6 0 0 0 12 0" />
+                <path d="M12 17v4" />
+                <path d="M9 21h6" />
+              </svg></button>
+            <div class="volume-popover singing-popover" onclick="event.stopPropagation()">
+              <div class="singing-title">唱歌模式</div>
+              <div class="fade-control-row">
+                <label for="vocal-level-slider">原唱</label>
+                <input id="vocal-level-slider" type="range" min="0" max="1" step="0.01" value="0" aria-label="原唱人声占比">
+                <span id="vocal-level-value">0%</span>
+              </div>
+              <div class="singing-hint">拖到 0% 纯伴奏 · 开麦跟唱,粒子和柱体会跟你的嗓音一起动</div>
+            </div>
+          </div>
           <button id="immersive-btn" class="ctrl-btn" onclick="toggleImmersiveMode()" title="全沉浸式" aria-label="全沉浸式"
             aria-pressed="false"><svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9"
               viewBox="0 0 24 24">

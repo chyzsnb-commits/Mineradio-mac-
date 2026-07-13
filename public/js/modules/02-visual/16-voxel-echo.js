@@ -558,7 +558,7 @@ var _voxData512 = new Float32Array(512);
 var _voxPrevData = new Float32Array(512);
 // 体素专用音频分析器(原作 AudioEngine:512 bin、smoothing 0.8);在 source 建立处接上,节拍检测才与原作一致
 var _voxAnalyser = null, _voxBytes = new Uint8Array(512);
-var _voxAnalyserSrc = null, _voxAnalyserCtx = null, _voxAnalyserMain = null;   // 记录接线时的 source/audioCtx/主 analyser,音频图重建后自动重挂
+var _voxAnalyserSrc = null, _voxAnalyserCtx = null, _voxAnalyserMain = null, _voxAnalyserMic = null;   // 记录接线时的 source/audioCtx/主 analyser/麦克风节点,音频图重建后自动重挂
 // ── 原作 AudioEngine.ts:157-160:专用分析器 fftSize=1024(512 bin)·smoothing 0.8·minDecibels −75(噪声门)──
 //   主分析器 smoothing=0.58、无 −75 噪声门,频段动态与通量节拍检测手感和原作不同(律动不跟旋律的根因);
 //   这里惰性接上专用分析器:只挂在 source 上做分析,不改变出声链路。
@@ -568,7 +568,8 @@ function _voxEnsureAnalyser() {
   if (typeof audioCtx === 'undefined' || !audioCtx || audioCtx.state === 'closed') return;
   if (typeof source === 'undefined' || !source) return;
   var mainAn = (typeof analyser !== 'undefined') ? analyser : null;
-  if (_voxAnalyser && _voxAnalyserSrc === source && _voxAnalyserCtx === audioCtx && _voxAnalyserMain === mainAn) return;   // 已接且未重建
+  var micAn = (typeof micVisualNode !== 'undefined') ? micVisualNode : null;
+  if (_voxAnalyser && _voxAnalyserSrc === source && _voxAnalyserCtx === audioCtx && _voxAnalyserMain === mainAn && _voxAnalyserMic === micAn) return;   // 已接且未重建
   try {
     if (_voxAnalyser && _voxAnalyserSrc) { try { _voxAnalyserSrc.disconnect(_voxAnalyser); } catch (e0) {} }
     var an = audioCtx.createAnalyser();
@@ -576,8 +577,9 @@ function _voxEnsureAnalyser() {
     an.smoothingTimeConstant = 0.8;     // 原作 AudioEngine.ts:159
     an.minDecibels = -75;               // 原作 AudioEngine.ts:160:静音段严格归零的噪声门
     source.connect(an);                 // AnalyserNode 只取样不出声,无需连 destination
-    _voxAnalyser = an; _voxAnalyserSrc = source; _voxAnalyserCtx = audioCtx; _voxAnalyserMain = mainAn;
-  } catch (e) { _voxAnalyser = null; _voxAnalyserSrc = null; _voxAnalyserCtx = null; _voxAnalyserMain = null; }
+    if (micAn) { try { micAn.connect(an); } catch (eMic) {} }   // 唱歌模式:嗓音也驱动体素(死端,不啸叫)
+    _voxAnalyser = an; _voxAnalyserSrc = source; _voxAnalyserCtx = audioCtx; _voxAnalyserMain = mainAn; _voxAnalyserMic = micAn;
+  } catch (e) { _voxAnalyser = null; _voxAnalyserSrc = null; _voxAnalyserCtx = null; _voxAnalyserMain = null; _voxAnalyserMic = null; }
 }
 var _voxPumped = false;   // 本 rAF 是否已在全帧率泵过音频/节拍(解耦于渲染限帧)
 // animate() 顶部、渲染跳帧判断之前调用:音频分析+通量触发+自适应节拍检测按满 rAF 帧率步进。

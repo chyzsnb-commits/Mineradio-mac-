@@ -762,9 +762,13 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
         var bindToCover = (shelfAlwaysVisible() || shelfPinnedOpen || shelfVisibility > 0.06) && particles && particles.rotation && !(contentList && contentList.isOpen());
         if (bindToCover) {
           var bindEase = uniforms.uTime.value < coverBindResumeUntil ? 0.18 : 0.075;
-          group.rotation.x += ((particles.rotation.x - py * 0.010) - group.rotation.x) * bindEase;
-          group.rotation.y += ((particles.rotation.y + px * 0.018) - group.rotation.y) * bindEase;
-          group.rotation.z += (particles.rotation.z - group.rotation.z) * bindEase;
+          // 跟随封面旋转,但钳到可点击的角度范围内:否则封面大幅旋转时歌架被带得侧过去、
+          // 卡片转出屏幕右缘就点不到了(光标放不到屏外的卡片上,不是命中判定的问题)。
+          var tgtRX = clampRange(particles.rotation.x * 0.5 - py * 0.010, -0.22, 0.22);
+          var tgtRY = clampRange(particles.rotation.y * 0.5 + px * 0.018, -0.32, 0.32);
+          group.rotation.x += (tgtRX - group.rotation.x) * bindEase;
+          group.rotation.y += (tgtRY - group.rotation.y) * bindEase;
+          group.rotation.z += (particles.rotation.z * 0.3 - group.rotation.z) * bindEase;
         } else {
           group.rotation.y += ((px * 0.018) - group.rotation.y) * 0.045;
           group.rotation.x += ((-py * 0.010) - group.rotation.x) * 0.045;

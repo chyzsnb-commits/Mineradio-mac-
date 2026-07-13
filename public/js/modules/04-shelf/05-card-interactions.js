@@ -176,6 +176,21 @@ renderer.domElement.addEventListener('contextmenu', function (e) {
 //   stage 模式: 鼠标 y > 60% 屏幕高
 //   shift + wheel: 强制滚卡片
 var wheelOverShelf = false;
+// 歌架滚动敏感度:trackpad 一次滑动会喷几十个 wheel 事件,原来每个都滚一格 → 太快。
+// 累计 deltaY,够一个步长才滚一格(步长越大越不敏感);留余数保持平滑。
+var _shelfWheelAccum = 0;
+var SHELF_WHEEL_STEP = 190;
+function shelfWheelDir(e) {
+  var d = e.deltaY;
+  if (e.deltaMode === 1) d *= 16; else if (e.deltaMode === 2) d *= 100;
+  _shelfWheelAccum += d;
+  if (Math.abs(_shelfWheelAccum) >= SHELF_WHEEL_STEP) {
+    var dir = _shelfWheelAccum > 0 ? 1 : -1;
+    _shelfWheelAccum -= dir * SHELF_WHEEL_STEP;
+    return dir;
+  }
+  return 0;
+}
 renderer.domElement.addEventListener('wheel', function (e) {
   if (isPointerOverUi(e)) return;
   if (!shelfManager || shelfManager.getMode() === 'off') return;
@@ -191,7 +206,7 @@ renderer.domElement.addEventListener('wheel', function (e) {
       var panelScreenHit = !rowHit && !panelHit && cl.screenContainsPanel ? cl.screenContainsPanel(e.clientX, e.clientY) : false;
       if (!rowHit && !panelHit && !panelScreenHit) return;
       e.preventDefault(); e.stopImmediatePropagation();
-      cl.scrollBy(e.deltaY > 0 ? 1 : -1);
+      var dRow = shelfWheelDir(e); if (dRow) cl.scrollBy(dRow);
       return;
     }
   }
@@ -210,7 +225,7 @@ renderer.domElement.addEventListener('wheel', function (e) {
   if (inShelfArea) {
     e.preventDefault();
     e.stopImmediatePropagation();
-    shelfManager.scrollBy(e.deltaY > 0 ? 1 : -1);
+    var dShelf = shelfWheelDir(e); if (dShelf) shelfManager.scrollBy(dShelf);
   }
 }, { passive: false, capture: true });
 

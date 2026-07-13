@@ -554,6 +554,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   applyVolumeToAudio();
   await applyAudioOutputDevice(audio);
   if (token !== trackSwitchToken) return false;
+  if (typeof applyPlaybackSpeedToAudio === 'function') applyPlaybackSpeedToAudio();
   audio.src = song.localUrl;
   updatePlaybackProgressUi();
   lyricSunEnergy = 0; lyricSunTarget = 0; lyricSunHold = 0; lyricSunAvg = 0; lyricSunPeak = 0.55;
@@ -844,6 +845,8 @@ async function playQueueAt(idx, opts) {
         handlePlaybackUnavailable(song, data);
         return;
       }
+      // 拿到可播 URL,打断自动跳过级联的计数,避免下一次零星失败被误判为“整队不可播”
+      if (typeof resetPlaybackSkipCascade === 'function') resetPlaybackSkipCascade();
       var resolvedQualityText = playbackResolvedQualityText(data, playbackProvider);
       // 记录本次实际下发的音质档位,音质胶囊按实际显示(用户反馈:选 Hi-Res 实际只给 320 却不提示)
       window.__playbackResolvedLevel = data.level || '';
@@ -892,6 +895,7 @@ async function playQueueAt(idx, opts) {
       }
       audio.autoplay = true;
       audio.preload = 'auto';
+      if (typeof applyPlaybackSpeedToAudio === 'function') applyPlaybackSpeedToAudio();
       resetPlaybackAudioGraphForSourceSwitch(albumGaplessHandoff ? 'album-gapless-handoff' : 'track-switch');
       bindPlaybackProgressEvents(audio);
       if (albumGaplessHandoff) setAudioOutputGainImmediate(albumGaplessMixed ? targetVolume : audioSilentFloor());
