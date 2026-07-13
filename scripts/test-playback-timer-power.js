@@ -138,7 +138,8 @@ test('已经播放的预载媒体在绑定时立即接管进度定时器', () =>
   media.paused = false;
   emit('play');
   assert.equal(timers.size, 1);
-  assert.deepEqual(gaplessEvents, ['pause', 'play']);
+  emit('seeked');
+  assert.deepEqual(gaplessEvents, ['pause', 'play', 'seeked']);
 });
 
 test('无缝连播只在最后 9 秒且正在播放时高频检查', () => {
