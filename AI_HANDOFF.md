@@ -7,7 +7,7 @@
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
 - **main 最新 commit**：`a2d8145`（PR #26 已合并：唱歌模式、倍速、防爆音、歌架与卡死修复）。
-- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）→ PR #34（最近播放滚动降载与 GPU 文案）→ PR #36（播放定时器降载）→ PR #37（本地 AI 分轨）→ PR #38（AI 提速与实时精准度）→ PR #39（软件 Logo）→ PR #40（歌词选项切换降卡）→ PR #41（音频上游断线保护）→ PR #42（整队不可播保护）→ PR #43（本机崩溃记录）→ `codex/exclude-omc-cache`（构建缓存排除）均为叠加关系；最新分支基于 PR #43。
+- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）→ PR #34（最近播放滚动降载与 GPU 文案）→ PR #36（播放定时器降载）→ PR #37（本地 AI 分轨）→ PR #38（AI 提速与实时精准度）→ PR #39（软件 Logo）→ PR #40（歌词选项切换降卡）→ PR #41（音频上游断线保护）→ PR #42（整队不可播保护）→ PR #43（本机崩溃记录）→ PR #44（构建缓存排除）均为叠加关系。
 - **协作者最新工作**：PR #28，分支 `codex/fix-gesture-latency`，优化双手手势延迟与 GPU 负载；当前仍待合并，本分支未修改其手势文件。
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
@@ -28,7 +28,7 @@
 2. **Mac 跳过 Windows 内存死代码 + 补漏 qishui-api.js**（32b163c4）
 3. **移除自动更新**（7c0254b1）：删 build.publish，build:mac 删 latest-mac.yml
 4. **图标瘦身**（#9）：icns 851KB→568KB 无损，视觉不变
-5. **DMG 视觉确认 + .omc 排除**（#9、`codex/exclude-omc-cache`）：electron-builder 自动生成背景图和卷图标；Git 与 App 打包都全局排除 `.omc` 工具缓存。
+5. **DMG 视觉确认 + .omc 排除**（#9、PR #44）：electron-builder 自动生成背景图和卷图标；Git 与 App 打包都全局排除 `.omc` 工具缓存。
 
 ### 发烫优化（用户反馈"1.1.0 不烫、1.1.3 烫"）
 6. **失焦降帧恢复**（#12）：1.1.3 把 `isVisibleBackgroundMode()` 写死 `return false`，导致切走仍满帧。已恢复 1.1.0 逻辑——失焦降到 15FPS。
@@ -259,7 +259,7 @@
 - 未验证：原用户歌曲场景尚未再次崩溃，仍需用户运行新分支复现后提供 dump，才能分析 GPU/Chromium 根因。
 
 **2026-07-14：Codex 永久排除 `.omc` 工具缓存。**
-- 分支：`codex/exclude-omc-cache`；基于 PR #43。
+- PR：#44；分支：`codex/exclude-omc-cache`；基于 PR #43；功能 commit（代码存档点）`87c1875`。
 - 检查：Git 当前没有跟踪任何 `.omc` 文件，本地也没有遗留 `.omc` 目录；旧待办中的垃圾已经清理。
 - 改动：electron-builder 的 `build.files` 增加 `!**/.omc/**/*`，与现有 `.gitignore` 形成双重保护；新增配置回归测试并接入 `npm run check`。
 - 验证：完整自动检查 80 项通过；在 `public/js/modules/.omc/` 临时放入探针后执行未签名 arm64 打包，app.asar 中无 `.omc` 和探针；验证后已删除临时目录。
