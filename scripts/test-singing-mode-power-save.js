@@ -36,6 +36,9 @@ test('原唱 100% 直连分析器且 99% 才创建去人声链', () => {
       buildCount += 1;
       return { input: chainInput, output: chainOutput, setLevel() {} };
     },
+    connectSingingKeyShiftOutput(ctx, inputNode, outputNodes) {
+      outputNodes.forEach((node) => inputNode.connect(node));
+    },
   };
   vm.runInNewContext(
     `${readFunction(source, 'singingVocalProcessingNeeded')};`
@@ -343,6 +346,9 @@ test('原唱 100% 开关唱歌模式不重建播放音频图', () => {
     ensureSingingLyrics() {},
     syncSingingModeUi() {},
     prepareSingingVocalProcessor() {},
+    prepareSingingKeyShiftProcessor() {},
+    singingKeyShiftProcessingNeeded() { return false; },
+    _singingKeyShiftChangeSerial: 0,
     singingMicShouldRun() { return false; },
     showToast(message) { toasts.push(message); },
     Promise,

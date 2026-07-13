@@ -2,10 +2,13 @@
 function audioGraphHealthy() {
   var aiHealthy = !(typeof aiStemPlaybackActive === 'function' && aiStemPlaybackActive())
     || !!(aiStemVocalSource && aiStemMixNode && aiStemAccompanimentGain && aiStemVocalGain);
-  return !!(audio && audioReady && audioCtx && audioCtx.state !== 'closed' && source && analyser && beatAnalyser && (gainNode || analysisSinkNode) && aiHealthy);
+  var keyShiftHealthy = !singingKeyShiftProcessingNeeded()
+    || !singingKeyShiftWorkletReady(audioCtx)
+    || !!singingKeyShiftNode;
+  return !!(audio && audioReady && audioCtx && audioCtx.state !== 'closed' && source && analyser && beatAnalyser && (gainNode || analysisSinkNode) && aiHealthy && keyShiftHealthy);
 }
 function disconnectAudioGraphNodes(keepSource) {
-  [source, aiStemVocalSource, aiStemMixNode, aiStemAccompanimentGain, aiStemVocalGain, analyser, beatAnalyser, gainNode, analysisSinkNode].forEach(function (node) {
+  [source, aiStemVocalSource, aiStemMixNode, aiStemAccompanimentGain, aiStemVocalGain, singingKeyShiftNode, analyser, beatAnalyser, gainNode, analysisSinkNode].forEach(function (node) {
     if (!node) return;
     try { node.disconnect(); } catch (e) { }
   });
@@ -25,6 +28,7 @@ function disconnectAudioGraphNodes(keepSource) {
   aiStemMixNode = null;
   aiStemAccompanimentGain = null;
   aiStemVocalGain = null;
+  singingKeyShiftNode = null;
   audioReady = false;
 }
 function restoreMediaTimeWhenReady(media, seconds) {
@@ -250,6 +254,112 @@ function ensureVocalRemoverWorklet(ctx) {
   _vocalWorkletPromisesByContext.set(ctx, p);
   return p;
 }
+
+var SINGING_KEY_SHIFT_MIN = -6;
+var SINGING_KEY_SHIFT_MAX = 6;
+var SINGING_KEY_SHIFT_PROCESSOR_URL = 'vendor/soundtouch/soundtouch-processor.js';
+var _singingKeyShiftReadyContexts = new WeakSet();
+var _singingKeyShiftPromisesByContext = new WeakMap();
+var _singingKeyShiftChangeSerial = 0;
+
+function normalizeSingingKeyShift(value) {
+  value = Number(value);
+  if (!isFinite(value)) value = 0;
+  return Math.max(-6, Math.min(6, Math.round(value)));
+}
+
+function effectiveSingingKeyShift() {
+  return singingModeEnabled ? normalizeSingingKeyShift(singingKeyShift) : 0;
+}
+
+function singingKeyShiftProcessingNeeded() {
+  return effectiveSingingKeyShift() !== 0;
+}
+
+function singingKeyShiftWorkletReady(ctx) {
+  return !!(ctx && _singingKeyShiftReadyContexts.has(ctx));
+}
+
+function ensureSingingKeyShiftWorklet(ctx) {
+  if (!ctx || !ctx.audioWorklet) return Promise.resolve(false);
+  if (singingKeyShiftWorkletReady(ctx)) return Promise.resolve(true);
+  var pending = _singingKeyShiftPromisesByContext.get(ctx);
+  if (pending) return pending;
+  var url;
+  try { url = new URL(SINGING_KEY_SHIFT_PROCESSOR_URL, window.location.href).href; }
+  catch (e) { url = SINGING_KEY_SHIFT_PROCESSOR_URL; }
+  var promise = ctx.audioWorklet.addModule(url).then(function () {
+    _singingKeyShiftReadyContexts.add(ctx);
+    return true;
+  }).catch(function (error) {
+    console.warn('singing key shift worklet load failed:', error && (error.message || error));
+    return false;
+  }).then(function (ok) {
+    if (_singingKeyShiftPromisesByContext.get(ctx) === promise) _singingKeyShiftPromisesByContext.delete(ctx);
+    return ok;
+  });
+  _singingKeyShiftPromisesByContext.set(ctx, promise);
+  return promise;
+}
+
+function setAudioParamImmediate(parameter, value, ctx) {
+  if (!parameter) return;
+  var now = ctx && isFinite(ctx.currentTime) ? ctx.currentTime : 0;
+  try {
+    parameter.cancelScheduledValues(now);
+    parameter.setValueAtTime(value, now);
+  } catch (e) {
+    try { parameter.value = value; } catch (_) {}
+  }
+}
+
+function updateSingingKeyShiftNodeParameters(node) {
+  node = node || singingKeyShiftNode;
+  if (!node || !node.parameters) return false;
+  var ctx = node.context || audioCtx;
+  setAudioParamImmediate(node.parameters.get('pitch'), 1, ctx);
+  setAudioParamImmediate(node.parameters.get('pitchSemitones'), effectiveSingingKeyShift(), ctx);
+  setAudioParamImmediate(node.parameters.get('playbackRate'), Number(playbackSpeed) || 1, ctx);
+  return true;
+}
+
+function buildSingingKeyShiftNode(ctx) {
+  var node = new AudioWorkletNode(ctx, 'soundtouch-processor', {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [2],
+    channelCount: 2,
+    channelCountMode: 'explicit',
+    channelInterpretation: 'speakers',
+    processorOptions: { sampleBufferType: 'circular' }
+  });
+  updateSingingKeyShiftNodeParameters(node);
+  return node;
+}
+
+function connectSingingKeyShiftOutput(ctx, inputNode, outputNodes) {
+  outputNodes = Array.isArray(outputNodes) ? outputNodes.filter(Boolean) : [outputNodes].filter(Boolean);
+  if (!inputNode || !outputNodes.length) return false;
+  singingKeyShiftNode = null;
+  if (!singingKeyShiftProcessingNeeded() || !singingKeyShiftWorkletReady(ctx) || typeof AudioWorkletNode === 'undefined') {
+    outputNodes.forEach(function (outputNode) { inputNode.connect(outputNode); });
+    return false;
+  }
+  try {
+    singingKeyShiftNode = buildSingingKeyShiftNode(ctx);
+    inputNode.connect(singingKeyShiftNode);
+    outputNodes.forEach(function (outputNode) { singingKeyShiftNode.connect(outputNode); });
+    return true;
+  } catch (error) {
+    console.warn('singing key shift node unavailable:', error && (error.message || error));
+    singingKeyShift = 0;
+    singingKeyShiftNode = null;
+    outputNodes.forEach(function (outputNode) { inputNode.connect(outputNode); });
+    syncSingingKeyShiftUi();
+    return false;
+  }
+}
+
 function buildVocalCutChainWorklet(ctx) {
   var node = new AudioWorkletNode(ctx, 'vocal-remover-processor', {
     numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
@@ -321,15 +431,15 @@ function singingVocalProcessingNeeded(vocalLevel, accompanimentLevel) {
 }
 function connectSingingPlaybackGraph(ctx, playbackSource, outputAnalyser, sourceUsesCapture) {
   vocalCutChain = null;
+  var processedOutput = playbackSource;
   if (singingVocalProcessingNeeded() && !sourceUsesCapture) {
     vocalCutChain = buildVocalCutChain(ctx);
     if (vocalCutChain.setLevels) vocalCutChain.setLevels(singingAccompanimentLevel, singingVocalLevel);
     else if (vocalCutChain.setLevel) vocalCutChain.setLevel(singingVocalLevel);
     playbackSource.connect(vocalCutChain.input);
-    vocalCutChain.output.connect(outputAnalyser);
-  } else {
-    playbackSource.connect(outputAnalyser);
+    processedOutput = vocalCutChain.output;
   }
+  connectSingingKeyShiftOutput(ctx, processedOutput, [outputAnalyser]);
   return vocalCutChain;
 }
 function initAudio() {
@@ -420,12 +530,14 @@ function initAudio() {
     analyser.connect(analysisSinkNode);
     analysisSinkNode.connect(audioCtx.destination);
   }
+  applyPlaybackSpeedToAudio();
   applyVolumeToAudio();
   frequencyData.fill(0);
   beatFrequencyData.fill(0);
   beatTimeDomainData.fill(128);
   resetRealtimeBeatEngine();
   audioReady = true;
+  if (singingKeyShiftProcessingNeeded() && !singingKeyShiftWorkletReady(audioCtx)) prepareSingingKeyShiftProcessor();
   applyAudioOutputDevice(audio);
   return true;
 }
@@ -887,12 +999,21 @@ function syncSpeedSliderUi() {
 // 把当前倍速套到 audio 元素上;每次新建/换 audio 元素后调用,保证提前设好的倍速不丢
 function applyPlaybackSpeedToAudio() {
   if (!audio) return;
-  // preservesPitch 在 Chromium 默认 true(变速不变调),这里显式置一遍更稳
-  try { audio.preservesPitch = true; audio.mozPreservesPitch = true; audio.webkitPreservesPitch = true; } catch (e) {}
-  try { audio.playbackRate = playbackSpeed; } catch (e) {}
-  if (typeof aiStemVocalAudio !== 'undefined' && aiStemVocalAudio) {
-    try { aiStemVocalAudio.playbackRate = playbackSpeed; } catch (e) {}
+  var keyShiftActive = !!singingKeyShiftNode;
+  function applyToMedia(media) {
+    if (!media) return;
+    try {
+      media.preservesPitch = !keyShiftActive;
+      media.mozPreservesPitch = !keyShiftActive;
+      media.webkitPreservesPitch = !keyShiftActive;
+    } catch (e) {}
+    try { media.playbackRate = playbackSpeed; } catch (e) {}
   }
+  applyToMedia(audio);
+  if (typeof aiStemVocalAudio !== 'undefined' && aiStemVocalAudio) {
+    applyToMedia(aiStemVocalAudio);
+  }
+  updateSingingKeyShiftNodeParameters(singingKeyShiftNode);
 }
 function setPlaybackSpeed(v, opts) {
   v = Math.min(3, Math.max(0.5, parseFloat(v) || 1));
@@ -912,6 +1033,7 @@ function syncSingingModeUi() {
   var wrap = document.getElementById('singing-control');
   if (wrap) wrap.classList.toggle('singing-on', singingModeEnabled);
   syncSingingVocalUi();
+  syncSingingKeyShiftUi();
 }
 function syncSingingVocalUi() {
   var accompanimentSlider = document.getElementById('accompaniment-level-slider');
@@ -924,6 +1046,66 @@ function syncSingingVocalUi() {
   if (accompanimentValue) accompanimentValue.textContent = accompanimentPct + '%';
   if (slider && document.activeElement !== slider) slider.value = String(singingVocalLevel);
   if (val) val.textContent = pct + '%';
+}
+function formatSingingKeyShift(value) {
+  value = normalizeSingingKeyShift(value);
+  return (value > 0 ? '+' : '') + value + ' Key';
+}
+function syncSingingKeyShiftUi() {
+  var value = document.getElementById('singing-key-value');
+  if (value) value.textContent = formatSingingKeyShift(singingKeyShift);
+  document.querySelectorAll('[data-singing-key-step]').forEach(function (button) {
+    var step = Number(button.getAttribute('data-singing-key-step')) || 0;
+    var next = singingKeyShift + step;
+    button.disabled = next < SINGING_KEY_SHIFT_MIN || next > SINGING_KEY_SHIFT_MAX;
+  });
+}
+function prepareSingingKeyShiftProcessor() {
+  if (!audioCtx || !singingKeyShiftProcessingNeeded()) return Promise.resolve(false);
+  if (singingKeyShiftWorkletReady(audioCtx)) return Promise.resolve(true);
+  var targetCtx = audioCtx;
+  var serial = _singingKeyShiftChangeSerial;
+  return ensureSingingKeyShiftWorklet(targetCtx).then(function (ok) {
+    if (serial !== _singingKeyShiftChangeSerial || audioCtx !== targetCtx || !singingKeyShiftProcessingNeeded()) return false;
+    if (!ok) {
+      singingKeyShift = 0;
+      syncSingingKeyShiftUi();
+      applyPlaybackSpeedToAudio();
+      showToast('变调组件加载失败，已恢复原调');
+      return false;
+    }
+    rebuildAudioGraphNow();
+    return true;
+  });
+}
+function setSingingKeyShift(value, opts) {
+  var previousEffective = effectiveSingingKeyShift();
+  singingKeyShift = normalizeSingingKeyShift(value);
+  var nextEffective = effectiveSingingKeyShift();
+  _singingKeyShiftChangeSerial++;
+  syncSingingKeyShiftUi();
+  if (!singingModeEnabled) {
+    if (!(opts && opts.silent)) showToast(formatSingingKeyShift(singingKeyShift) + '，开启唱歌模式后生效');
+    return Promise.resolve(false);
+  }
+  if (!nextEffective) {
+    if (previousEffective || singingKeyShiftNode) rebuildAudioGraphNow();
+    else applyPlaybackSpeedToAudio();
+    if (!(opts && opts.silent)) showToast('已恢复原调');
+    return Promise.resolve(true);
+  }
+  if (!audioCtx || !singingKeyShiftWorkletReady(audioCtx)) {
+    var loading = prepareSingingKeyShiftProcessor();
+    if (!(opts && opts.silent)) showToast(formatSingingKeyShift(singingKeyShift) + '，正在准备');
+    return loading;
+  }
+  if (!previousEffective || !singingKeyShiftNode) rebuildAudioGraphNow();
+  else {
+    updateSingingKeyShiftNodeParameters();
+    applyPlaybackSpeedToAudio();
+  }
+  if (!(opts && opts.silent)) showToast(formatSingingKeyShift(singingKeyShift));
+  return Promise.resolve(true);
 }
 function prepareSingingVocalProcessor() {
   if (!audioCtx || !singingVocalProcessingNeeded()) return Promise.resolve(false);
@@ -1094,12 +1276,16 @@ function setSingingMode(on) {
   on = !!on;
   if (on === singingModeEnabled) { syncSingingModeUi(); return; }
   var wasVocalProcessing = singingVocalProcessingNeeded();
+  var wasKeyShiftProcessing = singingKeyShiftProcessingNeeded();
   singingModeEnabled = on;
   var needsVocalProcessing = singingVocalProcessingNeeded();
-  if (wasVocalProcessing !== needsVocalProcessing) rebuildAudioGraphNow();
+  var needsKeyShiftProcessing = singingKeyShiftProcessingNeeded();
+  _singingKeyShiftChangeSerial++;
+  if (wasVocalProcessing !== needsVocalProcessing || wasKeyShiftProcessing !== needsKeyShiftProcessing) rebuildAudioGraphNow();
   if (on) {
     _singingMicPermissionBlocked = false;
     if (needsVocalProcessing) prepareSingingVocalProcessor();
+    if (needsKeyShiftProcessing) prepareSingingKeyShiftProcessor();
     syncSingingMicPowerState({ silent: false });
     ensureSingingLyrics(true);
     showToast('唱歌模式:伴奏人声混音已开启,正在开麦…');
@@ -1173,8 +1359,16 @@ function bindVolumeControls() {
     vocalSlider.addEventListener('input', function () { setSingingVocalLevel(vocalSlider.value, { silent: true }); });
     vocalSlider.addEventListener('change', function () { setSingingVocalLevel(vocalSlider.value, { silent: false }); });
   }
+  document.querySelectorAll('[data-singing-key-step]').forEach(function (button) {
+    if (button._singingKeyBound) return;
+    button._singingKeyBound = true;
+    button.addEventListener('click', function () {
+      setSingingKeyShift(singingKeyShift + (Number(button.getAttribute('data-singing-key-step')) || 0));
+    });
+  });
   syncSpeedSliderUi();
   syncSingingVocalUi();
+  syncSingingKeyShiftUi();
   if (typeof bindAiStemControls === 'function') bindAiStemControls();
   if (btn) {
     btn.addEventListener('dblclick', function (e) { e.stopPropagation(); toggleMute(); });

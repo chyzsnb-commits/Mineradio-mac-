@@ -146,8 +146,7 @@ function connectAiStemPlaybackGraph(ctx, accompanimentSource, analyserNode, beat
   vocalSource.connect(aiStemVocalGain);
   aiStemAccompanimentGain.connect(aiStemMixNode);
   aiStemVocalGain.connect(aiStemMixNode);
-  aiStemMixNode.connect(analyserNode);
-  aiStemMixNode.connect(beatNode);
+  connectSingingKeyShiftOutput(ctx, aiStemMixNode, [analyserNode, beatNode]);
   applyAiStemLevels();
   return true;
 }

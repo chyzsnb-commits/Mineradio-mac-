@@ -57,7 +57,7 @@ test('Worklet 用相干性与瞬态掩码混合伴奏和人声', () => {
 test('分离链滑块调节只发送参数而不创建第二个处理器', () => {
   const source = read('public/js/modules/05-playback/08-audio-graph-controls.js');
   assert.match(source, /setLevels:\s*function\s*\(accompaniment, vocal\)[\s\S]*postMessage\(\{ accompaniment: accompaniment, vocal: vocal \}\)/);
-  assert.equal((source.match(/new AudioWorkletNode\(/g) || []).length, 1);
+  assert.equal((source.match(/new AudioWorkletNode\(ctx, 'vocal-remover-processor'/g) || []).length, 1);
   assert.match(source, /function setSingingAccompanimentLevel\(/);
   assert.match(source, /function setSingingVocalLevel\(/);
 });

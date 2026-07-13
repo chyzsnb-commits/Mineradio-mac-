@@ -6135,6 +6135,71 @@ body:not(.controls-visible) .lyric-timing-control::before,
   font-variant-numeric: tabular-nums
 }
 
+.singing-key-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 29px;
+  margin-bottom: 5px
+}
+
+.singing-key-label {
+  color: rgba(255, 255, 255, .46);
+  font-size: 10px;
+  white-space: nowrap
+}
+
+.singing-key-control {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  align-items: stretch;
+  height: 28px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, .2)
+}
+
+.singing-key-control button {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, .66);
+  font: 500 17px/1 var(--font-sans);
+  cursor: pointer
+}
+
+.singing-key-control button:first-child {
+  border-right: 1px solid rgba(255, 255, 255, .07)
+}
+
+.singing-key-control button:last-child {
+  border-left: 1px solid rgba(255, 255, 255, .07)
+}
+
+.singing-key-control button:hover:not(:disabled) {
+  background: rgba(var(--fc-accent-rgb), .13);
+  color: #fff
+}
+
+.singing-key-control button:disabled {
+  color: rgba(255, 255, 255, .2);
+  cursor: default
+}
+
+.singing-key-control output {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  color: rgba(255, 255, 255, .88);
+  font: 650 10px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums
+}
+
 .singing-title {
   font-size: 11px;
   font-weight: 600;
@@ -11267,6 +11332,17 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   gap: 9px
 }
 
+.startup-toggle-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch
+}
+
+.startup-toggle-grid > .fx-toggle {
+  width: 100%;
+  min-width: 0;
+  min-height: 39px
+}
+
 .fx-toggle {
   min-height: 39px;
   display: flex;
@@ -14200,6 +14276,10 @@ html.control-glass-svg-ok #visual-guide-btn:hover {
   .preset-grid,
   .fx-toggle-grid {
     grid-template-columns: 1fr
+  }
+
+  .startup-toggle-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr))
   }
 
   .fx-slider {

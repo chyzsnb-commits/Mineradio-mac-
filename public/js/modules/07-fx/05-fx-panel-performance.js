@@ -837,7 +837,7 @@ function relabelFxPanelControls() {
   setFxSectionBefore('fx-desktoplyricssize', '桌面歌词');
   setFxSectionBefore('desktop-lyrics-fps-seg', '桌面歌词帧率');
   setFxSectionBefore('close-behavior-seg', '关闭窗口');
-  setFxSectionBefore('t-startupAutoplay', '启动播放');
+  setFxSectionBefore('startup-toggle-grid', '启动播放');
   setFxSectionBefore('fx-playlistblur', '左侧歌单栏');
   setFxSectionBefore('shelf-seg', '3D 歌单架');
   setFxSectionBefore('shelf-camera-seg', '歌单架镜头');

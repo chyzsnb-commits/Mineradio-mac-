@@ -653,7 +653,7 @@
             <button data-close-behavior="tray">后台托盘</button>
           </div>
           <div class="fx-section-label">启动播放</div>
-          <div class="fx-toggle-grid">
+          <div id="startup-toggle-grid" class="fx-toggle-grid startup-toggle-grid">
             <div class="fx-toggle" id="t-startupAutoplay" onclick="toggleStartupAutoplay()" title="打开软件后从上次保存进度自动继续播放">
               <span>启动自动播放</span><span class="dot"></span></div>
             <div class="fx-toggle" id="t-startupFastSkip" onclick="toggleStartupFastSkip()" title="打开软件后直接进入主页，不等待启动动画">
@@ -1126,6 +1126,14 @@
                 <button id="ai-stem-cancel-btn" type="button" title="取消 AI 分轨" aria-label="取消 AI 分轨">×</button>
               </div>
               <div id="ai-stem-progress" class="ai-stem-progress" aria-hidden="true"><span id="ai-stem-progress-fill"></span></div>
+              <div class="singing-key-row">
+                <span class="singing-key-label">音调</span>
+                <div id="singing-key-shift" class="singing-key-control" role="group" aria-label="歌曲升降 Key">
+                  <button type="button" data-singing-key-step="-1" title="降 Key" aria-label="降 Key">−</button>
+                  <output id="singing-key-value" aria-live="polite">0 Key</output>
+                  <button type="button" data-singing-key-step="1" title="升 Key" aria-label="升 Key">+</button>
+                </div>
+              </div>
               <div class="fade-control-row">
                 <label for="accompaniment-level-slider">伴奏</label>
                 <input id="accompaniment-level-slider" type="range" min="0" max="1" step="0.01" value="1" aria-label="伴奏音量">
