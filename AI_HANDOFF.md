@@ -2,11 +2,12 @@
 
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**
 
-## 当前权威入口（2026-07-12，转交给 Codex）
+## 当前权威入口（2026-07-13）
 
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
-- **main 最新 commit**：`b5069d9`（docs: 工作规则补「必须同步 Obsidian」）。
+- **main 最新 commit**：`a2d8145`（PR #26 已合并：唱歌模式、倍速、防爆音、歌架与卡死修复）。
+- **当前 Codex 任务分支**：`codex/gpu-mode-fast-splash`；设计存档 `7977185`，功能存档 `e7eb5f4`。
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
 - **网络注意**：本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI）正常。**用 gh API 推送代码，不要用 git push**。
@@ -19,7 +20,7 @@
 - **不要自动更新功能**（Mac 版从 Windows 迁移，不需要 electron-updater）。
 - Obsidian 笔记库在 `/Users/chy/菜鸡的仓库/菜鸡的仓库`，Mac 开发进度在 `02 知识编译/Mineradio Mac 开发进度.md`。
 
-## 已完成的工作（按时间，22 个 commit / PR）
+## 已完成的工作（按时间）
 
 ### 优化类
 1. **telemetry opt-in**（97c8ac3f）：正式版不上报，测试版首启询问
@@ -31,11 +32,14 @@
 ### 发烫优化（用户反馈"1.1.0 不烫、1.1.3 烫"）
 6. **失焦降帧恢复**（#12）：1.1.3 把 `isVisibleBackgroundMode()` 写死 `return false`，导致切走仍满帧。已恢复 1.1.0 逻辑——失焦降到 15FPS。
 7. **空闲降频**（#12→#17→#19）：前台不播放+无交互+加载完时，整个主循环降到 2FPS。**注意**：加载/换源期间必须保持渲染（`playToggleBusy` 判断），否则 GPU 上下文频繁停-启导致黑屏（PR #19 修复了这个）。
+8. **用户可选显卡模式 + 首页后台暂停**（`codex/gpu-mode-fast-splash`）：新增自动/省电/高性能；前台保留首页悬浮动画，失焦、隐藏或最小化时暂停。
 
 ### 新功能
-8. **Mac 内存面板**（#12）：`desktop/system-memory-mac.js`（vm_stat + purge，模仿腾讯柠檬），显示真实内存数据。
-9. **Touch Bar**（#14）：`desktop/touchbar.js`，老款 Intel MBP 播放控制。独立模块。
-10. **x64 打包**（#13）：`build:mac:arm64` / `:x64` / `:all`，CI matrix 双架构。
+- **Mac 内存面板**（#12）：`desktop/system-memory-mac.js`（vm_stat + purge，模仿腾讯柠檬），显示真实内存数据。
+- **Touch Bar**（#14）：`desktop/touchbar.js`，老款 Intel MBP 播放控制。独立模块。
+- **x64 打包**（#13）：`build:mac:arm64` / `:x64` / `:all`，CI matrix 双架构。
+- **倍速 + 唱歌模式 + 歌架交互**（#26）：可调原唱、频谱去人声、麦克风律动及音频图重建防爆音。
+- **启动页快速进入**（`codex/gpu-mode-fast-splash`）：动画出现后任意时刻点击、回车或空格都能立即进入。
 
 ### Bug 修复
 11. **音源切换死循环卡死**（#16→#17）：toast 无节流导致主线程被 reflow 占满。修：toast 800ms 节流 + `_playbackFailCounter`（同首歌 15 秒失败超 3 次跳下一首）+ 换源保留 `_lastPlaybackFailAt`。
@@ -62,7 +66,8 @@
 ## 待办清单
 
 - [ ] **渲染进程崩溃根因**：配 crashReporter 抓 dump 分析（上面详述）
-- [ ] **测试发烫效果**：`./node_modules/.bin/electron .`，切到别的软件看温度（验证失焦降帧 + 空闲降频）
+- [ ] **真机对比三种显卡模式**：分别重启到自动/省电/高性能，播放同一首歌 10 分钟，对比温度、CPU 和流畅度。
+- [ ] **继续发烫优化**：idle guide 深后台彻底停止；空闲主循环从高频 RAF 唤醒改成真正休眠。
 - [ ] **测试内存清理**：播放时分别点"压缩播放器 / 系统释放 / 提权释放"，确认不弹密码、不爆音、不丢播放状态
 - [ ] **Touch Bar 实测**：找老款 Intel MBP
 - [ ] **x64 CI 验证**：打测试 tag 看 x64 构建
@@ -71,7 +76,7 @@
 
 ## 用户需要手动完成的（账号授权类）
 
-- [ ] **装 Codex GitHub App**：https://github.com/settings/installations → OpenAI Codex → Configure → 勾 All repositories 或 mr。**用户正在做这个**。
+- [x] **装 Codex GitHub App**：已授权 `mr` 仓库。
 - [ ] **加 `OPENAI_API_KEY` secret**：mr 仓库 Settings → Secrets → Actions。
 
 ## 工作规则（给接手 AI）
@@ -97,3 +102,9 @@
 - CI 补充：PR #23 首轮 arm64 构建失败原因是 `.github/workflows/build-mac.yml` 的 `actions/setup-node` 开了 `cache: npm`，但仓库没有 `package-lock.json`；已移除该缓存配置，让 `npm ci || npm install` 正常执行。第二轮失败原因是 workflow 直接运行 `electron-builder`，GitHub shell 找不到本地 `node_modules/.bin`；已改为 `./node_modules/.bin/electron-builder`，并把 Node 从 20 调到 24 以匹配 Electron 42 的 Node 要求。
 - 验证：`npm run check`、`git diff --check` 通过；新增 `scripts/check-memory-audio-guard.js` 防止回退到播放/暂停式清理。
 - 未验证：还需要用户在真实播放时手动点三个按钮，确认喇叭不再“噗”、播放状态不丢。
+
+**2026-07-13：Codex 增加显卡模式并优化启动与首页后台占用。**
+- 分支：`codex/gpu-mode-fast-splash`；设计 commit（代码存档点）`7977185`，功能 commit `e7eb5f4`。
+- 改动：显卡模式新增自动/省电/高性能，主界面和启动页 WebGL 统一读取；切换后可稍后或立即重启；启动页无需等 5 秒即可跳过；首页悬浮动画前台完整保留，后台省电状态暂停。
+- 验证：`npm run check`、全部 `public/js` / `mjs` 语法检查、`git diff --check` 通过；Electron 隔离设置目录实测启动页点击立即进入；Playwright 实测三个按钮桌面尺寸均为 `126×34`、小窗口均为 `206×34`，文字无溢出，重启按钮均为 `150×35`；前台动画为 running，后台/隐藏为 paused；`CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:mac:dir` 打包通过，`app.asar` 已包含 `public/js/gpu-mode.js`。
+- 未验证：`powerPreference` 只是 WebGL 偏好，macOS 最终决定实际显卡；三种模式的真实温度和续航差异仍需同机长时间对比。
