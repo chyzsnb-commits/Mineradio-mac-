@@ -269,22 +269,32 @@ function fetchDeviceStats() {
   } catch (e) { _devStats = null; }
 }
 function perfHudOn() { try { return localStorage.getItem('mr_perfHud') === '1'; } catch (e) { return false; } }
+function suspendPerfHudSampling() {
+  var hud = document.getElementById('perf-hud');
+  if (hud) hud.style.display = 'none';
+  if (_perfHudTimer) { clearInterval(_perfHudTimer); _perfHudTimer = null; }
+  if (_devStatsTimer) { clearInterval(_devStatsTimer); _devStatsTimer = null; }
+  _devStats = null;
+}
+function resumePerfHudSampling() {
+  if (!perfHudOn()) return;
+  if (document.body && document.body.classList.contains('mw-wallpaper')) {
+    suspendPerfHudSampling();
+    return;
+  }
+  var hud = document.getElementById('perf-hud');
+  if (hud) hud.style.display = 'block';
+  updatePerfHud();
+  if (!_perfHudTimer) _perfHudTimer = setInterval(updatePerfHud, 500);
+  fetchDeviceStats();
+  if (!_devStatsTimer) _devStatsTimer = setInterval(fetchDeviceStats, 2000);
+}
 function setPerfHud(on) {
   try { localStorage.setItem('mr_perfHud', on ? '1' : '0'); } catch (e) { }
-  var hud = document.getElementById('perf-hud');
   var tog = document.getElementById('t-perfHud');
   if (tog) tog.classList.toggle('on', !!on);
-  if (hud) hud.style.display = on ? 'block' : 'none';
-  if (on) {
-    updatePerfHud();
-    if (!_perfHudTimer) _perfHudTimer = setInterval(updatePerfHud, 500);
-    fetchDeviceStats();
-    if (!_devStatsTimer) _devStatsTimer = setInterval(fetchDeviceStats, 2000);
-  } else {
-    if (_perfHudTimer) { clearInterval(_perfHudTimer); _perfHudTimer = null; }
-    if (_devStatsTimer) { clearInterval(_devStatsTimer); _devStatsTimer = null; }
-    _devStats = null;
-  }
+  if (on) resumePerfHudSampling();
+  else suspendPerfHudSampling();
 }
 function togglePerfHud() { setPerfHud(!perfHudOn()); }
 function updatePerfHud() {

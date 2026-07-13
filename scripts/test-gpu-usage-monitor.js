@@ -49,6 +49,18 @@ test('GPU 读取器只在 macOS 调用 ioreg 并复用进行中的采样', async
   });
   assert.equal(await readNonMac(), null);
   assert.equal(nonMacCalled, false);
+
+  const readFailed = gpuUsage.createGpuUsageReader({
+    platform: 'darwin',
+    execFileImpl: (_command, _args, _options, callback) => callback(new Error('ioreg failed'), '', ''),
+  });
+  assert.equal(await readFailed(), null);
+
+  const readThrew = gpuUsage.createGpuUsageReader({
+    platform: 'darwin',
+    execFileImpl: () => { throw new Error('spawn failed'); },
+  });
+  assert.equal(await readThrew(), null);
 });
 
 test('主进程返回 GPU 指标且 HUD 在 CPU 下方显示对称显卡行', () => {
@@ -62,4 +74,16 @@ test('主进程返回 GPU 指标且 HUD 在 CPU 下方显示对称显卡行', ()
   const gpuRow = hud.indexOf('<span>显卡</span>');
   const memoryRow = hud.indexOf('<span>内存</span>');
   assert.ok(cpuRow >= 0 && gpuRow > cpuRow && memoryRow > gpuRow, '显卡行必须位于 CPU 与内存之间');
+});
+
+test('壁纸模式隐藏 HUD 时停止全部采样并在退出后恢复', () => {
+  const hud = read('public/js/modules/07-fx/05-fx-panel-performance.js');
+  const wallpaper = read('public/js/modules/10-shell/04-desktop-overlay-fullscreen.js');
+  assert.match(hud, /function suspendPerfHudSampling\(\)/);
+  assert.match(hud, /function resumePerfHudSampling\(\)/);
+  assert.match(hud, /clearInterval\(_perfHudTimer\)/);
+  assert.match(hud, /clearInterval\(_devStatsTimer\)/);
+  assert.match(wallpaper, /payload\.enabled\s*\?\s*suspendPerfHudSampling\(\)\s*:\s*resumePerfHudSampling\(\)/);
+  assert.match(wallpaper, /active\s*\?\s*suspendPerfHudSampling\(\)\s*:\s*resumePerfHudSampling\(\)/);
+  assert.match(wallpaper, /onWallpaperForceOff[\s\S]*resumePerfHudSampling\(\)/);
 });
