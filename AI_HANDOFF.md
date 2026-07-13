@@ -7,7 +7,7 @@
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
 - **main 最新 commit**：`a2d8145`（PR #26 已合并：唱歌模式、倍速、防爆音、歌架与卡死修复）。
-- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）→ PR #34（最近播放滚动降载与 GPU 文案）→ PR #36（播放定时器降载）→ PR #37（本地 AI 分轨）→ PR #38（AI 提速与实时精准度）→ PR #39（软件 Logo）→ PR #40（歌词选项切换降卡）→ PR #41（音频上游断线保护）→ PR #42（整队不可播保护）→ PR #43（本机崩溃记录）→ PR #44（构建缓存排除）→ PR #45（双架构 CI 运行器）→ PR #46（Touch Bar 歌曲状态）→ 分支 `codex/karaoke-key-shift-toggle-layout`（K 歌升降 Key 与启动开关对齐）均为叠加关系。
+- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）→ PR #34（最近播放滚动降载与 GPU 文案）→ PR #36（播放定时器降载）→ PR #37（本地 AI 分轨）→ PR #38（AI 提速与实时精准度）→ PR #39（软件 Logo）→ PR #40（歌词选项切换降卡）→ PR #41（音频上游断线保护）→ PR #42（整队不可播保护）→ PR #43（本机崩溃记录）→ PR #44（构建缓存排除）→ PR #45（双架构 CI 运行器）→ PR #46（Touch Bar 歌曲状态）→ PR #47（K 歌升降 Key 与启动开关对齐）均为叠加关系。
 - **协作者最新工作**：PR #28，分支 `codex/fix-gesture-latency`，优化双手手势延迟与 GPU 负载；当前仍待合并，本分支未修改其手势文件。
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
@@ -283,7 +283,7 @@
 - 未验证：仍需在 2016-2019 带 Touch Bar 的 Intel MacBook Pro 上确认真实显示宽度和按钮触感；无对应硬件时为安全 no-op。
 
 **2026-07-14：Codex 增加 K 歌升降 Key 并修复启动开关对角错位。**
-- 分支：`codex/karaoke-key-shift-toggle-layout`；基于 PR #46；设计 commit（代码存档点）`76641b8`，功能 commit `903c576`。
+- PR：#47；分支：`codex/karaoke-key-shift-toggle-layout`；基于 PR #46；设计 commit（代码存档点）`76641b8`，功能 commit `903c576`。
 - 变调：唱歌面板新增对称的减号 / 当前 Key / 加号控制，范围 `-6` 到 `+6`；只改变歌曲、伴奏和原唱音高，不改变速度或麦克风声音。
 - 音频链：使用 `@soundtouchjs/audio-worklet` 2.1.0 的自包含处理器；实时分离与 AI 双轨在最终混音后共用一个节点，`0 Key` 和关闭唱歌模式时完全旁路。倍速启用时由 SoundTouch 补偿媒体倍速造成的音高变化。
 - 布局根因：页面启动后的 `setFxSectionBefore('t-startupAutoplay', ...)` 把“启动播放”标题插进了两列开关网格，形成 3 个网格元素，两个开关被挤成对角线；现改为对整个 `startup-toggle-grid` 插入标题。
