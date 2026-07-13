@@ -340,9 +340,14 @@ async function searchAlternatePlatformSong(song) {
 }
 // 连续自动跳过计数:整队都不可播时,nextUnblockedQueueIndex 的 18s 时间窗会让
 // 早先失败的曲目重新“解封”,导致无限跳歌把主线程和内存拖到卡死。用一个单调计数
-// 器保证级联最多跑一整圈队列就停;任何一首拿到可播 URL 时(见播放成功路径)清零。
+// 器保证级联最多跑一整圈队列就停;只有当前歌曲真正开始播放后才清零。
 var playbackSkipCascade = 0;
 function resetPlaybackSkipCascade() { playbackSkipCascade = 0; }
+function confirmQueuePlaybackStarted(idx, token) {
+  if (token !== trackSwitchToken || idx !== currentIdx || !audio || audio.paused || audio.ended) return false;
+  resetPlaybackSkipCascade();
+  return true;
+}
 function markQueueItemPlaybackFailed(idx) {
   if (playQueue[idx]) playQueue[idx]._lastPlaybackFailAt = Date.now();
 }

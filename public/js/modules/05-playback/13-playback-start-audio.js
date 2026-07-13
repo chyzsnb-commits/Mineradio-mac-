@@ -633,6 +633,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
     }
     return false;
   }
+  confirmQueuePlaybackStarted(idx, token);
   forcePlaybackControlsInteractive();
   beginListenSession(song, null);
   if (typeof cancelPendingTrackFallbackLyrics === 'function') cancelPendingTrackFallbackLyrics();
@@ -879,8 +880,6 @@ async function playQueueAt(idx, opts) {
         handlePlaybackUnavailable(song, data);
         return;
       }
-      // 拿到可播 URL,打断自动跳过级联的计数,避免下一次零星失败被误判为“整队不可播”
-      if (typeof resetPlaybackSkipCascade === 'function') resetPlaybackSkipCascade();
       var resolvedQualityText = playbackResolvedQualityText(data, playbackProvider);
       // 记录本次实际下发的音质档位,音质胶囊按实际显示(用户反馈:选 Hi-Res 实际只给 320 却不提示)
       window.__playbackResolvedLevel = data.level || '';
@@ -1033,6 +1032,7 @@ async function playQueueAt(idx, opts) {
         }
         return;
       }
+      confirmQueuePlaybackStarted(idx, token);
       forcePlaybackControlsInteractive();
       if (albumGaplessHandoff && albumGaplessPreviousAudio && albumGaplessPreviousAudio !== audio) {
         setTimeout(function () {
