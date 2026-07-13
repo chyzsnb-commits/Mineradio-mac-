@@ -6143,6 +6143,91 @@ body:not(.controls-visible) .lyric-timing-control::before,
   margin-bottom: 8px
 }
 
+.singing-separation-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, .2)
+}
+
+.singing-separation-mode button {
+  height: 25px;
+  min-width: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, .46);
+  font: 650 10px/1 var(--font-sans);
+  cursor: pointer
+}
+
+.singing-separation-mode button.active {
+  background: rgba(var(--fc-accent-rgb), .16);
+  color: rgba(255, 255, 255, .94);
+  box-shadow: inset 0 0 0 1px rgba(var(--fc-accent-rgb), .24)
+}
+
+.ai-stem-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 19px;
+  margin: -2px 0 5px
+}
+
+#ai-stem-status {
+  min-width: 0;
+  color: rgba(255, 255, 255, .42);
+  font-size: 9.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+#ai-stem-cancel-btn {
+  display: none;
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .07);
+  color: rgba(255, 255, 255, .62);
+  font: 14px/19px var(--font-sans);
+  cursor: pointer
+}
+
+.singing-control.ai-stem-running #ai-stem-cancel-btn {
+  display: block
+}
+
+.ai-stem-progress {
+  display: none;
+  height: 2px;
+  margin: -2px 0 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .07)
+}
+
+.singing-control.ai-stem-running .ai-stem-progress {
+  display: block
+}
+
+.ai-stem-progress-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--fc-accent);
+  transition: width .2s ease
+}
+
 .singing-hint {
   margin-top: 8px;
   font-size: 9.5px;
@@ -6151,7 +6236,7 @@ body:not(.controls-visible) .lyric-timing-control::before,
 }
 
 #singing-control .volume-popover {
-  min-width: 196px
+  min-width: 228px
 }
 
 .mini-queue-popover {

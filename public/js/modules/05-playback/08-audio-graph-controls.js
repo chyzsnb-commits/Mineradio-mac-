@@ -1,9 +1,11 @@
 // ============================================================
 function audioGraphHealthy() {
-  return !!(audio && audioReady && audioCtx && audioCtx.state !== 'closed' && source && analyser && beatAnalyser && (gainNode || analysisSinkNode));
+  var aiHealthy = !(typeof aiStemPlaybackActive === 'function' && aiStemPlaybackActive())
+    || !!(aiStemVocalSource && aiStemMixNode && aiStemAccompanimentGain && aiStemVocalGain);
+  return !!(audio && audioReady && audioCtx && audioCtx.state !== 'closed' && source && analyser && beatAnalyser && (gainNode || analysisSinkNode) && aiHealthy);
 }
 function disconnectAudioGraphNodes(keepSource) {
-  [source, analyser, beatAnalyser, gainNode, analysisSinkNode].forEach(function (node) {
+  [source, aiStemVocalSource, aiStemMixNode, aiStemAccompanimentGain, aiStemVocalGain, analyser, beatAnalyser, gainNode, analysisSinkNode].forEach(function (node) {
     if (!node) return;
     try { node.disconnect(); } catch (e) { }
   });
@@ -20,6 +22,9 @@ function disconnectAudioGraphNodes(keepSource) {
   beatAnalyser = null;
   gainNode = null;
   analysisSinkNode = null;
+  aiStemMixNode = null;
+  aiStemAccompanimentGain = null;
+  aiStemVocalGain = null;
   audioReady = false;
 }
 function restoreMediaTimeWhenReady(media, seconds) {
@@ -70,6 +75,9 @@ function replaceAudioElementForGraphRecovery(reason) {
 }
 function resetPlaybackAudioGraphForSourceSwitch(reason) {
   if (!audio) return;
+  if (typeof aiStemPlaybackActive === 'function' && aiStemPlaybackActive() && String(reason || '').indexOf('ai-stem-') !== 0) {
+    deactivateAiStemPlayback({ restoreOriginal: false, reason: reason || 'track-switch' });
+  }
   var sourceUsesCapture = !!(source && source.__mineradioUsesCapture);
   disconnectAudioGraphNodes(!sourceUsesCapture);
   if (sourceUsesCapture) audio.__mineradioMediaSourceBound = false;
@@ -281,6 +289,7 @@ function buildVocalCutChain(ctx) {
   return buildVocalCutChainBiquad(ctx);
 }
 function singingVocalProcessingNeeded(vocalLevel, accompanimentLevel) {
+  if (typeof aiStemPlaybackActive === 'function' && aiStemPlaybackActive()) return false;
   var vocal = arguments.length ? Number(vocalLevel) : Number(singingVocalLevel);
   var accompaniment = arguments.length > 1
     ? Number(accompanimentLevel)
@@ -359,7 +368,10 @@ function initAudio() {
   analyser.smoothingTimeConstant = 0.58;
   beatAnalyser.fftSize = BEAT_FFT_SIZE;
   beatAnalyser.smoothingTimeConstant = 0.10;
-  source.connect(beatAnalyser);  // beatAnalyser 始终读全混音,节拍更稳
+  var aiStemGraphConnected = false;
+  if (typeof connectAiStemPlaybackGraph === 'function' && !sourceUsesCapture) {
+    aiStemGraphConnected = connectAiStemPlaybackGraph(audioCtx, source, analyser, beatAnalyser);
+  }
   // 唱歌模式麦克风:重建 micSource,提亮后接进“只分析”的 beatAnalyser —— 粒子/节拍跟你嗓音动,
   // 且 beatAnalyser 是死端(不接 destination),麦克风绝不进扬声器=不啸叫。_voxAnalyser 由 voxel-echo 侧再挂一份。
   micVisualNode = null;
@@ -376,7 +388,10 @@ function initAudio() {
   }
   // 原唱 100% 时直连，完全绕过 Worklet；低于 100% 才建立去人声链。
   // 捕获流(mono 回退)仍不做去人声。麦克风不进输出链，只驱动分析器。
-  connectSingingPlaybackGraph(audioCtx, source, analyser, sourceUsesCapture);
+  if (!aiStemGraphConnected) {
+    source.connect(beatAnalyser);  // 实时模式保持原全混音节拍分析
+    connectSingingPlaybackGraph(audioCtx, source, analyser, sourceUsesCapture);
+  }
   if (gainNode) {
     analyser.connect(gainNode);
     gainNode.connect(audioCtx.destination);
@@ -577,6 +592,9 @@ function writeAudioOutputGain(value) {
   if (audio) {
     audio.muted = false;
     audio.volume = branchValue;
+  }
+  if (typeof aiStemVocalAudio !== 'undefined' && aiStemVocalAudio) {
+    try { aiStemVocalAudio.muted = false; aiStemVocalAudio.volume = branchValue; } catch (e) {}
   }
   if (gainNode && audioCtx) {
     try {
@@ -851,6 +869,9 @@ function applyPlaybackSpeedToAudio() {
   // preservesPitch 在 Chromium 默认 true(变速不变调),这里显式置一遍更稳
   try { audio.preservesPitch = true; audio.mozPreservesPitch = true; audio.webkitPreservesPitch = true; } catch (e) {}
   try { audio.playbackRate = playbackSpeed; } catch (e) {}
+  if (typeof aiStemVocalAudio !== 'undefined' && aiStemVocalAudio) {
+    try { aiStemVocalAudio.playbackRate = playbackSpeed; } catch (e) {}
+  }
 }
 function setPlaybackSpeed(v, opts) {
   v = Math.min(3, Math.max(0.5, parseFloat(v) || 1));
@@ -897,6 +918,12 @@ function setSingingAccompanimentLevel(level, opts) {
   level = Math.max(0, Math.min(1, parseFloat(level)));
   if (isNaN(level)) level = 1;
   singingAccompanimentLevel = level;
+  if (typeof aiStemPlaybackActive === 'function' && aiStemPlaybackActive()) {
+    applyAiStemLevels();
+    syncSingingVocalUi();
+    if (!(opts && opts.silent)) showToast('伴奏 ' + Math.round(level * 100) + '%');
+    return;
+  }
   var needsProcessing = singingVocalProcessingNeeded();
   if (singingModeEnabled && wasProcessing !== needsProcessing) {
     rebuildAudioGraphNow();
@@ -914,6 +941,12 @@ function setSingingVocalLevel(level, opts) {
   level = Math.max(0, Math.min(1, parseFloat(level)));
   if (isNaN(level)) level = 0;
   singingVocalLevel = level;
+  if (typeof aiStemPlaybackActive === 'function' && aiStemPlaybackActive()) {
+    applyAiStemLevels();
+    syncSingingVocalUi();
+    if (!(opts && opts.silent)) showToast('人声 ' + Math.round(level * 100) + '%');
+    return;
+  }
   var needsProcessing = singingVocalProcessingNeeded();
   if (singingModeEnabled && wasProcessing !== needsProcessing) {
     rebuildAudioGraphNow();
@@ -1050,6 +1083,7 @@ function setSingingMode(on) {
     ensureSingingLyrics(true);
     showToast('唱歌模式:伴奏人声混音已开启,正在开麦…');
   } else {
+    if (typeof setAiStemMode === 'function') setAiStemMode('realtime', { silent: true });
     stopSingingMic();
     ensureSingingLyrics(false);
     showToast('唱歌模式:已关闭');
@@ -1120,6 +1154,7 @@ function bindVolumeControls() {
   }
   syncSpeedSliderUi();
   syncSingingVocalUi();
+  if (typeof bindAiStemControls === 'function') bindAiStemControls();
   if (btn) {
     btn.addEventListener('dblclick', function (e) { e.stopPropagation(); toggleMute(); });
   }

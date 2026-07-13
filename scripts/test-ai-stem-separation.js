@@ -1,6 +1,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const vm = require('node:vm');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -16,6 +17,22 @@ const { serveAiStemRequest } = require('../desktop/ai-stem-cache-server');
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-ai-stems-'));
+}
+
+function read(relativePath) {
+  return fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
+}
+
+function readFunction(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `缺少 ${name}`);
+  const bodyStart = source.indexOf('{', start);
+  let depth = 0;
+  for (let i = bodyStart; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}' && --depth === 0) return source.slice(start, i + 1);
+  }
+  assert.fail(`${name} 函数未闭合`);
 }
 
 test('歌曲键生成稳定且不可注入路径的缓存 ID', () => {
@@ -179,4 +196,76 @@ test('Electron 暴露 AI 分轨开始、状态、取消和进度通道', () => {
   assert.match(preload, /onAiStemProgress:/);
   assert.match(server, /pn === '\/api\/ai-stem'/);
   assert.match(server, /serveAiStemRequest/);
+});
+
+test('唱歌面板提供对称的实时与 AI 模式、进度和取消按钮', () => {
+  const html = read('public/index.html');
+  const css = read('public/css/index.css');
+  assert.match(html, /id="singing-separation-mode"[\s\S]*data-singing-separation="realtime"[^>]*>实时<[\s\S]*data-singing-separation="ai"[^>]*>AI</);
+  assert.match(html, /id="ai-stem-progress"[\s\S]*id="ai-stem-progress-fill"/);
+  assert.match(html, /id="ai-stem-cancel-btn"[^>]*aria-label="取消 AI 分轨"/);
+  assert.match(css, /\.singing-separation-mode\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(css, /\.ai-stem-progress-fill/);
+});
+
+test('AI 双轨直接使用伴奏和人声音量，不经过实时 Worklet', () => {
+  const aiSource = read('public/js/modules/05-playback/09-ai-stem-playback.js');
+  const audioGraph = read('public/js/modules/05-playback/08-audio-graph-controls.js');
+  const sandbox = {
+    singingAccompanimentLevel: 0.35,
+    singingVocalLevel: 0.82,
+    aiStemAccompanimentGain: { gain: { value: 0 } },
+    aiStemVocalGain: { gain: { value: 0 } },
+  };
+  vm.runInNewContext(`${readFunction(aiSource, 'applyAiStemLevels')}; applied = applyAiStemLevels();`, sandbox);
+  assert.equal(sandbox.applied, true);
+  assert.equal(sandbox.aiStemAccompanimentGain.gain.value, 0.35);
+  assert.equal(sandbox.aiStemVocalGain.gain.value, 0.82);
+  assert.match(audioGraph, /if \(typeof aiStemPlaybackActive === 'function' && aiStemPlaybackActive\(\)\) return false;/);
+  assert.match(audioGraph, /connectAiStemPlaybackGraph\(audioCtx, source, analyser, beatAnalyser\)/);
+});
+
+test('AI 人声轨跟随主轨播放、暂停、跳转和倍速', async () => {
+  const aiSource = read('public/js/modules/05-playback/09-ai-stem-playback.js');
+  const calls = [];
+  const main = { currentTime: 28.4, playbackRate: 1.25, paused: false, ended: false };
+  const vocal = {
+    currentTime: 27.9,
+    playbackRate: 1,
+    paused: true,
+    ended: false,
+    play() { calls.push('play'); this.paused = false; return Promise.resolve(); },
+    pause() { calls.push('pause'); this.paused = true; },
+  };
+  const sandbox = { Promise };
+  vm.runInNewContext(`${readFunction(aiSource, 'syncAiStemSecondaryForEvent')};`, sandbox);
+  sandbox.syncAiStemSecondaryForEvent('play', main, vocal);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(vocal.currentTime, main.currentTime);
+  assert.equal(vocal.playbackRate, 1.25);
+  assert.deepEqual(calls, ['play']);
+
+  main.currentTime = 64.2;
+  sandbox.syncAiStemSecondaryForEvent('seeked', main, vocal);
+  assert.equal(vocal.currentTime, 64.2);
+  main.playbackRate = 0.8;
+  sandbox.syncAiStemSecondaryForEvent('ratechange', main, vocal);
+  assert.equal(vocal.playbackRate, 0.8);
+  sandbox.syncAiStemSecondaryForEvent('pause', main, vocal);
+  assert.deepEqual(calls, ['play', 'pause']);
+});
+
+test('AI 模式在播放时请求当前曲目，切歌会释放旧人声轨', () => {
+  const aiSource = read('public/js/modules/05-playback/09-ai-stem-playback.js');
+  const playbackCore = read('public/js/modules/05-playback/12-playback-switch-core.js');
+  const audioGraph = read('public/js/modules/05-playback/08-audio-graph-controls.js');
+  const stores = read('public/js/modules/00-state/00-core-stores.js');
+  const loader = read('public/js/index-loader.js');
+  assert.match(aiSource, /function requestAiStemForCurrentTrack\(/);
+  assert.match(aiSource, /function activateAiStemPlayback\(/);
+  assert.match(aiSource, /function deactivateAiStemPlayback\(/);
+  assert.match(playbackCore, /requestAiStemForCurrentTrack/);
+  assert.match(audioGraph, /deactivateAiStemPlayback\(\{ restoreOriginal: false, reason: reason \|\| 'track-switch' \}\)/);
+  assert.match(stores, /singingSeparationMode\s*=\s*'realtime'/);
+  assert.match(loader, /js\/modules\/05-playback\/09-ai-stem-playback\.js/);
 });

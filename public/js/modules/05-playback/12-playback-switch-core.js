@@ -30,6 +30,7 @@ function syncPlaybackStateFromAudioEvent(reason) {
       && singingVocalProcessingNeeded()
       && typeof prepareSingingVocalProcessor === 'function') prepareSingingVocalProcessor();
   if (typeof syncSingingMicPowerState === 'function') syncSingingMicPowerState({ silent: true, reason: reason });
+  if (isPlaying && typeof requestAiStemForCurrentTrack === 'function') requestAiStemForCurrentTrack();
   forcePlaybackControlsInteractive();
 }
 
