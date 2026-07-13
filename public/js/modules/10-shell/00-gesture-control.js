@@ -221,17 +221,97 @@ var gestureEngineMode = '';
 var _hpCanvas = null, _hpCtx = null, _hpInFlight = false, _hpSentAt = 0, _hpW = 256, _hpH = 192;
 var gestureLastInferAt = 0;
 var _hpBridge = (typeof window !== 'undefined' && window.desktopWindow && typeof window.desktopWindow.handposeStart === 'function') ? window.desktopWindow : null;
+var gestureWorker = null, gestureWorkerReady = false, gestureWorkerInFlight = false, gestureWorkerSentAt = 0;
+var GESTURE_WORKER_W = 256, GESTURE_WORKER_H = 192, GESTURE_INFER_INTERVAL = 32;
+
+function updateGestureInferenceStats(elapsed, tNow) {
+  gestureDetectAvgMs += (Math.min(250, elapsed) - gestureDetectAvgMs) * 0.08;
+  if (gestureInferWinStart === 0) gestureInferWinStart = tNow;
+  gestureInferWinCount++;
+  if (tNow - gestureInferWinStart >= 500) {
+    gestureInferRate = gestureInferWinCount * 1000 / (tNow - gestureInferWinStart);
+    gestureInferWinStart = tNow;
+    gestureInferWinCount = 0;
+  }
+  gestureStats.avgMs = gestureDetectAvgMs;
+  gestureStats.ratePerSec = gestureInferRate;
+}
+
+function stopGestureWorker() {
+  if (gestureWorker) {
+    try { gestureWorker.postMessage({ type: 'stop' }); } catch (e) { }
+    try { gestureWorker.terminate(); } catch (e) { }
+  }
+  gestureWorker = null;
+  gestureWorkerReady = false;
+  gestureWorkerInFlight = false;
+}
+
+function ensureGestureWorker() {
+  if (gestureWorker && gestureWorkerReady) return Promise.resolve();
+  stopGestureWorker();
+  return new Promise(function (resolve, reject) {
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      stopGestureWorker();
+      reject(new Error('GESTURE_WORKER_START_TIMEOUT'));
+    }, 12000);
+    try {
+      gestureWorker = new Worker(new URL('js/gesture-worker.js', location.href).href, { type: 'module' });
+    } catch (e) {
+      clearTimeout(timer);
+      reject(e);
+      return;
+    }
+    gestureWorker.onmessage = function (event) {
+      var msg = event.data || {};
+      if (msg.type === 'ready') {
+        gestureWorkerReady = true;
+        gestureStats.delegate = msg.delegate || 'GPU';
+        gestureStats.transport = 'worker';
+        if (!settled) { settled = true; clearTimeout(timer); resolve(); }
+        return;
+      }
+      if (msg.type === 'init-error') {
+        if (!settled) { settled = true; clearTimeout(timer); stopGestureWorker(); reject(new Error(msg.message || 'GESTURE_WORKER_INIT_ERROR')); }
+        return;
+      }
+      if (msg.type === 'result') {
+        gestureWorkerInFlight = false;
+        if (!gestureActive || gestureEngineMode !== 'worker') return;
+        var tNow = performance.now();
+        updateGestureInferenceStats(tNow - gestureWorkerSentAt, tNow);
+        handleGestureResults({ landmarks: msg.landmarks || [] }, tNow);
+        return;
+      }
+      if (msg.type === 'detect-error') gestureWorkerInFlight = false;
+    };
+    gestureWorker.onerror = function (event) {
+      gestureWorkerInFlight = false;
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        stopGestureWorker();
+        reject(new Error((event && event.message) || 'GESTURE_WORKER_ERROR'));
+      }
+    };
+    gestureWorker.postMessage({
+      type: 'init',
+      vendorBase: new URL(GESTURE_MP_LOCAL + '/', location.href).href,
+      delegates: ['GPU', 'CPU'],
+      numHands: 2,
+    });
+  });
+}
 
 // 原生结果回调:把助手回的 [[x,y,c]×21] 转成 {x,y,z} 喂现有 handleGestureResults(下游零改动)
 function onNativeHandpose(hands) {
   _hpInFlight = false;
   if (!gestureActive || gestureEngineMode !== 'native') return;
   var tNow = performance.now();
-  gestureDetectAvgMs += (Math.min(50, tNow - _hpSentAt) - gestureDetectAvgMs) * 0.08;   // 端到端往返耗时(HUD 显示)
-  if (gestureInferWinStart === 0) gestureInferWinStart = tNow;
-  gestureInferWinCount++;
-  if (tNow - gestureInferWinStart >= 500) { gestureInferRate = gestureInferWinCount * 1000 / (tNow - gestureInferWinStart); gestureInferWinStart = tNow; gestureInferWinCount = 0; }
-  gestureStats.avgMs = gestureDetectAvgMs; gestureStats.ratePerSec = gestureInferRate;
+  updateGestureInferenceStats(tNow - _hpSentAt, tNow);
   var landmarks = [];
   for (var i = 0; i < hands.length && i < 2; i++) {
     var h = hands[i]; if (!h || h.length < 21) continue;
@@ -242,8 +322,13 @@ function onNativeHandpose(hands) {
   handleGestureResults({ landmarks: landmarks }, tNow);
 }
 
-// 引擎选择:mac(有原生桥接)优先 Vision/ANE;失败/非桌面回退 MediaPipe WASM
+// 引擎选择:Worker GPU 实测延迟最低且不阻塞渲染主线程;失败后依次回退 Vision/ANE 和主线程 MediaPipe。
 async function ensureGestureEngine() {
+  try {
+    await ensureGestureWorker();
+    gestureEngineMode = 'worker';
+    return;
+  } catch (e) { console.warn('[Handpose] Worker 启动失败, 回退原生:', e); }
   if (_hpBridge) {
     try {
       var r = await _hpBridge.handposeStart();
@@ -268,10 +353,8 @@ async function startGestureControl() {
   var gen = ++gestureStartGen;
   showToast('正在加载手势识别…');
   try {
-    await ensureGestureEngine();
-    if (gen !== gestureStartGen || fx.cam !== 'gesture') { abortGestureStart(); return; }
     gestureStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60, max: 60 } },
+      video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30, max: 30 } },
       audio: false,
     });
     if (gen !== gestureStartGen || fx.cam !== 'gesture') { abortGestureStart(); return; }
@@ -281,8 +364,22 @@ async function startGestureControl() {
     gestureVideo.style.cssText = 'position:fixed;left:-9999px;top:0;width:4px;height:3px;opacity:0;pointer-events:none';
     gestureVideo.srcObject = gestureStream;
     document.body.appendChild(gestureVideo);
-    await gestureVideo.play();
+    await Promise.race([
+      gestureVideo.play(),
+      new Promise(function (_resolve, reject) {
+        setTimeout(function () { reject(new Error('GESTURE_CAMERA_FRAME_TIMEOUT')); }, 6000);
+      }),
+    ]);
     if (gen !== gestureStartGen || fx.cam !== 'gesture') { abortGestureStart(); return; }
+    await ensureGestureEngine();
+    if (gen !== gestureStartGen || fx.cam !== 'gesture') { abortGestureStart(); return; }
+    gestureDetectAvgMs = 8;
+    gestureInferWinStart = 0;
+    gestureInferWinCount = 0;
+    gestureInferRate = 0;
+    gestureStats.avgMs = 8;
+    gestureStats.ratePerSec = 0;
+    gestureLastInferAt = 0;
     gestureActive = true;
     gestureLastVideoTs = 0;
     gesturePumpFrame();
@@ -299,6 +396,9 @@ async function startGestureControl() {
     try { if (gestureStream) gestureStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e2) { }
     try { if (gestureVideo) gestureVideo.remove(); } catch (e2) { }
     gestureVideo = null; gestureStream = null;
+    stopGestureWorker();
+    if (_hpBridge) { try { _hpBridge.handposeStop(); } catch (e2) { } }
+    _hpInFlight = false; gestureEngineMode = '';
     showToast('手势启动失败 (需要摄像头权限)');
     fx.cam = 'off';
     document.querySelectorAll('#cam-seg button').forEach(function (b) { b.classList.toggle('active', b.dataset.cam === 'off'); });
@@ -311,6 +411,7 @@ function stopGestureControl() {
   if (!gestureActive && !gestureStarting) return;
   gestureActive = false;
   if (_hpBridge) { try { _hpBridge.handposeStop(); } catch (e) { } }   // 停原生助手进程
+  stopGestureWorker();
   _hpInFlight = false; gestureEngineMode = '';
   try { if (gestureVideo && gestureRvfcId && gestureVideo.cancelVideoFrameCallback) gestureVideo.cancelVideoFrameCallback(gestureRvfcId); } catch (e) { }
   if (gestureRafId) { cancelAnimationFrame(gestureRafId); gestureRafId = 0; }
@@ -362,6 +463,30 @@ function gesturePumpFrame() {
     gestureRafId = requestAnimationFrame(gesturePumpFrame);
   }
   if (gestureVideo.readyState < 2) return;
+  // Worker 模式:缩放后的 ImageBitmap 直接转移所有权,不做 canvas GPU→CPU 回读;单帧背压避免排队增加延迟。
+  if (gestureEngineMode === 'worker') {
+    if (gestureWorkerInFlight || !gestureWorker || !gestureWorkerReady) return;
+    var wNow = performance.now();
+    if (wNow - gestureLastInferAt < GESTURE_INFER_INTERVAL) return;
+    gestureLastInferAt = wNow;
+    gestureWorkerInFlight = true;
+    gestureWorkerSentAt = wNow;
+    var wTs = Math.max(wNow, gestureLastVideoTs + 0.01);
+    gestureLastVideoTs = wTs;
+    createImageBitmap(gestureVideo, {
+      resizeWidth: GESTURE_WORKER_W,
+      resizeHeight: GESTURE_WORKER_H,
+      resizeQuality: 'low',
+    }).then(function (bitmap) {
+      if (!gestureActive || gestureEngineMode !== 'worker' || !gestureWorker) {
+        gestureWorkerInFlight = false;
+        try { bitmap.close(); } catch (e) { }
+        return;
+      }
+      gestureWorker.postMessage({ type: 'frame', bitmap: bitmap, ts: wTs }, [bitmap]);
+    }).catch(function () { gestureWorkerInFlight = false; });
+    return;
+  }
   // 原生 Vision/ANE 模式:抽 256×192 RGBA 帧送助手(in-flight 背压:上一帧结果回来前不发下一帧);推理在 ANE,不碰 GPU
   if (gestureEngineMode === 'native') {
     if (_hpInFlight || !_hpBridge) return;

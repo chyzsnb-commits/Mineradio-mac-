@@ -11,6 +11,14 @@
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
 - **网络注意**：本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI）正常。**用 gh API 推送代码，不要用 git push**。
 
+## 当前进行中：手势延迟与卡顿修复
+
+- 分支：`codex/fix-gesture-latency`。
+- 根因：Swift/Vision 路径每帧经过 Renderer canvas 回读、IPC RGBA 传输和 CoreImage/Metal 转换，实测约 80–170ms、约 6 次/秒，开启后 GPU 进程增量约 47 个百分点。
+- 修复：GPU HandLandmarker 移到 Worker，使用 256×192 `ImageBitmap` 转移和单帧背压；保留双手与原生/主线程降级路径。
+- 修复后持续压测：平均推理 18.8ms、端到端 19.4ms、26.5 次/秒；GPU/Renderer 进程增量分别约 5.1 / 6.4 个百分点。
+- 当前机器在反复强制停止摄像头测试后出现硬件首帧不返回；新代码已验证 6 秒超时会完整恢复。合并前仍需由用户正常重开应用后做真实手部交互体验确认。
+
 ## 用户偏好（重要）
 
 - 默认中文沟通，语气直接、偏实干。**希望主动完成任务，不要只给方案**。
