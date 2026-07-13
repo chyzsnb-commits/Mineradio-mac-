@@ -12,6 +12,7 @@ const { execFile, spawn } = require('child_process');
 const systemMemory = process.platform === 'win32'
   ? require('./system-memory')
   : require('./system-memory-mac');
+const { readSystemGpuUsage } = require('./gpu-usage');
 // macOS Touch Bar 播放控制（2016-2019 Intel MBP）。无 Touch Bar 的机器安全 no-op。
 const touchbar = require('./touchbar');
 const { extractKugouAuth } = require('../kugou-api');
@@ -3203,10 +3204,10 @@ ipcMain.handle('mineradio-get-gpu-diagnostics', () => {
   return getGpuDiagnostics();
 });
 
-// 负载 HUD 设备指标:系统/播放器 CPU + 系统/播放器内存(HUD 可见时渲染层每 2s 拉一次)
+// 负载 HUD 设备指标:CPU + macOS 系统 GPU + 内存(HUD 可见时渲染层每 2s 拉一次)
 let __deviceStatsCpuPrev = null; // os.cpus() 上次累计采样,用于系统 CPU 差分
 ipcMain.handle('mineradio-device-stats', async () => {
-  const out = { sysCpuPct: null, appCpuPct: null, memUsedMB: null, memTotalMB: null, memFreeMB: null, appMemMB: null };
+  const out = { sysCpuPct: null, appCpuPct: null, sysGpuPct: null, memUsedMB: null, memTotalMB: null, memFreeMB: null, appMemMB: null };
   // 系统 CPU%:os.cpus() 两次采样差分(首次无上次样本 → 返回 null,渲染层显示 --)
   try {
     const cpus = os.cpus() || [];
@@ -3239,6 +3240,9 @@ ipcMain.handle('mineradio-device-stats', async () => {
     const cores = (os.cpus() || []).length || 1;
     out.appCpuPct = Math.max(0, Math.round(cpuSum / cores));
     out.appMemMB = Math.round(wsKB / 1024); // workingSetSize 单位 KB → MB
+  } catch (e) {}
+  try {
+    out.sysGpuPct = await readSystemGpuUsage();
   } catch (e) {}
   // 系统内存:复用 systemMemory(总量/已用/可用 MB,与内存压缩面板同源)
   try {

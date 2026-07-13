@@ -297,10 +297,11 @@ function updatePerfHud() {
   var bufLabel = Math.round(innerWidth * pr) + ' × ' + Math.round(innerHeight * pr);
   var scaleLabel = (typeof renderScaleResLabel === 'function') ? renderScaleResLabel() : (innerWidth + '×' + innerHeight);
   var resLabel = bufLabel + (bufLabel !== scaleLabel ? '  (滑块 ' + scaleLabel + ')' : '');
-  // 「状态」行换成真实设备指标:系统/播放器 CPU + 系统/播放器内存;数据来自主进程 device-stats(渲染层每 2s 拉一次,缓存于 _devStats)
+  // 真实设备指标:系统/播放器 CPU + macOS 系统 GPU + 系统/播放器内存;渲染层每 2s 拉一次
   var d = (_devStats && typeof _devStats === 'object') ? _devStats : null;
   var fmtPct = function (v) { return (typeof v === 'number' && isFinite(v)) ? Math.round(v) + '%' : '--'; };
   var cpuLine = '系统 ' + fmtPct(d ? d.sysCpuPct : null) + ' · 播放器 ' + fmtPct(d ? d.appCpuPct : null);
+  var gpuLine = '系统 ' + fmtPct(d ? d.sysGpuPct : null);
   var memPct = (d && typeof d.memUsedMB === 'number' && typeof d.memTotalMB === 'number' && d.memTotalMB > 0)
     ? Math.round(d.memUsedMB * 100 / d.memTotalMB) + '%' : '--';
   var freeGB = (d && typeof d.memFreeMB === 'number' && isFinite(d.memFreeMB)) ? (d.memFreeMB / 1024).toFixed(1) + ' GB' : '--';
@@ -334,6 +335,7 @@ function updatePerfHud() {
     '<div class="ph-r"><span>帧率</span><b>' + fps + ' FPS</b></div>' +
     '<div class="ph-r"><span>渲染分辨率</span><b>' + resLabel + '</b></div>' +
     '<div class="ph-r"><span>CPU</span><b>' + cpuLine + '</b></div>' +
+    '<div class="ph-r"><span>显卡</span><b>' + gpuLine + '</b></div>' +
     adaptRow +
     '<div class="ph-r"><span>内存</span><b>' + memLine + '</b></div>' +
     gestureRow +
