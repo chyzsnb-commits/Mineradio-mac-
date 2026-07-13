@@ -812,6 +812,95 @@ function scheduleStageLyricFullTrackWarmup(reason, delay) {
   return true;
 }
 
+function applyLyricMotionProfileToMaterial(material, profile) {
+  if (!material || !material.uniforms || !profile) return false;
+  var values = {
+    uSweep: Number(profile.sweep) || 0,
+    uShimmer: Number(profile.shimmer) || 0,
+    uGlitch: Number(profile.glitch) || 0,
+    uGlitchSlice: Number(profile.glitchSlice) || 0,
+    uGlitchChroma: Number(profile.glitchChroma) || 0,
+    uGlitchRate: isFinite(Number(profile.glitchRate)) ? Number(profile.glitchRate) : 1,
+    uEdgeBoost: isFinite(Number(profile.edgeBoost)) ? Number(profile.edgeBoost) : 1,
+    uGlitchBurst: 0
+  };
+  var changed = false;
+  Object.keys(values).forEach(function (key) {
+    if (!material.uniforms[key]) return;
+    material.uniforms[key].value = values[key];
+    changed = true;
+  });
+  return changed;
+}
+
+function applyLyricMotionProfileToMesh(mesh, profile) {
+  if (!mesh || !mesh.userData || !profile) return false;
+  mesh.userData.motionStyle = profile.style;
+  mesh.userData.glitchBurst = 0;
+  mesh.userData.glitchHold = 0;
+  mesh.userData.glitchNextAt = 0;
+  mesh.userData.glitchLastBeatAt = -10;
+  var data = mesh.userData.lyric || {};
+  var materials = [];
+  function addMaterial(material) {
+    if (material && materials.indexOf(material) < 0) materials.push(material);
+  }
+  addMaterial(data.textMat);
+  addMaterial(data.contextMat);
+  if (data.rowLayers && data.rowLayers.length) {
+    data.rowLayers.forEach(function (row) { if (row) addMaterial(row.mat); });
+  }
+  materials.forEach(function (material) { applyLyricMotionProfileToMaterial(material, profile); });
+  return true;
+}
+
+function applyStageLyricMotionStyleInPlace() {
+  var profile = lyricMotionProfile();
+  var meshes = [];
+  function addMesh(mesh) {
+    if (mesh && meshes.indexOf(mesh) < 0) meshes.push(mesh);
+  }
+  if (stageLyrics) {
+    addMesh(stageLyrics.current);
+    if (stageLyrics.outgoing && stageLyrics.outgoing.length) stageLyrics.outgoing.forEach(addMesh);
+    if (stageLyrics.parked) addMesh(stageLyrics.parked.mesh);
+  }
+  if (stageLyricPrewarm) addMesh(stageLyricPrewarm.mesh);
+  if (stageLyricSingleLinePrewarm && stageLyricSingleLinePrewarm.items) {
+    Object.keys(stageLyricSingleLinePrewarm.items).forEach(function (key) {
+      var item = stageLyricSingleLinePrewarm.items[key];
+      if (item) addMesh(item.mesh);
+    });
+  }
+  meshes.forEach(function (mesh) { applyLyricMotionProfileToMesh(mesh, profile); });
+  if (stageLyricPrewarm && stageLyricPrewarm.mesh && stageLyricPrewarm.mesh.userData && stageLyricPrewarm.mesh.userData.payload) {
+    stageLyricPrewarm.key = stageLyricPreparedKey(stageLyricPrewarm.mesh.userData.payload);
+  }
+  if (stageLyricSingleLinePrewarm && stageLyricSingleLinePrewarm.items) {
+    var nextItems = {};
+    var nextOrder = [];
+    Object.keys(stageLyricSingleLinePrewarm.items).forEach(function (oldKey) {
+      var item = stageLyricSingleLinePrewarm.items[oldKey];
+      if (!item) return;
+      if (item.timer && !item.mesh) {
+        clearTimeout(item.timer);
+        return;
+      }
+      var payload = item.payload || (item.mesh && item.mesh.userData && item.mesh.userData.payload);
+      var nextKey = payload ? stageLyricPreparedKey(payload) : oldKey;
+      if (!nextKey || nextItems[nextKey]) {
+        if (item.mesh) disposeLyricMesh(item.mesh);
+        return;
+      }
+      nextItems[nextKey] = item;
+      nextOrder.push(nextKey);
+    });
+    stageLyricSingleLinePrewarm.items = nextItems;
+    stageLyricSingleLinePrewarm.order = nextOrder;
+  }
+  return meshes.length;
+}
+
 function showStageLine(text, redrawOnly, options) {
   options = options || {};
   createLyricsParticles();

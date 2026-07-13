@@ -847,6 +847,59 @@ function toggleLyricGlitchCameraBind() {
   saveLyricLayout({ user: true, reason: 'lyricGlitchCameraBind' });
   showToast(fx.lyricGlitchCameraBind ? '故障歌词已跟随鼓点' : '故障歌词已取消鼓点跟随');
 }
+var stageLyricOptionRefreshFrame = 0;
+var stageLyricOptionApplyFrame = 0;
+var stageLyricOptionRefreshToken = 0;
+function cancelStageLyricOptionRefresh() {
+  if (stageLyricOptionRefreshFrame) cancelAnimationFrame(stageLyricOptionRefreshFrame);
+  if (stageLyricOptionApplyFrame) cancelAnimationFrame(stageLyricOptionApplyFrame);
+  stageLyricOptionRefreshFrame = 0;
+  stageLyricOptionApplyFrame = 0;
+}
+function flushStageLyricOptionRefresh(token) {
+  if (token !== stageLyricOptionRefreshToken) return false;
+  if (!stageLyrics || !stageLyrics.current || stageLyrics.currentIdx < 0 || !lyricsLines || !lyricsLines.length) return false;
+  var index = stageLyrics.currentIdx;
+  var progress = stageLyrics.current.userData ? (stageLyrics.current.userData.lastLyricProgress || 0) : 0;
+  var mode = normalizeLyricDisplayMode(fx && fx.lyricDisplayMode);
+  var payload = buildStageLyricDisplayPayload(index, mode === 'single' ? {} : { lightweightTrack: true });
+  if (!payload) return false;
+  stageLyrics.transitionLineStep = 0;
+  var displayed = false;
+  try {
+    displayed = showStageLine(payload, true);
+  } catch (err) {
+    console.warn('[Lyrics] option refresh failed', err);
+  }
+  if (!displayed) {
+    if (typeof scheduleStageLyricPrewarmForIndex === 'function') {
+      scheduleStageLyricPrewarmForIndex(index, payload.trackLightweight ? 'track-demand-light' : 'single-line-demand', 16);
+    }
+    return false;
+  }
+  updateLyricMeshProgress(stageLyrics.current, progress);
+  if (stageLyrics.current && stageLyrics.current.userData) stageLyrics.current.userData.age = 0.48;
+  if (payload.trackLightweight && typeof scheduleStageLyricFullTrackWarmup === 'function') {
+    scheduleStageLyricFullTrackWarmup('option-switch-upgrade', 120);
+  }
+  return true;
+}
+function scheduleStageLyricOptionRefresh() {
+  stageLyricOptionRefreshToken += 1;
+  cancelStageLyricOptionRefresh();
+  if (typeof clearStageLyricFullTrackWarmup === 'function') clearStageLyricFullTrackWarmup();
+  if (!stageLyrics || !stageLyrics.current || stageLyrics.currentIdx < 0 || !lyricsLines || !lyricsLines.length) return false;
+  var token = stageLyricOptionRefreshToken;
+  stageLyricOptionRefreshFrame = requestAnimationFrame(function () {
+    stageLyricOptionRefreshFrame = 0;
+    if (token !== stageLyricOptionRefreshToken) return;
+    stageLyricOptionApplyFrame = requestAnimationFrame(function () {
+      stageLyricOptionApplyFrame = 0;
+      flushStageLyricOptionRefresh(token);
+    });
+  });
+  return true;
+}
 function refreshStageLyricDisplayMode() {
   var progress = stageLyrics && stageLyrics.current && stageLyrics.current.userData
     ? (stageLyrics.current.userData.lastLyricProgress || 0)
@@ -868,23 +921,30 @@ function refreshStageLyricVisualOptions() {
   pushDesktopLyricsState(true);
 }
 function setLyricDisplayMode(mode) {
-  fx.lyricDisplayMode = normalizeLyricDisplayMode(mode);
+  var nextMode = normalizeLyricDisplayMode(mode);
+  if (normalizeLyricDisplayMode(fx && fx.lyricDisplayMode) === nextMode) return;
+  fx.lyricDisplayMode = nextMode;
   updateLyricDisplayModeControls();
-  refreshStageLyricDisplayMode();
+  scheduleStageLyricOptionRefresh();
   saveLyricLayout({ user: true, reason: 'lyricDisplayMode' });
   showToast('歌词行数已切换');
 }
 function setLyricTranslationMode(mode) {
-  fx.lyricTranslationMode = normalizeLyricTranslationMode(mode);
+  var nextMode = normalizeLyricTranslationMode(mode);
+  if (normalizeLyricTranslationMode(fx && fx.lyricTranslationMode) === nextMode) return;
+  fx.lyricTranslationMode = nextMode;
   updateLyricTranslationModeControls();
-  refreshStageLyricDisplayMode();
+  scheduleStageLyricOptionRefresh();
   saveLyricLayout({ user: true, reason: 'lyricTranslationMode' });
   showToast('双语翻译已切换');
 }
 function setLyricMotionStyle(style) {
-  fx.lyricMotionStyle = normalizeLyricMotionStyle(style);
+  var nextStyle = normalizeLyricMotionStyle(style);
+  if (normalizeLyricMotionStyle(fx && fx.lyricMotionStyle) === nextStyle) return;
+  fx.lyricMotionStyle = nextStyle;
   updateLyricMotionStyleControls();
-  refreshStageLyricDisplayMode();
+  if (typeof applyStageLyricMotionStyleInPlace === 'function') applyStageLyricMotionStyleInPlace();
+  else refreshStageLyricDisplayMode();
   saveLyricLayout({ user: true, reason: 'lyricMotionStyle' });
   showToast('歌词动画已切换');
 }
