@@ -7,7 +7,7 @@
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
 - **main 最新 commit**：`a2d8145`（PR #26 已合并：唱歌模式、倍速、防爆音、歌架与卡死修复）。
-- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）→ PR #34（最近播放滚动降载与 GPU 文案）→ PR #36（播放定时器降载）→ `codex/ai-stem-separation`（本地 AI 分轨）均为叠加关系；AI 分轨分支基于 #36，设计存档 `a6f31ca`、主进程存档 `2ebf1cc` / `2babc4c`、播放与 UI 存档 `987b17e`、竞态修复存档 `1b3e3a5` / `f4b8b7c`。
+- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）→ PR #34（最近播放滚动降载与 GPU 文案）→ PR #36（播放定时器降载）→ PR #37（本地 AI 分轨）均为叠加关系；PR #37 分支 `codex/ai-stem-separation` 基于 #36，设计存档 `a6f31ca`、主进程存档 `2ebf1cc` / `2babc4c`、播放与 UI 存档 `987b17e`、竞态修复存档 `1b3e3a5` / `f4b8b7c`。
 - **协作者最新工作**：PR #28，分支 `codex/fix-gesture-latency`，优化双手手势延迟与 GPU 负载；当前仍待合并，本分支未修改其手势文件。
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
@@ -195,7 +195,7 @@
 - 未验证：真实歌曲连续播放时的长期温度变化，以及同一专辑两首歌间的真实无缝切歌听感。
 
 **2026-07-13：Codex 增加本地 AI 人声 / 伴奏分轨。**
-- 分支：`codex/ai-stem-separation`，基于 PR #36；设计 commit（代码存档点）`a6f31ca`，核心 commit `2ebf1cc` / `2babc4c` / `987b17e`，审查修复 commit `1b3e3a5` / `f4b8b7c`。
+- PR：#37；分支：`codex/ai-stem-separation`，基于 PR #36；设计 commit（代码存档点）`a6f31ca`，核心 commit `2ebf1cc` / `2babc4c` / `987b17e`，审查修复 commit `1b3e3a5` / `f4b8b7c`。
 - 根因：原实时滤镜只能按左右声道位置判断，无法区分同样位于中间的人声和鼓点；继续调参无法解决“人声轨仍有鼓点”。
 - 改动：唱歌面板增加等宽“实时 / AI”；AI 模式调用本地 `audio-separator 0.44.3` 和 UVR HQ3 模型，分轨期间原曲继续播放，完成后在当前时间切换到两条 FLAC 音轨。两条滑块直接控制伴奏和人声音量。
 - 缓存与隐私：结果保存到 Electron `userData/ai-stems`，同曲不重复计算；歌曲和模型不上传任何第三方。切歌、取消和退出会终止 AI 子进程。
