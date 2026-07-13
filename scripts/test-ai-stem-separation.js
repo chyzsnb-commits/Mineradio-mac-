@@ -299,6 +299,21 @@ test('AI 人声轨跟随主轨播放、暂停、跳转和倍速', async () => {
   assert.deepEqual(calls, ['play', 'pause']);
 });
 
+test('切歌时优先使用新设置的音频代理地址', () => {
+  const aiSource = read('public/js/modules/05-playback/09-ai-stem-playback.js');
+  const sandbox = {
+    URL,
+    window: { location: { href: 'http://127.0.0.1:3000/' } },
+  };
+  vm.runInNewContext(`${readFunction(aiSource, 'aiStemRequestAudioUrl')};`, sandbox);
+  const media = {
+    src: 'http://127.0.0.1:3000/api/audio?url=new-song',
+    currentSrc: 'http://127.0.0.1:3000/api/ai-stem?id=old-song&stem=instrumental',
+  };
+  assert.equal(sandbox.aiStemRequestAudioUrl(media), media.src);
+  assert.equal(sandbox.aiStemRequestAudioUrl({ src: '', currentSrc: media.src }), media.src);
+});
+
 test('AI 双轨加载期间切歌不会让旧分轨覆盖新歌', async () => {
   const aiSource = read('public/js/modules/05-playback/09-ai-stem-playback.js');
   let releaseMedia;

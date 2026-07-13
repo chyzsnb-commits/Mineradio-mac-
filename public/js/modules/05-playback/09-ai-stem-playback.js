@@ -20,6 +20,19 @@ function aiStemTrackKey(song) {
   return base ? base + (quality ? '|quality:' + quality : '') : '';
 }
 
+function aiStemRequestAudioUrl(media) {
+  if (!media) return '';
+  var candidates = [String(media.src || ''), String(media.currentSrc || '')];
+  for (var i = 0; i < candidates.length; i++) {
+    if (!candidates[i]) continue;
+    try {
+      var parsed = new URL(candidates[i], window.location.href);
+      if (parsed.pathname === '/api/audio') return parsed.href;
+    } catch (e) {}
+  }
+  return candidates[0] || candidates[1] || '';
+}
+
 function beginAiStemPlaybackOperation(trackKey) {
   return {
     serial: ++aiStemPlaybackOperationSerial,
@@ -318,14 +331,14 @@ function handleAiStemProgress(payload) {
 async function requestAiStemForCurrentTrack() {
   if (singingSeparationMode !== 'ai' || !singingModeEnabled || !audio) return false;
   var trackKey = aiStemTrackKey();
-  var audioUrl = audio.currentSrc || audio.src || '';
+  var audioUrl = aiStemRequestAudioUrl(audio);
   if (!trackKey || !audioUrl || aiStemPlaybackActive()) return false;
   if (!window.desktopWindow || typeof window.desktopWindow.startAiStemSeparation !== 'function') {
     setAiStemRuntime({ status: 'error', stage: 'error', error: 'AI_STEM_HELPER_MISSING' });
     return false;
   }
   if (aiStemRuntime.status === 'running' && aiStemRuntime.trackKey === trackKey) return true;
-  setAiStemRuntime({ status: 'running', stage: 'preparing', percent: 0, trackKey: trackKey, error: '' });
+  setAiStemRuntime({ status: 'running', stage: 'preparing', percent: 0, trackKey: trackKey, id: '', jobId: 0, cached: false, active: false, original: null, error: '' });
   var result = await window.desktopWindow.startAiStemSeparation({ trackKey: trackKey, audioUrl: audioUrl });
   if (singingSeparationMode !== 'ai' || trackKey !== aiStemTrackKey()) return false;
   if (result && result.status === 'ready') {
