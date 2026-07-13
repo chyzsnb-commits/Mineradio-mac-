@@ -71,7 +71,8 @@ test('性能面板提供三等分显卡模式和重启确认窗口', () => {
   assert.match(html, /id="gpu-mode-restart-modal"[^>]*role="dialog"[^>]*aria-modal="true"/);
   assert.match(controls, /function setGpuMode/);
   assert.match(controls, /restartApp/);
-  assert.match(controls, /gpu-mode-later-btn[\s\S]*\.focus\(\)/);
+  assert.match(controls, /gpu-mode-later-btn[\s\S]*\.focus\(\{\s*preventScroll:\s*true\s*\}\)/);
+  assert.match(controls, /previousFocus\.focus\(\{\s*preventScroll:\s*true\s*\}\)/);
   assert.match(controls, /e\.key !== 'Tab'/);
 });
 

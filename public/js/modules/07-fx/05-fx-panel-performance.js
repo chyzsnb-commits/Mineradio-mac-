@@ -192,7 +192,7 @@ function openGpuModeRestartPrompt(mode) {
   else modal.classList.add('show');
   requestAnimationFrame(function () {
     var laterButton = document.getElementById('gpu-mode-later-btn');
-    if (laterButton) laterButton.focus();
+    if (laterButton) laterButton.focus({ preventScroll: true });
   });
 }
 function dismissGpuModeRestartPrompt() {
@@ -202,7 +202,7 @@ function dismissGpuModeRestartPrompt() {
   var previousFocus = gpuModeRestartPreviousFocus;
   gpuModeRestartPreviousFocus = null;
   function restoreGpuModeFocus() {
-    if (previousFocus && previousFocus.isConnected && typeof previousFocus.focus === 'function') previousFocus.focus();
+    if (previousFocus && previousFocus.isConnected && typeof previousFocus.focus === 'function') previousFocus.focus({ preventScroll: true });
   }
   if (typeof closeGsapModal === 'function') closeGsapModal(modal, restoreGpuModeFocus);
   else {
