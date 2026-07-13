@@ -150,10 +150,34 @@ function gpuModeLabel(mode) {
   mode = window.MineradioGpuMode ? window.MineradioGpuMode.normalizeMode(mode) : 'auto';
   return mode === 'low-power' ? '省电' : (mode === 'high-performance' ? '高性能' : '自动');
 }
+var gpuModeRestartPreviousFocus = null;
 function syncGpuModeSeg() {
   var current = currentGpuMode();
   document.querySelectorAll('#gpu-mode-seg [data-gpu-mode]').forEach(function (btn) {
     btn.classList.toggle('active', btn.getAttribute('data-gpu-mode') === current);
+  });
+}
+function bindGpuModeRestartPromptKeyboard(modal) {
+  if (!modal || modal._gpuModeKeyboardBound) return;
+  modal._gpuModeKeyboardBound = true;
+  modal.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      dismissGpuModeRestartPrompt();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    var buttons = Array.prototype.slice.call(modal.querySelectorAll('button:not([disabled])'));
+    if (!buttons.length) return;
+    var first = buttons[0];
+    var last = buttons[buttons.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
   });
 }
 function openGpuModeRestartPrompt(mode) {
@@ -161,14 +185,30 @@ function openGpuModeRestartPrompt(mode) {
   var desc = document.getElementById('gpu-mode-restart-desc');
   if (desc) desc.textContent = gpuModeLabel(mode) + '模式将在重启后生效。';
   if (!modal) return;
+  gpuModeRestartPreviousFocus = document.activeElement;
+  modal.setAttribute('aria-hidden', 'false');
+  bindGpuModeRestartPromptKeyboard(modal);
   if (typeof openGsapModal === 'function') openGsapModal(modal);
   else modal.classList.add('show');
+  requestAnimationFrame(function () {
+    var laterButton = document.getElementById('gpu-mode-later-btn');
+    if (laterButton) laterButton.focus();
+  });
 }
 function dismissGpuModeRestartPrompt() {
   var modal = document.getElementById('gpu-mode-restart-modal');
   if (!modal) return;
-  if (typeof closeGsapModal === 'function') closeGsapModal(modal);
-  else modal.classList.remove('show');
+  modal.setAttribute('aria-hidden', 'true');
+  var previousFocus = gpuModeRestartPreviousFocus;
+  gpuModeRestartPreviousFocus = null;
+  function restoreGpuModeFocus() {
+    if (previousFocus && previousFocus.isConnected && typeof previousFocus.focus === 'function') previousFocus.focus();
+  }
+  if (typeof closeGsapModal === 'function') closeGsapModal(modal, restoreGpuModeFocus);
+  else {
+    modal.classList.remove('show');
+    restoreGpuModeFocus();
+  }
 }
 async function restartForGpuMode() {
   if (!(window.desktopWindow && typeof window.desktopWindow.restartApp === 'function')) {

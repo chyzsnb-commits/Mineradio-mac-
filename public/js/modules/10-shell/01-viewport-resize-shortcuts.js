@@ -20,6 +20,7 @@ window.addEventListener('resize', function () {
   if (desktopRuntimeState.fullscreen || desktopFullscreenActive || document.fullscreenElement || document.body.classList.contains('desktop-fullscreen')) layoutFullscreenDiyZone();
 });
 document.addEventListener('keydown', function (e) {
+  if (document.body && document.body.classList.contains('splash-active')) return;
   if (isTypingTarget(e.target)) return;
   if (handleConfiguredLocalHotkey(e)) return;
   if (shouldSuppressDefaultConfiguredHotkey(e)) return;

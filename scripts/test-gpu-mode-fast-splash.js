@@ -68,9 +68,11 @@ test('性能面板提供三等分显卡模式和重启确认窗口', () => {
   assert.match(segment[0], />自动<\/button>/);
   assert.match(segment[0], />省电<\/button>/);
   assert.match(segment[0], />高性能<\/button>/);
-  assert.match(html, /id="gpu-mode-restart-modal"/);
+  assert.match(html, /id="gpu-mode-restart-modal"[^>]*role="dialog"[^>]*aria-modal="true"/);
   assert.match(controls, /function setGpuMode/);
   assert.match(controls, /restartApp/);
+  assert.match(controls, /gpu-mode-later-btn[\s\S]*\.focus\(\)/);
+  assert.match(controls, /e\.key !== 'Tab'/);
 });
 
 test('启动页无需等待即可手动跳过', () => {
@@ -80,6 +82,15 @@ test('启动页无需等待即可手动跳过', () => {
   assert.ok(handler, '缺少启动页进入处理函数');
   assert.doesNotMatch(handler[1], /splashReadyToEnter/);
   assert.match(handler[1], /dismissSplash\(\{\s*quick:\s*true/);
+});
+
+test('启动页显示时普通播放热键不会抢先处理空格', () => {
+  const shortcuts = read('public/js/modules/10-shell/01-viewport-resize-shortcuts.js');
+  const handler = shortcuts.match(/document\.addEventListener\('keydown', function \(e\) \{([\s\S]*?)\n\}\);/);
+
+  assert.ok(handler, '缺少普通键盘热键处理函数');
+  assert.match(handler[1], /splash-active[\s\S]*return/);
+  assert.ok(handler[1].indexOf('splash-active') < handler[1].indexOf("e.code === 'Space'"), '启动页拦截必须先于播放热键');
 });
 
 test('首页悬浮动画只在后台省电状态暂停', () => {
