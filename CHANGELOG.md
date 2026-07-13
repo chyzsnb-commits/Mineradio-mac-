@@ -2,6 +2,11 @@
 
 ## 待发布（基于 v1.1.3 基线的优化）
 
+### 构建缓存排除（Codex）
+
+- electron-builder 新增全局 `!**/.omc/**/*` 排除规则，任何位置重新生成的 `.omc` 工具缓存都不会进入 App。
+- 临时放入缓存探针后重新打包，app.asar 中确认无 `.omc` 目录和探针文件；完整自动检查增至 80 项。
+
 ### 本机崩溃记录（Codex）
 
 - 在最新代码重新接入 Electron `crashReporter`，渲染器和 GPU 子进程崩溃时把 `.dmp` 与诊断 JSON 保存到本机 `userData/CrashDumps`。
