@@ -1107,7 +1107,7 @@
               <path d="M10 16h4" />
             </svg></button>
           <div id="singing-control" class="volume-control singing-control">
-            <button id="singing-mode-btn" class="ctrl-btn" onclick="toggleSingingMode()" title="唱歌模式(压低原唱,开麦跟唱)"
+            <button id="singing-mode-btn" class="ctrl-btn" onclick="toggleSingingMode()" title="唱歌模式(调节伴奏与人声,开麦跟唱)"
               aria-label="唱歌模式" aria-pressed="false"><svg width="18" height="18" fill="none" stroke="currentColor"
                 stroke-width="2" viewBox="0 0 24 24">
                 <rect x="9" y="3" width="6" height="11" rx="3" />
@@ -1118,11 +1118,16 @@
             <div class="volume-popover singing-popover" onclick="event.stopPropagation()">
               <div class="singing-title">唱歌模式</div>
               <div class="fade-control-row">
-                <label for="vocal-level-slider">原唱</label>
-                <input id="vocal-level-slider" type="range" min="0" max="1" step="0.01" value="0" aria-label="原唱人声占比">
+                <label for="accompaniment-level-slider">伴奏</label>
+                <input id="accompaniment-level-slider" type="range" min="0" max="1" step="0.01" value="1" aria-label="伴奏音量">
+                <span id="accompaniment-level-value">100%</span>
+              </div>
+              <div class="fade-control-row">
+                <label for="vocal-level-slider">人声</label>
+                <input id="vocal-level-slider" type="range" min="0" max="1" step="0.01" value="0" aria-label="人声音量">
                 <span id="vocal-level-value">0%</span>
               </div>
-              <div class="singing-hint">拖到 0% 纯伴奏 · 开麦跟唱,粒子和柱体会跟你的嗓音一起动</div>
+              <div class="singing-hint">人声 0% 压低原唱 · 伴奏 0% 突出人声 · 开麦后视觉跟随嗓音</div>
             </div>
           </div>
           <button id="immersive-btn" class="ctrl-btn" onclick="toggleImmersiveMode()" title="全沉浸式" aria-label="全沉浸式"

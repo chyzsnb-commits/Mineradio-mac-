@@ -4,9 +4,9 @@
 //  Global State
 // ============================================================
 var audio = null, audioCtx = null, source = null, analyser = null, beatAnalyser = null, gainNode = null, analysisSinkNode = null, audioReady = false;
-// 唱歌模式(Apple Music Sing 式):可调原唱 dry/wet + 麦克风驱动可视化(graph 由 initAudio 按状态重建)
-// singingVocalLevel:1=原唱满,0=纯伴奏。micVisualNode:麦克风提亮后接进 beatAnalyser/_voxAnalyser(死端,不啸叫)
-var singingModeEnabled = false, singingVocalLevel = 0, vocalCutChain = null, micStream = null, micSource = null, micVisualNode = null;
+// 唱歌模式:伴奏/人声独立混音 + 麦克风驱动可视化(graph 由 initAudio 按状态重建)
+// 默认伴奏满、人声零。micVisualNode 只进分析器死端,不进扬声器。
+var singingModeEnabled = false, singingAccompanimentLevel = 1, singingVocalLevel = 0, vocalCutChain = null, micStream = null, micSource = null, micVisualNode = null;
 var uiSfxCtx = null, lastShelfSelectSfxAt = 0;
 var FFT_SIZE = 2048;
 var frequencyData = new Uint8Array(FFT_SIZE / 2);

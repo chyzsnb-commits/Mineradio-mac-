@@ -356,7 +356,7 @@ test('原唱 100% 开关唱歌模式不重建播放音频图', () => {
   );
   vm.runInNewContext('setSingingMode(true); setSingingMode(false);', sandbox);
   assert.equal(rebuildCount, 0);
-  assert.equal(toasts[0], '唱歌模式:已压低原唱,正在开麦…');
+  assert.equal(toasts[0], '唱歌模式:伴奏人声混音已开启,正在开麦…');
   assert.doesNotMatch(source, /播放后自动开麦/);
 });
 
