@@ -13,6 +13,7 @@ const systemMemory = process.platform === 'win32'
   ? require('./system-memory')
   : require('./system-memory-mac');
 const { readSystemGpuUsage } = require('./gpu-usage');
+const { createAiStemService } = require('./ai-stem-separator');
 // macOS Touch Bar 播放控制（2016-2019 Intel MBP）。无 Touch Bar 的机器安全 no-op。
 const touchbar = require('./touchbar');
 const { extractKugouAuth } = require('../kugou-api');
@@ -79,6 +80,7 @@ let closeBehavior = 'exit';
 let appQuitting = false;
 let mainWindowCloseFlushArmed = false;
 let tray = null;
+let aiStemService = null;
 const registeredGlobalHotkeys = new Map();
 
 const WINDOWED_ASPECT = 16 / 9;
@@ -245,6 +247,23 @@ function waitForServer(server) {
 
 function getCurrentFxAutosavePath() {
   return path.join(app.getPath('userData'), CURRENT_FX_AUTOSAVE_FILE);
+}
+
+function getAiStemCacheRoot() {
+  return path.join(app.getPath('userData'), 'ai-stems');
+}
+
+function ensureAiStemService() {
+  if (aiStemService) return aiStemService;
+  aiStemService = createAiStemService({
+    cacheRoot: getAiStemCacheRoot(),
+    getLocalOrigin: () => 'http://127.0.0.1:' + mainServerPort,
+    onProgress: (payload) => {
+      if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) return;
+      mainWindow.webContents.send('mineradio-ai-stems-progress', payload || {});
+    },
+  });
+  return aiStemService;
 }
 
 function readCurrentFxAutosaveFile() {
@@ -3280,6 +3299,21 @@ ipcMain.handle('mineradio-device-stats', async () => {
   return out;
 });
 
+ipcMain.handle('mineradio-ai-stems-start', async (_event, payload = {}) => {
+  try { return await ensureAiStemService().start(payload); }
+  catch (error) { return { ok: false, status: 'error', error: String(error && (error.code || error.message) || 'AI_STEM_FAILED') }; }
+});
+
+ipcMain.handle('mineradio-ai-stems-status', (_event, trackKey) => {
+  try { return ensureAiStemService().status(trackKey); }
+  catch (error) { return { ok: false, status: 'error', error: String(error && (error.code || error.message) || 'AI_STEM_FAILED') }; }
+});
+
+ipcMain.handle('mineradio-ai-stems-cancel', (_event, jobId) => {
+  try { return ensureAiStemService().cancel(jobId); }
+  catch (error) { return { ok: false, status: 'error', error: String(error && (error.code || error.message) || 'AI_STEM_FAILED') }; }
+});
+
 ipcMain.handle('mineradio-memory-get-snapshot', async () => {
   try {
     return {
@@ -3696,6 +3730,7 @@ async function createWindow() {
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
   process.env.KUGOU_COOKIE_FILE = path.join(app.getPath('userData'), '.kugou-cookie');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
+  process.env.MINERADIO_AI_STEM_CACHE_DIR = getAiStemCacheRoot();
   try {
     const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
     if (fs.existsSync(legacyQQCookie)) {
@@ -4005,6 +4040,7 @@ if (!gotSingleInstanceLock) {
 
   app.on('before-quit', () => {
     appQuitting = true;
+    if (aiStemService) aiStemService.shutdown();
     stopMemoryAutoTimer();
     unregisterMineradioGlobalHotkeys();
     closeOverlayWindows();

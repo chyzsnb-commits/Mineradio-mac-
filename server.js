@@ -62,6 +62,7 @@ const tls = require('tls');
 const { once } = require('events');
 const { fileURLToPath } = require('url');
 const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer');
+const { serveAiStemRequest } = require('./desktop/ai-stem-cache-server');
 const { TrackDecryptor } = require('./qishui-audio-decryptor/track-decryptor');
 const {
   handleKugouSearch,
@@ -6430,6 +6431,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ---------- 音频代理 (支持 Range) ----------
+  if (pn === '/api/ai-stem') {
+    await serveAiStemRequest(req, res, process.env.MINERADIO_AI_STEM_CACHE_DIR, url.searchParams);
+    return;
+  }
+
   if (pn === '/api/audio') {
     try {
       const audioUrl = url.searchParams.get('url');

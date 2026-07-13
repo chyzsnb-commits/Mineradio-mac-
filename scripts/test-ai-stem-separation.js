@@ -12,6 +12,7 @@ const {
   parseSeparatorProgress,
   validateLocalAudioUrl,
 } = require('../desktop/ai-stem-separator');
+const { serveAiStemRequest } = require('../desktop/ai-stem-cache-server');
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-ai-stems-'));
@@ -122,4 +123,60 @@ test('同曲复用任务，换曲取消旧任务，手动取消立即结束', as
   const secondResult = await secondPromise;
   assert.equal(secondResult.status, 'cancelled');
   assert.equal(service.status('qq:second').status, 'idle');
+});
+
+function mockResponse() {
+  const chunks = [];
+  return {
+    statusCode: 0,
+    headers: {},
+    chunks,
+    writeHead(code, headers) { this.statusCode = code; this.headers = headers || {}; },
+    write(chunk) { chunks.push(Buffer.from(chunk)); return true; },
+    end(chunk) { if (chunk) chunks.push(Buffer.from(chunk)); this.ended = true; },
+    once() {},
+    body() { return Buffer.concat(chunks); },
+  };
+}
+
+test('只读 stem 路由校验缓存 ID 并支持 Range 拖动', async () => {
+  const cacheRoot = tempDir();
+  const id = cacheIdForTrack('qq:range-song');
+  const dir = path.join(cacheRoot, id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'instrumental.flac'), Buffer.from('0123456789'));
+
+  const invalid = mockResponse();
+  await serveAiStemRequest({ method: 'GET', headers: {} }, invalid, cacheRoot, new URLSearchParams('id=../../etc&stem=instrumental'));
+  assert.equal(invalid.statusCode, 400);
+
+  const ranged = mockResponse();
+  await serveAiStemRequest({ method: 'GET', headers: { range: 'bytes=2-5' } }, ranged, cacheRoot, new URLSearchParams({ id, stem: 'instrumental' }));
+  assert.equal(ranged.statusCode, 206);
+  assert.equal(ranged.headers['Content-Range'], 'bytes 2-5/10');
+  assert.equal(ranged.headers['Content-Length'], 4);
+  assert.equal(ranged.body().toString(), '2345');
+
+  const full = mockResponse();
+  await serveAiStemRequest({ method: 'GET', headers: {} }, full, cacheRoot, new URLSearchParams({ id, stem: 'instrumental' }));
+  assert.equal(full.statusCode, 200);
+  assert.equal(full.headers['Accept-Ranges'], 'bytes');
+  assert.equal(full.body().toString(), '0123456789');
+});
+
+test('Electron 暴露 AI 分轨开始、状态、取消和进度通道', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'preload.js'), 'utf8');
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(main, /createAiStemService/);
+  assert.match(main, /ipcMain\.handle\('mineradio-ai-stems-start'/);
+  assert.match(main, /ipcMain\.handle\('mineradio-ai-stems-status'/);
+  assert.match(main, /ipcMain\.handle\('mineradio-ai-stems-cancel'/);
+  assert.match(main, /aiStemService\.shutdown\(\)/);
+  assert.match(preload, /startAiStemSeparation:\s*\(payload\)\s*=>\s*ipcRenderer\.invoke\('mineradio-ai-stems-start'/);
+  assert.match(preload, /getAiStemStatus:/);
+  assert.match(preload, /cancelAiStemSeparation:/);
+  assert.match(preload, /onAiStemProgress:/);
+  assert.match(server, /pn === '\/api\/ai-stem'/);
+  assert.match(server, /serveAiStemRequest/);
 });

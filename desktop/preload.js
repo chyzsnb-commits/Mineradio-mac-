@@ -14,6 +14,15 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   trimAppMemory: (payload) => ipcRenderer.invoke('mineradio-memory-trim-app', payload || {}),
   purgeSystemMemory: (payload) => ipcRenderer.invoke('mineradio-memory-purge-system', payload || {}),
   deviceStats: () => ipcRenderer.invoke('mineradio-device-stats'),
+  startAiStemSeparation: (payload) => ipcRenderer.invoke('mineradio-ai-stems-start', payload || {}),
+  getAiStemStatus: (trackKey) => ipcRenderer.invoke('mineradio-ai-stems-status', String(trackKey || '')),
+  cancelAiStemSeparation: (jobId) => ipcRenderer.invoke('mineradio-ai-stems-cancel', Number(jobId) || 0),
+  onAiStemProgress: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-ai-stems-progress', listener);
+    return () => ipcRenderer.removeListener('mineradio-ai-stems-progress', listener);
+  },
   close: (behavior) => ipcRenderer.invoke('desktop-window-close', behavior),
   getCloseBehavior: () => ipcRenderer.invoke('desktop-window-get-close-behavior'),
   setCloseBehavior: (behavior) => ipcRenderer.invoke('desktop-window-set-close-behavior', behavior),
