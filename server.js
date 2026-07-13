@@ -6466,7 +6466,16 @@ const server = http.createServer(async (req, res) => {
         if (!res.write(c.value)) await new Promise((resolve) => res.once('drain', resolve));
       }
       res.end();
-    } catch (err) { console.error('[Audio]', err); res.writeHead(500); res.end(); }
+    } catch (err) {
+      console.error('[Audio]', err);
+      if (res.destroyed || res.writableEnded) return;
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      res.writeHead(500);
+      res.end();
+    }
     return;
   }
 
