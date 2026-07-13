@@ -284,10 +284,14 @@ function resumePerfHudSampling() {
   }
   var hud = document.getElementById('perf-hud');
   if (hud) hud.style.display = 'block';
-  updatePerfHud();
-  if (!_perfHudTimer) _perfHudTimer = setInterval(updatePerfHud, 500);
-  fetchDeviceStats();
-  if (!_devStatsTimer) _devStatsTimer = setInterval(fetchDeviceStats, 2000);
+  if (!_perfHudTimer) {
+    updatePerfHud();
+    _perfHudTimer = setInterval(updatePerfHud, 500);
+  }
+  if (!_devStatsTimer) {
+    _devStatsTimer = setInterval(fetchDeviceStats, 2000);
+    fetchDeviceStats();
+  }
 }
 function setPerfHud(on) {
   try { localStorage.setItem('mr_perfHud', on ? '1' : '0'); } catch (e) { }

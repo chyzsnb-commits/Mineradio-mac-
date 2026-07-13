@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const vm = require('node:vm');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -9,6 +10,13 @@ const gpuUsage = fs.existsSync(modulePath) ? require(modulePath) : null;
 
 function read(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), 'utf8');
+}
+
+function readFunction(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `缺少 ${name}`);
+  const next = source.indexOf('\nfunction ', start + 1);
+  return source.slice(start, next >= 0 ? next : source.length);
 }
 
 test('解析 macOS 真实 GPU 占用并对多显卡取最高值', () => {
@@ -79,10 +87,36 @@ test('主进程返回 GPU 指标且 HUD 在 CPU 下方显示对称显卡行', ()
 test('壁纸模式隐藏 HUD 时停止全部采样并在退出后恢复', () => {
   const hud = read('public/js/modules/07-fx/05-fx-panel-performance.js');
   const wallpaper = read('public/js/modules/10-shell/04-desktop-overlay-fullscreen.js');
-  assert.match(hud, /function suspendPerfHudSampling\(\)/);
-  assert.match(hud, /function resumePerfHudSampling\(\)/);
-  assert.match(hud, /clearInterval\(_perfHudTimer\)/);
-  assert.match(hud, /clearInterval\(_devStatsTimer\)/);
+  const calls = { fetches: 0, updates: 0, intervals: [], clears: 0 };
+  const sandbox = {
+    document: {
+      body: { classList: { contains: () => false } },
+      getElementById: () => ({ style: {} }),
+    },
+    perfHudOn: () => true,
+    fetchDeviceStats() { calls.fetches += 1; },
+    updatePerfHud() { calls.updates += 1; },
+    setInterval(fn, delay) {
+      const timer = { fn, delay };
+      calls.intervals.push(timer);
+      return timer;
+    },
+    clearInterval() { calls.clears += 1; },
+  };
+  vm.runInNewContext(`
+    var _perfHudTimer = null;
+    var _devStatsTimer = null;
+    var _devStats = { ready: true };
+    ${readFunction(hud, 'suspendPerfHudSampling')}
+    ${readFunction(hud, 'resumePerfHudSampling')}
+    resumePerfHudSampling();
+    resumePerfHudSampling();
+    suspendPerfHudSampling();
+  `, sandbox);
+  assert.equal(calls.fetches, 1, '连续恢复只能立即采样一次');
+  assert.equal(calls.updates, 1, '连续恢复只能启动一次 HUD 刷新');
+  assert.equal(calls.intervals.length, 2, '只创建 HUD 与设备指标两个定时器');
+  assert.equal(calls.clears, 2, '暂停时两个定时器都要停止');
   assert.match(wallpaper, /payload\.enabled\s*\?\s*suspendPerfHudSampling\(\)\s*:\s*resumePerfHudSampling\(\)/);
   assert.match(wallpaper, /active\s*\?\s*suspendPerfHudSampling\(\)\s*:\s*resumePerfHudSampling\(\)/);
   assert.match(wallpaper, /onWallpaperForceOff[\s\S]*resumePerfHudSampling\(\)/);
