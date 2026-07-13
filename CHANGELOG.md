@@ -2,6 +2,13 @@
 
 ## 待发布（基于 v1.1.3 基线的优化）
 
+### macOS 双架构 CI 运行器修复（Codex）
+
+- x64 构建从已下线的 `macos-13` 改为 GitHub 当前 Intel 标签 `macos-15-intel`，解决任务永久排队。
+- arm64 从已进入弃用期的 `macos-14` 升级为 `macos-15` Apple Silicon 运行器。
+- 工作流自身和 `scripts/**` 测试变更现在也会触发 PR 构建；同一 PR 的旧构建自动取消，减少重复排队。
+- 新增运行器配置回归测试，完整自动检查增至 82 项。
+
 ### 构建缓存排除（Codex）
 
 - electron-builder 新增全局 `!**/.omc/**/*` 排除规则，任何位置重新生成的 `.omc` 工具缓存都不会进入 App。
