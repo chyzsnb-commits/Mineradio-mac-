@@ -185,20 +185,36 @@ class VocalRemoverProcessor extends AudioWorkletProcessor {
 registerProcessor('vocal-remover-processor', VocalRemoverProcessor);
 `;
 var _vocalWorkletCtx = null, _vocalWorkletPromise = null;
+var _vocalWorkletReadyContexts = new WeakSet();
+var _vocalWorkletPromisesByContext = new WeakMap();
+function vocalRemoverWorkletReady(ctx) {
+  return !!(ctx && _vocalWorkletReadyContexts.has(ctx));
+}
 function ensureVocalRemoverWorklet(ctx) {
   if (!ctx || !ctx.audioWorklet) return Promise.resolve(false);
-  if (_vocalWorkletCtx === ctx) return Promise.resolve(true);
-  if (_vocalWorkletPromise && _vocalWorkletPromise._ctx === ctx) return _vocalWorkletPromise;
+  if (vocalRemoverWorkletReady(ctx)) return Promise.resolve(true);
+  var pending = _vocalWorkletPromisesByContext.get(ctx);
+  if (pending) return pending;
   var url;
   try { url = URL.createObjectURL(new Blob([VOCAL_REMOVER_PROCESSOR_SRC], { type: 'application/javascript' })); }
   catch (e) { return Promise.resolve(false); }
   var p = ctx.audioWorklet.addModule(url).then(function () {
-    _vocalWorkletCtx = ctx; try { URL.revokeObjectURL(url); } catch (e) {} return true;
+    _vocalWorkletReadyContexts.add(ctx);
+    _vocalWorkletCtx = ctx;
+    try { URL.revokeObjectURL(url); } catch (e) {}
+    return true;
   }).catch(function (err) {
     console.warn('vocal remover worklet load failed:', err && (err.message || err));
     try { URL.revokeObjectURL(url); } catch (e) {} return false;
+  }).then(function (ok) {
+    if (_vocalWorkletPromisesByContext.get(ctx) === p) _vocalWorkletPromisesByContext.delete(ctx);
+    if (_vocalWorkletPromise === p) _vocalWorkletPromise = null;
+    return ok;
   });
-  p._ctx = ctx; _vocalWorkletPromise = p; return p;
+  p._ctx = ctx;
+  _vocalWorkletPromise = p;
+  _vocalWorkletPromisesByContext.set(ctx, p);
+  return p;
 }
 function buildVocalCutChainWorklet(ctx) {
   var node = new AudioWorkletNode(ctx, 'vocal-remover-processor', {
@@ -250,7 +266,7 @@ function buildVocalCutChainBiquad(ctx) {
 }
 // 有 worklet 用频谱级(单路,内部按 level 调),否则回退双段 biquad(dry/wet 混)
 function buildVocalCutChain(ctx) {
-  if (_vocalWorkletCtx === ctx && typeof AudioWorkletNode !== 'undefined') {
+  if (vocalRemoverWorkletReady(ctx) && typeof AudioWorkletNode !== 'undefined') {
     try { return buildVocalCutChainWorklet(ctx); } catch (e) { }
   }
   return buildVocalCutChainBiquad(ctx);
@@ -850,7 +866,7 @@ function syncSingingVocalUi() {
 }
 function prepareSingingVocalProcessor() {
   if (!audioCtx || !singingVocalProcessingNeeded()) return Promise.resolve(false);
-  if (typeof _vocalWorkletCtx !== 'undefined' && _vocalWorkletCtx === audioCtx) return Promise.resolve(true);
+  if (vocalRemoverWorkletReady(audioCtx)) return Promise.resolve(true);
   var targetCtx = audioCtx;
   return ensureVocalRemoverWorklet(targetCtx).then(function (ok) {
     if (ok && audioCtx === targetCtx && singingVocalProcessingNeeded()) rebuildAudioGraphNow();
@@ -915,11 +931,15 @@ function stopMediaStreamTracks(stream) {
   if (!stream || typeof stream.getTracks !== 'function') return;
   try { stream.getTracks().forEach(function (track) { try { track.stop(); } catch (e) { } }); } catch (e) { }
 }
+function singingMicPermissionDenied(error) {
+  var name = String(error && error.name || '').toLowerCase();
+  var message = String(error && error.message || error || '').toLowerCase();
+  return name === 'notallowederror'
+    || name === 'securityerror'
+    || name === 'permissiondeniederror'
+    || /permission|not allowed|denied/.test(message);
+}
 function stopSingingMic() {
-  if (_singingMicRequestPromise) {
-    _singingMicRequestSerial += 1;
-    _singingMicRequestPromise = null;
-  }
   stopMediaStreamTracks(micStream);
   micStream = null;
   if (micVisualNode) { try { micVisualNode.disconnect(); } catch (e) { } micVisualNode = null; }
@@ -948,9 +968,10 @@ function startSingingMic(opts) {
     rebuildAudioGraphNow();
     if (!opts.silent) showToast('麦克风已开,开唱吧');
     return true;
-  }).catch(function () {
+  }).catch(function (error) {
     if (serial === _singingMicRequestSerial) {
-      _singingMicPermissionBlocked = true;
+      if (singingMicPermissionDenied(error)) _singingMicPermissionBlocked = true;
+      else console.warn('singing microphone unavailable:', error && (error.message || error));
       micStream = null;
       if (!opts.silent) showToast('麦克风未授权,唱歌律动暂用伴奏驱动');
     }
@@ -980,17 +1001,18 @@ function ensureSingingLyrics(on) {
 function setSingingMode(on) {
   on = !!on;
   if (on === singingModeEnabled) { syncSingingModeUi(); return; }
+  var wasVocalProcessing = singingVocalProcessingNeeded();
   singingModeEnabled = on;
+  var needsVocalProcessing = singingVocalProcessingNeeded();
+  if (wasVocalProcessing !== needsVocalProcessing) rebuildAudioGraphNow();
   if (on) {
     _singingMicPermissionBlocked = false;
-    rebuildAudioGraphNow();
-    if (singingVocalProcessingNeeded()) prepareSingingVocalProcessor();
+    if (needsVocalProcessing) prepareSingingVocalProcessor();
     syncSingingMicPowerState({ silent: false });
     ensureSingingLyrics(true);
-    showToast(singingMicShouldRun() ? '唱歌模式:已压低原唱,正在开麦…' : '唱歌模式:已开启,播放后自动开麦');
+    showToast('唱歌模式:已压低原唱,正在开麦…');
   } else {
     stopSingingMic();
-    rebuildAudioGraphNow();  // 移除去人声与麦克风,恢复原声
     ensureSingingLyrics(false);
     showToast('唱歌模式:已关闭');
   }

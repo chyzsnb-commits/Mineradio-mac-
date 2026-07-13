@@ -79,6 +79,7 @@ test('原唱滑块只在跨越 100% 边界时重建音频图', async () => {
     showToast() {},
     rebuildAudioGraphNow() { rebuildCount += 1; },
     ensureVocalRemoverWorklet() { workletLoadCount += 1; return Promise.resolve(true); },
+    vocalRemoverWorkletReady() { return false; },
   };
   vm.runInNewContext(
     `${readFunction(source, 'singingVocalProcessingNeeded')};\n`
@@ -151,6 +152,7 @@ test('并发播放事件只申请一次麦克风且暂停后丢弃过期流', as
   };
   vm.runInNewContext(
     `${readFunction(source, 'singingMicShouldRun')};`
+      + `${readFunction(source, 'singingMicPermissionDenied')};`
       + `${readFunction(source, 'stopMediaStreamTracks')};`
       + `${readFunction(source, 'stopSingingMic')};`
       + `${readFunction(source, 'startSingingMic')};`
@@ -170,6 +172,50 @@ test('并发播放事件只申请一次麦克风且暂停后丢弃过期流', as
   assert.equal(stopped, 1);
   assert.equal(sandbox.micStream, null);
   assert.equal(rebuildCount, 0);
+});
+
+test('麦克风请求期间快速暂停恢复仍只保留一个请求', async () => {
+  const source = audioGraphSource();
+  let resolveMedia;
+  let requestCount = 0;
+  let rebuildCount = 0;
+  const mediaPromise = new Promise((resolve) => { resolveMedia = resolve; });
+  const stream = { getTracks() { return [{ stop() {} }]; } };
+  const sandbox = {
+    singingModeEnabled: true,
+    audio: { src: 'song.mp3', paused: false, ended: false, error: null },
+    micStream: null,
+    micSource: null,
+    micVisualNode: null,
+    _singingMicRequestPromise: null,
+    _singingMicRequestSerial: 0,
+    _singingMicPermissionBlocked: false,
+    isDeepBackgroundMode() { return false; },
+    navigator: { mediaDevices: { getUserMedia() { requestCount += 1; return mediaPromise; } } },
+    rebuildAudioGraphNow() { rebuildCount += 1; },
+    showToast() {},
+    Promise,
+  };
+  vm.runInNewContext(
+    `${readFunction(source, 'singingMicShouldRun')};`
+      + `${readFunction(source, 'singingMicPermissionDenied')};`
+      + `${readFunction(source, 'stopMediaStreamTracks')};`
+      + `${readFunction(source, 'stopSingingMic')};`
+      + `${readFunction(source, 'startSingingMic')};`
+      + `${readFunction(source, 'syncSingingMicPowerState')};`,
+    sandbox,
+  );
+  const first = vm.runInNewContext('syncSingingMicPowerState({ silent: true });', sandbox);
+  sandbox.audio.paused = true;
+  vm.runInNewContext('syncSingingMicPowerState({ silent: true });', sandbox);
+  sandbox.audio.paused = false;
+  const resumed = vm.runInNewContext('syncSingingMicPowerState({ silent: true });', sandbox);
+  assert.equal(requestCount, 1);
+  assert.equal(resumed, first);
+  resolveMedia(stream);
+  assert.equal(await resumed, true);
+  assert.equal(sandbox.micStream, stream);
+  assert.equal(rebuildCount, 1);
 });
 
 test('麦克风权限失败后本次开启期间不重复申请', async () => {
@@ -192,6 +238,7 @@ test('麦克风权限失败后本次开启期间不重复申请', async () => {
   };
   vm.runInNewContext(
     `${readFunction(source, 'singingMicShouldRun')};`
+      + `${readFunction(source, 'singingMicPermissionDenied')};`
       + `${readFunction(source, 'stopMediaStreamTracks')};`
       + `${readFunction(source, 'stopSingingMic')};`
       + `${readFunction(source, 'startSingingMic')};`
@@ -203,6 +250,114 @@ test('麦克风权限失败后本次开启期间不重复申请', async () => {
   assert.equal(requestCount, 1);
   assert.equal(sandbox._singingMicPermissionBlocked, true);
   assert.match(source, /function setSingingMode[\s\S]*_singingMicPermissionBlocked = false/);
+});
+
+test('麦克风临时设备错误不会锁死后续重试', async () => {
+  const source = audioGraphSource();
+  let requestCount = 0;
+  const sandbox = {
+    singingModeEnabled: true,
+    audio: { src: 'song.mp3', paused: false, ended: false, error: null },
+    micStream: null,
+    micSource: null,
+    micVisualNode: null,
+    _singingMicRequestPromise: null,
+    _singingMicRequestSerial: 0,
+    _singingMicPermissionBlocked: false,
+    isDeepBackgroundMode() { return false; },
+    navigator: {
+      mediaDevices: {
+        getUserMedia() {
+          requestCount += 1;
+          const error = new Error('device busy');
+          error.name = 'NotReadableError';
+          return Promise.reject(error);
+        },
+      },
+    },
+    rebuildAudioGraphNow() {},
+    showToast() {},
+    console: { warn() {} },
+    Promise,
+  };
+  vm.runInNewContext(
+    `${readFunction(source, 'singingMicShouldRun')};`
+      + `${readFunction(source, 'singingMicPermissionDenied')};`
+      + `${readFunction(source, 'stopMediaStreamTracks')};`
+      + `${readFunction(source, 'stopSingingMic')};`
+      + `${readFunction(source, 'startSingingMic')};`
+      + `${readFunction(source, 'syncSingingMicPowerState')};`,
+    sandbox,
+  );
+  await vm.runInNewContext('syncSingingMicPowerState({ silent: true });', sandbox);
+  assert.equal(requestCount, 1);
+  assert.equal(sandbox._singingMicPermissionBlocked, false);
+});
+
+test('不同 AudioContext 的 Worklet 逆序完成也分别保持就绪', async () => {
+  const source = audioGraphSource();
+  let resolveA;
+  let resolveB;
+  const ctxA = { audioWorklet: { addModule() { return new Promise((resolve) => { resolveA = resolve; }); } } };
+  const ctxB = { audioWorklet: { addModule() { return new Promise((resolve) => { resolveB = resolve; }); } } };
+  const sandbox = {
+    _vocalWorkletCtx: null,
+    _vocalWorkletPromise: null,
+    _vocalWorkletReadyContexts: new WeakSet(),
+    _vocalWorkletPromisesByContext: new WeakMap(),
+    VOCAL_REMOVER_PROCESSOR_SRC: 'registerProcessor("test", class {});',
+    URL: { createObjectURL() { return 'blob:test'; }, revokeObjectURL() {} },
+    Blob: class {},
+    console: { warn() {} },
+    Promise,
+  };
+  vm.runInNewContext(
+    `${readFunction(source, 'vocalRemoverWorkletReady')};`
+      + `${readFunction(source, 'ensureVocalRemoverWorklet')};`,
+    sandbox,
+  );
+  sandbox.ctxA = ctxA;
+  sandbox.ctxB = ctxB;
+  const promiseA = vm.runInNewContext('ensureVocalRemoverWorklet(ctxA)', sandbox);
+  const promiseB = vm.runInNewContext('ensureVocalRemoverWorklet(ctxB)', sandbox);
+  resolveB();
+  await promiseB;
+  resolveA();
+  await promiseA;
+  vm.runInNewContext('readyA = vocalRemoverWorkletReady(ctxA); readyB = vocalRemoverWorkletReady(ctxB);', sandbox);
+  assert.equal(sandbox.readyA, true);
+  assert.equal(sandbox.readyB, true);
+});
+
+test('原唱 100% 开关唱歌模式不重建播放音频图', () => {
+  const source = audioGraphSource();
+  let rebuildCount = 0;
+  const toasts = [];
+  const sandbox = {
+    singingModeEnabled: false,
+    singingVocalLevel: 1,
+    _singingMicPermissionBlocked: false,
+    rebuildAudioGraphNow() { rebuildCount += 1; },
+    syncSingingMicPowerState() { return Promise.resolve(false); },
+    stopSingingMic() {},
+    ensureSingingLyrics() {},
+    syncSingingModeUi() {},
+    prepareSingingVocalProcessor() {},
+    singingMicShouldRun() { return false; },
+    showToast(message) { toasts.push(message); },
+    Promise,
+    Number,
+    isFinite,
+  };
+  vm.runInNewContext(
+    `${readFunction(source, 'singingVocalProcessingNeeded')};`
+      + `${readFunction(source, 'setSingingMode')};`,
+    sandbox,
+  );
+  vm.runInNewContext('setSingingMode(true); setSingingMode(false);', sandbox);
+  assert.equal(rebuildCount, 0);
+  assert.equal(toasts[0], '唱歌模式:已压低原唱,正在开麦…');
+  assert.doesNotMatch(source, /播放后自动开麦/);
 });
 
 test('播放状态和窗口电源状态都会同步麦克风生命周期', () => {
