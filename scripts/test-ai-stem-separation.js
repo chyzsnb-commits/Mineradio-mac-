@@ -11,6 +11,7 @@ const {
   cacheIdForTrack,
   createAiStemService,
   parseSeparatorProgress,
+  recommendedMdxBatchSize,
   validateLocalAudioUrl,
 } = require('../desktop/ai-stem-separator');
 const { serveAiStemRequest } = require('../desktop/ai-stem-cache-server');
@@ -58,6 +59,7 @@ test('分轨命令复用 UVR 模型且不经过 shell 字符串', () => {
     inputPath: '/tmp/input song.flac',
     outputDir: '/tmp/stems output',
     modelDir: '/tmp/models',
+    mdxBatchSize: 2,
   });
   assert.equal(command.file, '/Users/test/.local/bin/uv');
   assert.equal(command.options.shell, false);
@@ -67,6 +69,16 @@ test('分轨命令复用 UVR 模型且不经过 shell 字符串', () => {
   assert.ok(command.args.includes('/tmp/stems output'));
   assert.ok(command.args.includes('/tmp/models'));
   assert.ok(command.args.includes('FLAC'));
+  assert.deepEqual(command.args.slice(command.args.indexOf('--mdx_batch_size'), command.args.indexOf('--mdx_batch_size') + 2), ['--mdx_batch_size', '2']);
+  assert.ok(command.args.includes('--use_soundfile'));
+});
+
+test('Apple Silicon 内存充足时用 batch 2，低内存或 Intel 自动回退', () => {
+  const gb = 1024 * 1024 * 1024;
+  assert.equal(recommendedMdxBatchSize({ platform: 'darwin', arch: 'arm64', totalMemoryBytes: 16 * gb }), 2);
+  assert.equal(recommendedMdxBatchSize({ platform: 'darwin', arch: 'arm64', totalMemoryBytes: 8 * gb }), 1);
+  assert.equal(recommendedMdxBatchSize({ platform: 'darwin', arch: 'x64', totalMemoryBytes: 32 * gb }), 1);
+  assert.equal(recommendedMdxBatchSize({ platform: 'win32', arch: 'arm64', totalMemoryBytes: 32 * gb }), 1);
 });
 
 test('解析准备、下载和 AI 分轨百分比', () => {

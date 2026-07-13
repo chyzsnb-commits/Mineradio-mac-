@@ -24,6 +24,13 @@ function cacheIdForTrack(trackKey) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
+function recommendedMdxBatchSize(options = {}) {
+  const platform = String(options.platform || process.platform);
+  const arch = String(options.arch || process.arch);
+  const totalMemoryBytes = Number(options.totalMemoryBytes == null ? os.totalmem() : options.totalMemoryBytes) || 0;
+  return platform === 'darwin' && arch === 'arm64' && totalMemoryBytes >= 12 * 1024 * 1024 * 1024 ? 2 : 1;
+}
+
 function validateLocalAudioUrl(value, localOrigin) {
   let origin;
   let parsed;
@@ -48,6 +55,9 @@ function validateLocalAudioUrl(value, localOrigin) {
 function buildSeparatorCommand(options = {}) {
   const uvPath = String(options.uvPath || '');
   const executableName = path.basename(uvPath).toLowerCase();
+  const mdxBatchSize = Number(options.mdxBatchSize) === 1 || Number(options.mdxBatchSize) === 2
+    ? Number(options.mdxBatchSize)
+    : recommendedMdxBatchSize();
   const args = executableName === 'uv'
     ? ['tool', 'run', '--from', AI_STEM_SEPARATOR_PACKAGE, 'audio-separator']
     : ['--from', AI_STEM_SEPARATOR_PACKAGE, 'audio-separator'];
@@ -58,6 +68,8 @@ function buildSeparatorCommand(options = {}) {
     '--output_dir', String(options.outputDir || ''),
     '--output_format', 'FLAC',
     '--custom_output_names', JSON.stringify({ Instrumental: 'instrumental', Vocals: 'vocals' }),
+    '--mdx_batch_size', String(mdxBatchSize),
+    '--use_soundfile',
     '--log_level', 'info',
   );
   return { file: uvPath, args, options: { shell: false } };
@@ -453,5 +465,6 @@ module.exports = {
   findUvrFfmpegDirectory,
   findUvrModel,
   parseSeparatorProgress,
+  recommendedMdxBatchSize,
   validateLocalAudioUrl,
 };
