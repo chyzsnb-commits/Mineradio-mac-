@@ -212,6 +212,8 @@ async function downloadInput({ audioUrl, localOrigin, inputBase, signal, fetchIm
   const parsed = validateLocalAudioUrl(audioUrl, localOrigin);
   const controller = new AbortController();
   const removeCancel = signal.onCancel(() => controller.abort());
+  let inputPath = '';
+  let completed = false;
   try {
     report({ stage: 'downloading', percent: 1 });
     const response = await fetchImpl(parsed.href, { signal: controller.signal });
@@ -221,7 +223,7 @@ async function downloadInput({ audioUrl, localOrigin, inputBase, signal, fetchIm
     const length = Number(response.headers && response.headers.get && response.headers.get('content-length')) || 0;
     if (length > AI_STEM_MAX_INPUT_BYTES) throw codedError('AI_STEM_AUDIO_TOO_LARGE');
     const extension = extensionForContentType(response.headers && response.headers.get && response.headers.get('content-type'));
-    const inputPath = inputBase + extension;
+    inputPath = inputBase + extension;
     let received = 0;
     const readable = Readable.fromWeb(response.body);
     readable.on('data', (chunk) => {
@@ -235,12 +237,14 @@ async function downloadInput({ audioUrl, localOrigin, inputBase, signal, fetchIm
     });
     await pipeline(readable, fs.createWriteStream(inputPath, { flags: 'wx' }));
     signal.throwIfCancelled();
+    completed = true;
     return inputPath;
   } catch (error) {
     if (signal.cancelled || (error && error.name === 'AbortError')) throw codedError('AI_STEM_CANCELLED');
     throw error;
   } finally {
     removeCancel();
+    if (!completed) safeUnlink(inputPath);
   }
 }
 

@@ -142,6 +142,50 @@ test('同曲复用任务，换曲取消旧任务，手动取消立即结束', as
   assert.equal(service.status('qq:second').status, 'idle');
 });
 
+test('读取音频时取消会删除半截文件，同曲可以重试', async () => {
+  const cacheRoot = tempDir();
+  const modelPath = path.join(cacheRoot, 'source-model.onnx');
+  fs.writeFileSync(modelPath, 'model');
+  let streamController;
+  const fetchImpl = async (_url, options) => {
+    const body = new ReadableStream({
+      start(controller) {
+        streamController = controller;
+        controller.enqueue(new Uint8Array(64 * 1024));
+        options.signal.addEventListener('abort', () => {
+          const error = new Error('aborted');
+          error.name = 'AbortError';
+          controller.error(error);
+        }, { once: true });
+      },
+      cancel() {},
+    });
+    return {
+      ok: true,
+      status: 200,
+      headers: { get(name) { return String(name).toLowerCase() === 'content-type' ? 'audio/wav' : ''; } },
+      body,
+    };
+  };
+  const service = createAiStemService({
+    cacheRoot,
+    getLocalOrigin: () => 'http://127.0.0.1:3147',
+    findUv: () => '/bin/echo',
+    findModel: () => modelPath,
+    fetchImpl,
+  });
+
+  const pending = service.start({ trackKey: 'qq:partial', audioUrl: '/api/audio?url=partial' });
+  while (!streamController || service.status('qq:partial').stage !== 'downloading') {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  service.cancel(service.status('qq:partial').jobId);
+  const result = await pending;
+  assert.equal(result.status, 'cancelled');
+  const dir = path.join(cacheRoot, cacheIdForTrack('qq:partial'));
+  assert.deepEqual(fs.readdirSync(dir).filter((name) => name.startsWith('input.')), []);
+});
+
 function mockResponse() {
   const chunks = [];
   return {
@@ -253,6 +297,148 @@ test('AI 人声轨跟随主轨播放、暂停、跳转和倍速', async () => {
   assert.equal(vocal.playbackRate, 0.8);
   sandbox.syncAiStemSecondaryForEvent('pause', main, vocal);
   assert.deepEqual(calls, ['play', 'pause']);
+});
+
+test('AI 双轨加载期间切歌不会让旧分轨覆盖新歌', async () => {
+  const aiSource = read('public/js/modules/05-playback/09-ai-stem-playback.js');
+  let releaseMedia;
+  let waitCalls = 0;
+  let playCalls = 0;
+  let initCalls = 0;
+  const mediaReady = new Promise((resolve) => { releaseMedia = resolve; });
+  const vocal = {
+    currentSrc: '', src: '', currentTime: 0, playbackRate: 1, paused: true, ended: false,
+    readyState: 0,
+    pause() { this.paused = true; },
+    play() { this.paused = false; return Promise.resolve(); },
+    load() {}, removeAttribute() { this.src = ''; },
+    addEventListener() {}, removeEventListener() {},
+  };
+  const main = {
+    currentSrc: '/api/audio?url=old', src: '/api/audio?url=old', currentTime: 18,
+    playbackRate: 1, paused: false, ended: false, preload: 'auto',
+    pause() { this.paused = true; },
+    play() { playCalls += 1; this.paused = false; return Promise.resolve(); },
+    load() {}, addEventListener() {},
+  };
+  const sandbox = {
+    Promise,
+    console: { warn() {} },
+    audio: main,
+    audioReady: true,
+    playbackSpeed: 1,
+    targetVolume: 0.8,
+    trackSwitchToken: 4,
+    singingSeparationMode: 'ai',
+    aiStemRuntime: { status: 'idle', active: false },
+    aiStemVocalAudio: null,
+    aiStemVocalSource: null,
+    aiStemMixNode: null,
+    aiStemAccompanimentGain: null,
+    aiStemVocalGain: null,
+    Audio: function () { return vocal; },
+    setTimeout(fn) { fn(); return 1; },
+    clearTimeout() {},
+    document: { getElementById() { return null; }, querySelectorAll() { return []; } },
+    aiStemTrackKey() { return 'qq:old|quality:lossless'; },
+    waitAiStemMediaReady() { waitCalls += 1; return mediaReady; },
+    resetPlaybackAudioGraphForSourceSwitch() {},
+    initAudio() { initCalls += 1; return true; },
+    applyAiStemLevels() { return true; },
+    rampAudioOutputGain() {},
+    applyVolumeToAudio() {},
+    showToast() {},
+  };
+  vm.runInNewContext(aiSource, sandbox);
+  sandbox.aiStemTrackKey = () => 'qq:old|quality:lossless';
+  sandbox.waitAiStemMediaReady = () => { waitCalls += 1; return mediaReady; };
+  sandbox.setAiStemRuntime = (patch) => { sandbox.aiStemRuntime = Object.assign({}, sandbox.aiStemRuntime, patch); };
+  sandbox.syncAiStemUi = () => {};
+  sandbox.resetPlaybackAudioGraphForSourceSwitch = () => {};
+  sandbox.initAudio = () => { initCalls += 1; return true; };
+  sandbox.applyAiStemLevels = () => true;
+
+  const activation = sandbox.activateAiStemPlayback({
+    status: 'ready', id: 'old-id', trackKey: 'qq:old|quality:lossless',
+    instrumentalUrl: '/api/ai-stem?id=old-id&stem=instrumental',
+    vocalsUrl: '/api/ai-stem?id=old-id&stem=vocals',
+  });
+  while (waitCalls < 2) await new Promise((resolve) => setImmediate(resolve));
+  sandbox.trackSwitchToken += 1;
+  sandbox.aiStemTrackKey = () => 'qq:new|quality:lossless';
+  main.currentSrc = '/api/audio?url=new';
+  main.src = '/api/audio?url=new';
+  releaseMedia(true);
+
+  assert.equal(await activation, false);
+  assert.equal(main.src, '/api/audio?url=new');
+  assert.equal(playCalls, 0);
+  assert.equal(initCalls, 0);
+});
+
+test('恢复原曲的等待期间切歌不会操作新歌', async () => {
+  const aiSource = read('public/js/modules/05-playback/09-ai-stem-playback.js');
+  let releaseMedia;
+  let playCalls = 0;
+  let initCalls = 0;
+  const mediaReady = new Promise((resolve) => { releaseMedia = resolve; });
+  const main = {
+    currentSrc: '/api/ai-stem?id=old-id&stem=instrumental',
+    src: '/api/ai-stem?id=old-id&stem=instrumental', currentTime: 33,
+    playbackRate: 1, paused: false, ended: false, preload: 'auto',
+    pause() { this.paused = true; },
+    play() { playCalls += 1; this.paused = false; return Promise.resolve(); },
+    load() {}, addEventListener() {},
+  };
+  const vocal = {
+    pause() {}, removeAttribute() {}, load() {},
+  };
+  const sandbox = {
+    Promise,
+    console: { warn() {} },
+    audio: main,
+    audioReady: true,
+    playbackSpeed: 1,
+    targetVolume: 0.8,
+    trackSwitchToken: 8,
+    singingSeparationMode: 'realtime',
+    aiStemRuntime: {
+      status: 'ready', active: true,
+      original: { src: '/api/audio?url=old', currentTime: 12, wasPlaying: true },
+    },
+    aiStemVocalAudio: vocal,
+    aiStemVocalSource: null,
+    aiStemMixNode: null,
+    aiStemAccompanimentGain: null,
+    aiStemVocalGain: null,
+    document: { getElementById() { return null; }, querySelectorAll() { return []; } },
+    aiStemTrackKey() { return 'qq:old|quality:lossless'; },
+    waitAiStemMediaReady() { return mediaReady; },
+    disconnectAudioGraphNodes() {},
+    initAudio() { initCalls += 1; return true; },
+    rampAudioOutputGain() {},
+    applyVolumeToAudio() {},
+  };
+  vm.runInNewContext(aiSource, sandbox);
+  sandbox.aiStemTrackKey = () => 'qq:old|quality:lossless';
+  sandbox.waitAiStemMediaReady = () => mediaReady;
+  sandbox.setAiStemRuntime = (patch) => { sandbox.aiStemRuntime = Object.assign({}, sandbox.aiStemRuntime, patch); };
+  sandbox.disconnectAudioGraphNodes = () => {};
+  sandbox.disposeAiStemSecondaryAudio = () => { sandbox.aiStemVocalAudio = null; };
+  sandbox.initAudio = () => { initCalls += 1; return true; };
+
+  const restoration = sandbox.deactivateAiStemPlayback({ restoreOriginal: true, reason: 'realtime-mode' });
+  await new Promise((resolve) => setImmediate(resolve));
+  sandbox.trackSwitchToken += 1;
+  sandbox.aiStemTrackKey = () => 'qq:new|quality:lossless';
+  main.currentSrc = '/api/audio?url=new';
+  main.src = '/api/audio?url=new';
+  releaseMedia(true);
+
+  assert.equal(await restoration, false);
+  assert.equal(main.src, '/api/audio?url=new');
+  assert.equal(playCalls, 0);
+  assert.equal(initCalls, 0);
 });
 
 test('AI 模式在播放时请求当前曲目，切歌会释放旧人声轨', () => {

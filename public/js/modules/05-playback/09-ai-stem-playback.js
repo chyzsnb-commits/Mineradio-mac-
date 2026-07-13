@@ -1,5 +1,7 @@
 'use strict';
 
+var aiStemPlaybackOperationSerial = 0;
+
 function aiStemPlaybackActive() {
   return !!(aiStemRuntime && aiStemRuntime.active && aiStemVocalAudio);
 }
@@ -16,6 +18,37 @@ function aiStemTrackKey(song) {
     : String(song.provider || song.source || '') + ':' + String(song.id || song.mid || song.localKey || song.name || '');
   var quality = typeof currentQuality === 'string' ? currentQuality : '';
   return base ? base + (quality ? '|quality:' + quality : '') : '';
+}
+
+function beginAiStemPlaybackOperation(trackKey) {
+  return {
+    serial: ++aiStemPlaybackOperationSerial,
+    trackSwitchToken: Number(trackSwitchToken) || 0,
+    trackKey: String(trackKey || ''),
+  };
+}
+
+function aiStemPlaybackOperationCurrent(operation, requireAiMode) {
+  if (!operation || operation.serial !== aiStemPlaybackOperationSerial) return false;
+  if (operation.trackSwitchToken !== (Number(trackSwitchToken) || 0)) return false;
+  if (operation.trackKey && operation.trackKey !== aiStemTrackKey()) return false;
+  return !requireAiMode || singingSeparationMode === 'ai';
+}
+
+function releaseAiStemMedia(media) {
+  if (!media) return;
+  try { media.pause(); media.removeAttribute('src'); media.load(); } catch (e) {}
+}
+
+function abandonAiStemActivation(operation, vocalMedia) {
+  releaseAiStemMedia(vocalMedia);
+  if (aiStemVocalAudio === vocalMedia) {
+    disposeAiStemSecondaryAudio();
+    if (aiStemRuntime && aiStemRuntime.trackKey === operation.trackKey) {
+      setAiStemRuntime({ active: false, original: null, status: 'idle', stage: 'idle', percent: 0 });
+    }
+  }
+  return false;
 }
 
 function applyAiStemLevels() {
@@ -192,6 +225,7 @@ async function activateAiStemPlayback(result) {
   if (!result || result.status !== 'ready' || !audio || !expectedKey || result.trackKey !== expectedKey) return false;
   if (aiStemPlaybackActive() && aiStemRuntime.id === result.id) return true;
   if (aiStemPlaybackActive()) await deactivateAiStemPlayback({ restoreOriginal: true, reason: 'replace-ai-stem' });
+  var operation = beginAiStemPlaybackOperation(expectedKey);
   var originalSrc = audio.currentSrc || audio.src || '';
   var resumeAt = isFinite(audio.currentTime) ? Number(audio.currentTime) : 0;
   var wasPlaying = !audio.paused && !audio.ended;
@@ -206,6 +240,7 @@ async function activateAiStemPlayback(result) {
   try {
     if (typeof rampAudioOutputGain === 'function') rampAudioOutputGain(0, 70);
     await new Promise(function (resolve) { setTimeout(resolve, 85); });
+    if (!aiStemPlaybackOperationCurrent(operation, true)) return abandonAiStemActivation(operation, vocalMedia);
     try { audio.pause(); } catch (e) {}
     resetPlaybackAudioGraphForSourceSwitch('ai-stem-activate');
     audio.src = result.instrumentalUrl;
@@ -215,12 +250,14 @@ async function activateAiStemPlayback(result) {
     audio.load();
     vocalMedia.load();
     await Promise.all([waitAiStemMediaReady(audio, 8000), waitAiStemMediaReady(vocalMedia, 8000)]);
+    if (!aiStemPlaybackOperationCurrent(operation, true)) return abandonAiStemActivation(operation, vocalMedia);
     try { audio.currentTime = resumeAt; vocalMedia.currentTime = resumeAt; } catch (e) {}
     audioReady = false;
     initAudio();
     applyAiStemLevels();
     if (wasPlaying) {
       await audio.play();
+      if (!aiStemPlaybackOperationCurrent(operation, true)) return abandonAiStemActivation(operation, vocalMedia);
       syncAiStemSecondaryForEvent('play', audio, vocalMedia);
     }
     if (typeof rampAudioOutputGain === 'function') rampAudioOutputGain(targetVolume, 100);
@@ -230,8 +267,11 @@ async function activateAiStemPlayback(result) {
     return true;
   } catch (error) {
     console.warn('[AIStem] activate failed:', error && (error.message || error));
+    if (!aiStemPlaybackOperationCurrent(operation, true)) return abandonAiStemActivation(operation, vocalMedia);
     await deactivateAiStemPlayback({ restoreOriginal: true, reason: 'activation-failed' });
-    setAiStemRuntime({ status: 'error', stage: 'error', active: false, error: 'AI_STEM_PLAYBACK_FAILED' });
+    if (singingSeparationMode === 'ai' && expectedKey === aiStemTrackKey() && aiStemRuntime.status !== 'running') {
+      setAiStemRuntime({ status: 'error', stage: 'error', active: false, error: 'AI_STEM_PLAYBACK_FAILED' });
+    }
     return false;
   }
 }
@@ -241,6 +281,7 @@ async function deactivateAiStemPlayback(options) {
   var active = aiStemPlaybackActive() || (aiStemRuntime && aiStemRuntime.active);
   var original = aiStemRuntime && aiStemRuntime.original;
   if (!active) { disposeAiStemSecondaryAudio(); return false; }
+  var operation = beginAiStemPlaybackOperation(aiStemTrackKey());
   var resumeAt = audio && isFinite(audio.currentTime) ? Number(audio.currentTime) : Number(original && original.currentTime) || 0;
   var wasPlaying = !!(audio && !audio.paused && !audio.ended);
   setAiStemRuntime({ active: false, original: null, stage: 'idle', percent: 0, status: singingSeparationMode === 'ai' ? 'idle' : 'idle' });
@@ -254,10 +295,12 @@ async function deactivateAiStemPlayback(options) {
     audio.playbackRate = Number(playbackSpeed) || 1;
     audio.load();
     await waitAiStemMediaReady(audio, 8000);
+    if (!aiStemPlaybackOperationCurrent(operation, false)) return false;
     try { audio.currentTime = resumeAt; } catch (e) {}
     audioReady = false;
     initAudio();
     if (wasPlaying || original.wasPlaying) await audio.play();
+    if (!aiStemPlaybackOperationCurrent(operation, false)) return false;
     if (typeof rampAudioOutputGain === 'function') rampAudioOutputGain(targetVolume, 90);
     else applyVolumeToAudio({ restoreEnvelope: true });
     return true;
