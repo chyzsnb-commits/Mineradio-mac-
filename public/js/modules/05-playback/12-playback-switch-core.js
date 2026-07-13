@@ -22,6 +22,11 @@ function syncPlaybackStateFromAudioEvent(reason) {
     switchPlaybackVisualToEmily();
     if (typeof markStageLyricsPlaybackResume === 'function') markStageLyricsPlaybackResume(reason);
   }
+  if (isPlaying
+      && typeof singingVocalProcessingNeeded === 'function'
+      && singingVocalProcessingNeeded()
+      && typeof prepareSingingVocalProcessor === 'function') prepareSingingVocalProcessor();
+  if (typeof syncSingingMicPowerState === 'function') syncSingingMicPowerState({ silent: true, reason: reason });
   forcePlaybackControlsInteractive();
 }
 

@@ -255,6 +255,23 @@ function buildVocalCutChain(ctx) {
   }
   return buildVocalCutChainBiquad(ctx);
 }
+function singingVocalProcessingNeeded(level) {
+  var currentLevel = arguments.length ? Number(level) : Number(singingVocalLevel);
+  if (!isFinite(currentLevel)) currentLevel = 0;
+  return !!(singingModeEnabled && currentLevel < 1);
+}
+function connectSingingPlaybackGraph(ctx, playbackSource, outputAnalyser, sourceUsesCapture) {
+  vocalCutChain = null;
+  if (singingVocalProcessingNeeded() && !sourceUsesCapture) {
+    vocalCutChain = buildVocalCutChain(ctx);
+    if (vocalCutChain.setLevel) vocalCutChain.setLevel(singingVocalLevel);
+    playbackSource.connect(vocalCutChain.input);
+    vocalCutChain.output.connect(outputAnalyser);
+  } else {
+    playbackSource.connect(outputAnalyser);
+  }
+  return vocalCutChain;
+}
 function initAudio() {
   if (!audio) return false;
   if (audioGraphHealthy()) return true;
@@ -327,17 +344,9 @@ function initAudio() {
       micVisualNode.connect(beatAnalyser);
     } catch (e) { micVisualNode = null; }
   }
-  if (singingModeEnabled && !sourceUsesCapture) {
-    // 可调原唱:source → 去人声链(worklet 频谱级,内部按 level 调;biquad 为回退)→ analyser → 输出。
-    // 捕获流(mono 回退)不做去人声。麦克风不进这条输出链,只驱动 beatAnalyser/_voxAnalyser。
-    vocalCutChain = buildVocalCutChain(audioCtx);
-    if (vocalCutChain.setLevel) vocalCutChain.setLevel(singingVocalLevel);
-    source.connect(vocalCutChain.input);
-    vocalCutChain.output.connect(analyser);
-  } else {
-    vocalCutChain = null;
-    source.connect(analyser);
-  }
+  // 原唱 100% 时直连，完全绕过 Worklet；低于 100% 才建立去人声链。
+  // 捕获流(mono 回退)仍不做去人声。麦克风不进输出链，只驱动分析器。
+  connectSingingPlaybackGraph(audioCtx, source, analyser, sourceUsesCapture);
   if (gainNode) {
     analyser.connect(gainNode);
     gainNode.connect(audioCtx.destination);
@@ -839,12 +848,28 @@ function syncSingingVocalUi() {
   if (slider && document.activeElement !== slider) slider.value = String(singingVocalLevel);
   if (val) val.textContent = pct + '%';
 }
-// 实时调原唱人声占比(1=原唱满,0=纯伴奏),直接改 dry/wet 增益,不重建音频图
+function prepareSingingVocalProcessor() {
+  if (!audioCtx || !singingVocalProcessingNeeded()) return Promise.resolve(false);
+  if (typeof _vocalWorkletCtx !== 'undefined' && _vocalWorkletCtx === audioCtx) return Promise.resolve(true);
+  var targetCtx = audioCtx;
+  return ensureVocalRemoverWorklet(targetCtx).then(function (ok) {
+    if (ok && audioCtx === targetCtx && singingVocalProcessingNeeded()) rebuildAudioGraphNow();
+    return ok;
+  });
+}
+// 实时调原唱人声占比(1=原唱满,0=纯伴奏)。只有跨越 100% 旁路边界才重建音频图。
 function setSingingVocalLevel(level, opts) {
+  var wasProcessing = singingVocalProcessingNeeded();
   level = Math.max(0, Math.min(1, parseFloat(level)));
   if (isNaN(level)) level = 0;
   singingVocalLevel = level;
-  if (vocalCutChain && vocalCutChain.setLevel) { try { vocalCutChain.setLevel(level); } catch (e) {} }
+  var needsProcessing = singingVocalProcessingNeeded();
+  if (singingModeEnabled && wasProcessing !== needsProcessing) {
+    rebuildAudioGraphNow();
+    if (needsProcessing) prepareSingingVocalProcessor();
+  } else if (vocalCutChain && vocalCutChain.setLevel) {
+    try { vocalCutChain.setLevel(level); } catch (e) {}
+  }
   syncSingingVocalUi();
   if (!(opts && opts.silent)) showToast('原唱 ' + Math.round(level * 100) + '%');
 }
@@ -877,27 +902,68 @@ function rebuildAudioGraphNow() {
     }
   }, 16);
 }
-async function startSingingMic() {
-  if (micStream) { rebuildAudioGraphNow(); return true; }
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { showToast('此环境不支持麦克风'); return false; }
-  try {
-    micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-    });
-  } catch (e) {
-    micStream = null;
-    showToast('麦克风未授权,唱歌律动暂用伴奏驱动');
-    return false;
-  }
-  if (!singingModeEnabled) { stopSingingMic(); return false; }  // 拿到权限前用户已关掉
-  rebuildAudioGraphNow();  // 把嗓音接进可视化混音总线
-  showToast('麦克风已开,开唱吧');
-  return true;
+var _singingMicRequestPromise = null;
+var _singingMicRequestSerial = 0;
+var _singingMicPermissionBlocked = false;
+function singingMicShouldRun() {
+  if (!singingModeEnabled || !audio) return false;
+  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) return false;
+  var src = audio.currentSrc || audio.src || '';
+  return !!(src && !audio.paused && !audio.ended && !audio.error);
+}
+function stopMediaStreamTracks(stream) {
+  if (!stream || typeof stream.getTracks !== 'function') return;
+  try { stream.getTracks().forEach(function (track) { try { track.stop(); } catch (e) { } }); } catch (e) { }
 }
 function stopSingingMic() {
-  if (micStream) { try { micStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { } }
+  if (_singingMicRequestPromise) {
+    _singingMicRequestSerial += 1;
+    _singingMicRequestPromise = null;
+  }
+  stopMediaStreamTracks(micStream);
   micStream = null;
+  if (micVisualNode) { try { micVisualNode.disconnect(); } catch (e) { } micVisualNode = null; }
   if (micSource) { try { micSource.disconnect(); } catch (e) { } micSource = null; }
+}
+function startSingingMic(opts) {
+  opts = opts || {};
+  if (!singingMicShouldRun()) { stopSingingMic(); return Promise.resolve(false); }
+  if (micStream) return Promise.resolve(true);
+  if (_singingMicPermissionBlocked) return Promise.resolve(false);
+  if (_singingMicRequestPromise) return _singingMicRequestPromise;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    _singingMicPermissionBlocked = true;
+    if (!opts.silent) showToast('此环境不支持麦克风');
+    return Promise.resolve(false);
+  }
+  var serial = ++_singingMicRequestSerial;
+  var request = navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  }).then(function (stream) {
+    if (serial !== _singingMicRequestSerial || !singingMicShouldRun()) {
+      stopMediaStreamTracks(stream);
+      return false;
+    }
+    micStream = stream;
+    rebuildAudioGraphNow();
+    if (!opts.silent) showToast('麦克风已开,开唱吧');
+    return true;
+  }).catch(function () {
+    if (serial === _singingMicRequestSerial) {
+      _singingMicPermissionBlocked = true;
+      micStream = null;
+      if (!opts.silent) showToast('麦克风未授权,唱歌律动暂用伴奏驱动');
+    }
+    return false;
+  }).finally(function () {
+    if (_singingMicRequestPromise === request) _singingMicRequestPromise = null;
+  });
+  _singingMicRequestPromise = request;
+  return request;
+}
+function syncSingingMicPowerState(opts) {
+  if (!singingMicShouldRun()) { stopSingingMic(); return Promise.resolve(false); }
+  return startSingingMic(opts);
 }
 var _singingPrevLyrics = null;
 // 进唱歌模式亮出同步歌词(跟唱),退出时恢复用户原来的歌词偏好(非破坏性)
@@ -916,11 +982,12 @@ function setSingingMode(on) {
   if (on === singingModeEnabled) { syncSingingModeUi(); return; }
   singingModeEnabled = on;
   if (on) {
-    rebuildAudioGraphNow();  // 先用 biquad 立即去人声
-    if (audioCtx) ensureVocalRemoverWorklet(audioCtx).then(function (ok) { if (ok && singingModeEnabled) rebuildAudioGraphNow(); });  // worklet 就绪后重建成频谱级
-    startSingingMic();       // 异步:拿到麦克风后再重建,把嗓音接进律动
+    _singingMicPermissionBlocked = false;
+    rebuildAudioGraphNow();
+    if (singingVocalProcessingNeeded()) prepareSingingVocalProcessor();
+    syncSingingMicPowerState({ silent: false });
     ensureSingingLyrics(true);
-    showToast('唱歌模式:已压低原唱,正在开麦…');
+    showToast(singingMicShouldRun() ? '唱歌模式:已压低原唱,正在开麦…' : '唱歌模式:已开启,播放后自动开麦');
   } else {
     stopSingingMic();
     rebuildAudioGraphNow();  // 移除去人声与麦克风,恢复原声

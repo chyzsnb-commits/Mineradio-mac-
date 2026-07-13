@@ -166,6 +166,7 @@ function updateRenderPowerClasses() {
   document.body.classList.toggle('render-deep-sleep', isDeepBackgroundMode());
   document.body.classList.toggle('render-background-eco', isVisibleBackgroundMode());
   if (typeof syncIdleGuideLoopPowerState === 'function') syncIdleGuideLoopPowerState();
+  if (typeof syncSingingMicPowerState === 'function') syncSingingMicPowerState({ silent: true, reason: 'render-power' });
 }
 function safeObjectKeys(obj) {
   try { return obj ? Object.keys(obj) : []; } catch (e) { return []; }
