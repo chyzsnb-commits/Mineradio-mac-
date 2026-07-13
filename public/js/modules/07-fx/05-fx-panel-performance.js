@@ -97,6 +97,7 @@ function updatePerformanceControls() {
   document.querySelectorAll('#performance-background-seg [data-performance-background]').forEach(function (btn) {
     btn.classList.toggle('active', btn.getAttribute('data-performance-background') === fx.performanceBackground);
   });
+  syncGpuModeSeg();
   syncPerformanceQualitySeg();
   var liveBackgroundKeepToggle = document.getElementById('t-liveBackgroundKeep');
   if (liveBackgroundKeepToggle) liveBackgroundKeepToggle.classList.toggle('on', fx.liveBackgroundKeep === true);
@@ -139,6 +140,67 @@ function setPerformanceQualityMode(mode, silent) {
       showToast('性能档位: ' + label);
     }
   }
+}
+function currentGpuMode() {
+  return window.MineradioGpuMode
+    ? window.MineradioGpuMode.readMode(window.localStorage)
+    : 'auto';
+}
+function gpuModeLabel(mode) {
+  mode = window.MineradioGpuMode ? window.MineradioGpuMode.normalizeMode(mode) : 'auto';
+  return mode === 'low-power' ? '省电' : (mode === 'high-performance' ? '高性能' : '自动');
+}
+function syncGpuModeSeg() {
+  var current = currentGpuMode();
+  document.querySelectorAll('#gpu-mode-seg [data-gpu-mode]').forEach(function (btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-gpu-mode') === current);
+  });
+}
+function openGpuModeRestartPrompt(mode) {
+  var modal = document.getElementById('gpu-mode-restart-modal');
+  var desc = document.getElementById('gpu-mode-restart-desc');
+  if (desc) desc.textContent = gpuModeLabel(mode) + '模式将在重启后生效。';
+  if (!modal) return;
+  if (typeof openGsapModal === 'function') openGsapModal(modal);
+  else modal.classList.add('show');
+}
+function dismissGpuModeRestartPrompt() {
+  var modal = document.getElementById('gpu-mode-restart-modal');
+  if (!modal) return;
+  if (typeof closeGsapModal === 'function') closeGsapModal(modal);
+  else modal.classList.remove('show');
+}
+async function restartForGpuMode() {
+  if (!(window.desktopWindow && typeof window.desktopWindow.restartApp === 'function')) {
+    dismissGpuModeRestartPrompt();
+    showToast('设置已保存，下次启动生效');
+    return;
+  }
+  try {
+    var result = await window.desktopWindow.restartApp();
+    if (result && result.ok === false) throw new Error(result.error || 'RESTART_FAILED');
+  } catch (e) {
+    dismissGpuModeRestartPrompt();
+    showToast('自动重启失败，请手动重启软件');
+  }
+}
+function setGpuMode(mode, silent) {
+  if (!window.MineradioGpuMode) return;
+  var next = window.MineradioGpuMode.normalizeMode(mode);
+  var current = currentGpuMode();
+  if (next === current) {
+    syncGpuModeSeg();
+    if (!silent) showToast('显卡模式: ' + gpuModeLabel(next));
+    return;
+  }
+  window.MineradioGpuMode.saveMode(window.localStorage, next);
+  if (currentGpuMode() !== next) {
+    syncGpuModeSeg();
+    showToast('显卡模式保存失败');
+    return;
+  }
+  syncGpuModeSeg();
+  if (!silent) openGpuModeRestartPrompt(next);
 }
 // 总刷新率上限:用户选的全局帧率上限(0=无上限随显示器)
 function syncMaxFpsSeg() {

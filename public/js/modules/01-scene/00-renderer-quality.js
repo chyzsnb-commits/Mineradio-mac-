@@ -166,7 +166,10 @@ function getRenderLoadTier() {
   if (cssPixels >= 3200000 || renderPixels >= 3600000) return 1;
   return 0;
 }
-var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
+var mainGpuPowerPreference = window.MineradioGpuMode
+  ? window.MineradioGpuMode.powerPreferenceForMode(window.MineradioGpuMode.readMode(window.localStorage))
+  : 'default';
+var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: mainGpuPowerPreference });
 renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(getRenderPixelRatio());
 renderer.setSize(innerWidth, innerHeight);

@@ -12,6 +12,7 @@
   <script src="vendor/three.r128.min.js"></script>
   <script src="vendor/music-tempo.min.js"></script>
   <script src="vendor/gsap.min.js"></script>
+  <script src="js/gpu-mode.js"></script>
   <script src="js/preload-mode.js"></script>
   <link rel="stylesheet" href="css/index.css">
 </head>
@@ -678,6 +679,12 @@
             <button data-max-fps="60" onclick="setMaxRenderFps(60)">60</button>
             <button data-max-fps="120" onclick="setMaxRenderFps(120)">120</button>
             <button data-max-fps="0" onclick="setMaxRenderFps(0)">无上限</button>
+          </div>
+          <div class="fx-section-label">显卡模式</div>
+          <div class="fx-seg gpu-mode-seg" id="gpu-mode-seg" title="切换后重启生效；自动模式由 macOS 决定渲染功耗偏好">
+            <button data-gpu-mode="auto" onclick="setGpuMode('auto')">自动</button>
+            <button data-gpu-mode="low-power" onclick="setGpuMode('low-power')">省电</button>
+            <button data-gpu-mode="high-performance" onclick="setGpuMode('high-performance')">高性能</button>
           </div>
           <div class="fx-section-label">性能档位</div>
           <div class="fx-seg" id="performance-quality-seg" title="低配机器选低配或自动;高性能机器可选高性能。自动按硬件判档">
@@ -1410,6 +1417,17 @@
             <button class="update-secondary-btn" type="button" onclick="closeUpdatePanel()">取消</button>
           </div>
           <div id="update-footnote" class="update-footnote">预览版只演示更新手感，不会真的下载安装。</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="gpu-mode-restart-modal" class="modal-mask" aria-labelledby="gpu-mode-restart-title">
+      <div class="modal gpu-mode-restart-modal">
+        <h2 id="gpu-mode-restart-title">显卡模式已保存</h2>
+        <div id="gpu-mode-restart-desc" class="desc">新模式将在重启后生效。</div>
+        <div class="btn-row">
+          <button class="modal-btn" type="button" onclick="dismissGpuModeRestartPrompt()">稍后重启</button>
+          <button class="modal-btn primary" type="button" onclick="restartForGpuMode()">立即重启</button>
         </div>
       </div>
     </div>

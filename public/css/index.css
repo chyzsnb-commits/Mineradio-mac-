@@ -2342,6 +2342,13 @@ body.empty-home-active .home-visual {
   animation: home-visual-drift 8.8s ease-in-out infinite
 }
 
+body.render-background-eco.empty-home-active .home-card,
+body.render-background-eco.empty-home-active .home-visual,
+body.render-deep-sleep.empty-home-active .home-card,
+body.render-deep-sleep.empty-home-active .home-visual {
+  animation-play-state: paused
+}
+
 @keyframes home-card-float {
 
   0%,
@@ -11309,6 +11316,22 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
 .fx-seg button.active {
   background: rgba(0, 245, 212, .10);
   color: var(--fc-accent)
+}
+
+.gpu-mode-seg button {
+  min-width: 0;
+  letter-spacing: 0
+}
+
+.gpu-mode-restart-modal .btn-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr))
+}
+
+.gpu-mode-restart-modal .modal-btn {
+  width: 100%;
+  min-width: 0;
+  letter-spacing: 0
 }
 
 /* --- 高级折叠 --- */
