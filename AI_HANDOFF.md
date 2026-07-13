@@ -7,7 +7,7 @@
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
 - **main 最新 commit**：`a2d8145`（PR #26 已合并：唱歌模式、倍速、防爆音、歌架与卡死修复）。
-- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）均为叠加关系；当前分支 `codex/vocal-accompaniment-mixer` 基于 #32，设计存档 `ae7af32`、功能存档 `67bf0de`，实现伴奏/人声双滑块和更强中置人声抑制，待创建叠加 PR。
+- **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）均为叠加关系；PR #33 分支 `codex/vocal-accompaniment-mixer` 基于 #32，设计存档 `ae7af32`、功能存档 `67bf0de`，实现伴奏/人声双滑块和更强中置人声抑制。
 - **协作者最新工作**：PR #28，分支 `codex/fix-gesture-latency`，优化双手手势延迟与 GPU 负载；当前仍待合并，本分支未修改其手势文件。
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
@@ -163,7 +163,7 @@
 - 未验证：真实播放、暂停、隐藏窗口后的系统释放时机和长期内存变化仍需用户真机确认；手动三个内存按钮仍保留原有短静音保护，不属于本次自动清理路径。
 
 **2026-07-13：Codex 增加伴奏/人声双滑块并加强去人声。**
-- 分支：`codex/vocal-accompaniment-mixer`；基于 PR #32；设计 commit（代码存档点）`ae7af32`，功能 commit `67bf0de`，待创建叠加 PR。
+- PR：#33，分支：`codex/vocal-accompaniment-mixer`；基于 PR #32；设计 commit（代码存档点）`ae7af32`，功能 commit `67bf0de`。
 - 唱歌模式面板新增对称的“伴奏”和“人声”两条滑块；默认伴奏 100%、人声 0%，可调为去人声、去伴奏突出人声或任意混合。
 - 频谱 Worklet 只运行一份，输出系数改为 `伴奏音量 × mask + 人声音量 × (1-mask)`；没有增加第二套 FFT。两条滑块同时 100% 时仍原声直通并完全绕过 Worklet。
 - 去人声曲线从 `ratio^1.4` 加强为 `ratio^2.2`，更强抑制带轻微立体声扩散的人声；130Hz 以下仍归入伴奏，保护贝斯和底鼓。
