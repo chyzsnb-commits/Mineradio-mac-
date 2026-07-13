@@ -13,8 +13,13 @@ function read(relativePath) {
 function readFunction(source, name) {
   const start = source.indexOf(`function ${name}(`);
   assert.ok(start >= 0, `缺少 ${name}`);
-  const next = source.indexOf('\nfunction ', start + 1);
-  return source.slice(start, next >= 0 ? next : source.length);
+  const bodyStart = source.indexOf('{', start);
+  let depth = 0;
+  for (let i = bodyStart; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}' && --depth === 0) return source.slice(start, i + 1);
+  }
+  assert.fail(`${name} 函数未闭合`);
 }
 
 test('最近播放列表记录滚动活动并在 240ms 后恢复', () => {
@@ -34,7 +39,7 @@ test('最近播放滚动时 3D 上限 30 FPS 且不抬高用户 24 FPS 设置', 
     isHomeRecentScrollActive() { return true; },
     isVisibleBackgroundMode() { return false; },
     normalizeForegroundFpsMode(value) { return value; },
-    foregroundFixedFpsForMode(mode) { return mode === '24' ? 24 : (mode === 'vsync' ? 0 : null); },
+    foregroundFixedFpsForMode(mode) { return mode === 'vsync' ? 0 : null; },
     foregroundFpsGovernorCap() { return 0; },
     resolveAdaptiveRenderCadence() { return null; },
     currentRenderAdaptiveContext() { return { kind: 'playback', tier: 0 }; },
@@ -50,12 +55,13 @@ test('最近播放滚动时 3D 上限 30 FPS 且不抬高用户 24 FPS 设置', 
     RENDER_ACTIVE_FPS: 60,
     Math,
   };
-  vm.runInNewContext(`${readFunction(loop, 'getAdaptiveRenderFps')};`, sandbox);
+  vm.runInNewContext(`${readFunction(loop, 'getAdaptiveRenderFps')};${readFunction(loop, 'applyMaxFpsCap')};`, sandbox);
   vm.runInNewContext('scrollFps = getAdaptiveRenderFps(1000);', sandbox);
   assert.equal(sandbox.scrollFps, 30);
-  sandbox.fx.foregroundFpsMode = '24';
-  vm.runInNewContext('fixedScrollFps = getAdaptiveRenderFps(1000);', sandbox);
+  sandbox.fx.maxFps = 24;
+  vm.runInNewContext('fixedScrollFps = applyMaxFpsCap(getAdaptiveRenderFps(1000));', sandbox);
   assert.equal(sandbox.fixedScrollFps, 24);
+  assert.match(readFunction(loop, 'shouldSkipAdaptiveRenderFrame'), /applyMaxFpsCap\(cadence \? cadence\.fps : getAdaptiveRenderFps\(now\)\)/);
 });
 
 test('最近播放滚动层独立合成且滚动时停用卡片重阴影', () => {
