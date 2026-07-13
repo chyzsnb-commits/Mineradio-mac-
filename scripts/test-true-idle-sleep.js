@@ -61,6 +61,51 @@ test('交互会取消休眠定时器并立即请求一帧', () => {
   assert.match(mainLoop, /audio\.addEventListener\(['"]play['"],\s*wakeMainLoopFromBackground\)/);
 });
 
+test('主循环调度会执行定时帧且唤醒时取消等待', () => {
+  const source = read('public/js/modules/11-main-loop.js');
+  let delay = 500;
+  let timeoutCallback = null;
+  let clearedTimer = 0;
+  let animationCallback = null;
+  const sandbox = {
+    mainLoopBackgroundTimer: 0,
+    mainLoopAnimationRequested: false,
+    mainLoopFrameDelayMs() { return delay; },
+    performance: { now() { return 1000; } },
+    setTimeout(callback, wait) {
+      assert.equal(wait, delay);
+      timeoutCallback = callback;
+      return 41;
+    },
+    clearTimeout(timer) { clearedTimer = timer; },
+    requestAnimationFrame(callback) { animationCallback = callback; return 77; },
+    animate() {},
+  };
+  vm.runInNewContext(
+    `${readFunction(source, 'requestMainLoopAnimationFrame')};`
+      + `${readFunction(source, 'scheduleNextMainLoopFrame')};`
+      + `${readFunction(source, 'wakeMainLoopFromBackground')};`
+      + 'scheduleNextMainLoopFrame();',
+    sandbox,
+  );
+  assert.equal(sandbox.mainLoopBackgroundTimer, 41);
+  assert.equal(animationCallback, null);
+
+  timeoutCallback();
+  assert.equal(sandbox.mainLoopBackgroundTimer, 0);
+  assert.equal(animationCallback, sandbox.animate);
+  assert.equal(sandbox.mainLoopAnimationRequested, true);
+
+  sandbox.mainLoopAnimationRequested = false;
+  animationCallback = null;
+  timeoutCallback = null;
+  delay = 67;
+  vm.runInNewContext('scheduleNextMainLoopFrame(); wakeMainLoopFromBackground();', sandbox);
+  assert.equal(clearedTimer, 41);
+  assert.equal(sandbox.mainLoopBackgroundTimer, 0);
+  assert.equal(animationCallback, sandbox.animate);
+});
+
 test('idle guide 禁用且无提示或进入深后台时不再安排帧', () => {
   const idleGuide = read('public/js/modules/09-idle-toast-libraries.js');
   const shelf = read('public/js/modules/04-shelf/00-layout-hover.js');
@@ -118,4 +163,29 @@ test('普通鼠标移动且歌架提示未激活时不唤醒 idle guide', () => 
   shouldRun = true;
   vm.runInNewContext('updateShelfHoverCueFromPointer({ clientX: 40, clientY: 50 });', sandbox);
   assert.equal(wakeCount, 1);
+});
+
+test('进入深后台会清掉尚未淡出的歌架提示残值', () => {
+  const idleGuide = read('public/js/modules/09-idle-toast-libraries.js');
+  const sandbox = {
+    idleGuideDelayTimer: 17,
+    idleGuideAnimationFrame: 23,
+    idleGuideCtx: { clearRect() {} },
+    idleGuideW: 100,
+    idleGuideH: 80,
+    shelfHoverCue: {
+      guide: false,
+      target: 0,
+      value: 0.64,
+      zoneActive: false,
+      enteredAt: 900,
+    },
+    clearTimeout() {},
+    cancelAnimationFrame() {},
+    resetIdleGuideTrails() {},
+    setIdleGuideVisible() {},
+  };
+  vm.runInNewContext(`${readFunction(idleGuide, 'stopIdleGuideLoop')}; stopIdleGuideLoop(true, true);`, sandbox);
+  assert.equal(sandbox.shelfHoverCue.value, 0);
+  assert.equal(sandbox.shelfHoverCue.enteredAt, 0);
 });

@@ -227,7 +227,7 @@ function idleGuideLoopShouldRun() {
   if (typeof shelfHoverCue === 'undefined' || !shelfHoverCue) return false;
   return !!(shelfHoverCue.guide || shelfHoverCue.zoneActive || shelfHoverCue.target > 0 || shelfHoverCue.value > 0.005);
 }
-function stopIdleGuideLoop(clearSurface) {
+function stopIdleGuideLoop(clearSurface, resetShelfCue) {
   if (idleGuideDelayTimer) {
     clearTimeout(idleGuideDelayTimer);
     idleGuideDelayTimer = null;
@@ -240,6 +240,12 @@ function stopIdleGuideLoop(clearSurface) {
     idleGuideCtx.clearRect(0, 0, idleGuideW, idleGuideH);
     resetIdleGuideTrails();
     setIdleGuideVisible(false, false);
+  }
+  if (resetShelfCue && typeof shelfHoverCue !== 'undefined' && shelfHoverCue && !shelfHoverCue.guide) {
+    shelfHoverCue.target = 0;
+    shelfHoverCue.value = 0;
+    shelfHoverCue.zoneActive = false;
+    shelfHoverCue.enteredAt = 0;
   }
 }
 function requestIdleGuideAnimationFrame() {
@@ -281,11 +287,11 @@ function wakeIdleGuideLoop() {
   requestIdleGuideAnimationFrame();
 }
 function syncIdleGuideLoopPowerState() {
-  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) stopIdleGuideLoop(true);
+  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) stopIdleGuideLoop(true, true);
   else wakeIdleGuideLoop();
 }
 document.addEventListener('visibilitychange', function () {
-  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) stopIdleGuideLoop(true);
+  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) stopIdleGuideLoop(true, true);
   else wakeIdleGuideLoop();
 });
 window.addEventListener('focus', wakeIdleGuideLoop);
