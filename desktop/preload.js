@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   getMemorySnapshot: () => ipcRenderer.invoke('mineradio-memory-get-snapshot'),
   configureMemoryReduct: (payload) => ipcRenderer.invoke('mineradio-memory-configure-auto', payload || {}),
   setMemoryPlaybackState: (payload) => ipcRenderer.send('mineradio-memory-playback-state', payload || {}),
+  updateTouchBarTrack: (payload) => ipcRenderer.send('touchbar-update-track', payload || {}),
   trimAppMemory: (payload) => ipcRenderer.invoke('mineradio-memory-trim-app', payload || {}),
   purgeSystemMemory: (payload) => ipcRenderer.invoke('mineradio-memory-purge-system', payload || {}),
   deviceStats: () => ipcRenderer.invoke('mineradio-device-stats'),

@@ -3797,6 +3797,12 @@ async function createWindow() {
     },
   });
 
+  try {
+    touchbar.init({ window: mainWindow, sendAction: sendGlobalHotkeyAction, ipcMain });
+  } catch (e) {
+    console.log('[TouchBar] 初始化跳过:', e.message);
+  }
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
@@ -4058,10 +4064,6 @@ if (!gotSingleInstanceLock) {
     screen.on('display-removed', handleDisplayLayoutChanged);
     await createWindow();
     try { require('./telemetry').startTelemetry(); } catch (e) {}
-    // macOS Touch Bar 播放控制（无 Touch Bar 的机器安全 no-op，不报错）
-    try {
-      touchbar.init({ window: mainWindow, sendAction: sendGlobalHotkeyAction, ipcMain: ipcMain });
-    } catch (e) { console.log('[TouchBar] 初始化跳过:', e.message); }
   });
 
   app.on('activate', () => {

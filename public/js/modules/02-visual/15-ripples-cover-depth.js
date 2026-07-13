@@ -531,12 +531,30 @@ function setControlCoverSrc(src) {
   cover.classList.remove('cover-empty');
 }
 
+function syncTouchBarTrack(song, isPlayingOverride) {
+  if (!window.desktopWindow || typeof window.desktopWindow.updateTouchBarTrack !== 'function') return false;
+  if (!song && typeof currentCoverSong === 'function') song = currentCoverSong();
+  song = song || {};
+  var title = song.name || song.title || '';
+  if (!title) return false;
+  var active = typeof isPlayingOverride === 'boolean'
+    ? isPlayingOverride
+    : !!(audio && audio.src && !audio.paused && !audio.ended);
+  window.desktopWindow.updateTouchBarTrack({
+    title: title,
+    artist: song.artist || '',
+    isPlaying: active,
+  });
+  return true;
+}
+
 function updateControlTrackInfo(song) {
   song = song || {};
   var title = document.getElementById('control-title');
   var artist = document.getElementById('control-artist');
   if (title) title.textContent = song.name || '';
   if (artist) artist.textContent = song.artist || '';
+  syncTouchBarTrack(song);
   updatePlaybackQualityUi();
   if (typeof updateLyricTimingOffsetUi === 'function') updateLyricTimingOffsetUi(song);
 }

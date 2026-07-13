@@ -17,6 +17,24 @@ let playPauseBtn = null;
 let currentWindow = null;
 let sendActionFn = null;
 let isPlaying = false;
+let ipcMainRef = null;
+let trackUpdateListener = null;
+
+function unbindTrackUpdates() {
+  if (ipcMainRef && trackUpdateListener) {
+    ipcMainRef.removeListener('touchbar-update-track', trackUpdateListener);
+  }
+  ipcMainRef = null;
+  trackUpdateListener = null;
+}
+
+function bindTrackUpdates(ipcMain) {
+  unbindTrackUpdates();
+  if (!ipcMain) return;
+  ipcMainRef = ipcMain;
+  trackUpdateListener = (_event, payload) => updateTrack(payload);
+  ipcMainRef.on('touchbar-update-track', trackUpdateListener);
+}
 
 function buildTouchBar() {
   // 歌曲名标签
@@ -69,6 +87,9 @@ function init({ window, sendAction, ipcMain }) {
   if (process.platform !== 'darwin') return;  // 仅 macOS
   if (!window || window.isDestroyed()) return;
 
+  if (currentWindow && currentWindow !== window && !currentWindow.isDestroyed()) {
+    try { currentWindow.setTouchBar(null); } catch (_) {}
+  }
   currentWindow = window;
   sendActionFn = sendAction || function () {};
 
@@ -81,21 +102,21 @@ function init({ window, sendAction, ipcMain }) {
     return;
   }
 
-  // 监听渲染进程推送的歌曲名更新
-  if (ipcMain) {
-    ipcMain.on('touchbar-update-track', (_event, payload) => {
-      updateTrack(payload);
-    });
-  }
+  bindTrackUpdates(ipcMain);
 
   // 窗口关闭时清理
   window.on('closed', () => {
+    if (currentWindow !== window) return;
     try {
       if (currentWindow && !currentWindow.isDestroyed()) {
         currentWindow.setTouchBar(null);
       }
     } catch (e) {}
+    unbindTrackUpdates();
     currentWindow = null;
+    titleLabel = null;
+    playPauseBtn = null;
+    sendActionFn = null;
   });
 }
 

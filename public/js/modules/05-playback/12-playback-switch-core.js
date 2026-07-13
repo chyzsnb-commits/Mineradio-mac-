@@ -19,6 +19,7 @@ function syncPlaybackStateFromAudioEvent(reason) {
   if (window.desktopWindow && typeof window.desktopWindow.setMemoryPlaybackState === 'function') {
     window.desktopWindow.setMemoryPlaybackState({ playing: isPlaying, reason: reason || '' });
   }
+  if (typeof syncTouchBarTrack === 'function') syncTouchBarTrack(null, isPlaying);
   setPlayIcon(isPlaying);
   if (!isPlaying) hideLoading();
   if (reason === 'play' || reason === 'playing') {
