@@ -170,6 +170,105 @@ function getRenderLoadTier() {
 var mainGpuPowerPreference = window.MineradioGpuMode
   ? window.MineradioGpuMode.powerPreferenceForMode(window.MineradioGpuMode.readMode(window.localStorage))
   : 'default';
+
+// GPU 计时查询不会等待显卡；结果没准备好时直接留到下次读取。
+function createRendererGpuTimer(gl, nowFn) {
+  if (!gl || typeof gl.getExtension !== 'function') return null;
+  nowFn = typeof nowFn === 'function' ? nowFn : function () { return performance.now(); };
+  var ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+  var webgl2 = !!(ext && typeof gl.createQuery === 'function' && typeof gl.beginQuery === 'function');
+  if (!webgl2) ext = gl.getExtension('EXT_disjoint_timer_query');
+  if (!ext) return null;
+  var webgl1 = !webgl2 && typeof ext.createQueryEXT === 'function' && typeof ext.beginQueryEXT === 'function';
+  if (!webgl2 && !webgl1) return null;
+
+  var pending = [];
+  var active = null;
+  var previous = null;
+  var previousStartedAt = 0;
+  var usagePct = null;
+
+  function deleteQuery(query) {
+    try {
+      if (webgl2) gl.deleteQuery(query);
+      else ext.deleteQueryEXT(query);
+    } catch (e) {}
+  }
+  function resetPending() {
+    for (var i = 0; i < pending.length; i++) deleteQuery(pending[i].query);
+    pending.length = 0;
+    active = null;
+    previous = null;
+  }
+  function poll() {
+    try {
+      if (gl.getParameter(ext.GPU_DISJOINT_EXT)) {
+        resetPending();
+        usagePct = null;
+        return;
+      }
+      while (pending.length) {
+        var item = pending[0];
+        var ready = webgl2
+          ? gl.getQueryParameter(item.query, gl.QUERY_RESULT_AVAILABLE)
+          : ext.getQueryObjectEXT(item.query, ext.QUERY_RESULT_AVAILABLE_EXT);
+        if (!ready) break;
+        var nanoseconds = webgl2
+          ? gl.getQueryParameter(item.query, gl.QUERY_RESULT)
+          : ext.getQueryObjectEXT(item.query, ext.QUERY_RESULT_EXT);
+        pending.shift();
+        deleteQuery(item.query);
+        if (item.periodMs > 0 && typeof nanoseconds === 'number' && isFinite(nanoseconds)) {
+          var next = Math.max(0, Math.min(100, nanoseconds / 1000000 / item.periodMs * 100));
+          usagePct = usagePct == null ? next : usagePct * 0.72 + next * 0.28;
+        }
+      }
+    } catch (e) {
+      resetPending();
+      usagePct = null;
+    }
+  }
+  return {
+    begin: function (periodMs) {
+      if (active) return false;
+      var now = nowFn();
+      if (previous && !(previous.periodMs > 0)) previous.periodMs = Math.max(1, now - previousStartedAt);
+      poll();
+      if (pending.length >= 4) return false;
+      var query = webgl2 ? gl.createQuery() : ext.createQueryEXT();
+      if (!query) return false;
+      var item = { query: query, periodMs: Number(periodMs) > 0 ? Number(periodMs) : 0 };
+      try {
+        if (webgl2) gl.beginQuery(ext.TIME_ELAPSED_EXT, query);
+        else ext.beginQueryEXT(ext.TIME_ELAPSED_EXT, query);
+      } catch (e) {
+        deleteQuery(query);
+        return false;
+      }
+      pending.push(item);
+      active = item;
+      previous = item;
+      previousStartedAt = now;
+      return true;
+    },
+    end: function () {
+      if (!active) return false;
+      try {
+        if (webgl2) gl.endQuery(ext.TIME_ELAPSED_EXT);
+        else ext.endQueryEXT(ext.TIME_ELAPSED_EXT);
+      } catch (e) {
+        resetPending();
+        usagePct = null;
+        return false;
+      }
+      active = null;
+      return true;
+    },
+    value: function () { poll(); return usagePct; },
+    dispose: resetPending
+  };
+}
+
 var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: mainGpuPowerPreference });
 renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(getRenderPixelRatio());
@@ -181,12 +280,33 @@ renderer.domElement.style.height = '100%';
 renderer.domElement.tabIndex = 0;
 document.getElementById('canvas-container').appendChild(renderer.domElement);
 
+var rendererGpuTimer = createRendererGpuTimer(renderer.getContext());
+var rendererGpuSampleLastAt = 0;
+function rendererGpuUsagePct() {
+  return rendererGpuTimer ? rendererGpuTimer.value() : null;
+}
+function beginRendererGpuSample() {
+  if (!rendererGpuTimer || typeof perfHudOn !== 'function' || !perfHudOn()) return false;
+  var now = performance.now();
+  if (now - rendererGpuSampleLastAt < 250) return false;
+  rendererGpuSampleLastAt = now;
+  var fps = (typeof renderPerfState !== 'undefined' && renderPerfState && renderPerfState.fps) || 0;
+  return rendererGpuTimer.begin(fps > 0 ? 1000 / fps : 0);
+}
+function renderMainSceneWithGpuSample(sceneRef, cameraRef) {
+  var sampled = beginRendererGpuSample();
+  try { renderer.render(sceneRef, cameraRef); }
+  finally { if (sampled && rendererGpuTimer) rendererGpuTimer.end(); }
+}
+
 // WebGL 上下文丢失处理（修复"窗口全黑"bug）。
 // GPU 压力大或驱动异常时会触发 webglcontextlost，画面变黑且不自动恢复。
 // 监听该事件：阻止默认行为，延迟 2 秒尝试恢复；仍失败则刷新页面（最可靠的恢复）。
 var _webglContextLostAt = 0;
 renderer.domElement.addEventListener('webglcontextlost', function (event) {
   event.preventDefault();  // 阻止默认，允许后续恢复
+  if (rendererGpuTimer) rendererGpuTimer.dispose();
+  rendererGpuTimer = null;
   _webglContextLostAt = Date.now();
   console.error('[WebGL] 上下文丢失，画面将变黑。2 秒后尝试恢复...');
   if (typeof showToast === 'function') {
@@ -199,6 +319,8 @@ renderer.domElement.addEventListener('webglcontextrestored', function () {
   try {
     renderer.setPixelRatio(getRenderPixelRatio());
     renderer.setSize(innerWidth, innerHeight);
+    rendererGpuTimer = createRendererGpuTimer(renderer.getContext());
+    rendererGpuSampleLastAt = 0;
   } catch (e) {}
 }, false);
 // 兜底：上下文丢失 5 秒还没恢复 → 刷新页面（最可靠的重置）

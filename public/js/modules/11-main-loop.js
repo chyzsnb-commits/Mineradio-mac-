@@ -400,7 +400,7 @@ function animate() {
     if (now - splashWarmRenderLast > 520) {
       splashWarmRenderLast = now;
       var splashRenderPerfStart = performance.now();
-      renderer.render(scene, camera);
+      renderMainSceneWithGpuSample(scene, camera);
       if (perfProbe && perfProbe.markSince) perfProbe.markSince('renderer.render.splash', splashRenderPerfStart);
     }
     var splashFrameCostMs = performance.now() - framePerfStart;
@@ -708,7 +708,7 @@ function animate() {
   }
 
   var rendererPerfStart = performance.now();
-  renderer.render(scene, camera);
+  renderMainSceneWithGpuSample(scene, camera);
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('renderer.render', rendererPerfStart);
   var frameCostMs = performance.now() - framePerfStart;
   if (typeof sampleAdaptiveFrameCost === 'function') {
