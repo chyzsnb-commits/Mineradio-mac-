@@ -75,22 +75,56 @@ function syncAiStemSecondaryForEvent(name, mainMedia, secondaryMedia) {
   if (!mainMedia || !secondaryMedia) return false;
   var mainTime = isFinite(mainMedia.currentTime) ? Number(mainMedia.currentTime) : 0;
   var secondaryTime = isFinite(secondaryMedia.currentTime) ? Number(secondaryMedia.currentTime) : 0;
+  if (secondaryMedia._mineradioAiStemSeekInFlight && !secondaryMedia.seeking) {
+    secondaryMedia._mineradioAiStemSeekInFlight = false;
+  }
+  var secondarySeekInFlight = !!(secondaryMedia._mineradioAiStemSeekInFlight || secondaryMedia.seeking);
   if (name === 'ratechange' || name === 'play' || name === 'playing') {
     try { secondaryMedia.playbackRate = Number(mainMedia.playbackRate) || 1; } catch (e) {}
   }
-  if (name === 'seeking' || name === 'seeked' || name === 'play' || name === 'playing'
-      || (name === 'timeupdate' && Math.abs(mainTime - secondaryTime) > 0.12)) {
-    if (Math.abs(mainTime - secondaryTime) > 0.035) {
-      try { secondaryMedia.currentTime = mainTime; } catch (e) {}
-    }
-  }
   if (name === 'pause' || name === 'ended' || name === 'emptied' || name === 'abort' || name === 'error') {
+    if (mainMedia.seeking) secondaryMedia._mineradioAiStemPendingTime = mainTime;
+    secondaryMedia._mineradioAiStemPendingPlay = false;
     try { secondaryMedia.pause(); } catch (e) {}
     return true;
   }
-  if ((name === 'play' || name === 'playing') && !mainMedia.paused && !mainMedia.ended) {
+  if (name === 'seeking' || mainMedia.seeking) {
+    secondaryMedia._mineradioAiStemPendingTime = mainTime;
+    if (!mainMedia.paused && !mainMedia.ended) secondaryMedia._mineradioAiStemPendingPlay = true;
+    try { if (!secondaryMedia.paused) secondaryMedia.pause(); } catch (e) {}
+    return true;
+  }
+  var shouldSync = name === 'seeked' || name === 'play' || name === 'playing'
+    || (name === 'timeupdate' && Math.abs(mainTime - secondaryTime) > 0.12);
+  if (name === 'seeked' || (secondarySeekInFlight && shouldSync)) {
+    secondaryMedia._mineradioAiStemPendingTime = mainTime;
+  }
+  var pendingTimeValue = secondaryMedia._mineradioAiStemPendingTime;
+  var pendingTime = Number(pendingTimeValue);
+  var hasPendingTime = pendingTimeValue != null && isFinite(pendingTime);
+  var syncTarget = hasPendingTime ? pendingTime : mainTime;
+  if (!secondarySeekInFlight && (hasPendingTime || shouldSync)) {
+    if (Math.abs(syncTarget - secondaryTime) > 0.035) {
+      try {
+        secondaryMedia.currentTime = syncTarget;
+        secondaryMedia._mineradioAiStemSeekInFlight = !!secondaryMedia.seeking;
+        if (!secondaryMedia._mineradioAiStemSeekInFlight) secondaryMedia._mineradioAiStemPendingTime = null;
+      } catch (e) {}
+    } else {
+      secondaryMedia._mineradioAiStemPendingTime = null;
+    }
+  }
+  if ((name === 'play' || name === 'playing') && !mainMedia.paused && !mainMedia.ended && secondaryMedia.paused) {
+    secondaryMedia._mineradioAiStemPendingPlay = true;
+  }
+  secondarySeekInFlight = !!(secondaryMedia._mineradioAiStemSeekInFlight || secondaryMedia.seeking);
+  pendingTimeValue = secondaryMedia._mineradioAiStemPendingTime;
+  hasPendingTime = pendingTimeValue != null && isFinite(Number(pendingTimeValue));
+  if (secondaryMedia._mineradioAiStemPendingPlay && !secondarySeekInFlight && !hasPendingTime
+      && !mainMedia.paused && !mainMedia.ended && secondaryMedia.paused) {
     try {
       var promise = secondaryMedia.play();
+      secondaryMedia._mineradioAiStemPendingPlay = false;
       if (promise && typeof promise.catch === 'function') promise.catch(function () {});
     } catch (e) {}
   }
