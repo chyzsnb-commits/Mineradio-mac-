@@ -11,6 +11,42 @@ const { spawn } = require('child_process');
 const AI_STEM_MODEL_FILENAME = 'UVR-MDX-NET-Inst_HQ_3.onnx';
 const AI_STEM_SEPARATOR_PACKAGE = 'audio-separator[cpu]==0.44.3';
 const AI_STEM_MAX_INPUT_BYTES = 220 * 1024 * 1024;
+const AI_STEM_PYTHON_HOOK = `'Mineradio AI stem runtime limits.'
+import os
+
+try:
+    _threads = max(1, int(os.environ.get('MINERADIO_AI_STEM_MAX_THREADS', '1')))
+except (TypeError, ValueError):
+    _threads = 1
+
+try:
+    import torch
+    torch.set_num_threads(_threads)
+    torch.set_num_interop_threads(1)
+except Exception:
+    pass
+
+try:
+    import onnxruntime as ort
+    if not getattr(ort, '_mineradio_session_options_patched', False):
+        _original_session_options = ort.SessionOptions
+
+        def _mineradio_session_options():
+            options = _original_session_options()
+            options.intra_op_num_threads = _threads
+            options.inter_op_num_threads = 1
+            try:
+                options.add_session_config_entry('session.intra_op.allow_spinning', '0')
+                options.add_session_config_entry('session.inter_op.allow_spinning', '0')
+            except Exception:
+                pass
+            return options
+
+        ort.SessionOptions = _mineradio_session_options
+        ort._mineradio_session_options_patched = True
+except Exception:
+    pass
+`;
 
 function codedError(code, message) {
   const error = new Error(message || code);
@@ -28,7 +64,51 @@ function recommendedMdxBatchSize(options = {}) {
   const platform = String(options.platform || process.platform);
   const arch = String(options.arch || process.arch);
   const totalMemoryBytes = Number(options.totalMemoryBytes == null ? os.totalmem() : options.totalMemoryBytes) || 0;
-  return platform === 'darwin' && arch === 'arm64' && totalMemoryBytes >= 12 * 1024 * 1024 * 1024 ? 2 : 1;
+  const onBatteryPower = options.onBatteryPower === true;
+  const thermalState = options.thermalState == null ? 'nominal' : String(options.thermalState).toLowerCase();
+  const thermalHealthy = thermalState === 'nominal';
+  return platform === 'darwin'
+    && arch === 'arm64'
+    && totalMemoryBytes >= 12 * 1024 * 1024 * 1024
+    && !onBatteryPower
+    && thermalHealthy
+    ? 2
+    : 1;
+}
+
+function recommendedAiStemThreadCount(options = {}) {
+  const detected = Number(options.logicalCpuCount == null ? (os.cpus() || []).length : options.logicalCpuCount);
+  const logicalCpuCount = Number.isFinite(detected) ? Math.max(1, Math.floor(detected)) : 1;
+  return Math.max(1, Math.min(6, logicalCpuCount - 2));
+}
+
+function ensureAiStemRuntimeHook(cacheRoot) {
+  const hookDir = path.join(cacheRoot, 'runtime');
+  const hookFile = path.join(hookDir, 'sitecustomize.py');
+  fs.mkdirSync(hookDir, { recursive: true });
+  let current = '';
+  try { current = fs.readFileSync(hookFile, 'utf8'); } catch (_) {}
+  if (current !== AI_STEM_PYTHON_HOOK) fs.writeFileSync(hookFile, AI_STEM_PYTHON_HOOK, 'utf8');
+  return hookDir;
+}
+
+function buildAiStemProcessEnvironment(baseEnv = {}, runtime = {}) {
+  const env = { ...baseEnv };
+  const threads = String(Math.max(1, Number(runtime.maxCpuThreads) || 1));
+  env.MINERADIO_AI_STEM_MAX_THREADS = threads;
+  env.OMP_NUM_THREADS = threads;
+  env.OMP_THREAD_LIMIT = threads;
+  env.OPENBLAS_NUM_THREADS = threads;
+  env.MKL_NUM_THREADS = threads;
+  env.VECLIB_MAXIMUM_THREADS = threads;
+  env.NUMEXPR_NUM_THREADS = threads;
+  env.OMP_WAIT_POLICY = 'PASSIVE';
+  env.KMP_BLOCKTIME = '0';
+  if (runtime.pythonHookDir) {
+    env.PYTHONPATH = String(runtime.pythonHookDir)
+      + (env.PYTHONPATH ? path.delimiter + String(env.PYTHONPATH) : '');
+  }
+  return env;
 }
 
 function validateLocalAudioUrl(value, localOrigin) {
@@ -72,6 +152,13 @@ function buildSeparatorCommand(options = {}) {
     '--use_soundfile',
     '--log_level', 'info',
   );
+  if (options.lowPriority === true) {
+    return {
+      file: String(options.nicePath || '/usr/bin/nice'),
+      args: ['-n', '10', uvPath, ...args],
+      options: { shell: false },
+    };
+  }
   return { file: uvPath, args, options: { shell: false } };
 }
 
@@ -306,6 +393,25 @@ async function defaultProcessTrack(context, options) {
   fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(modelDir, { recursive: true });
 
+  let powerState = {};
+  try {
+    powerState = typeof options.getPowerState === 'function' ? options.getPowerState() || {} : {};
+  } catch (_) {}
+  const runtime = {
+    mdxBatchSize: recommendedMdxBatchSize({
+      platform: process.platform,
+      arch: process.arch,
+      totalMemoryBytes: os.totalmem(),
+      onBatteryPower: powerState.onBatteryPower === true,
+      thermalState: powerState.thermalState,
+    }),
+    maxCpuThreads: recommendedAiStemThreadCount(),
+    lowPriority: process.platform === 'darwin',
+    powerSource: powerState.onBatteryPower === true ? 'battery' : 'ac',
+    thermalState: String(powerState.thermalState || 'unknown'),
+  };
+  runtime.pythonHookDir = ensureAiStemRuntimeHook(cacheRoot);
+
   const uvPath = (options.findUv || findUvExecutable)(process.env);
   if (!uvPath) throw codedError('AI_STEM_HELPER_MISSING');
   const sourceModel = (options.findModel || findUvrModel)(process.env, modelDir);
@@ -330,10 +436,29 @@ async function defaultProcessTrack(context, options) {
       report,
     });
     report({ stage: 'preparing', percent: 19 });
-    const command = buildSeparatorCommand({ uvPath, inputPath, outputDir: dir, modelDir });
+    const command = buildSeparatorCommand({
+      uvPath,
+      inputPath,
+      outputDir: dir,
+      modelDir,
+      mdxBatchSize: runtime.mdxBatchSize,
+      lowPriority: runtime.lowPriority,
+    });
     const ffmpegDir = (options.findFfmpegDir || findUvrFfmpegDirectory)(process.env);
-    const env = { ...process.env };
-    if (ffmpegDir) env.PATH = ffmpegDir + path.delimiter + String(env.PATH || '');
+    const baseEnv = { ...process.env };
+    if (ffmpegDir) baseEnv.PATH = ffmpegDir + path.delimiter + String(baseEnv.PATH || '');
+    const env = buildAiStemProcessEnvironment(baseEnv, runtime);
+    report({
+      stage: 'preparing',
+      percent: 19,
+      runtime: {
+        mdxBatchSize: runtime.mdxBatchSize,
+        maxCpuThreads: runtime.maxCpuThreads,
+        lowPriority: runtime.lowPriority,
+        powerSource: runtime.powerSource,
+        thermalState: runtime.thermalState,
+      },
+    });
     await runSeparatorProcess({
       command,
       signal,
@@ -416,6 +541,7 @@ function createAiStemService(options = {}) {
     activeJob = job;
     function report(progress = {}) {
       job.percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
+      if (progress.runtime && typeof progress.runtime === 'object') job.runtime = { ...progress.runtime };
       emit({
         ok: true,
         status: 'running',
@@ -424,6 +550,7 @@ function createAiStemService(options = {}) {
         jobId: job.jobId,
         stage: String(progress.stage || 'preparing'),
         percent: job.percent,
+        ...(job.runtime ? { runtime: { ...job.runtime } } : {}),
       });
     }
     report({ stage: 'preparing', percent: 0 });
@@ -458,13 +585,16 @@ function createAiStemService(options = {}) {
 module.exports = {
   AI_STEM_MODEL_FILENAME,
   AI_STEM_SEPARATOR_PACKAGE,
+  buildAiStemProcessEnvironment,
   buildSeparatorCommand,
   cacheIdForTrack,
   createAiStemService,
+  ensureAiStemRuntimeHook,
   findUvExecutable,
   findUvrFfmpegDirectory,
   findUvrModel,
   parseSeparatorProgress,
+  recommendedAiStemThreadCount,
   recommendedMdxBatchSize,
   validateLocalAudioUrl,
 };

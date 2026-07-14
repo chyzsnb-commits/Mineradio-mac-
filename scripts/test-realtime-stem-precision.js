@@ -99,6 +99,45 @@ function createSyntheticMix() {
   return { vocalLeft, vocalRight, drum, side, mixLeft, mixRight, drumStarts };
 }
 
+function createSyllabicCenteredVocal() {
+  const length = SAMPLE_RATE * 3;
+  const left = new Float32Array(length);
+  const right = new Float32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    const time = i / SAMPLE_RATE;
+    const syllableTime = time % 0.28;
+    const envelope = syllableTime < 0.18
+      ? Math.min(1, syllableTime / 0.018) * Math.exp(-syllableTime * 2.4)
+      : 0;
+    const vocal = envelope * 0.18 * (
+      Math.sin(2 * Math.PI * 230 * time)
+      + 0.42 * Math.sin(2 * Math.PI * 690 * time)
+      + 0.20 * Math.sin(2 * Math.PI * 8200 * time)
+    );
+    left[i] = vocal;
+    right[i] = vocal;
+  }
+  return { left, right };
+}
+
+function createCenteredPercussion() {
+  const length = SAMPLE_RATE * 3;
+  const signal = new Float32Array(length);
+  const starts = [0.9, 1.5, 2.1].map((seconds) => Math.round(seconds * SAMPLE_RATE));
+  for (const start of starts) {
+    const duration = Math.round(SAMPLE_RATE * 0.06);
+    for (let j = 0; j < duration; j += 1) {
+      const attack = Math.min(1, j / (SAMPLE_RATE * 0.002));
+      const envelope = attack * Math.exp(-j / (SAMPLE_RATE * 0.018));
+      signal[start + j] = envelope * (
+        0.28 * Math.sin(2 * Math.PI * 1800 * j / SAMPLE_RATE)
+        + 0.16 * Math.sin(2 * Math.PI * 4700 * j / SAMPLE_RATE)
+      );
+    }
+  }
+  return { signal, starts };
+}
+
 function rms(values, start, end) {
   let sum = 0;
   let count = 0;
@@ -142,6 +181,50 @@ test('实时人声轨压低中置鼓点且保留持续人声', () => {
   assert.ok(retainedVocal > 0.90, `人声保留过低: ${retainedVocal.toFixed(3)}`);
 });
 
+test('实时伴奏轨强力压低反复出现的中置人声', () => {
+  const vocal = createSyllabicCenteredVocal();
+  const accompaniment = processStereo(vocal.left, vocal.right, { accompaniment: 1, vocal: 0 }).left;
+  const start = PROCESSOR_DELAY + Math.round(SAMPLE_RATE * 0.35);
+  const end = PROCESSOR_DELAY + Math.round(SAMPLE_RATE * 2.8);
+  const residual = rms(accompaniment, start, end)
+    / rms(vocal.left, start - PROCESSOR_DELAY, end - PROCESSOR_DELAY);
+  assert.ok(residual < 0.14, `伴奏轨人声残留过高: ${residual.toFixed(3)}`);
+});
+
+test('实时伴奏轨保留侧声道乐器', () => {
+  const fixture = createSyntheticMix();
+  const sideOnly = processStereo(fixture.side, fixture.side.map((value) => -value), { accompaniment: 1, vocal: 0 }).left;
+  const start = PROCESSOR_DELAY + Math.round(SAMPLE_RATE * 0.35);
+  const end = PROCESSOR_DELAY + Math.round(SAMPLE_RATE * 2.8);
+  const retained = rms(sideOnly, start, end)
+    / rms(fixture.side, start - PROCESSOR_DELAY, end - PROCESSOR_DELAY);
+  assert.ok(retained > 0.85, `侧声道伴奏保留过低: ${retained.toFixed(3)}`);
+});
+
+test('实时伴奏轨保留居中的高频鼓点瞬态', () => {
+  const percussion = createCenteredPercussion();
+  const output = processStereo(percussion.signal, percussion.signal, { accompaniment: 1, vocal: 0 }).left;
+  let retainedRms = 0;
+  let retainedPeak = 0;
+  for (const start of percussion.starts) {
+    const duration = Math.round(SAMPLE_RATE * 0.075);
+    const outputStart = start + PROCESSOR_DELAY;
+    retainedRms += rms(output, outputStart, outputStart + duration)
+      / rms(percussion.signal, start, start + duration);
+    let inputPeak = 0;
+    let outputPeak = 0;
+    for (let i = 0; i < duration; i += 1) {
+      inputPeak = Math.max(inputPeak, Math.abs(percussion.signal[start + i] || 0));
+      outputPeak = Math.max(outputPeak, Math.abs(output[outputStart + i] || 0));
+    }
+    retainedPeak += outputPeak / Math.max(1e-9, inputPeak);
+  }
+  retainedRms /= percussion.starts.length;
+  retainedPeak /= percussion.starts.length;
+  assert.ok(retainedRms > 0.50, `中置鼓点能量保留过低: ${retainedRms.toFixed(3)}`);
+  assert.ok(retainedPeak > 0.60, `中置鼓点冲击保留过低: ${retainedPeak.toFixed(3)}`);
+});
+
 test('实时分离仍只使用一套 FFT 且帧内零分配', () => {
   const processor = readProcessorSource();
   assert.equal((processor.match(/this\.fft\(this\.re1, this\.im1, false\)/g) || []).length, 1);
@@ -150,4 +233,5 @@ test('实时分离仍只使用一套 FFT 且帧内零分配', () => {
   assert.doesNotMatch(frame, /new (?:Float32Array|Uint32Array|Array|Object)\b/);
   assert.match(processor, /prevMidEnergy/);
   assert.match(processor, /phaseCoherence/);
+  assert.match(processor, /accompanimentMaskPrev/);
 });

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, crashReporter } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, crashReporter, powerMonitor } = require('electron');
 const net = require('net');
 const http = require('http');
 const path = require('path');
@@ -261,11 +261,20 @@ function getAiStemCacheRoot() {
   return path.join(app.getPath('userData'), 'ai-stems');
 }
 
+function getAiStemPowerState() {
+  let onBatteryPower = process.platform === 'darwin';
+  let thermalState = process.platform === 'darwin' ? 'unknown' : 'nominal';
+  try { onBatteryPower = powerMonitor.isOnBatteryPower(); } catch (_) {}
+  try { thermalState = powerMonitor.getCurrentThermalState(); } catch (_) {}
+  return { onBatteryPower, thermalState };
+}
+
 function ensureAiStemService() {
   if (aiStemService) return aiStemService;
   aiStemService = createAiStemService({
     cacheRoot: getAiStemCacheRoot(),
     getLocalOrigin: () => 'http://127.0.0.1:' + mainServerPort,
+    getPowerState: getAiStemPowerState,
     onProgress: (payload) => {
       if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) return;
       mainWindow.webContents.send('mineradio-ai-stems-progress', payload || {});

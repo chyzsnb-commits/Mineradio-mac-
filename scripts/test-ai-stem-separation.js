@@ -7,10 +7,13 @@ const assert = require('node:assert/strict');
 
 const {
   AI_STEM_MODEL_FILENAME,
+  buildAiStemProcessEnvironment,
   buildSeparatorCommand,
   cacheIdForTrack,
   createAiStemService,
+  ensureAiStemRuntimeHook,
   parseSeparatorProgress,
+  recommendedAiStemThreadCount,
   recommendedMdxBatchSize,
   validateLocalAudioUrl,
 } = require('../desktop/ai-stem-separator');
@@ -75,10 +78,67 @@ test('分轨命令复用 UVR 模型且不经过 shell 字符串', () => {
 
 test('Apple Silicon 内存充足时用 batch 2，低内存或 Intel 自动回退', () => {
   const gb = 1024 * 1024 * 1024;
-  assert.equal(recommendedMdxBatchSize({ platform: 'darwin', arch: 'arm64', totalMemoryBytes: 16 * gb }), 2);
+  assert.equal(recommendedMdxBatchSize({
+    platform: 'darwin', arch: 'arm64', totalMemoryBytes: 16 * gb,
+    onBatteryPower: false, thermalState: 'nominal',
+  }), 2);
   assert.equal(recommendedMdxBatchSize({ platform: 'darwin', arch: 'arm64', totalMemoryBytes: 8 * gb }), 1);
   assert.equal(recommendedMdxBatchSize({ platform: 'darwin', arch: 'x64', totalMemoryBytes: 32 * gb }), 1);
   assert.equal(recommendedMdxBatchSize({ platform: 'win32', arch: 'arm64', totalMemoryBytes: 32 * gb }), 1);
+});
+
+test('电池供电或温度升高时 AI 自动使用 batch 1', () => {
+  const gb = 1024 * 1024 * 1024;
+  const base = { platform: 'darwin', arch: 'arm64', totalMemoryBytes: 16 * gb };
+  assert.equal(recommendedMdxBatchSize({ ...base, onBatteryPower: true, thermalState: 'nominal' }), 1);
+  assert.equal(recommendedMdxBatchSize({ ...base, onBatteryPower: false, thermalState: 'fair' }), 1);
+  assert.equal(recommendedMdxBatchSize({ ...base, onBatteryPower: false, thermalState: 'serious' }), 1);
+  assert.equal(recommendedMdxBatchSize({ ...base, onBatteryPower: false, thermalState: 'critical' }), 1);
+  assert.equal(recommendedMdxBatchSize({ ...base, onBatteryPower: false, thermalState: 'unknown' }), 1);
+});
+
+test('AI 推理为系统留出核心并限制常见数学线程池', () => {
+  assert.equal(recommendedAiStemThreadCount({ logicalCpuCount: 8 }), 6);
+  assert.equal(recommendedAiStemThreadCount({ logicalCpuCount: 4 }), 2);
+  assert.equal(recommendedAiStemThreadCount({ logicalCpuCount: 2 }), 1);
+  assert.equal(recommendedAiStemThreadCount({ logicalCpuCount: 12 }), 6);
+  const env = buildAiStemProcessEnvironment(
+    { PATH: '/usr/bin', PYTHONPATH: '/existing/python' },
+    { maxCpuThreads: 6, pythonHookDir: '/tmp/mineradio-hook' },
+  );
+  assert.equal(env.PATH, '/usr/bin');
+  assert.equal(env.OMP_NUM_THREADS, '6');
+  assert.equal(env.OPENBLAS_NUM_THREADS, '6');
+  assert.equal(env.MKL_NUM_THREADS, '6');
+  assert.equal(env.VECLIB_MAXIMUM_THREADS, '6');
+  assert.equal(env.NUMEXPR_NUM_THREADS, '6');
+  assert.equal(env.OMP_WAIT_POLICY, 'PASSIVE');
+  assert.equal(env.PYTHONPATH, '/tmp/mineradio-hook' + path.delimiter + '/existing/python');
+});
+
+test('Python 启动钩子把线程数写入 ONNX Runtime 会话', () => {
+  const cacheRoot = tempDir();
+  const hookDir = ensureAiStemRuntimeHook(cacheRoot);
+  const hookSource = fs.readFileSync(path.join(hookDir, 'sitecustomize.py'), 'utf8');
+  assert.match(hookSource, /intra_op_num_threads\s*=\s*_threads/);
+  assert.match(hookSource, /inter_op_num_threads\s*=\s*1/);
+  assert.match(hookSource, /torch\.set_num_threads\(_threads\)/);
+});
+
+test('macOS AI 子进程通过 nice 降低优先级且不使用 shell', () => {
+  const command = buildSeparatorCommand({
+    uvPath: '/Users/test/.local/bin/uv',
+    inputPath: '/tmp/input.flac',
+    outputDir: '/tmp/output',
+    modelDir: '/tmp/models',
+    mdxBatchSize: 1,
+    lowPriority: true,
+    nicePath: '/usr/bin/nice',
+  });
+  assert.equal(command.file, '/usr/bin/nice');
+  assert.deepEqual(command.args.slice(0, 3), ['-n', '10', '/Users/test/.local/bin/uv']);
+  assert.equal(command.options.shell, false);
+  assert.deepEqual(command.args.slice(command.args.indexOf('--mdx_batch_size'), command.args.indexOf('--mdx_batch_size') + 2), ['--mdx_batch_size', '1']);
 });
 
 test('解析准备、下载和 AI 分轨百分比', () => {
@@ -242,6 +302,10 @@ test('Electron 暴露 AI 分轨开始、状态、取消和进度通道', () => {
   const preload = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'preload.js'), 'utf8');
   const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
   assert.match(main, /createAiStemService/);
+  assert.match(main, /powerMonitor/);
+  assert.match(main, /getPowerState:\s*getAiStemPowerState/);
+  assert.match(main, /powerMonitor\.isOnBatteryPower\(\)/);
+  assert.match(main, /powerMonitor\.getCurrentThermalState\(\)/);
   assert.match(main, /ipcMain\.handle\('mineradio-ai-stems-start'/);
   assert.match(main, /ipcMain\.handle\('mineradio-ai-stems-status'/);
   assert.match(main, /ipcMain\.handle\('mineradio-ai-stems-cancel'/);

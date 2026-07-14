@@ -50,7 +50,7 @@ test('Worklet 用相干性与瞬态掩码混合伴奏和人声', () => {
   assert.match(source, /processorOptions:\s*\{\s*accompaniment:\s*singingAccompanimentLevel,\s*vocal:\s*singingVocalLevel\s*\}/);
   assert.match(source, /phaseCoherence/);
   assert.match(source, /transientProbability/);
-  assert.match(source, /var applied = accompaniment \* \(1 - vocalProbability\) \+ vocal \* vocalProbability;/);
+  assert.match(source, /var applied = accompaniment \* accompanimentMask \+ vocal \* vocalProbability;/);
   assert.doesNotMatch(source, /var applied = lv \+ \(1 - lv\) \* mask;/);
 });
 

@@ -89,8 +89,7 @@ function resetPlaybackAudioGraphForSourceSwitch(reason) {
 var MIC_VISUAL_GAIN = 3.0;  // 麦克风信号进可视化分析器前的提亮倍数(嗓音常偏小)
 
 // ── 频谱级去人声 AudioWorklet 处理器 ──
-// STFT(2048/HOP512,Hann,75% 叠加)结合中置相干性与瞬态检测生成人声概率。
-// 居中且稳定的成分归入人声,宽频突变的鼓点和侧声道成分归入伴奏。
+// STFT(2048/HOP512,Hann,75% 叠加)生成两套掩码:伴奏轨强力削中置,人声轨保护鼓点瞬态。
 // 仍是单路 FFT 处理,无双路延迟错配。
 var VOCAL_REMOVER_PROCESSOR_SRC = `
 class VocalRemoverProcessor extends AudioWorkletProcessor {
@@ -104,6 +103,8 @@ class VocalRemoverProcessor extends AudioWorkletProcessor {
     this.norm = c > 0 ? 1 / c : 1;
     this.lowKeepBin = Math.max(1, Math.round(130 * N / sampleRate));  // <130Hz(贝斯/底鼓)整段保留
     this.highProtectBin = Math.max(this.lowKeepBin + 1, Math.round(7200 * N / sampleRate));
+    this.accompanimentMaskPrev = new Float32Array(N);
+    for (var mk = 0; mk < N; mk++) this.accompanimentMaskPrev[mk] = 1;
     this.vocalProbabilityPrev = new Float32Array(N);
     this.prevMidEnergy = new Float32Array(N);
     this.transientState = new Float32Array(N);
@@ -147,7 +148,7 @@ class VocalRemoverProcessor extends AudioWorkletProcessor {
   }
   frame() {
     var N = this.N, win = this.win, accompaniment = this.accompanimentLevel, vocal = this.vocalLevel;
-    var keepBin = this.lowKeepBin, highBin = this.highProtectBin, vp = this.vocalProbabilityPrev, pe = this.prevMidEnergy, ts = this.transientState;
+    var keepBin = this.lowKeepBin, highBin = this.highProtectBin, amp = this.accompanimentMaskPrev, vp = this.vocalProbabilityPrev, pe = this.prevMidEnergy, ts = this.transientState;
     for (var i = 0; i < N; i++) { this.re1[i] = this.inL[i] * win[i]; this.im1[i] = 0; this.re2[i] = this.inR[i] * win[i]; this.im2[i] = 0; }
     this.fft(this.re1, this.im1, false);
     this.fft(this.re2, this.im2, false);
@@ -157,9 +158,13 @@ class VocalRemoverProcessor extends AudioWorkletProcessor {
       var sr = (lr - rr) * 0.5, si = (li - ri) * 0.5;
       var midEnergy = mr * mr + mi * mi, sideEnergy = sr * sr + si * si;
       var leftEnergy = lr * lr + li * li, rightEnergy = rr * rr + ri * ri;
+      var rawAccompanimentMask = 1;
       var rawVocalProbability = 0;
+      var instantTransientProbability = 0;
       var fb = b <= (N >> 1) ? b : (N - b);   // 折叠到 0..N/2
       if (fb > keepBin && midEnergy > 1e-12) {
+        var sideToMid = Math.min(1, Math.sqrt(sideEnergy) / (Math.sqrt(midEnergy) + 1e-9));
+        rawAccompanimentMask = Math.pow(sideToMid, 2.2);
         var crossRoot = Math.sqrt(leftEnergy * rightEnergy);
         var phaseCoherence = Math.max(0, Math.min(1, (lr * rr + li * ri) / (crossRoot + 1e-12)));
         var levelBalance = Math.min(1, 2 * crossRoot / (leftEnergy + rightEnergy + 1e-12));
@@ -169,6 +174,7 @@ class VocalRemoverProcessor extends AudioWorkletProcessor {
         var transientProbability = previousEnergy > 1e-12
           ? Math.max(0, Math.min(1, (midEnergy - previousEnergy) / (midEnergy + 1e-12)))
           : 1;
+        instantTransientProbability = transientProbability;
         transientProbability = Math.max(transientProbability, ts[b] * 0.58);
         ts[b] = transientProbability;
         pe[b] = previousEnergy * 0.56 + midEnergy * 0.44;
@@ -180,12 +186,18 @@ class VocalRemoverProcessor extends AudioWorkletProcessor {
         pe[b] *= 0.5;
         ts[b] *= 0.5;
       }
+      // 只放回最尖锐的第一下瞬态；五次方会快速压低持续人声，同时保留军鼓/镲片的冲击。
+      if (fb > keepBin) rawAccompanimentMask = Math.max(rawAccompanimentMask, Math.pow(instantTransientProbability, 5));
+      var previousAccompanimentMask = amp[b];
+      var accompanimentSmoothing = rawAccompanimentMask < previousAccompanimentMask ? 0.18 : 0.62;
+      var accompanimentMask = accompanimentSmoothing * previousAccompanimentMask + (1 - accompanimentSmoothing) * rawAccompanimentMask;
+      amp[b] = accompanimentMask;
       // 瞬态到来时快速转入伴奏,人声概率慢速恢复,减少水声伪影。
       var previousVocalProbability = vp[b];
       var smoothing = rawVocalProbability < previousVocalProbability ? 0.16 : 0.72;
       var vocalProbability = smoothing * previousVocalProbability + (1 - smoothing) * rawVocalProbability;
       vp[b] = vocalProbability;
-      var applied = accompaniment * (1 - vocalProbability) + vocal * vocalProbability;
+      var applied = accompaniment * accompanimentMask + vocal * vocalProbability;
       this.re1[b] = lr * applied; this.im1[b] = li * applied;
       this.re2[b] = rr * applied; this.im2[b] = ri * applied;
     }
