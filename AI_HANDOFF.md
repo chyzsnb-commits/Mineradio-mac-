@@ -13,13 +13,15 @@
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
 - **网络注意**：本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI）正常。**用 gh API 推送代码，不要用 git push**。
 
-## 当前进行中：手势延迟与卡顿修复
+## 最终整合（agents/final-integration，2026-07-14）
 
-- 分支：`codex/fix-gesture-latency`。
-- 根因：Swift/Vision 路径每帧经过 Renderer canvas 回读、IPC RGBA 传输和 CoreImage/Metal 转换，实测约 80–170ms、约 6 次/秒，开启后 GPU 进程增量约 47 个百分点。
-- 修复：GPU HandLandmarker 移到 Worker，使用 256×192 `ImageBitmap` 转移和单帧背压；保留双手与原生/主线程降级路径。
-- 修复后持续压测：平均推理 18.8ms、端到端 19.4ms、26.5 次/秒；GPU/Renderer 进程增量分别约 5.1 / 6.4 个百分点。
-- 当前机器在反复强制停止摄像头测试后出现硬件首帧不返回；新代码已验证 6 秒超时会完整恢复。合并前仍需由用户正常重开应用后做真实手部交互体验确认。
+- **分支**：`agents/final-integration`（共享任务分支，从 PR #52 `codex/async-playback-race-fixes` 创建）。
+- **本轮目标**：把 PR #28（`codex/fix-gesture-latency`，双手手势 GPU Worker 管线）整合进 PR #52 基线。#52 基线未改手势文件，`00-gesture-control.js` 干净合入；仅 `CHANGELOG.md` 冲突已并（手势条目置顶）。PR #35（协作 Skill）不属于播放器，未混入。
+- **PR #28 审查结论（发热/卡顿）**：是**净改善**，不是增负担。旧 Swift/Vision 原生路径开启后 GPU 进程 49.8%→97.2%、延迟约 80–170ms；新 Worker 路径 GPU 仅 +5.1pp、端到端约 19.4ms / 26.5 次每秒；摄像头 640×480@60 → 320×240@30，保留双手。协议核对：`gesture-worker.js` 的 init/frame/stop 与 `gesture-control.js` 的发送/回调完全对得上；失败依次回退 Vision/ANE → 主线程 MediaPipe。
+- **自动检查**：`npm run check` 本地通过（21 个测试文件、**122 项全过**）。关键功能存在性核对：失焦降帧、空闲真休眠（PR #30 的 500ms / 2FPS）、Mac 内存面板+purge、Touch Bar、崩溃恢复+记录、WebGL 黑屏恢复、purge 防爆音、GPU/CPU 占用显示、AI 分轨、唱歌模式——全部在。
+- **未本地验证**：Electron 假媒体启动 + 未签名 arm64 打包（本地未装 electron/electron-builder；仓库主人机器为无风扇 M4，避免重载，**交由本 PR 的 CI arm64/x64 构建验证**）；真实手部跟踪体验需用户正常重开应用确认（#28 备注：该机反复强停摄像头后暂时不返首帧）。
+- **旧 PR**：未关闭任何旧 PR，等最终 PR 审查通过后统一处理。
+- **Obsidian**：接手环境访问不到仓库主人电脑上的 Obsidian（`/Users/chy/...`），**待仓库主人侧同步**。
 
 ## 用户偏好（重要）
 
