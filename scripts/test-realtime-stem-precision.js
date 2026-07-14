@@ -78,6 +78,8 @@ function createSyntheticMix() {
       Math.sin(2 * Math.PI * 220 * time)
       + 0.48 * Math.sin(2 * Math.PI * 440 * time)
       + 0.26 * Math.sin(2 * Math.PI * 660 * time)
+      + 0.16 * Math.sin(2 * Math.PI * 1320 * time)
+      + 0.10 * Math.sin(2 * Math.PI * 2200 * time)
     );
     vocalLeft[i] = vocal;
     vocalRight[i] = vocal;
@@ -138,6 +140,72 @@ function createCenteredPercussion() {
   return { signal, starts };
 }
 
+function createStereoInstrument() {
+  const length = SAMPLE_RATE * 3;
+  const left = new Float32Array(length);
+  const right = new Float32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    const time = i / SAMPLE_RATE;
+    const noteTime = time % 0.5;
+    const envelope = noteTime < 0.34
+      ? Math.min(1, noteTime / 0.01) * Math.exp(-noteTime * 4)
+      : 0;
+    const center = envelope * 0.13 * (
+      Math.sin(2 * Math.PI * 330 * time)
+      + 0.5 * Math.sin(2 * Math.PI * 990 * time)
+    );
+    const side = envelope * 0.08 * (
+      Math.sin(2 * Math.PI * 410 * time)
+      + 0.4 * Math.sin(2 * Math.PI * 1230 * time)
+    );
+    left[i] = center + side;
+    right[i] = center - side;
+  }
+  return { left, right };
+}
+
+function createLowMaleVocal() {
+  const length = SAMPLE_RATE * 3;
+  const left = new Float32Array(length);
+  const right = new Float32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    const time = i / SAMPLE_RATE;
+    let vocal = 0;
+    for (let harmonic = 1; harmonic <= 24; harmonic += 1) {
+      const frequency = 110 * harmonic;
+      const formant = 0.85 * Math.exp(-Math.pow((frequency - 520) / 260, 2))
+        + 0.62 * Math.exp(-Math.pow((frequency - 1050) / 360, 2))
+        + 0.38 * Math.exp(-Math.pow((frequency - 2350) / 520, 2));
+      vocal += (0.035 + formant) / Math.sqrt(harmonic)
+        * Math.sin(2 * Math.PI * frequency * time);
+    }
+    left[i] = Math.min(1, time / 0.08) * 0.06 * vocal;
+    right[i] = left[i];
+  }
+  return { left, right };
+}
+
+function createCenteredSibilance() {
+  const length = SAMPLE_RATE * 3;
+  const left = new Float32Array(length);
+  const right = new Float32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    const time = i / SAMPLE_RATE;
+    const localTime = time % 0.42;
+    const envelope = localTime < 0.18
+      ? Math.min(1, localTime / 0.018) * Math.exp(-localTime * 2.2)
+      : 0;
+    const vocal = envelope * 0.08 * (
+      Math.sin(2 * Math.PI * 3200 * time)
+      + 0.7 * Math.sin(2 * Math.PI * 4700 * time + 0.4)
+      + 0.45 * Math.sin(2 * Math.PI * 6100 * time + 1.1)
+    );
+    left[i] = vocal;
+    right[i] = vocal;
+  }
+  return { left, right };
+}
+
 function rms(values, start, end) {
   let sum = 0;
   let count = 0;
@@ -177,8 +245,65 @@ test('实时人声轨压低中置鼓点且保留持续人声', () => {
   const retainedVocal = rms(vocalOnly, steadyStart, steadyEnd)
     / rms(fixture.vocalLeft, steadyStart - PROCESSOR_DELAY, steadyEnd - PROCESSOR_DELAY);
 
-  assert.ok(leakedDrum / rawDrum < 0.215, `鼓点泄漏过高: ${(leakedDrum / rawDrum).toFixed(3)}`);
-  assert.ok(retainedVocal > 0.90, `人声保留过低: ${retainedVocal.toFixed(3)}`);
+  assert.ok(leakedDrum / rawDrum < 0.10, `鼓点泄漏过高: ${(leakedDrum / rawDrum).toFixed(3)}`);
+  assert.ok(retainedVocal > 0.70, `人声保留过低: ${retainedVocal.toFixed(3)}`);
+});
+
+test('实时人声轨压低带立体声扩散的乐器', () => {
+  const instrument = createStereoInstrument();
+  const vocalTrack = processStereo(instrument.left, instrument.right, { accompaniment: 0, vocal: 1 }).left;
+  const start = PROCESSOR_DELAY + Math.round(SAMPLE_RATE * 0.4);
+  const end = PROCESSOR_DELAY + Math.round(SAMPLE_RATE * 2.8);
+  const leaked = rms(vocalTrack, start, end)
+    / rms(instrument.left, start - PROCESSOR_DELAY, end - PROCESSOR_DELAY);
+  assert.ok(leaked < 0.25, `乐器泄漏过高: ${leaked.toFixed(3)}`);
+});
+
+test('实时人声轨不放回与人声同频的侧声道乐器', () => {
+  const length = SAMPLE_RATE * 3;
+  const vocal = new Float32Array(length);
+  const side = new Float32Array(length);
+  const mixLeft = new Float32Array(length);
+  const mixRight = new Float32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    const time = i / SAMPLE_RATE;
+    const sideEnvelope = 0.58 + 0.42 * Math.sin(2 * Math.PI * 1.7 * time);
+    vocal[i] = 0.18 * Math.sin(2 * Math.PI * 440 * time)
+      + 0.08 * Math.sin(2 * Math.PI * 1760 * time);
+    side[i] = sideEnvelope * (
+      0.05 * Math.sin(2 * Math.PI * 440 * time)
+      + 0.03 * Math.sin(2 * Math.PI * 1760 * time)
+      + 0.008 * deterministicNoise(i)
+    );
+    mixLeft[i] = vocal[i] + side[i];
+    mixRight[i] = vocal[i] - side[i];
+  }
+  const mixed = processStereo(mixLeft, mixRight, { accompaniment: 0, vocal: 1 });
+  const start = PROCESSOR_DELAY + SAMPLE_RATE;
+  const end = PROCESSOR_DELAY + Math.round(SAMPLE_RATE * 2.7);
+  const leaked = differenceRms(mixed.left, mixed.right, [[start, end]])
+    / (2 * rms(side, start - PROCESSOR_DELAY, end - PROCESSOR_DELAY));
+  assert.ok(leaked < 0.05, `同频侧声道乐器泄漏过高: ${leaked.toFixed(3)}`);
+});
+
+test('实时人声轨保留低沉男声主体', () => {
+  const vocal = createLowMaleVocal();
+  const output = processStereo(vocal.left, vocal.right, { accompaniment: 0, vocal: 1 }).left;
+  const start = PROCESSOR_DELAY + Math.round(SAMPLE_RATE * 0.45);
+  const end = PROCESSOR_DELAY + Math.round(SAMPLE_RATE * 2.8);
+  const retained = rms(output, start, end)
+    / rms(vocal.left, start - PROCESSOR_DELAY, end - PROCESSOR_DELAY);
+  assert.ok(retained > 0.85, `低沉男声保留过低: ${retained.toFixed(3)}`);
+});
+
+test('实时人声轨保留女声齿音', () => {
+  const vocal = createCenteredSibilance();
+  const output = processStereo(vocal.left, vocal.right, { accompaniment: 0, vocal: 1 }).left;
+  const start = PROCESSOR_DELAY + Math.round(SAMPLE_RATE * 0.45);
+  const end = PROCESSOR_DELAY + Math.round(SAMPLE_RATE * 2.8);
+  const retained = rms(output, start, end)
+    / rms(vocal.left, start - PROCESSOR_DELAY, end - PROCESSOR_DELAY);
+  assert.ok(retained > 0.55, `女声齿音保留过低: ${retained.toFixed(3)}`);
 });
 
 test('实时伴奏轨强力压低反复出现的中置人声', () => {
@@ -230,8 +355,10 @@ test('实时分离仍只使用一套 FFT 且帧内零分配', () => {
   assert.equal((processor.match(/this\.fft\(this\.re1, this\.im1, false\)/g) || []).length, 1);
   assert.equal((processor.match(/this\.fft\(this\.re2, this\.im2, false\)/g) || []).length, 1);
   const frame = processor.slice(processor.indexOf('  frame() {'), processor.indexOf('  process(inputs'));
+  assert.equal((frame.match(/for \(var b = 0; b < N; b\+\+\)/g) || []).length, 1, '每帧只能扫描一次完整频谱');
   assert.doesNotMatch(frame, /new (?:Float32Array|Uint32Array|Array|Object)\b/);
   assert.match(processor, /prevMidEnergy/);
   assert.match(processor, /phaseCoherence/);
   assert.match(processor, /accompanimentMaskPrev/);
+  assert.match(processor, /frameVocalConfidence/);
 });

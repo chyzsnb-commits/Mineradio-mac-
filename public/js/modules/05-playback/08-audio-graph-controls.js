@@ -103,11 +103,15 @@ class VocalRemoverProcessor extends AudioWorkletProcessor {
     this.norm = c > 0 ? 1 / c : 1;
     this.lowKeepBin = Math.max(1, Math.round(130 * N / sampleRate));  // <130Hz(贝斯/底鼓)整段保留
     this.highProtectBin = Math.max(this.lowKeepBin + 1, Math.round(7200 * N / sampleRate));
+    this.voiceLowBin = Math.max(this.lowKeepBin + 1, Math.round(160 * N / sampleRate));
+    this.voicePresenceBin = Math.round(1400 * N / sampleRate);
+    this.voiceHighBin = Math.min(N >> 1, Math.round(6000 * N / sampleRate));
     this.accompanimentMaskPrev = new Float32Array(N);
     for (var mk = 0; mk < N; mk++) this.accompanimentMaskPrev[mk] = 1;
     this.vocalProbabilityPrev = new Float32Array(N);
     this.prevMidEnergy = new Float32Array(N);
     this.transientState = new Float32Array(N);
+    this.frameVocalConfidence = 0.25;
     this.inL = new Float32Array(N); this.inR = new Float32Array(N); this.inFill = 0;
     this.olaL = new Float32Array(N); this.olaR = new Float32Array(N);
     this.qL = new Float32Array(N * 2); this.qR = new Float32Array(N * 2);
@@ -152,6 +156,9 @@ class VocalRemoverProcessor extends AudioWorkletProcessor {
     for (var i = 0; i < N; i++) { this.re1[i] = this.inL[i] * win[i]; this.im1[i] = 0; this.re2[i] = this.inR[i] * win[i]; this.im2[i] = 0; }
     this.fft(this.re1, this.im1, false);
     this.fft(this.re2, this.im2, false);
+    var voiceTotalEnergy = 0, voicePresenceEnergy = 0;
+    var voiceLowBin = this.voiceLowBin, voicePresenceBin = this.voicePresenceBin, voiceHighBin = this.voiceHighBin;
+    var frameVocalConfidence = this.frameVocalConfidence;
     for (var b = 0; b < N; b++) {
       var lr = this.re1[b], li = this.im1[b], rr = this.re2[b], ri = this.im2[b];
       var mr = (lr + rr) * 0.5, mi = (li + ri) * 0.5;
@@ -178,10 +185,19 @@ class VocalRemoverProcessor extends AudioWorkletProcessor {
         transientProbability = Math.max(transientProbability, ts[b] * 0.58);
         ts[b] = transientProbability;
         pe[b] = previousEnergy * 0.56 + midEnergy * 0.44;
+        if (b >= voiceLowBin && b <= voiceHighBin) {
+          var stableWeight = 1 - transientProbability;
+          var stableEnergy = midEnergy * stableWeight * stableWeight;
+          voiceTotalEnergy += stableEnergy;
+          if (b >= voicePresenceBin) voicePresenceEnergy += stableEnergy;
+        }
         var highFrequencyProtection = fb > highBin
           ? Math.max(0.35, 1 - 0.65 * (fb - highBin) / Math.max(1, (N >> 1) - highBin))
           : 1;
-        rawVocalProbability = spatialCenter * (1 - 0.90 * transientProbability) * highFrequencyProtection;
+        rawVocalProbability = spatialCenter * spatialCenter
+          * (1 - 0.98 * transientProbability)
+          * highFrequencyProtection
+          * frameVocalConfidence;
       } else {
         pe[b] *= 0.5;
         ts[b] *= 0.5;
@@ -197,10 +213,18 @@ class VocalRemoverProcessor extends AudioWorkletProcessor {
       var smoothing = rawVocalProbability < previousVocalProbability ? 0.16 : 0.72;
       var vocalProbability = smoothing * previousVocalProbability + (1 - smoothing) * rawVocalProbability;
       vp[b] = vocalProbability;
-      var applied = accompaniment * accompanimentMask + vocal * vocalProbability;
-      this.re1[b] = lr * applied; this.im1[b] = li * applied;
-      this.re2[b] = rr * applied; this.im2[b] = ri * applied;
+      var accompanimentApplied = accompaniment * accompanimentMask;
+      var vocalApplied = vocal * vocalProbability;
+      // 人声支路只重建中置信号，避免同频的侧声道乐器随掩码一起漏回。
+      this.re1[b] = lr * accompanimentApplied + mr * vocalApplied;
+      this.im1[b] = li * accompanimentApplied + mi * vocalApplied;
+      this.re2[b] = rr * accompanimentApplied + mr * vocalApplied;
+      this.im2[b] = ri * accompanimentApplied + mi * vocalApplied;
     }
+    // 用本帧统计更新下一帧，避免为人声判断再扫描一遍频谱。
+    var presenceShare = voicePresenceEnergy / (voiceTotalEnergy + 1e-12);
+    var targetVocalConfidence = 0.25 + 0.75 * Math.min(1, presenceShare / 0.01);
+    this.frameVocalConfidence = 0.55 * frameVocalConfidence + 0.45 * targetVocalConfidence;
     this.fft(this.re1, this.im1, true);
     this.fft(this.re2, this.im2, true);
     var norm = this.norm;
