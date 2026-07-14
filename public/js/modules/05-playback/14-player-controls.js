@@ -478,24 +478,58 @@ function reorderQueueForShufflePlaybackOrder(startIdx, opts) {
   if (opts.persistSnapshot !== false && typeof saveLastPlaybackSnapshot === 'function') saveLastPlaybackSnapshot(true, opts.reason || 'shuffle-playback-order');
   return currentIdx;
 }
-function nextTrack(userInitiated) {
-  if (!playQueue.length) return;
-  playToggleBusy = false;
-  forcePlaybackControlsInteractive();
-  if (playMode === 'shuffle') currentIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % playQueue.length;
-  else currentIdx = (currentIdx + 1) % playQueue.length;
-  var opts = userInitiated ? { manual: true, suppressPlayFailureNotice: true } : { suppressPlayFailureNotice: true };
-  if (playMode === 'shuffle') opts.skipShuffleOrder = true;
-  Promise.resolve(playQueueAt(currentIdx, opts)).finally(forcePlaybackControlsInteractive);
+function trackNavigationTargetIndex(startIndex, delta, length) {
+  length = Math.max(0, Number(length) || 0);
+  if (!length) return -1;
+  return ((Number(startIndex) + Number(delta)) % length + length) % length;
 }
-function prevTrack(userInitiated) {
-  if (!playQueue.length) return;
+
+async function drainTrackNavigation() {
+  while (playQueue.length && trackNavigationState.pendingDelta) {
+    var delta = trackNavigationState.pendingDelta;
+    var manual = trackNavigationState.manual;
+    trackNavigationState.pendingDelta = 0;
+    trackNavigationState.manual = false;
+    var targetIndex = trackNavigationTargetIndex(currentIdx, delta, playQueue.length);
+    if (targetIndex < 0) break;
+    currentIdx = targetIndex;
+    var opts = manual ? { manual: true, suppressPlayFailureNotice: true } : { suppressPlayFailureNotice: true };
+    if (playMode === 'shuffle') opts.skipShuffleOrder = true;
+    try {
+      await playQueueAt(targetIndex, opts);
+    } catch (err) {
+      console.warn('[TrackNavigation]', err);
+    } finally {
+      forcePlaybackControlsInteractive();
+    }
+  }
+  return true;
+}
+
+function requestTrackNavigation(delta, userInitiated) {
+  if (!playQueue.length) return Promise.resolve(false);
   playToggleBusy = false;
   forcePlaybackControlsInteractive();
-  currentIdx = (currentIdx - 1 + playQueue.length) % playQueue.length;
-  var opts = userInitiated ? { manual: true, suppressPlayFailureNotice: true } : { suppressPlayFailureNotice: true };
-  if (playMode === 'shuffle') opts.skipShuffleOrder = true;
-  Promise.resolve(playQueueAt(currentIdx, opts)).finally(forcePlaybackControlsInteractive);
+  trackNavigationState.pendingDelta += Number(delta) || 0;
+  trackNavigationState.manual = trackNavigationState.manual || !!userInitiated;
+  if (trackNavigationState.inProgress) return trackNavigationState.promise || Promise.resolve(true);
+  trackNavigationState.inProgress = true;
+  trackNavigationState.promise = Promise.resolve(drainTrackNavigation()).finally(function () {
+    trackNavigationState.inProgress = false;
+    trackNavigationState.pendingDelta = 0;
+    trackNavigationState.manual = false;
+    trackNavigationState.promise = null;
+    forcePlaybackControlsInteractive();
+  });
+  return trackNavigationState.promise;
+}
+
+function nextTrack(userInitiated) {
+  return requestTrackNavigation(1, userInitiated);
+}
+
+function prevTrack(userInitiated) {
+  return requestTrackNavigation(-1, userInitiated);
 }
 function shuffleQueue() {
   reorderQueueForShufflePlaybackOrder(currentIdx, { reason: 'shuffle-queue' });

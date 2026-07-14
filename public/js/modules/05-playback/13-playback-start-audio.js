@@ -567,6 +567,7 @@ function playAlbumGaplessNextOnEnded(token) {
 async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resumeAt) {
   opts = opts || {};
   if (!song || !song.localUrl) {
+    clearFailedPlaybackAudioSource(token);
     showToast('本地文件已失效，请重新导入后继续');
     forcePlaybackControlsInteractive();
     return false;
@@ -590,6 +591,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   if (token !== trackSwitchToken) return false;
   if (typeof applyPlaybackSpeedToAudio === 'function') applyPlaybackSpeedToAudio();
   audio.src = song.localUrl;
+  commitPlaybackTrackUi(song, token);
   updatePlaybackProgressUi();
   lyricSunEnergy = 0; lyricSunTarget = 0; lyricSunHold = 0; lyricSunAvg = 0; lyricSunPeak = 0.55;
   audio.onended = function () {
@@ -623,6 +625,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   var playbackStarted = await playAudio({ manual: !!opts.manual, silent: !!opts.startupAutoplay || !opts.manual, startupAutoplay: !!opts.startupAutoplay, trackSwitch: true, resumeRecovery: !!opts.resumeRecovery });
   if (token !== trackSwitchToken) return false;
   if (!playbackStarted) {
+    clearFailedPlaybackAudioSource(token);
     forcePlaybackControlsInteractive();
     if (opts.startupAutoplay) {
       return false;
@@ -738,13 +741,6 @@ async function playQueueAt(idx, opts) {
     safePlaybackStep('like-status', function () { syncLikeStatusForSong(song); });
     safePlaybackStep('cinema-track-profile', function () { if (!qualitySwitch) resetCinemaTrackProfile(song); });
     safePlaybackStep('empty-home', function () { if (!opts.preserveHomeState) updateEmptyHomeVisibility(); });
-    safePlaybackStep('track-ui', function () {
-      document.getElementById('hint').classList.add('hidden');
-      document.getElementById('thumb-title').textContent = song.name;
-      document.getElementById('thumb-artist').textContent = song.artist;
-      updateControlTrackInfo(song);
-      document.getElementById('thumb-wrap').classList.add('visible');
-    });
     markPlayPhase('lyric-prep');
     safePlaybackStep('lyric-prep', function () {
       if (qualitySwitch) {
@@ -871,6 +867,7 @@ async function playQueueAt(idx, opts) {
       }
       var retryPlaybackOpts = Object.assign({}, opts, { resumeAt: opts.resumeAt != null ? opts.resumeAt : restoreResumeAt });
       if (!data.url) {
+        clearFailedPlaybackAudioSource(token);
         if (isQQPlayback && await retryQQPlaybackWithCompatibleQuality(song, idx, token, retryPlaybackOpts, data, requestedQuality)) return;
         if (await tryAutoPlaybackFallback(song, data, idx, token, retryPlaybackOpts)) return;
         if (opts.startupAutoplay) {
@@ -936,6 +933,7 @@ async function playQueueAt(idx, opts) {
       await applyAudioOutputDevice(audio);
       if (token !== trackSwitchToken) return false;
       if (!albumGaplessHandoff) audio.src = proxyAudioUrl;
+      commitPlaybackTrackUi(song, token);
       updatePlaybackProgressUi();
       audio.onended = function () {
         if (token !== trackSwitchToken) return;
@@ -1018,6 +1016,7 @@ async function playQueueAt(idx, opts) {
       var playbackStarted = await playAudio({ manual: !!opts.manual, silent: isQQPlayback || !!opts.startupAutoplay || !opts.manual, startupAutoplay: !!opts.startupAutoplay, trackSwitch: true, resumeRecovery: !!opts.resumeRecovery, fade: albumGaplessHandoff ? false : opts.fade });
       if (token !== trackSwitchToken) return false;
       if (!playbackStarted) {
+        clearFailedPlaybackAudioSource(token);
         if (isQQPlayback && await retryQQPlaybackWithCompatibleQuality(song, idx, token, retryPlaybackOpts, data, requestedQuality)) return;
         forcePlaybackControlsInteractive();
         if (opts.startupAutoplay) {
@@ -1066,6 +1065,7 @@ async function playQueueAt(idx, opts) {
       scheduleAlbumGaplessPreloadForCurrent(token, albumGaplessHandoff ? 'album-gapless-handoff-started' : 'track-started');
       safePlaybackStep('shelf-preview-suppress-end', suppressShelfPreviewForPlaybackSwitch);
     } catch (err) {
+      if (typeof token !== 'undefined') clearFailedPlaybackAudioSource(token);
       console.error('Play failed:', { phase: playPhase, error: err }, err);
       hideLoading();
       forcePlaybackControlsInteractive();
@@ -1082,6 +1082,7 @@ async function playQueueAt(idx, opts) {
       if (typeof showSourceFallbackNotice === 'function') showSourceFallbackNotice('播放失败', failText);
     }
   } catch (setupErr) {
+    if (typeof token !== 'undefined') clearFailedPlaybackAudioSource(token);
     console.error('Play setup failed:', { phase: playPhase, error: setupErr }, setupErr);
     hideLoading();
     forcePlaybackControlsInteractive();

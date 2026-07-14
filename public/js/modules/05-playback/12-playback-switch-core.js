@@ -6,10 +6,37 @@ function pauseCurrentAudioForTrackSwitch() {
     clearAudioFadeTimers();
     audio.onended = null;
     audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
   } catch (e) { }
   playing = false;
   setPlayIcon(false);
   syncPlaybackStateFromAudioEvent('track-switch');
+}
+
+function clearFailedPlaybackAudioSource(token) {
+  if (token !== trackSwitchToken || !audio) return false;
+  try {
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+  } catch (e) { }
+  playing = false;
+  setPlayIcon(false);
+  syncPlaybackStateFromAudioEvent('track-failed');
+  return true;
+}
+
+function commitPlaybackTrackUi(song, token) {
+  if (!song || token !== trackSwitchToken) return false;
+  safePlaybackStep('track-ui', function () {
+    document.getElementById('hint').classList.add('hidden');
+    document.getElementById('thumb-title').textContent = song.name;
+    document.getElementById('thumb-artist').textContent = song.artist;
+    updateControlTrackInfo(song);
+    document.getElementById('thumb-wrap').classList.add('visible');
+  });
+  return true;
 }
 
 function syncPlaybackStateFromAudioEvent(reason) {
