@@ -2,6 +2,15 @@
 
 ## 待发布（基于 v1.1.3 基线的优化）
 
+### AI 分轨 CoreML 全图加速（Codex）
+
+- Apple Silicon 的 AI 分轨改用 CoreML MLProgram 配置，让 UVR HQ3 的 178/178 个算子进入同一个 CoreML 分区，不再由 CPU 处理剩余算子。
+- 4 分 40.58 秒完整歌曲第二次实测从 171.13 秒降到 37.34 秒，约提速 4.58 倍；90 秒调试样本为 10.78 秒。
+- 保留可在 macOS arm64 安装的 `audio-separator[cpu]==0.44.3`；不使用会安装失败的 `[gpu]` 依赖，也不传该版本不存在的 `--execution_provider` 参数。
+- 仅 Apple Silicon 启用；Intel Mac 和其他平台保持原路径。MLProgram 建立失败时自动回退默认 CoreML，并保留 CPU 兜底。
+- 界面显示实际使用的 CoreML 或 CPU，结果同时写入缓存；完整歌曲输出 SDR 为 114.97-123.52dB，连续两次输出逐文件一致。
+- 新增 Provider、平台判断、回退、日志分片、缓存和界面测试，完整自动检查增至 110 项；Electron 假媒体启动和未签名 arm64 打包通过。
+
 ### K 歌升降 Key + 启动开关对齐（Codex）
 
 - 唱歌模式新增 `-6` 到 `+6 Key` 调节，每次升降 1 个半音；只改变歌曲、伴奏和原唱音高，播放速度与麦克风声音保持不变。

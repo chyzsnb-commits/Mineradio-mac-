@@ -11,13 +11,27 @@ const { spawn } = require('child_process');
 const AI_STEM_MODEL_FILENAME = 'UVR-MDX-NET-Inst_HQ_3.onnx';
 const AI_STEM_SEPARATOR_PACKAGE = 'audio-separator[cpu]==0.44.3';
 const AI_STEM_MAX_INPUT_BYTES = 220 * 1024 * 1024;
-const AI_STEM_PYTHON_HOOK = `'Mineradio AI stem runtime limits.'
+const AI_STEM_PYTHON_HOOK = `'Mineradio AI stem runtime configuration.'
 import os
+import platform
+import sys
 
 try:
     _threads = max(1, int(os.environ.get('MINERADIO_AI_STEM_MAX_THREADS', '1')))
 except (TypeError, ValueError):
     _threads = 1
+
+_coreml_mlprogram_enabled = (
+    os.environ.get('MINERADIO_AI_STEM_COREML_MLPROGRAM') == '1'
+    and sys.platform == 'darwin'
+    and platform.machine().lower() in ('arm64', 'aarch64')
+)
+_coreml_mlprogram_options = {
+    'ModelFormat': 'MLProgram',
+    'MLComputeUnits': 'ALL',
+    'RequireStaticInputShapes': '0',
+    'SpecializationStrategy': 'FastPrediction',
+}
 
 try:
     import torch
@@ -44,6 +58,77 @@ try:
 
         ort.SessionOptions = _mineradio_session_options
         ort._mineradio_session_options_patched = True
+
+    if not getattr(ort, '_mineradio_inference_session_patched', False):
+        _original_inference_session = ort.InferenceSession
+
+        def _mineradio_provider_names(providers):
+            names = []
+            for provider in providers or []:
+                names.append(provider[0] if isinstance(provider, tuple) else provider)
+            return names
+
+        def _mineradio_with_cpu_fallback(providers):
+            result = list(providers or [])
+            if 'CPUExecutionProvider' not in _mineradio_provider_names(result):
+                result.append('CPUExecutionProvider')
+            return result
+
+        def _mineradio_replace_providers(args, kwargs, providers):
+            updated_args = list(args)
+            updated_kwargs = dict(kwargs)
+            if 'providers' in updated_kwargs or len(updated_args) < 3:
+                updated_kwargs['providers'] = providers
+            else:
+                updated_args[2] = providers
+            return tuple(updated_args), updated_kwargs
+
+        def _mineradio_session_providers(session):
+            try:
+                return session.get_providers()
+            except Exception:
+                return []
+
+        def _mineradio_report_provider(session, coreml_mode='coreml-default'):
+            providers = _mineradio_session_providers(session)
+            if 'CoreMLExecutionProvider' in providers:
+                provider = coreml_mode
+            elif 'CPUExecutionProvider' in providers:
+                provider = 'cpu'
+            else:
+                provider = 'other'
+            print('MINERADIO_AI_STEM_PROVIDER=' + provider, flush=True)
+
+        def _mineradio_inference_session(*args, **kwargs):
+            providers = kwargs.get('providers')
+            if providers is None and len(args) >= 3:
+                providers = args[2]
+            provider_names = _mineradio_provider_names(providers)
+            if _coreml_mlprogram_enabled and 'CoreMLExecutionProvider' in provider_names:
+                fallback_providers = _mineradio_with_cpu_fallback(providers)
+                mlprogram_providers = [
+                    ('CoreMLExecutionProvider', _coreml_mlprogram_options),
+                    *[provider for provider in fallback_providers
+                      if (provider[0] if isinstance(provider, tuple) else provider) != 'CoreMLExecutionProvider'],
+                ]
+                ml_args, ml_kwargs = _mineradio_replace_providers(args, kwargs, mlprogram_providers)
+                try:
+                    session = _original_inference_session(*ml_args, **ml_kwargs)
+                    _mineradio_report_provider(session, 'coreml-mlprogram')
+                    return session
+                except Exception as error:
+                    print('MINERADIO_AI_STEM_COREML_MLPROGRAM_FALLBACK=' + type(error).__name__, flush=True)
+                    fallback_args, fallback_kwargs = _mineradio_replace_providers(args, kwargs, fallback_providers)
+                    session = _original_inference_session(*fallback_args, **fallback_kwargs)
+                    _mineradio_report_provider(session, 'coreml-default')
+                    return session
+
+            session = _original_inference_session(*args, **kwargs)
+            _mineradio_report_provider(session, 'coreml-default')
+            return session
+
+        ort.InferenceSession = _mineradio_inference_session
+        ort._mineradio_inference_session_patched = True
 except Exception:
     pass
 `;
@@ -82,6 +167,12 @@ function recommendedAiStemThreadCount(options = {}) {
   return Math.max(1, Math.min(6, logicalCpuCount - 2));
 }
 
+function shouldUseCoreMLProgram(options = {}) {
+  const platform = String(options.platform || process.platform);
+  const arch = String(options.arch || process.arch);
+  return platform === 'darwin' && arch === 'arm64';
+}
+
 function ensureAiStemRuntimeHook(cacheRoot) {
   const hookDir = path.join(cacheRoot, 'runtime');
   const hookFile = path.join(hookDir, 'sitecustomize.py');
@@ -104,6 +195,8 @@ function buildAiStemProcessEnvironment(baseEnv = {}, runtime = {}) {
   env.NUMEXPR_NUM_THREADS = threads;
   env.OMP_WAIT_POLICY = 'PASSIVE';
   env.KMP_BLOCKTIME = '0';
+  if (runtime.useCoreMLProgram === true) env.MINERADIO_AI_STEM_COREML_MLPROGRAM = '1';
+  else delete env.MINERADIO_AI_STEM_COREML_MLPROGRAM;
   if (runtime.pythonHookDir) {
     env.PYTHONPATH = String(runtime.pythonHookDir)
       + (env.PYTHONPATH ? path.delimiter + String(env.PYTHONPATH) : '');
@@ -173,6 +266,11 @@ function parseSeparatorProgress(line) {
   match = text.match(/(?:^|\s)([0-9]{1,3})\s*%\|/);
   if (match) return { stage: 'separating', percent: Math.max(0, Math.min(95, Number(match[1]) || 0)) };
   return null;
+}
+
+function parseSeparatorRuntime(line) {
+  const match = String(line || '').match(/(?:^|\s)MINERADIO_AI_STEM_PROVIDER=(coreml-mlprogram|coreml-default|cpu)(?:\s|$)/);
+  return match ? { provider: match[1] } : null;
 }
 
 function firstExistingFile(candidates) {
@@ -261,6 +359,9 @@ function publicReadyResult(cacheRoot, trackKey, cached) {
     id: hit.id,
     trackKey: String(trackKey || ''),
     model: AI_STEM_MODEL_FILENAME,
+    ...(hit.manifest.runtime && typeof hit.manifest.runtime === 'object'
+      ? { runtime: { ...hit.manifest.runtime } }
+      : {}),
     instrumentalUrl: query + '&stem=instrumental',
     vocalsUrl: query + '&stem=vocals',
   };
@@ -351,29 +452,43 @@ function runSeparatorProcess({ command, signal, report, spawnImpl, env, logFile 
   return new Promise((resolve, reject) => {
     const child = spawnImpl(command.file, command.args, { ...command.options, env });
     let log = '';
+    const pendingLines = { stdout: '', stderr: '' };
+    const runtime = {};
     let settled = false;
     let killTimer = null;
     function finish(error) {
       if (settled) return;
       settled = true;
+      for (const source of Object.keys(pendingLines)) {
+        if (pendingLines[source]) consumeLine(pendingLines[source]);
+        pendingLines[source] = '';
+      }
       if (killTimer) clearTimeout(killTimer);
       removeCancel();
       try { fs.writeFileSync(logFile, log.slice(-256 * 1024)); } catch (_) {}
       if (error) reject(error);
-      else resolve();
+      else resolve({ ...runtime });
     }
-    function consume(chunk) {
+    function consumeLine(line) {
+      const detectedRuntime = parseSeparatorRuntime(line);
+      if (detectedRuntime) {
+        Object.assign(runtime, detectedRuntime);
+        report({ runtime: detectedRuntime });
+      }
+      const progress = parseSeparatorProgress(line);
+      if (progress) report(progress);
+    }
+    function consume(source, chunk) {
       const text = String(chunk || '');
       log += text;
-      for (const line of text.split(/[\r\n]+/)) {
-        const progress = parseSeparatorProgress(line);
-        if (progress) report(progress);
-      }
+      const lines = (pendingLines[source] + text).split(/[\r\n]+/);
+      pendingLines[source] = lines.pop() || '';
+      for (const line of lines) consumeLine(line);
     }
-    if (child.stdout) child.stdout.on('data', consume);
-    if (child.stderr) child.stderr.on('data', consume);
+    if (child.stdout) child.stdout.on('data', (chunk) => consume('stdout', chunk));
+    if (child.stderr) child.stderr.on('data', (chunk) => consume('stderr', chunk));
     child.once('error', (error) => finish(codedError('AI_STEM_HELPER_START_FAILED', error.message)));
-    child.once('exit', (code, childSignal) => {
+    child.once('close', (code, childSignal) => {
       if (signal.cancelled) finish(codedError('AI_STEM_CANCELLED'));
       else if (code === 0) finish();
       else finish(codedError('AI_STEM_HELPER_FAILED', 'AI_STEM_HELPER_FAILED:' + code + ':' + (childSignal || '')));
@@ -383,6 +498,18 @@ function runSeparatorProcess({ command, signal, report, spawnImpl, env, logFile 
       killTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch (_) {} }, 1800);
     });
   });
+}
+
+function publicAiStemRuntime(runtime = {}) {
+  const result = {
+    mdxBatchSize: runtime.mdxBatchSize,
+    maxCpuThreads: runtime.maxCpuThreads,
+    lowPriority: runtime.lowPriority === true,
+    powerSource: runtime.powerSource,
+    thermalState: runtime.thermalState,
+  };
+  if (runtime.provider) result.provider = runtime.provider;
+  return result;
 }
 
 async function defaultProcessTrack(context, options) {
@@ -407,6 +534,7 @@ async function defaultProcessTrack(context, options) {
     }),
     maxCpuThreads: recommendedAiStemThreadCount(),
     lowPriority: process.platform === 'darwin',
+    useCoreMLProgram: shouldUseCoreMLProgram(),
     powerSource: powerState.onBatteryPower === true ? 'battery' : 'ac',
     thermalState: String(powerState.thermalState || 'unknown'),
   };
@@ -451,15 +579,9 @@ async function defaultProcessTrack(context, options) {
     report({
       stage: 'preparing',
       percent: 19,
-      runtime: {
-        mdxBatchSize: runtime.mdxBatchSize,
-        maxCpuThreads: runtime.maxCpuThreads,
-        lowPriority: runtime.lowPriority,
-        powerSource: runtime.powerSource,
-        thermalState: runtime.thermalState,
-      },
+      runtime: publicAiStemRuntime(runtime),
     });
-    await runSeparatorProcess({
+    const detectedRuntime = await runSeparatorProcess({
       command,
       signal,
       report,
@@ -467,6 +589,7 @@ async function defaultProcessTrack(context, options) {
       env,
       logFile: path.join(dir, 'separator.log'),
     });
+    Object.assign(runtime, detectedRuntime);
     signal.throwIfCancelled();
     const instrumentalPath = canonicalizeOutput(dir, 'instrumental');
     const vocalsPath = canonicalizeOutput(dir, 'vocals');
@@ -476,10 +599,11 @@ async function defaultProcessTrack(context, options) {
       trackKey,
       model: AI_STEM_MODEL_FILENAME,
       createdAt: new Date().toISOString(),
+      runtime: publicAiStemRuntime(runtime),
       files: { instrumental: path.basename(instrumentalPath), vocals: path.basename(vocalsPath) },
     };
     writeManifestAtomic(path.join(dir, 'manifest.json'), manifest);
-    report({ stage: 'ready', percent: 100 });
+    report({ stage: 'ready', percent: 100, runtime: publicAiStemRuntime(runtime) });
     return { instrumentalPath, vocalsPath, manifest };
   } finally {
     safeUnlink(inputPath);
@@ -540,15 +664,20 @@ function createAiStemService(options = {}) {
     };
     activeJob = job;
     function report(progress = {}) {
-      job.percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
-      if (progress.runtime && typeof progress.runtime === 'object') job.runtime = { ...progress.runtime };
+      if (Object.prototype.hasOwnProperty.call(progress, 'percent')) {
+        job.percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
+      }
+      if (progress.stage) job.stage = String(progress.stage);
+      if (progress.runtime && typeof progress.runtime === 'object') {
+        job.runtime = { ...(job.runtime || {}), ...progress.runtime };
+      }
       emit({
         ok: true,
         status: 'running',
         id,
         trackKey,
         jobId: job.jobId,
-        stage: String(progress.stage || 'preparing'),
+        stage: String(job.stage || 'preparing'),
         percent: job.percent,
         ...(job.runtime ? { runtime: { ...job.runtime } } : {}),
       });
@@ -568,8 +697,9 @@ function createAiStemService(options = {}) {
         return { ok: true, status: 'cancelled', id, trackKey, jobId: job.jobId };
       }
       const code = String(error && (error.code || error.message) || 'AI_STEM_FAILED').slice(0, 120);
-      emit({ ok: false, status: 'error', id, trackKey, jobId: job.jobId, stage: 'error', percent: job.percent, error: code });
-      return { ok: false, status: 'error', id, trackKey, jobId: job.jobId, error: code };
+      const runtimeSnapshot = job.runtime ? { runtime: { ...job.runtime } } : {};
+      emit({ ok: false, status: 'error', id, trackKey, jobId: job.jobId, stage: 'error', percent: job.percent, error: code, ...runtimeSnapshot });
+      return { ok: false, status: 'error', id, trackKey, jobId: job.jobId, error: code, ...runtimeSnapshot };
     } finally {
       if (activeJob === job) activeJob = null;
     }
@@ -593,8 +723,11 @@ module.exports = {
   findUvExecutable,
   findUvrFfmpegDirectory,
   findUvrModel,
+  parseSeparatorRuntime,
   parseSeparatorProgress,
   recommendedAiStemThreadCount,
   recommendedMdxBatchSize,
+  runSeparatorProcess,
+  shouldUseCoreMLProgram,
   validateLocalAudioUrl,
 };

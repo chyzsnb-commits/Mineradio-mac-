@@ -2,6 +2,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const vm = require('node:vm');
+const { spawnSync } = require('child_process');
+const { EventEmitter } = require('events');
+const { PassThrough } = require('stream');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -12,9 +15,12 @@ const {
   cacheIdForTrack,
   createAiStemService,
   ensureAiStemRuntimeHook,
+  parseSeparatorRuntime,
   parseSeparatorProgress,
   recommendedAiStemThreadCount,
   recommendedMdxBatchSize,
+  runSeparatorProcess,
+  shouldUseCoreMLProgram,
   validateLocalAudioUrl,
 } = require('../desktop/ai-stem-separator');
 const { serveAiStemRequest } = require('../desktop/ai-stem-cache-server');
@@ -74,6 +80,8 @@ test('分轨命令复用 UVR 模型且不经过 shell 字符串', () => {
   assert.ok(command.args.includes('FLAC'));
   assert.deepEqual(command.args.slice(command.args.indexOf('--mdx_batch_size'), command.args.indexOf('--mdx_batch_size') + 2), ['--mdx_batch_size', '2']);
   assert.ok(command.args.includes('--use_soundfile'));
+  assert.ok(!command.args.some((value) => String(value).includes('audio-separator[gpu]')));
+  assert.ok(!command.args.includes('--execution_provider'));
 });
 
 test('Apple Silicon 内存充足时用 batch 2，低内存或 Intel 自动回退', () => {
@@ -116,6 +124,24 @@ test('AI 推理为系统留出核心并限制常见数学线程池', () => {
   assert.equal(env.PYTHONPATH, '/tmp/mineradio-hook' + path.delimiter + '/existing/python');
 });
 
+test('只有 Apple Silicon 请求 CoreML MLProgram，其他平台保持原路径', () => {
+  assert.equal(shouldUseCoreMLProgram({ platform: 'darwin', arch: 'arm64' }), true);
+  assert.equal(shouldUseCoreMLProgram({ platform: 'darwin', arch: 'x64' }), false);
+  assert.equal(shouldUseCoreMLProgram({ platform: 'win32', arch: 'arm64' }), false);
+  assert.equal(shouldUseCoreMLProgram({ platform: 'linux', arch: 'arm64' }), false);
+
+  const enabled = buildAiStemProcessEnvironment({}, {
+    maxCpuThreads: 4,
+    useCoreMLProgram: true,
+  });
+  const disabled = buildAiStemProcessEnvironment({ MINERADIO_AI_STEM_COREML_MLPROGRAM: 'stale' }, {
+    maxCpuThreads: 4,
+    useCoreMLProgram: false,
+  });
+  assert.equal(enabled.MINERADIO_AI_STEM_COREML_MLPROGRAM, '1');
+  assert.equal(disabled.MINERADIO_AI_STEM_COREML_MLPROGRAM, undefined);
+});
+
 test('Python 启动钩子把线程数写入 ONNX Runtime 会话', () => {
   const cacheRoot = tempDir();
   const hookDir = ensureAiStemRuntimeHook(cacheRoot);
@@ -123,6 +149,64 @@ test('Python 启动钩子把线程数写入 ONNX Runtime 会话', () => {
   assert.match(hookSource, /intra_op_num_threads\s*=\s*_threads/);
   assert.match(hookSource, /inter_op_num_threads\s*=\s*1/);
   assert.match(hookSource, /torch\.set_num_threads\(_threads\)/);
+  assert.match(hookSource, /ModelFormat['"]:\s*['"]MLProgram/);
+  assert.match(hookSource, /MLComputeUnits['"]:\s*['"]ALL/);
+  assert.match(hookSource, /RequireStaticInputShapes['"]:\s*['"]0/);
+  assert.match(hookSource, /SpecializationStrategy['"]:\s*['"]FastPrediction/);
+  assert.match(hookSource, /CPUExecutionProvider/);
+});
+
+test('Apple Silicon 的 MLProgram 会话失败时回退默认 CoreML', {
+  skip: process.platform !== 'darwin' || process.arch !== 'arm64',
+}, () => {
+  const cacheRoot = tempDir();
+  const hookDir = ensureAiStemRuntimeHook(cacheRoot);
+  fs.writeFileSync(path.join(hookDir, 'onnxruntime.py'), `
+import os
+calls = []
+
+class SessionOptions:
+    def add_session_config_entry(self, key, value):
+        pass
+
+class _Session:
+    def __init__(self, providers):
+        self._providers = [item[0] if isinstance(item, tuple) else item for item in (providers or [])]
+    def get_providers(self):
+        return self._providers
+
+def InferenceSession(*args, **kwargs):
+    providers = kwargs.get('providers')
+    calls.append(providers)
+    if os.environ.get('MINERADIO_TEST_FAIL_MLPROGRAM') == '1' and providers and isinstance(providers[0], tuple):
+        raise RuntimeError('mlprogram failed')
+    return _Session(providers)
+`);
+  const probe = `
+import json
+import onnxruntime as ort
+session = ort.InferenceSession('model.onnx', providers=['CoreMLExecutionProvider'], sess_options=ort.SessionOptions())
+print('MINERADIO_TEST_RESULT=' + json.dumps({'calls': ort.calls, 'providers': session.get_providers()}))
+`;
+  const result = spawnSync('python3', ['-c', probe], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PYTHONPATH: hookDir,
+      MINERADIO_AI_STEM_COREML_MLPROGRAM: '1',
+      MINERADIO_TEST_FAIL_MLPROGRAM: '1',
+    },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const match = result.stdout.match(/MINERADIO_TEST_RESULT=(\{.*\})/);
+  assert.ok(match, result.stdout);
+  const data = JSON.parse(match[1]);
+  assert.equal(data.calls.length, 2);
+  assert.equal(data.calls[0][0][0], 'CoreMLExecutionProvider');
+  assert.equal(data.calls[0][0][1].ModelFormat, 'MLProgram');
+  assert.deepEqual(data.calls[1], ['CoreMLExecutionProvider', 'CPUExecutionProvider']);
+  assert.deepEqual(data.providers, ['CoreMLExecutionProvider', 'CPUExecutionProvider']);
+  assert.match(result.stdout, /MINERADIO_AI_STEM_PROVIDER=coreml-default/);
 });
 
 test('macOS AI 子进程通过 nice 降低优先级且不使用 shell', () => {
@@ -149,6 +233,39 @@ test('解析准备、下载和 AI 分轨百分比', () => {
   assert.equal(parseSeparatorProgress('ordinary log line'), null);
 });
 
+test('解析 AI 实际运行设备标记', () => {
+  assert.deepEqual(parseSeparatorRuntime('MINERADIO_AI_STEM_PROVIDER=coreml-mlprogram'), { provider: 'coreml-mlprogram' });
+  assert.deepEqual(parseSeparatorRuntime('MINERADIO_AI_STEM_PROVIDER=coreml-default'), { provider: 'coreml-default' });
+  assert.deepEqual(parseSeparatorRuntime('MINERADIO_AI_STEM_PROVIDER=cpu'), { provider: 'cpu' });
+  assert.equal(parseSeparatorRuntime('MINERADIO_AI_STEM_PROVIDER=not-valid'), null);
+});
+
+test('子进程两条日志通道分片时仍能识别 CoreML 标记', async () => {
+  const reports = [];
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = () => true;
+  const pending = runSeparatorProcess({
+    command: { file: '/fake/uvx', args: [], options: { shell: false } },
+    signal: { cancelled: false, onCancel: () => () => {} },
+    report: (value) => reports.push(value),
+    spawnImpl: () => child,
+    env: {},
+    logFile: path.join(tempDir(), 'separator.log'),
+  });
+  child.stdout.write('MINERADIO_AI_STEM_PRO');
+  child.stderr.write('Starting separation process for audio_file_path: input.wav\n');
+  child.stdout.write('VIDER=coreml-mlprogram\n');
+  child.stdout.end();
+  child.stderr.end();
+  child.emit('close', 0, null);
+
+  assert.deepEqual(await pending, { provider: 'coreml-mlprogram' });
+  assert.ok(reports.some((value) => value.runtime && value.runtime.provider === 'coreml-mlprogram'));
+  assert.ok(reports.some((value) => value.stage === 'separating'));
+});
+
 test('缓存命中直接返回双轨，不再次运行模型', async () => {
   const cacheRoot = tempDir();
   const trackKey = 'qq:cached-song';
@@ -157,7 +274,13 @@ test('缓存命中直接返回双轨，不再次运行模型', async () => {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'instrumental.flac'), 'instrumental');
   fs.writeFileSync(path.join(dir, 'vocals.flac'), 'vocals');
-  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ version: 1, id, trackKey, model: AI_STEM_MODEL_FILENAME }));
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({
+    version: 1,
+    id,
+    trackKey,
+    model: AI_STEM_MODEL_FILENAME,
+    runtime: { provider: 'coreml-mlprogram' },
+  }));
   let runs = 0;
   const service = createAiStemService({
     cacheRoot,
@@ -170,9 +293,42 @@ test('缓存命中直接返回双轨，不再次运行模型', async () => {
   assert.equal(result.status, 'ready');
   assert.equal(result.cached, true);
   assert.equal(result.id, id);
+  assert.deepEqual(result.runtime, { provider: 'coreml-mlprogram' });
   assert.match(result.instrumentalUrl, new RegExp('/api/ai-stem\\?id=' + id + '&stem=instrumental'));
   assert.match(result.vocalsUrl, new RegExp('/api/ai-stem\\?id=' + id + '&stem=vocals'));
   assert.equal(runs, 0);
+});
+
+test('运行设备标记合并进现有批次与线程信息，不重置进度', async () => {
+  const cacheRoot = tempDir();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const service = createAiStemService({
+    cacheRoot,
+    getLocalOrigin: () => 'http://127.0.0.1:3147',
+    processTrack: async ({ report }) => {
+      report({
+        stage: 'separating',
+        percent: 42,
+        runtime: { mdxBatchSize: 2, maxCpuThreads: 6 },
+      });
+      report({ runtime: { provider: 'coreml-mlprogram' } });
+      await gate;
+    },
+  });
+  const pending = service.start({ trackKey: 'qq:runtime-merge', audioUrl: '/api/audio?url=x' });
+  await new Promise((resolve) => setImmediate(resolve));
+  const state = service.status('qq:runtime-merge');
+  assert.equal(state.stage, 'separating');
+  assert.equal(state.percent, 42);
+  assert.deepEqual(state.runtime, {
+    mdxBatchSize: 2,
+    maxCpuThreads: 6,
+    provider: 'coreml-mlprogram',
+  });
+  service.cancel(state.jobId);
+  release();
+  await pending;
 });
 
 test('同曲复用任务，换曲取消旧任务，手动取消立即结束', async () => {
@@ -326,6 +482,25 @@ test('唱歌面板提供对称的实时与 AI 模式、进度和取消按钮', (
   assert.match(html, /id="ai-stem-cancel-btn"[^>]*aria-label="取消 AI 分轨"/);
   assert.match(css, /\.singing-separation-mode\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(css, /\.ai-stem-progress-fill/);
+});
+
+test('AI 状态显示实际使用的 CoreML 或 CPU', () => {
+  const aiSource = read('public/js/modules/05-playback/09-ai-stem-playback.js');
+  const sandbox = { singingSeparationMode: 'ai', aiStemRuntime: {} };
+  vm.runInNewContext(`
+    ${readFunction(aiSource, 'aiStemProviderLabel')};
+    ${readFunction(aiSource, 'aiStemStatusLabel')};
+  `, sandbox);
+  assert.equal(sandbox.aiStemStatusLabel({
+    status: 'ready',
+    runtime: { provider: 'coreml-mlprogram' },
+  }), 'AI 双轨已就绪 · CoreML');
+  assert.equal(sandbox.aiStemStatusLabel({
+    status: 'running',
+    stage: 'separating',
+    percent: 48,
+    runtime: { provider: 'cpu' },
+  }), 'AI 分轨 48% · CPU');
 });
 
 test('AI 双轨直接使用伴奏和人声音量，不经过实时 Worklet', () => {

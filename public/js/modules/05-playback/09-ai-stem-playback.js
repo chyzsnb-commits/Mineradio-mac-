@@ -163,10 +163,19 @@ function disposeAiStemSecondaryAudio() {
   aiStemVocalGain = null;
 }
 
+function aiStemProviderLabel(state) {
+  var provider = state && state.runtime && state.runtime.provider;
+  if (provider === 'coreml-mlprogram' || provider === 'coreml-default') return 'CoreML';
+  if (provider === 'cpu') return 'CPU';
+  return '';
+}
+
 function aiStemStatusLabel(state) {
   state = state || aiStemRuntime || {};
+  var providerLabel = aiStemProviderLabel(state);
+  var providerSuffix = providerLabel ? ' · ' + providerLabel : '';
   if (singingSeparationMode !== 'ai') return '实时处理';
-  if (state.status === 'ready' || state.active) return 'AI 双轨已就绪';
+  if (state.status === 'ready' || state.active) return 'AI 双轨已就绪' + providerSuffix;
   if (state.status === 'error') {
     if (state.error === 'AI_STEM_HELPER_MISSING') return 'AI 组件不可用';
     if (state.error === 'AI_STEM_MODEL_MISSING') return '未找到 UVR 模型';
@@ -175,7 +184,7 @@ function aiStemStatusLabel(state) {
   }
   if (state.status === 'running' || state.status === 'cancelling') {
     var names = { preparing: '准备 AI', downloading: '读取音频', model: '准备模型', separating: 'AI 分轨', saving: '保存双轨', cancelling: '正在取消' };
-    return (names[state.stage] || 'AI 分轨') + (state.percent > 0 ? ' ' + Math.round(state.percent) + '%' : '');
+    return (names[state.stage] || 'AI 分轨') + (state.percent > 0 ? ' ' + Math.round(state.percent) + '%' : '') + providerSuffix;
   }
   return '等待当前歌曲';
 }
