@@ -296,5 +296,5 @@
 - PR：#48；分支：`codex/gpu-player-usage`；基于 PR #47；功能 commit（代码存档点）`eb3ccf9`。
 - 改动：GPU 行改为“系统 xx% · 播放器 xx%”。系统值仍使用 macOS `ioreg`；播放器值使用 WebGL 非阻塞 GPU 计时查询，测量 Mineradio 主 3D 场景的真实绘制耗时。
 - 开销：只在负载监视器打开时每 250ms 采一帧；结果未就绪时留到下次读取，不同步等待 GPU。WebGL 不支持计时或上下文丢失时显示 `--`，恢复后重建采样。
-- 验证：`npm run check` 共 93 项通过，`git diff --check` 通过。Electron 独立资料和假媒体实测 GPU 行显示对称文案；空闲底层读数约 0.29%，界面四舍五入显示 0%。
+- 验证：`npm run check` 共 93 项通过，`git diff --check` 通过。Electron 独立资料和假媒体实测 GPU 行显示对称文案；空闲底层读数约 0.29%，界面四舍五入显示 0%。GitHub arm64 36 秒、Intel x64 1 分 23 秒构建通过；`codex-review` 仍因仓库原有 server info 文件缺失而失败。
 - 未验证：需用户播放真实歌曲并开启高负载视觉，确认数字变化；播放器值只表示主 3D 场景绘制，不包括 macOS 窗口合成和视频解码。
