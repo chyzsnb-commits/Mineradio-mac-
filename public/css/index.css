@@ -7036,6 +7036,181 @@ body.immersive-mode #time-display {
   }
 }
 
+/* 桌面全屏 / 浏览器全屏：底栏右侧模式区按钮多，「词」与唱歌等图标易重叠。
+   策略：底栏更宽、三列网格给 modes 更多最小宽度、按钮与间距略收、允许换行；
+   进度条与时间改用固定宽度，避免挤占按钮。 */
+body.desktop-shell.desktop-fullscreen #bottom-bar,
+html:fullscreen body.desktop-shell #bottom-bar,
+body.desktop-shell.desktop-fullscreen #bottom-bar.stage-mode,
+html:fullscreen body.desktop-shell #bottom-bar.stage-mode {
+  width: min(1280px, calc(100vw - 40px));
+  padding: 10px 18px 14px;
+  gap: 8px
+}
+
+body.desktop-shell.desktop-fullscreen #controls,
+html:fullscreen body.desktop-shell #controls {
+  grid-template-columns: minmax(280px, 1fr) minmax(280px, auto) minmax(360px, 1.15fr);
+  gap: 12px
+}
+
+body.desktop-shell.desktop-fullscreen .control-cluster,
+html:fullscreen body.desktop-shell .control-cluster {
+  gap: 8px;
+  height: auto;
+  min-height: 56px;
+  flex-wrap: wrap;
+  row-gap: 6px
+}
+
+body.desktop-shell.desktop-fullscreen .control-cluster.modes,
+html:fullscreen body.desktop-shell .control-cluster.modes {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  max-width: 100%
+}
+
+body.desktop-shell.desktop-fullscreen .control-cluster.actions,
+html:fullscreen body.desktop-shell .control-cluster.actions {
+  overflow: visible
+}
+
+body.desktop-shell.desktop-fullscreen .control-meta,
+html:fullscreen body.desktop-shell .control-meta {
+  max-width: min(220px, 18vw)
+}
+
+body.desktop-shell.desktop-fullscreen .ctrl-btn,
+html:fullscreen body.desktop-shell .ctrl-btn {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto
+}
+
+body.desktop-shell.desktop-fullscreen .ctrl-btn svg,
+html:fullscreen body.desktop-shell .ctrl-btn svg {
+  width: 18px;
+  height: 18px
+}
+
+body.desktop-shell.desktop-fullscreen #play-btn,
+html:fullscreen body.desktop-shell #play-btn {
+  width: 52px;
+  height: 52px
+}
+
+body.desktop-shell.desktop-fullscreen #play-btn svg,
+html:fullscreen body.desktop-shell #play-btn svg {
+  width: 22px;
+  height: 22px
+}
+
+/* 词 / 唱歌 / 音量等带 popover 的控件：固定占位，避免 absolute 子弹挤扁导致图标叠在一起 */
+body.desktop-shell.desktop-fullscreen .lyric-timing-control,
+body.desktop-shell.desktop-fullscreen .volume-control,
+body.desktop-shell.desktop-fullscreen .singing-control,
+body.desktop-shell.desktop-fullscreen .quality-control,
+html:fullscreen body.desktop-shell .lyric-timing-control,
+html:fullscreen body.desktop-shell .volume-control,
+html:fullscreen body.desktop-shell .singing-control,
+html:fullscreen body.desktop-shell .quality-control {
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center
+}
+
+body.desktop-shell.desktop-fullscreen .lyric-timing-control .ctrl-btn,
+body.desktop-shell.desktop-fullscreen .volume-control .ctrl-btn,
+body.desktop-shell.desktop-fullscreen .singing-control .ctrl-btn,
+body.desktop-shell.desktop-fullscreen .quality-control .ctrl-btn,
+html:fullscreen body.desktop-shell .lyric-timing-control .ctrl-btn,
+html:fullscreen body.desktop-shell .volume-control .ctrl-btn,
+html:fullscreen body.desktop-shell .singing-control .ctrl-btn,
+html:fullscreen body.desktop-shell .quality-control .ctrl-btn {
+  position: relative;
+  margin: 0
+}
+
+body.desktop-shell.desktop-fullscreen #time-display,
+html:fullscreen body.desktop-shell #time-display {
+  min-width: 78px;
+  height: 34px;
+  font-size: 11.5px;
+  padding: 0 4px
+}
+
+body.desktop-shell.desktop-fullscreen #progress-bar,
+html:fullscreen body.desktop-shell #progress-bar {
+  width: calc(100% - clamp(48px, 6vw, 100px))
+}
+
+/* DIY 面板在全屏时已偏移，底栏不再额外左移挤压右侧按钮 */
+body.desktop-shell.desktop-fullscreen.diy-mode #bottom-bar,
+body.desktop-shell.desktop-fullscreen.diy-mode #bottom-bar.stage-mode,
+html:fullscreen body.desktop-shell.diy-mode #bottom-bar,
+html:fullscreen body.desktop-shell.diy-mode #bottom-bar.stage-mode {
+  left: 50%;
+  width: min(1200px, calc(100vw - 160px))
+}
+
+@media (max-width: 1100px) {
+  body.desktop-shell.desktop-fullscreen #controls,
+  html:fullscreen body.desktop-shell #controls {
+    grid-template-columns: minmax(220px, 1fr) minmax(240px, auto) minmax(300px, 1.2fr);
+    gap: 8px
+  }
+
+  body.desktop-shell.desktop-fullscreen .control-cluster,
+  html:fullscreen body.desktop-shell .control-cluster {
+    gap: 6px
+  }
+
+  body.desktop-shell.desktop-fullscreen .control-meta,
+  html:fullscreen body.desktop-shell .control-meta {
+    max-width: min(160px, 16vw)
+  }
+}
+
+@media (max-width: 860px) {
+  body.desktop-shell.desktop-fullscreen #bottom-bar,
+  html:fullscreen body.desktop-shell #bottom-bar,
+  body.desktop-shell.desktop-fullscreen #bottom-bar.stage-mode,
+  html:fullscreen body.desktop-shell #bottom-bar.stage-mode {
+    width: calc(100vw - 20px);
+    padding: 8px 10px 12px
+  }
+
+  body.desktop-shell.desktop-fullscreen #controls,
+  html:fullscreen body.desktop-shell #controls {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 6px
+  }
+
+  body.desktop-shell.desktop-fullscreen .ctrl-btn,
+  html:fullscreen body.desktop-shell .ctrl-btn,
+  body.desktop-shell.desktop-fullscreen .lyric-timing-control,
+  body.desktop-shell.desktop-fullscreen .volume-control,
+  body.desktop-shell.desktop-fullscreen .singing-control,
+  body.desktop-shell.desktop-fullscreen .quality-control,
+  html:fullscreen body.desktop-shell .lyric-timing-control,
+  html:fullscreen body.desktop-shell .volume-control,
+  html:fullscreen body.desktop-shell .singing-control,
+  html:fullscreen body.desktop-shell .quality-control {
+    width: 32px;
+    height: 32px
+  }
+
+  body.desktop-shell.desktop-fullscreen #time-display,
+  html:fullscreen body.desktop-shell #time-display {
+    min-width: 70px;
+    font-size: 10.5px
+  }
+}
+
 body.immersive-mode::after {
   content: '';
   position: fixed;
