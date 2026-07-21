@@ -45,16 +45,21 @@ test('只有伴奏和人声同时 100% 才绕过分离处理', () => {
   assert.equal(sandbox.isolateVocal, true);
 });
 
-test('Worklet 保留立体声伴奏并只从中置声道重建人声', () => {
+test('Worklet 用 mac-port 听感基线并保留双滑块混合语义', () => {
   const source = read('public/js/modules/05-playback/08-audio-graph-controls.js');
   assert.match(source, /processorOptions:\s*\{\s*accompaniment:\s*singingAccompanimentLevel,\s*vocal:\s*singingVocalLevel\s*\}/);
-  assert.match(source, /phaseCoherence/);
-  assert.match(source, /transientProbability/);
-  assert.match(source, /var accompanimentApplied = accompaniment \* accompanimentMask;/);
-  assert.match(source, /var vocalApplied = vocal \* vocalProbability;/);
-  assert.match(source, /this\.re1\[b\] = lr \* accompanimentApplied \+ mr \* vocalApplied;/);
-  assert.match(source, /this\.re2\[b\] = rr \* accompanimentApplied \+ mr \* vocalApplied;/);
-  assert.doesNotMatch(source, /var applied = lv \+ \(1 - lv\) \* mask;/);
+  // 听感基线：side/mid ^1.4 + 时间平滑 + 低频保留
+  assert.match(source, /Math\.pow\(ratio,\s*1\.4\)/);
+  assert.match(source, /maskAlpha\s*=\s*0\.6/);
+  assert.match(source, /lowKeepBin[\s\S]*130/);
+  // 双滑块：applied = vocal + (accompaniment - vocal) * mask
+  assert.match(source, /var applied = vocal \+ \(accompaniment - vocal\) \* mask;/);
+  // 双 100% 跳过 FFT
+  assert.match(source, /accompaniment >= 0\.999 && vocal >= 0\.999/);
+  // 不再使用 #49–#50 复杂双掩码字段
+  assert.doesNotMatch(source, /frameVocalConfidence/);
+  assert.doesNotMatch(source, /phaseCoherence/);
+  assert.doesNotMatch(source, /accompanimentMaskPrev/);
 });
 
 test('分离链滑块调节只发送参数而不创建第二个处理器', () => {
