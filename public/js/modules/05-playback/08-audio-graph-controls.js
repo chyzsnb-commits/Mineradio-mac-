@@ -89,13 +89,8 @@ function resetPlaybackAudioGraphForSourceSwitch(reason) {
 var MIC_VISUAL_GAIN = 3.0;  // 麦克风信号进可视化分析器前的提亮倍数(嗓音常偏小)
 
 // ── 频谱级去人声 AudioWorklet 处理器 ──
-// 听感基线取自 mac-port-full 的实时算法(用户实测优于 #49–#50 复杂双掩码):
-//   mask = |side|/(|side|+|mid|), ^1.4, 时间 IIR 平滑, <130Hz 全保留。
-// 仍保留 #52 链双滑块语义: applied = vocal + (accompaniment - vocal) * mask
-//   伴奏 100% / 人声 0%  → 纯去人声(等同旧单滑块 level=0)
-//   伴奏 100% / 人声 100% → 原声(等同 level=1; 外层会旁路本 Worklet)
-//   伴奏 0%  / 人声 100% → 近似人声残留 (1-mask)
-// 单路 STFT,无双路延迟错配; 双 100% 时跳过 FFT。
+// STFT(2048/HOP512,Hann,75% 叠加)生成两套掩码:伴奏轨强力削中置,人声轨保护鼓点瞬态。
+// 仍是单路 FFT 处理,无双路延迟错配。
 var VOCAL_REMOVER_PROCESSOR_SRC = `
 class VocalRemoverProcessor extends AudioWorkletProcessor {
   constructor(options) {
@@ -107,8 +102,16 @@ class VocalRemoverProcessor extends AudioWorkletProcessor {
     var c = 0; for (var p = (N / 2) % HOP; p < N; p += HOP) c += this.win[p] * this.win[p];
     this.norm = c > 0 ? 1 / c : 1;
     this.lowKeepBin = Math.max(1, Math.round(130 * N / sampleRate));  // <130Hz(贝斯/底鼓)整段保留
-    this.maskPrev = new Float32Array(N); for (var mk = 0; mk < N; mk++) this.maskPrev[mk] = 1;
-    this.maskAlpha = 0.6;  // 越大越平滑(水声越少),响应略慢
+    this.highProtectBin = Math.max(this.lowKeepBin + 1, Math.round(7200 * N / sampleRate));
+    this.voiceLowBin = Math.max(this.lowKeepBin + 1, Math.round(160 * N / sampleRate));
+    this.voicePresenceBin = Math.round(1400 * N / sampleRate);
+    this.voiceHighBin = Math.min(N >> 1, Math.round(6000 * N / sampleRate));
+    this.accompanimentMaskPrev = new Float32Array(N);
+    for (var mk = 0; mk < N; mk++) this.accompanimentMaskPrev[mk] = 1;
+    this.vocalProbabilityPrev = new Float32Array(N);
+    this.prevMidEnergy = new Float32Array(N);
+    this.transientState = new Float32Array(N);
+    this.frameVocalConfidence = 0.25;
     this.inL = new Float32Array(N); this.inR = new Float32Array(N); this.inFill = 0;
     this.olaL = new Float32Array(N); this.olaR = new Float32Array(N);
     this.qL = new Float32Array(N * 2); this.qR = new Float32Array(N * 2);
@@ -148,43 +151,84 @@ class VocalRemoverProcessor extends AudioWorkletProcessor {
     if (inv) { for (var m = 0; m < N; m++) { re[m] /= N; im[m] /= N; } }
   }
   frame() {
-    var N = this.N, win = this.win, accompaniment = this.accompanimentLevel, vocal = this.vocalLevel, norm = this.norm;
-    // 双 100%:与 mac-port 原唱=100% 一致,跳过 FFT,窗² 叠加重构 → 切换无咔哒
-    if (accompaniment >= 0.999 && vocal >= 0.999) {
-      for (var i = 0; i < N; i++) {
-        this.olaL[i] += this.inL[i] * win[i] * win[i] * norm;
-        this.olaR[i] += this.inR[i] * win[i] * win[i] * norm;
-      }
-    } else {
-      var keepBin = this.lowKeepBin, a = this.maskAlpha, ia = 1 - this.maskAlpha, mp = this.maskPrev;
-      for (var j = 0; j < N; j++) { this.re1[j] = this.inL[j] * win[j]; this.im1[j] = 0; this.re2[j] = this.inR[j] * win[j]; this.im2[j] = 0; }
-      this.fft(this.re1, this.im1, false);
-      this.fft(this.re2, this.im2, false);
-      for (var b = 0; b < N; b++) {
-        var lr = this.re1[b], li = this.im1[b], rr = this.re2[b], ri = this.im2[b];
-        var mr = (lr + rr) * 0.5, mi = (li + ri) * 0.5;
-        var sr = (lr - rr) * 0.5, si = (li - ri) * 0.5;
-        var mMag = Math.sqrt(mr * mr + mi * mi), sMag = Math.sqrt(sr * sr + si * si);
-        var rawMask;
-        var fb = b <= (N >> 1) ? b : (N - b);
-        if (fb <= keepBin) {
-          rawMask = 1;   // 低频(贝斯/底鼓)整段保留
-        } else {
-          var ratio = Math.min(1, sMag / (mMag + 1e-9));
-          rawMask = Math.pow(ratio, 1.4);   // 居中(人声)→0,声像两侧→1
+    var N = this.N, win = this.win, accompaniment = this.accompanimentLevel, vocal = this.vocalLevel;
+    var keepBin = this.lowKeepBin, highBin = this.highProtectBin, amp = this.accompanimentMaskPrev, vp = this.vocalProbabilityPrev, pe = this.prevMidEnergy, ts = this.transientState;
+    for (var i = 0; i < N; i++) { this.re1[i] = this.inL[i] * win[i]; this.im1[i] = 0; this.re2[i] = this.inR[i] * win[i]; this.im2[i] = 0; }
+    this.fft(this.re1, this.im1, false);
+    this.fft(this.re2, this.im2, false);
+    var voiceTotalEnergy = 0, voicePresenceEnergy = 0;
+    var voiceLowBin = this.voiceLowBin, voicePresenceBin = this.voicePresenceBin, voiceHighBin = this.voiceHighBin;
+    var frameVocalConfidence = this.frameVocalConfidence;
+    for (var b = 0; b < N; b++) {
+      var lr = this.re1[b], li = this.im1[b], rr = this.re2[b], ri = this.im2[b];
+      var mr = (lr + rr) * 0.5, mi = (li + ri) * 0.5;
+      var sr = (lr - rr) * 0.5, si = (li - ri) * 0.5;
+      var midEnergy = mr * mr + mi * mi, sideEnergy = sr * sr + si * si;
+      var leftEnergy = lr * lr + li * li, rightEnergy = rr * rr + ri * ri;
+      var rawAccompanimentMask = 1;
+      var rawVocalProbability = 0;
+      var instantTransientProbability = 0;
+      var fb = b <= (N >> 1) ? b : (N - b);   // 折叠到 0..N/2
+      if (fb > keepBin && midEnergy > 1e-12) {
+        var sideToMid = Math.min(1, Math.sqrt(sideEnergy) / (Math.sqrt(midEnergy) + 1e-9));
+        rawAccompanimentMask = Math.pow(sideToMid, 2.2);
+        var crossRoot = Math.sqrt(leftEnergy * rightEnergy);
+        var phaseCoherence = Math.max(0, Math.min(1, (lr * rr + li * ri) / (crossRoot + 1e-12)));
+        var levelBalance = Math.min(1, 2 * crossRoot / (leftEnergy + rightEnergy + 1e-12));
+        var sideRatioSquared = Math.min(1, sideEnergy / (midEnergy + 1e-12));
+        var spatialCenter = (1 - Math.pow(sideRatioSquared, 1.1)) * phaseCoherence * levelBalance;
+        var previousEnergy = pe[b];
+        var transientProbability = previousEnergy > 1e-12
+          ? Math.max(0, Math.min(1, (midEnergy - previousEnergy) / (midEnergy + 1e-12)))
+          : 1;
+        instantTransientProbability = transientProbability;
+        transientProbability = Math.max(transientProbability, ts[b] * 0.58);
+        ts[b] = transientProbability;
+        pe[b] = previousEnergy * 0.56 + midEnergy * 0.44;
+        if (b >= voiceLowBin && b <= voiceHighBin) {
+          var stableWeight = 1 - transientProbability;
+          var stableEnergy = midEnergy * stableWeight * stableWeight;
+          voiceTotalEnergy += stableEnergy;
+          if (b >= voicePresenceBin) voicePresenceEnergy += stableEnergy;
         }
-        var mask = a * mp[b] + ia * rawMask;
-        mp[b] = mask;
-        // 双滑块: vocal 拉满时贴近原声; accompaniment 拉满且 vocal=0 时等同纯去人声
-        var applied = vocal + (accompaniment - vocal) * mask;
-        if (applied < 0) applied = 0; else if (applied > 1.5) applied = 1.5;
-        this.re1[b] = lr * applied; this.im1[b] = li * applied;
-        this.re2[b] = rr * applied; this.im2[b] = ri * applied;
+        var highFrequencyProtection = fb > highBin
+          ? Math.max(0.35, 1 - 0.65 * (fb - highBin) / Math.max(1, (N >> 1) - highBin))
+          : 1;
+        rawVocalProbability = spatialCenter * spatialCenter
+          * (1 - 0.98 * transientProbability)
+          * highFrequencyProtection
+          * frameVocalConfidence;
+      } else {
+        pe[b] *= 0.5;
+        ts[b] *= 0.5;
       }
-      this.fft(this.re1, this.im1, true);
-      this.fft(this.re2, this.im2, true);
-      for (var o = 0; o < N; o++) { this.olaL[o] += this.re1[o] * win[o] * norm; this.olaR[o] += this.re2[o] * win[o] * norm; }
+      // 只放回最尖锐的第一下瞬态；五次方会快速压低持续人声，同时保留军鼓/镲片的冲击。
+      if (fb > keepBin) rawAccompanimentMask = Math.max(rawAccompanimentMask, Math.pow(instantTransientProbability, 5));
+      var previousAccompanimentMask = amp[b];
+      var accompanimentSmoothing = rawAccompanimentMask < previousAccompanimentMask ? 0.18 : 0.62;
+      var accompanimentMask = accompanimentSmoothing * previousAccompanimentMask + (1 - accompanimentSmoothing) * rawAccompanimentMask;
+      amp[b] = accompanimentMask;
+      // 瞬态到来时快速转入伴奏,人声概率慢速恢复,减少水声伪影。
+      var previousVocalProbability = vp[b];
+      var smoothing = rawVocalProbability < previousVocalProbability ? 0.16 : 0.72;
+      var vocalProbability = smoothing * previousVocalProbability + (1 - smoothing) * rawVocalProbability;
+      vp[b] = vocalProbability;
+      var accompanimentApplied = accompaniment * accompanimentMask;
+      var vocalApplied = vocal * vocalProbability;
+      // 人声支路只重建中置信号，避免同频的侧声道乐器随掩码一起漏回。
+      this.re1[b] = lr * accompanimentApplied + mr * vocalApplied;
+      this.im1[b] = li * accompanimentApplied + mi * vocalApplied;
+      this.re2[b] = rr * accompanimentApplied + mr * vocalApplied;
+      this.im2[b] = ri * accompanimentApplied + mi * vocalApplied;
     }
+    // 用本帧统计更新下一帧，避免为人声判断再扫描一遍频谱。
+    var presenceShare = voicePresenceEnergy / (voiceTotalEnergy + 1e-12);
+    var targetVocalConfidence = 0.25 + 0.75 * Math.min(1, presenceShare / 0.01);
+    this.frameVocalConfidence = 0.55 * frameVocalConfidence + 0.45 * targetVocalConfidence;
+    this.fft(this.re1, this.im1, true);
+    this.fft(this.re2, this.im2, true);
+    var norm = this.norm;
+    for (var o = 0; o < N; o++) { this.olaL[o] += this.re1[o] * win[o] * norm; this.olaR[o] += this.re2[o] * win[o] * norm; }
     for (var h = 0; h < this.HOP; h++) {
       this.qL[this.qTail] = this.olaL[h]; this.qR[this.qTail] = this.olaR[h];
       this.qTail = (this.qTail + 1) % this.qL.length; this.qCount++;
