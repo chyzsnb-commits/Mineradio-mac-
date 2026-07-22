@@ -6737,6 +6737,7 @@ body.diy-mode #controls {
 .control-cluster.modes {
   justify-content: flex-end;
   overflow: visible;
+  gap: 8px;   /* 原继承 13px:11 个模式按钮在 1470 宽下超出列宽向左溢出,压到 transport 上=底栏图标"他俩重叠"(00在);收紧到 8px + 底栏加宽到 1200 后不再重叠 */
 }
 
 .control-track {
@@ -10304,7 +10305,7 @@ body.desktop-shell.diy-mode.controls-visible #fx-fab {
 body.desktop-shell.diy-mode #bottom-bar,
 body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   left: 50%;
-  width: min(1080px, calc(100vw - 72px))
+  width: min(1200px, calc(100vw - 72px))   /* 原 1080:桌面外壳 diy 模式底栏太窄,11 个模式按钮溢出压到 transport 上=图标重叠(00在);加宽到 1200 + 模式簇间距收紧后消除 */
 }
 
 @media (max-height:760px) {

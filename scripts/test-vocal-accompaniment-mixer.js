@@ -78,3 +78,14 @@ test('核心状态默认伴奏满、人声零', () => {
   assert.match(stores, /singingAccompanimentLevel\s*=\s*1/);
   assert.match(stores, /singingVocalLevel\s*=\s*0/);
 });
+
+test('三段均衡器位于最终输出端且保留 AI 双轨和升降 Key 路由', () => {
+  const source = read('public/js/modules/05-playback/08-audio-graph-controls.js');
+  const html = read('public/index.html');
+  assert.match(html, /id="eq-low-slider"[\s\S]*id="eq-mid-slider"[\s\S]*id="eq-high-slider"/);
+  assert.match(source, /connectAiStemPlaybackGraph\(audioCtx, source, analyser, beatAnalyser\)/);
+  assert.match(source, /connectSingingPlaybackGraph\(audioCtx, source, analyser, sourceUsesCapture\)/);
+  assert.match(source, /analyser\.connect\(eqNodes\.low\)[\s\S]*eqNodes\.high\.connect\(eqOutput\)/);
+  assert.match(source, /applyPlaybackSpeedToAudio\(\)/);
+  assert.match(source, /syncSingingKeyShiftUi\(\)/);
+});

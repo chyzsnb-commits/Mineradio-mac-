@@ -261,14 +261,11 @@ function updatePlaybackQualityUi() {
     option.classList.toggle('locked', locked);
     option.classList.toggle('cap-locked', capLocked);
     option.disabled = locked;
-    if (capLocked) option.title = '当前歌曲最高: ' + playbackQualityLabel(runtimeCapQuality, provider);
-    option.title = locked ? '需要网易云 SVIP 账号' : playbackQualityLabel(q, provider);
+    // 锁因分开:曲目上限显示真实原因;只有网易云 SVIP 档(jymaster)才提网易云,别的平台不背这口锅
+    option.title = capLocked
+      ? ('当前歌曲最高: ' + playbackQualityLabel(runtimeCapQuality, provider))
+      : (locked ? '需要网易云 SVIP 账号' : playbackQualityLabel(q, provider));
   });
-  if (runtimeCapQuality) {
-    document.querySelectorAll('.quality-option.cap-locked').forEach(function (option) {
-      option.title = '当前歌曲最高: ' + playbackQualityLabel(runtimeCapQuality, provider);
-    });
-  }
 }
 function setPlaybackQuality(value) {
   var provider = currentPlaybackQualityProvider();

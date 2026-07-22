@@ -1098,6 +1098,16 @@
                 <input id="speed-slider" type="range" min="0.5" max="3" step="0.05" value="1" aria-label="播放倍速">
                 <span id="speed-value">1.0×</span>
               </div>
+              <div class="crossfade-block eq-block">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+                  <span style="font-size:11.5px;font-weight:700;color:rgba(255,255,255,.82)">均衡器</span>
+                  <button id="eq-reset-btn" type="button" onclick="event.stopPropagation()" style="font-size:10.5px;padding:2px 9px;border-radius:6px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.62);border:none;cursor:pointer">重置</button>
+                </div>
+                <div class="fade-control-row"><label for="eq-low-slider">低频</label><input id="eq-low-slider" type="range" min="-12" max="12" step="1" value="0" aria-label="低频增益"><span id="eq-low-value">0 dB</span></div>
+                <div class="fade-control-row"><label for="eq-mid-slider">中频</label><input id="eq-mid-slider" type="range" min="-12" max="12" step="1" value="0" aria-label="中频增益"><span id="eq-mid-value">0 dB</span></div>
+                <div class="fade-control-row"><label for="eq-high-slider">高频</label><input id="eq-high-slider" type="range" min="-12" max="12" step="1" value="0" aria-label="高频增益"><span id="eq-high-value">0 dB</span></div>
+                <div class="singing-hint">低 / 中 / 高三段增益 · ±12 dB · 自定义调音,自动保存</div>
+              </div>
             </div>
           </div>
           <button id="controls-hide-btn" class="ctrl-btn active" onclick="toggleControlsAutoHide()" title="控制条自动隐藏"><svg

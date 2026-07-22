@@ -44,6 +44,11 @@ function lyricContextOpacityValue() {
 function lyricContextSpreadValue() {
   return clampRange(fx && fx.lyricContextSpread == null ? fxDefaults.lyricContextSpread : Number(fx && fx.lyricContextSpread), 0.60, 2.40);
 }
+function lyricNonTranslationSlotStepValue() {
+  // 翻译关闭时,虚拟行距原本 = 原始整数 n(= 恰好 1 个行高)→ 双行/多行模式上下句零间隙贴死 = 用户反复截图的"他俩重叠"。
+  // 乘一个 >1 的系数给出可见行距,并让 lyricContextSpread 滑块在无翻译布局下也生效(此前 line 91 硬返回 n,spread 对它完全无效)。
+  return clampRange(1.24 + (lyricContextSpreadValue() - 1) * 0.16, 1.12, 1.66);
+}
 function lyricTranslationGapValue() {
   return clampRange(fx && fx.lyricTranslationGap == null ? fxDefaults.lyricTranslationGap : Number(fx && fx.lyricTranslationGap), 0.28, 2.20);
 }
@@ -88,7 +93,7 @@ function lyricPrimaryVirtualPrefixKey() {
 function lyricPrimaryVirtualIndex(index) {
   var n = Math.round(Number(index) || 0);
   if (!isFinite(n) || n === 0) return 0;
-  if (!lyricTranslationLayoutActive()) return n;
+  if (!lyricTranslationLayoutActive()) return n * lyricNonTranslationSlotStepValue();
   if (n < 0) return n * lyricPrimarySlotStepValue();
   var key = lyricPrimaryVirtualPrefixKey();
   if (!lyricPrimaryVirtualPrefixCache || lyricPrimaryVirtualPrefixCache.key !== key) {

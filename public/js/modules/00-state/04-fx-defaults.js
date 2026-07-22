@@ -27,10 +27,10 @@ var fxDefaults = {
   lyricCustomLineCount: 5,
   lyricGlitchCameraBind: false,
   lyricGlitchIntensity: 1.0,
-  lyricGlitchSlice: 0.72,
-  lyricGlitchChroma: 0.86,
+  lyricGlitchSlice: 0.25,   // 原 0.72 太猛:水平切片位移把字横向劈成"叠影/重叠"(用户截到的 00在);降到 0.25 保留故障感但字不再劈开
+  lyricGlitchChroma: 0.6,   // 原 0.86:RGB 色散过强也在加重叠;降一档,仍有故障色边
   lyricGlitchRate: 1.0,
-  lyricGlitchJitter: 0.72,
+  lyricGlitchJitter: 0.35,  // 原 0.72:抖动过大= 字发糊/重影;减半
   lyricContextOpacity: 0.72,
   lyricContextSpread: 1.12,
   lyricTranslationGap: 0.42,

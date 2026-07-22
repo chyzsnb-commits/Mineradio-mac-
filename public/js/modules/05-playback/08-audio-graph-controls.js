@@ -29,7 +29,63 @@ function disconnectAudioGraphNodes(keepSource) {
   aiStemAccompanimentGain = null;
   aiStemVocalGain = null;
   singingKeyShiftNode = null;
+  ['low', 'mid', 'high'].forEach(function (band) {
+    if (!eqNodes[band]) return;
+    try { eqNodes[band].disconnect(); } catch (e) { }
+    eqNodes[band] = null;
+  });
   audioReady = false;
+}
+// 三段均衡器：位于 analyser 和最终输出之间，不改动 #52 的实时唱歌、AI 双轨和升降 Key 路由。
+var eqNodes = { low: null, mid: null, high: null };
+var eqBands = { low: 0, mid: 0, high: 0 };
+var EQ_STORE_KEY = 'mineradio-eq-v1';
+var EQ_MIN_DB = -12, EQ_MAX_DB = 12;
+(function loadEqBands() {
+  try {
+    var parsed = JSON.parse(localStorage.getItem(EQ_STORE_KEY) || 'null');
+    if (parsed && typeof parsed === 'object') ['low', 'mid', 'high'].forEach(function (band) {
+      var value = Number(parsed[band]);
+      if (isFinite(value)) eqBands[band] = Math.max(EQ_MIN_DB, Math.min(EQ_MAX_DB, value));
+    });
+  } catch (e) { }
+})();
+function applyEqToAudio() {
+  ['low', 'mid', 'high'].forEach(function (band) {
+    if (!eqNodes[band]) return;
+    try { eqNodes[band].gain.value = eqBands[band]; } catch (e) { }
+  });
+}
+function saveEqBands() {
+  try { localStorage.setItem(EQ_STORE_KEY, JSON.stringify(eqBands)); } catch (e) { }
+}
+function syncEqUi() {
+  ['low', 'mid', 'high'].forEach(function (band) {
+    var slider = document.getElementById('eq-' + band + '-slider');
+    var value = document.getElementById('eq-' + band + '-value');
+    var db = eqBands[band];
+    if (slider && document.activeElement !== slider) slider.value = String(db);
+    if (value) value.textContent = (db > 0 ? '+' : '') + db + ' dB';
+  });
+}
+function setEqBand(band, db, opts) {
+  opts = opts || {};
+  if (band !== 'low' && band !== 'mid' && band !== 'high') return;
+  eqBands[band] = Math.max(EQ_MIN_DB, Math.min(EQ_MAX_DB, Math.round(Number(db) || 0)));
+  applyEqToAudio();
+  saveEqBands();
+  syncEqUi();
+  if (!opts.silent) {
+    var label = band === 'low' ? '低频' : (band === 'mid' ? '中频' : '高频');
+    showToast('均衡器 · ' + label + ' ' + (eqBands[band] > 0 ? '+' : '') + eqBands[band] + ' dB');
+  }
+}
+function resetEq() {
+  eqBands.low = eqBands.mid = eqBands.high = 0;
+  applyEqToAudio();
+  saveEqBands();
+  syncEqUi();
+  showToast('均衡器已重置');
 }
 function restoreMediaTimeWhenReady(media, seconds) {
   seconds = Math.max(0, Number(seconds) || 0);
@@ -559,12 +615,24 @@ function initAudio() {
     source.connect(beatAnalyser);  // 实时模式保持原全混音节拍分析
     connectSingingPlaybackGraph(audioCtx, source, analyser, sourceUsesCapture);
   }
-  if (gainNode) {
-    analyser.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-  } else if (analysisSinkNode) {
-    analyser.connect(analysisSinkNode);
-    analysisSinkNode.connect(audioCtx.destination);
+  var eqOutput = gainNode || analysisSinkNode;
+  if (eqOutput) {
+    eqNodes.low = audioCtx.createBiquadFilter();
+    eqNodes.low.type = 'lowshelf';
+    eqNodes.low.frequency.value = 120;
+    eqNodes.mid = audioCtx.createBiquadFilter();
+    eqNodes.mid.type = 'peaking';
+    eqNodes.mid.frequency.value = 1000;
+    eqNodes.mid.Q.value = 0.9;
+    eqNodes.high = audioCtx.createBiquadFilter();
+    eqNodes.high.type = 'highshelf';
+    eqNodes.high.frequency.value = 5000;
+    analyser.connect(eqNodes.low);
+    eqNodes.low.connect(eqNodes.mid);
+    eqNodes.mid.connect(eqNodes.high);
+    eqNodes.high.connect(eqOutput);
+    eqOutput.connect(audioCtx.destination);
+    applyEqToAudio();
   }
   applyPlaybackSpeedToAudio();
   applyVolumeToAudio();
@@ -1402,6 +1470,21 @@ function bindVolumeControls() {
       setSingingKeyShift(singingKeyShift + (Number(button.getAttribute('data-singing-key-step')) || 0));
     });
   });
+  ['low', 'mid', 'high'].forEach(function (band) {
+    var slider = document.getElementById('eq-' + band + '-slider');
+    if (!slider || slider._eqBound) return;
+    slider._eqBound = true;
+    slider.addEventListener('input', function () { setEqBand(band, slider.value, { silent: true }); });
+    slider.addEventListener('change', function () { setEqBand(band, slider.value, { silent: false }); });
+    slider.addEventListener('focus', keepVolumePanelOpen);
+    slider.addEventListener('blur', closeVolumePanelSoon);
+  });
+  var eqResetBtn = document.getElementById('eq-reset-btn');
+  if (eqResetBtn && !eqResetBtn._eqBound) {
+    eqResetBtn._eqBound = true;
+    eqResetBtn.addEventListener('click', function (e) { e.stopPropagation(); resetEq(); });
+  }
+  syncEqUi();
   syncSpeedSliderUi();
   syncSingingVocalUi();
   syncSingingKeyShiftUi();

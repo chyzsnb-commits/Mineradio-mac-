@@ -1746,8 +1746,12 @@ const NETEASE_QUALITY_CANDIDATES = [
   { level: 'exhigh',   br: 999000,  label: '极高' },
   { level: 'standard', br: 128000,  label: '标准' },
 ];
+// QQ Hi-Res 前缀实测(2026-07-17,SVIP 账号逐档探活+Content-Range 量尺):
+// 旧 RS01 已全网 404(失效前缀)→ 真源是 Q001(臻品音质,~100MB 24bit,可流式)与 AI00(臻品母带,~240MB),
+// Q000=全景声(atmos,不作默认)。hires 档先试 Q001 再兜底 AI00,都拿不到才落无损。
 const QQ_QUALITY_CANDIDATE_TEMPLATES = [
-  { prefix: 'RS01', ext: '.flac', level: 'hires', label: 'Hi-Res FLAC' },
+  { prefix: 'Q001', ext: '.flac', level: 'hires', label: 'Hi-Res FLAC' },
+  { prefix: 'AI00', ext: '.flac', level: 'hires', label: '臻品母带' },
   { prefix: 'F000', ext: '.flac', level: 'lossless', label: '无损 FLAC' },
   { prefix: 'M800', ext: '.mp3', level: 'exhigh', label: '320k MP3' },
   { prefix: 'M500', ext: '.mp3', level: 'standard', label: '128k MP3' },
@@ -4134,7 +4138,16 @@ async function handleQQSongUrl(mid, mediaMid, qualityPreference, playbackHints) 
   const uin = qqCookieUin(cookieObj) || '0';
   const musicKey = qqCookieMusicKey(cookieObj);
   const playbackKey = qqCookiePlaybackKey(cookieObj);
-  const fileMediaMid = String(mediaMid || '').trim();
+  let fileMediaMid = String(mediaMid || '').trim();
+  // 老歌单、历史队列和部分早期搜索缓存只保存 song mid，没有保存真正用于
+  // 拼音频文件名的 file.media_mid。两者经常不同，直接拿 song mid 请求会让
+  // QQ CDN 返回 404，随后前端误以为版权不可播并连续换源。缺失时先补详情。
+  if (!fileMediaMid) {
+    try {
+      const detail = await qqSongDetail(songmid, { mid: songmid, songmid });
+      fileMediaMid = String(detail && (detail.mediaMid || detail.media_mid) || '').trim();
+    } catch (e) { /* 详情暂时不可用时仍保留旧的 song mid 兜底 */ }
+  }
   const requestedQuality = normalizeQualityPreference(qualityPreference);
   const memberTrackHint = qqPlaybackMemberHints(playbackHints);
   const hasQQPlaybackSession = !!(uin && uin !== '0' && musicKey);
@@ -4176,7 +4189,14 @@ async function handleQQSongUrl(mid, mediaMid, qualityPreference, playbackHints) 
     try {
       const probeCtrl = new AbortController();
       const probeTimer = setTimeout(() => probeCtrl.abort(), 4500);
-      const probeRes = await fetch(sipBase + cand.purl, { headers: { Range: 'bytes=0-0', 'User-Agent': UA }, signal: probeCtrl.signal });
+      // 探活必须和真正的 /api/audio 拉流使用同一组来源头。QQ CDN 对缺少
+      // y.qq.com Referer 的签名地址会返回 403；旧逻辑因此把有效会员音源误判为
+      // 不可播，前端随后不断自动换源。
+      const candidateUrl = sipBase + cand.purl;
+      const probeRes = await fetch(candidateUrl, {
+        headers: audioProxyHeadersFor(candidateUrl, 'bytes=0-0'),
+        signal: probeCtrl.signal,
+      });
       clearTimeout(probeTimer);
       try { probeRes.body && probeRes.body.cancel && probeRes.body.cancel(); } catch (e) {}
       if (probeRes.status === 200 || probeRes.status === 206) { info = cand; break; }

@@ -63,3 +63,26 @@ test('拿到音频地址时不再提前清零，远程和本地播放成功路�
   const confirmations = source.match(/confirmQueuePlaybackStarted\(idx, token\)/g) || [];
   assert.equal(confirmations.length, 2, '本地和远程播放成功路径都应确认并清零');
 });
+
+test('手动点歌自动换源最多一次，失败后不继续跳整队', async () => {
+  const source = read('public/js/modules/05-playback/11-provider-fallback.js');
+  const calls = { skip: 0, failed: 0, unavailable: 0 };
+  const sandbox = {
+    calls,
+    console: { warn() {} },
+    _playbackFailExceeded() { return false; },
+    _recordPlaybackFail() { return 1; },
+    markQueueItemPlaybackFailed() { calls.failed += 1; },
+    handlePlaybackUnavailable() { calls.unavailable += 1; },
+    skipFailedQueueItem() { calls.skip += 1; },
+  };
+  const fallbackFunction = readFunction(source, 'tryAutoPlaybackFallback').replace(/^function /, 'async function ');
+  vm.runInNewContext(`${fallbackFunction};`, sandbox);
+
+  await vm.runInNewContext("tryAutoPlaybackFallback({ name: '测试歌曲' }, { url: '' }, 0, 1, { fallbackDepth: 1, startupAutoplay: false })", sandbox);
+  assert.deepEqual(calls, { skip: 0, failed: 1, unavailable: 1 }, '手动点歌的替代源失败后必须停住');
+
+  calls.skip = calls.failed = calls.unavailable = 0;
+  await vm.runInNewContext("tryAutoPlaybackFallback({ name: '测试歌曲' }, { url: '' }, 0, 1, { fallbackDepth: 1, startupAutoplay: true })", sandbox);
+  assert.deepEqual(calls, { skip: 1, failed: 0, unavailable: 0 }, '只有启动自动续播可以继续扫描队列');
+});

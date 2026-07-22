@@ -634,11 +634,16 @@ function songRequiresVip(song) {
 function songVipTagHtml(song) {
   return songRequiresVip(song) ? '<span class="tag-vip">VIP</span>' : '';
 }
+function qqSearchResultNeedsAuthorization(song) {
+  if (!song || song.playable) return false;
+  var status = typeof searchProviderStatus === 'function' ? searchProviderStatus('qq') : qqLoginStatus;
+  return !(status && status.loggedIn && status.playbackKeyReady);
+}
 function searchResultMetaText(song) {
   var bits = [];
   if (song.artist) bits.push(song.artist);
   if (song.album) bits.push(song.album);
-  if (songProviderKey(song) === 'qq' && !song.playable) bits.push('QQ 播放需会话/授权');
+  if (songProviderKey(song) === 'qq' && qqSearchResultNeedsAuthorization(song)) bits.push('QQ 播放需会话/授权');
   if (songProviderKey(song) === 'kugou' && !song.playable) bits.push('酷狗播放需会话/授权');
   if (songProviderKey(song) === 'qishui' && !song.playable) bits.push('汽水匹配源，播放会自动换源');
   if (songProviderKey(song) === 'spotify' && !song.playable) bits.push('Spotify 匹配源，播放会自动换源');
@@ -649,7 +654,7 @@ function searchResultMetaHtml(song, index) {
   var artist = String(song.artist || '').trim();
   var bits = [];
   if (song.album) bits.push(song.album);
-  if (songProviderKey(song) === 'qq' && !song.playable) bits.push('QQ 播放需会话/授权');
+  if (songProviderKey(song) === 'qq' && qqSearchResultNeedsAuthorization(song)) bits.push('QQ 播放需会话/授权');
   if (songProviderKey(song) === 'kugou' && !song.playable) bits.push('酷狗播放需会话/授权');
   if (songProviderKey(song) === 'qishui' && !song.playable) bits.push('汽水匹配源，播放会自动换源');
   if (songProviderKey(song) === 'spotify' && !song.playable) bits.push('Spotify 匹配源，播放会自动换源');

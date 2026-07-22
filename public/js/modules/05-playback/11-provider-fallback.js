@@ -403,7 +403,13 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
   if (opts.resumeAt != null) skipPlaybackOpts.resumeAt = opts.resumeAt;
   var skipOpts = opts.startupAutoplay ? { silent: true, playbackOpts: skipPlaybackOpts } : null;
   if (opts.fallbackDepth > 0) {
-    skipFailedQueueItem(idx, token, '自动换源后的版本仍不可播，正在播放下一首。', skipOpts);
+    // 用户手动点中的歌只自动匹配一次。替代源仍不可播时停下来说明原因，
+    // 不要继续跳下一首并再次换源；启动自动续播才允许扫描后续队列。
+    if (opts.startupAutoplay) skipFailedQueueItem(idx, token, '自动换源后的版本仍不可播，正在播放下一首。', skipOpts);
+    else {
+      markQueueItemPlaybackFailed(idx);
+      handlePlaybackUnavailable(song, data);
+    }
     return true;
   }
   if (!song || song.type === 'local' || song.type === 'podcast' || song.source === 'podcast') return false;
@@ -417,7 +423,11 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
     if (token !== trackSwitchToken) return true;
     if (!alternate) {
       if (category === 'login_required') return false;
-      skipFailedQueueItem(idx, token, '没有找到同名同歌手的 ' + targetLabel + ' 版本，正在播放下一首。', skipOpts);
+      if (opts.startupAutoplay) skipFailedQueueItem(idx, token, '没有找到同名同歌手的 ' + targetLabel + ' 版本，正在播放下一首。', skipOpts);
+      else {
+        markQueueItemPlaybackFailed(idx);
+        handlePlaybackUnavailable(song, data);
+      }
       return true;
     }
     alternate.autoFallbackFrom = songProviderKey(song);
@@ -435,7 +445,11 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
     return true;
   } catch (e) {
     if (token !== trackSwitchToken) return true;
-    skipFailedQueueItem(idx, token, '自动换源搜索失败，正在播放下一首。', skipOpts);
+    if (opts.startupAutoplay) skipFailedQueueItem(idx, token, '自动换源搜索失败，正在播放下一首。', skipOpts);
+    else {
+      markQueueItemPlaybackFailed(idx);
+      handlePlaybackUnavailable(song, data);
+    }
     return true;
   }
 }
