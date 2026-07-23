@@ -21,6 +21,20 @@
 
 原实现包含读取官方客户端 Cookie 数据库、要求用户粘贴会话 Cookie/Token、模拟官方客户端请求及解密受保护音频等行为。免责声明不能消除这些行为的账号安全、平台协议、隐私和内容授权风险，因此 2.0 公开分支采取的是删除，而不是继续保留后加提示。
 
+## mineradio.cn 分发核对
+
+- Apple Silicon 与 Intel DMG 均已实际挂载；镜像内包含 `Mineradio.app` 和指向 `/Applications` 的快捷方式，因此官网“打开 DMG，把 Mineradio 拖进应用程序”的步骤仍然适用。
+- 官网现有 `xattr -cr /Applications/Mineradio.app` 与“系统设置 → 隐私与安全性 → 仍要打开”说明适用于当前未公证测试包，但不能替代正式公开发行所需的 Developer ID 签名与 Apple 公证。
+- 官网当前“v1.1.3 起 Intel 与 Apple 芯片同一安装包”的说明不适用于 2.0。正式上线前应改为两个明确入口，并提示用户按“Apple Silicon（M 系列）”或“Intel”选择对应 DMG。
+- 官网当前 Mac 下载卡仍显示 `v1.1.3` 并指向旧下载目录；在 2.0 DMG 尚未上传到正式下载地址前，不应把该入口标记为 2.0。
+
+已验证候选产物：
+
+| 架构 | 文件名 | SHA-256 |
+|---|---|---|
+| Apple Silicon | `Mineradio-2.0.0-arm64.dmg` | `6fb6cecea002db5ee0f6d352c6ea6e217ea62d9302bec9fc4d96c648076fbd6a` |
+| Intel | `Mineradio-2.0.0-x64.dmg` | `ab97d3b50b20f6ced16031f04ad55176534a8f36ed755a03d4ce4d7575380e73` |
+
 ## 正式公开前的阻塞项
 
 1. **Apple 签名与公证**：本机没有有效 Developer ID Application 证书；当前 DMG 未签名、未公证，只适合内部验收。
