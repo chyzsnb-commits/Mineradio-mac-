@@ -362,6 +362,11 @@ function qqPlaybackEvidenceQuery(song) {
 async function resolveAlbumGaplessPlaybackData(song) {
   if (!song || song.type === 'local' || song.source === 'local' || song.localUrl) return null;
   var playbackProvider = normalizePlaybackProvider(songProviderKey(song));
+  if (typeof isPlaybackProviderDisabled === 'function' && isPlaybackProviderDisabled(playbackProvider)) {
+    return typeof playbackProviderUnavailablePayload === 'function'
+      ? playbackProviderUnavailablePayload(playbackProvider)
+      : { url: '', playable: false, error: 'PROVIDER_DISABLED' };
+  }
   var requestedQuality = normalizePlaybackQualityForProvider(getProviderPlaybackQuality(playbackProvider), playbackProvider);
   if (playbackProvider === 'netease' && requestedQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) requestedQuality = 'hires';
   var runtimeQualityCap = playbackQualityCapValue(song, playbackProvider);
@@ -797,6 +802,18 @@ async function playQueueAt(idx, opts) {
       var isQQPlayback = playbackProvider === 'qq';
       var isKugouPlayback = playbackProvider === 'kugou';
       var isSpotifyPlayback = playbackProvider === 'spotify';
+      if (typeof isPlaybackProviderDisabled === 'function' && isPlaybackProviderDisabled(playbackProvider)) {
+        var disabledPayload = typeof playbackProviderUnavailablePayload === 'function'
+          ? playbackProviderUnavailablePayload(playbackProvider)
+          : { url: '', playable: false, error: 'PROVIDER_DISABLED', message: '该音源已在公开版移除' };
+        if (opts.startupAutoplay) {
+          markQueueItemPlaybackFailed(idx);
+          return false;
+        }
+        if (await tryAutoPlaybackFallback(song, disabledPayload, idx, token, Object.assign({}, opts, { resumeAt: opts.resumeAt != null ? opts.resumeAt : restoreResumeAt }))) return;
+        handlePlaybackUnavailable(song, disabledPayload);
+        return;
+      }
       var requestedQuality = normalizePlaybackQualityForProvider(opts.qualityOverride || getProviderPlaybackQuality(playbackProvider), playbackProvider);
       if (playbackProvider === 'netease' && requestedQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) requestedQuality = 'hires';
       // 天花板只限本首歌的降级重试(带 qualityOverride);换新歌就清零重试用户选的音质——

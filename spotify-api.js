@@ -168,10 +168,25 @@ function readJsonFile(file, sensitive) {
   const text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '').trim();
   if (!sensitive || !RELEASE_POLICY.publicRelease) return JSON.parse(text);
   const prefix = 'mineradio-safe-storage-v1:';
-  if (!text.startsWith(prefix)) throw new Error('UNENCRYPTED_CREDENTIAL_FILE');
-  const { safeStorage } = require('electron');
-  if (!safeStorage || !safeStorage.isEncryptionAvailable()) throw new Error('SAFE_STORAGE_UNAVAILABLE');
-  return JSON.parse(safeStorage.decryptString(Buffer.from(text.slice(prefix.length), 'base64')));
+  if (text.startsWith(prefix)) {
+    const { safeStorage } = require('electron');
+    if (!safeStorage || !safeStorage.isEncryptionAvailable()) throw new Error('SAFE_STORAGE_UNAVAILABLE');
+    return JSON.parse(safeStorage.decryptString(Buffer.from(text.slice(prefix.length), 'base64')));
+  }
+  // \u516C\u5F00\u7248\u5347\u7EA7\uFF1A\u65E7\u660E\u6587 Spotify \u51ED\u636E/token \u81EA\u52A8\u52A0\u5BC6\u91CD\u5199
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new Error('UNENCRYPTED_CREDENTIAL_FILE');
+  }
+  try {
+    writeJsonFile(file, parsed, { sensitive: true });
+    console.info('[Spotify] migrated plaintext credential file to safeStorage:', file);
+  } catch (err) {
+    console.warn('[Spotify] migrate write failed:', file, err && err.message);
+  }
+  return parsed;
 }
 
 function writeJsonFile(file, payload, options) {

@@ -32,7 +32,28 @@ function normalizePlaybackProvider(provider) {
   if (provider === 'kugou') return 'kugou';
   if (provider === 'qishui') return 'qishui';
   if (provider === 'spotify') return 'spotify';
+  if (provider === 'ytmusic') return 'ytmusic';
   return 'netease';
+}
+function isPlaybackProviderDisabled(provider) {
+  provider = String(provider || '').trim().toLowerCase();
+  if (!provider) return false;
+  if (typeof MINERADIO_DISABLED_PROVIDERS !== 'undefined' && Array.isArray(MINERADIO_DISABLED_PROVIDERS)) {
+    return MINERADIO_DISABLED_PROVIDERS.indexOf(provider) >= 0;
+  }
+  return provider === 'qishui' && typeof MINERADIO_QISHUI_ENABLED !== 'undefined' && !MINERADIO_QISHUI_ENABLED;
+}
+function playbackProviderUnavailablePayload(provider) {
+  provider = normalizePlaybackProvider(provider);
+  var label = provider === 'qishui' ? '汽水音乐' : (provider === 'spotify' ? 'Spotify' : (provider === 'qq' ? 'QQ 音乐' : (provider === 'kugou' ? '酷狗音乐' : '该音源')));
+  return {
+    url: '',
+    playable: false,
+    provider: provider,
+    error: 'PROVIDER_DISABLED',
+    message: label + ' 已在公开版移除，无法播放该曲目',
+    category: 'provider_disabled',
+  };
 }
 function normalizePlaybackQualityForProvider(value, provider) {
   provider = normalizePlaybackProvider(provider);

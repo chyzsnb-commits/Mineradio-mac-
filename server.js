@@ -232,39 +232,69 @@ function getQQCookieFile() {
 function getKugouCookieFile() {
   return process.env.KUGOU_COOKIE_FILE || DEFAULT_KUGOU_COOKIE_FILE;
 }
+const SAFE_STORAGE_PREFIX = 'mineradio-safe-storage-v1:';
+function encryptPublicSecret(plaintext) {
+  try {
+    const { safeStorage } = require('electron');
+    if (!safeStorage || !safeStorage.isEncryptionAvailable()) return '';
+    return SAFE_STORAGE_PREFIX + safeStorage.encryptString(String(plaintext || '')).toString('base64');
+  } catch (_) {
+    return '';
+  }
+}
+function decryptPublicSecret(stored) {
+  try {
+    if (!String(stored || '').startsWith(SAFE_STORAGE_PREFIX)) return '';
+    const { safeStorage } = require('electron');
+    if (!safeStorage || !safeStorage.isEncryptionAvailable()) return '';
+    return safeStorage.decryptString(Buffer.from(String(stored).slice(SAFE_STORAGE_PREFIX.length), 'base64')).trim();
+  } catch (_) {
+    return '';
+  }
+}
 function readConfiguredCookieFile(file) {
   try {
     if (!file || !fs.existsSync(file)) return '';
     const stored = fs.readFileSync(file, 'utf8').trim();
+    if (!stored) return '';
     if (!RELEASE_POLICY.publicRelease) return stored;
-    const prefix = 'mineradio-safe-storage-v1:';
-    if (!stored.startsWith(prefix)) return '';
-    try {
-      const { safeStorage } = require('electron');
-      if (!safeStorage || !safeStorage.isEncryptionAvailable()) return '';
-      return safeStorage.decryptString(Buffer.from(stored.slice(prefix.length), 'base64')).trim();
-    } catch (_) {
-      return '';
+    if (stored.startsWith(SAFE_STORAGE_PREFIX)) {
+      return decryptPublicSecret(stored);
     }
+    // 公开版升级迁移：旧版明文 cookie 自动加密落盘，避免登录态静默丢失
+    const encrypted = encryptPublicSecret(stored);
+    if (encrypted) {
+      try {
+        fs.writeFileSync(file, encrypted, { encoding: 'utf8', mode: 0o600 });
+        console.info('[Cookie] migrated plaintext cookie to safeStorage:', file);
+      } catch (err) {
+        console.warn('[Cookie] migrate write failed:', file, err && err.message);
+      }
+      return stored;
+    }
+    console.warn('[Cookie] safeStorage unavailable; using plaintext cookie in-memory only:', file);
+    return stored;
   } catch (_) {}
   return '';
 }
 function writeConfiguredCookieFile(file, value) {
   try {
-    if (!file) return;
+    if (!file) return { ok: false, error: 'MISSING_FILE' };
     fs.mkdirSync(path.dirname(file), { recursive: true });
     let stored = String(value || '');
     if (RELEASE_POLICY.publicRelease && stored) {
-      try {
-        const { safeStorage } = require('electron');
-        if (!safeStorage || !safeStorage.isEncryptionAvailable()) return;
-        stored = 'mineradio-safe-storage-v1:' + safeStorage.encryptString(stored).toString('base64');
-      } catch (_) {
-        return;
+      const encrypted = encryptPublicSecret(stored);
+      if (!encrypted) {
+        console.warn('[Cookie] safeStorage unavailable; cookie not persisted:', file);
+        return { ok: false, error: 'SAFE_STORAGE_UNAVAILABLE' };
       }
+      stored = encrypted;
     }
     fs.writeFileSync(file, stored, { encoding: 'utf8', mode: 0o600 });
-  } catch (_) {}
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err && err.message) || 'COOKIE_WRITE_FAILED' };
+  }
 }
 const configuredCookieStores = {
   netease: { file: '', value: '', getFile: getCookieFile },
@@ -283,7 +313,12 @@ function saveConfiguredCookieStore(store, value) {
   const file = store.getFile();
   store.file = file;
   store.value = String(value || '');
-  writeConfiguredCookieFile(file, store.value);
+  const result = writeConfiguredCookieFile(file, store.value);
+  if (result && result.ok === false) {
+    store.lastPersistError = result.error || 'COOKIE_WRITE_FAILED';
+  } else {
+    store.lastPersistError = '';
+  }
   return store.value;
 }
 let userCookie = '';
@@ -346,9 +381,11 @@ function requestOriginAllowed(req) {
     const parsed = new URL(candidate);
     const expectedPort = String(PORT);
     const host = String(parsed.hostname || '').toLowerCase();
-    return parsed.protocol === 'http:'
-      && (host === '127.0.0.1' || host === 'localhost' || host === '::1')
-      && String(parsed.port || '80') === expectedPort;
+    const localHost = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+    if (parsed.protocol !== 'http:' || !localHost) return false;
+    // 本机 Origin 省略端口时按当前服务端口处理，避免把 127.0.0.1 当成 :80 误杀
+    const port = String(parsed.port || (localHost ? expectedPort : (parsed.protocol === 'https:' ? '443' : '80')));
+    return port === expectedPort;
   } catch (_) {
     return false;
   }
