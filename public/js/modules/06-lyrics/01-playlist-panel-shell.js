@@ -351,19 +351,14 @@ async function refreshUserPlaylists(force) {
       loginStatus.loggedIn ? apiJson('/api/podcast/my') : Promise.resolve({ collections: [], loggedIn: false }),
       qqLoginStatus.loggedIn ? apiJson('/api/qq/user/playlists') : Promise.resolve({ playlists: [] }),
       kugouLoginStatus.loggedIn ? apiJson('/api/kugou/user/playlists') : Promise.resolve({ playlists: [] }),
-      qishuiLoginStatus.loggedIn ? apiJson('/api/qishui/user/playlists') : Promise.resolve({ playlists: [] }),
       spotifyLoginStatus.loggedIn ? apiJson('/api/spotify/user/playlists') : Promise.resolve({ playlists: [] })
     ]);
     var neteaseLists = (result[0].playlists || []).map(function (pl) { pl.provider = 'netease'; pl.source = 'netease'; return pl; });
     qqPlaylists = (result[2].playlists || []).map(function (pl) { pl.provider = 'qq'; pl.source = 'qq'; return pl; });
     kugouPlaylists = (result[3].playlists || []).map(function (pl) { pl.provider = 'kugou'; pl.source = 'kugou'; return pl; });
-    qishuiPlaylists = (result[4].playlists || []).map(function (pl) { pl.provider = 'qishui'; pl.source = 'qishui'; return pl; }).filter(function (pl) {
-      // 汽水库存常带一批 0 首的收藏位/系统歌单,全上架就是一排空壳;显式为 0 的不上架,没数量字段的保留避免误杀
-      var n = pl.trackCount != null ? Number(pl.trackCount) : (pl.count != null ? Number(pl.count) : (pl.songCount != null ? Number(pl.songCount) : NaN));
-      return n !== 0;
-    });
-    spotifyPlaylists = (result[5].playlists || []).map(function (pl) { pl.provider = 'spotify'; pl.source = 'spotify'; return pl; });
-    userPlaylists = neteaseLists.concat(qqPlaylists).concat(kugouPlaylists).concat(qishuiPlaylists).concat(spotifyPlaylists);
+    qishuiPlaylists = [];
+    spotifyPlaylists = (result[4].playlists || []).map(function (pl) { pl.provider = 'spotify'; pl.source = 'spotify'; return pl; });
+    userPlaylists = neteaseLists.concat(qqPlaylists).concat(kugouPlaylists).concat(spotifyPlaylists);
     myPodcastCollections = result[1].collections || [];
     var animatePanel = isPlaylistPanelVisibleForRender();
     renderUserPlaylistsList({ animate: animatePanel, reset: true });

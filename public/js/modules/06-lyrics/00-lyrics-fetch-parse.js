@@ -37,9 +37,6 @@ function lyricEndpointForSong(songOrId) {
       '&artist=' + encodeURIComponent(song.artist || '') +
       '&sec=' + ytDurationTextToSeconds(song.durationText);
   }
-  if (provider === 'qishui') {
-    return '/api/qishui/lyric?id=' + encodeURIComponent(song.id || song.providerSongId || '');
-  }
   if (provider === 'spotify') {
     return '/api/spotify/lyric?id=' + encodeURIComponent(song.id || song.providerSongId || song.spotifyId || '');
   }

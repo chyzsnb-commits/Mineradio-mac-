@@ -63,7 +63,7 @@ const { once } = require('events');
 const { fileURLToPath } = require('url');
 const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer');
 const { serveAiStemRequest } = require('./desktop/ai-stem-cache-server');
-const { TrackDecryptor } = require('./qishui-audio-decryptor/track-decryptor');
+const RELEASE_POLICY = require('./desktop/release-policy');
 const {
   handleKugouSearch,
   handleKugouSongUrl,
@@ -85,20 +85,6 @@ const {
   kugouAudioReferer,
 } = require('./kugou-api');
 const {
-  getQishuiStatus,
-  handleQishuiStatus,
-  normalizeQishuiCookieInput,
-  qishuiCookieHasLogin,
-  saveQishuiAccessToken,
-  clearQishuiAccessToken,
-  handleQishuiSearch,
-  handleQishuiFeed,
-  handleQishuiUserPlaylists,
-  handleQishuiPlaylistTracks,
-  handleQishuiLyric,
-  handleQishuiSongUrl,
-} = require('./qishui-api');
-const {
   getSpotifyConfig,
   clearSpotifyToken,
   saveSpotifyConfig,
@@ -115,12 +101,11 @@ const {
 const { qrcHexToYrc } = require('./qq-qrc');
 
 const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '0.0.0.0';
+const HOST = process.env.HOST || '127.0.0.1';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const DEFAULT_COOKIE_FILE = path.join(__dirname, '.cookie');
 const DEFAULT_QQ_COOKIE_FILE = path.join(__dirname, '.qq-cookie');
 const DEFAULT_KUGOU_COOKIE_FILE = path.join(__dirname, '.kugou-cookie');
-const DEFAULT_QISHUI_COOKIE_FILE = path.join(__dirname, '.qishui-cookie');
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
@@ -133,10 +118,6 @@ const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '0.9
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
 const PATCH_MAX_BYTES = 12 * 1024 * 1024;
 const PATCH_ALLOWED_ROOTS = new Set(['public', 'desktop', 'build']);
-const qishuiAudioDecryptor = new TrackDecryptor();
-const qishuiAudioDecryptCache = new Map();
-const QISHUI_AUDIO_DECRYPT_CACHE_MAX_BYTES = 96 * 1024 * 1024;
-let qishuiAudioDecryptCacheBytes = 0;
 const PATCH_ALLOWED_FILES = new Set(['server.js', 'dj-analyzer.js', 'package.json', 'package-lock.json']);
 const UPDATE_FALLBACK_NOTES = [
   '电影镜头节奏更松',
@@ -251,12 +232,20 @@ function getQQCookieFile() {
 function getKugouCookieFile() {
   return process.env.KUGOU_COOKIE_FILE || DEFAULT_KUGOU_COOKIE_FILE;
 }
-function getQishuiCookieFile() {
-  return process.env.QISHUI_COOKIE_FILE || DEFAULT_QISHUI_COOKIE_FILE;
-}
 function readConfiguredCookieFile(file) {
   try {
-    if (file && fs.existsSync(file)) return fs.readFileSync(file, 'utf8').trim();
+    if (!file || !fs.existsSync(file)) return '';
+    const stored = fs.readFileSync(file, 'utf8').trim();
+    if (!RELEASE_POLICY.publicRelease) return stored;
+    const prefix = 'mineradio-safe-storage-v1:';
+    if (!stored.startsWith(prefix)) return '';
+    try {
+      const { safeStorage } = require('electron');
+      if (!safeStorage || !safeStorage.isEncryptionAvailable()) return '';
+      return safeStorage.decryptString(Buffer.from(stored.slice(prefix.length), 'base64')).trim();
+    } catch (_) {
+      return '';
+    }
   } catch (_) {}
   return '';
 }
@@ -264,14 +253,23 @@ function writeConfiguredCookieFile(file, value) {
   try {
     if (!file) return;
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, String(value || ''), 'utf8');
+    let stored = String(value || '');
+    if (RELEASE_POLICY.publicRelease && stored) {
+      try {
+        const { safeStorage } = require('electron');
+        if (!safeStorage || !safeStorage.isEncryptionAvailable()) return;
+        stored = 'mineradio-safe-storage-v1:' + safeStorage.encryptString(stored).toString('base64');
+      } catch (_) {
+        return;
+      }
+    }
+    fs.writeFileSync(file, stored, { encoding: 'utf8', mode: 0o600 });
   } catch (_) {}
 }
 const configuredCookieStores = {
   netease: { file: '', value: '', getFile: getCookieFile },
   qq: { file: '', value: '', getFile: getQQCookieFile },
   kugou: { file: '', value: '', getFile: getKugouCookieFile },
-  qishui: { file: '', value: '', getFile: getQishuiCookieFile },
 };
 function refreshConfiguredCookieStore(store, force) {
   const file = store.getFile();
@@ -303,15 +301,10 @@ function saveKugouCookie(c) {
   kugouCookie = saveConfiguredCookieStore(configuredCookieStores.kugou, normalizeCookieHeader(c) || rawCookieFallback(c));
 }
 
-let qishuiCookie = '';
-function saveQishuiCookie(c) {
-  qishuiCookie = saveConfiguredCookieStore(configuredCookieStores.qishui, normalizeQishuiCookieInput(c) || normalizeCookieHeader(c) || rawCookieFallback(c));
-}
 function refreshConfiguredCookieStores(force) {
   userCookie = refreshConfiguredCookieStore(configuredCookieStores.netease, force);
   qqCookie = refreshConfiguredCookieStore(configuredCookieStores.qq, force);
   kugouCookie = refreshConfiguredCookieStore(configuredCookieStores.kugou, force);
-  qishuiCookie = refreshConfiguredCookieStore(configuredCookieStores.qishui, force);
 }
 function refreshQQConfiguredCookieStore(force) {
   qqCookie = refreshConfiguredCookieStore(configuredCookieStores.qq, force);
@@ -336,12 +329,29 @@ function serveStatic(res, filePath) {
 function sendJSON(res, data, status) {
   res.writeHead(status || 200, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
     'Pragma': 'no-cache',
     'Expires': '0',
   });
   res.end(JSON.stringify(data));
+}
+
+function requestOriginAllowed(req) {
+  const origin = String(req && req.headers && req.headers.origin || '').trim();
+  const fetchSite = String(req && req.headers && req.headers['sec-fetch-site'] || '').trim().toLowerCase();
+  if (fetchSite && fetchSite !== 'same-origin' && fetchSite !== 'same-site' && fetchSite !== 'none') return false;
+  const candidate = origin || String(req && req.headers && req.headers.referer || '').trim();
+  if (!candidate) return true;
+  try {
+    const parsed = new URL(candidate);
+    const expectedPort = String(PORT);
+    const host = String(parsed.hostname || '').toLowerCase();
+    return parsed.protocol === 'http:'
+      && (host === '127.0.0.1' || host === 'localhost' || host === '::1')
+      && String(parsed.port || '80') === expectedPort;
+  } catch (_) {
+    return false;
+  }
 }
 function readPackageInfo() {
   try {
@@ -3259,60 +3269,11 @@ function audioProxyHeadersFor(audioUrl, range) {
     if (host.includes('qq.com') || host.includes('qpic.cn')) headers.Referer = 'https://y.qq.com/';
     else if (host.includes('kugou.com') || host.includes('kgimg.com')) headers.Referer = 'https://www.kugou.com/';
     else if (host.includes('googlevideo')) delete headers.Referer;
-    if (host.includes('qishui.com') || host.includes('byteimg.com') || host.includes('douyin')) headers.Referer = 'https://www.qishui.com/';
     const kugouReferer = kugouAudioReferer(audioUrl);
     if (kugouReferer) headers.Referer = kugouReferer;
   } catch (e) {}
   if (range) headers.Range = range;
   return headers;
-}
-
-function qishuiAudioAuthFromUrl(audioUrl) {
-  const text = String(audioUrl || '');
-  const idx = text.indexOf('#auth=');
-  if (idx < 0) return { cleanUrl: text, auth: '' };
-  const authRaw = text.slice(idx + 6);
-  let auth = authRaw;
-  try { auth = decodeURIComponent(authRaw); } catch (_) {}
-  return { cleanUrl: text.slice(0, idx), auth };
-}
-
-function qishuiAudioCacheKey(cleanUrl, auth) {
-  return crypto.createHash('sha1').update(String(cleanUrl || '') + '\n' + String(auth || '')).digest('hex');
-}
-
-function rememberQishuiDecryptedAudio(key, payload) {
-  if (!payload || !Buffer.isBuffer(payload.buffer)) return;
-  qishuiAudioDecryptCache.set(key, Object.assign({ at: Date.now() }, payload));
-  qishuiAudioDecryptCacheBytes += payload.buffer.length;
-  while (qishuiAudioDecryptCacheBytes > QISHUI_AUDIO_DECRYPT_CACHE_MAX_BYTES && qishuiAudioDecryptCache.size > 1) {
-    const oldest = [...qishuiAudioDecryptCache.entries()].sort((a, b) => (a[1].at || 0) - (b[1].at || 0))[0];
-    if (!oldest) break;
-    qishuiAudioDecryptCache.delete(oldest[0]);
-    qishuiAudioDecryptCacheBytes -= oldest[1].buffer.length;
-  }
-}
-
-async function getQishuiDecryptedAudio(audioUrl) {
-  const parsed = qishuiAudioAuthFromUrl(audioUrl);
-  if (!parsed.auth) return null;
-  const key = qishuiAudioCacheKey(parsed.cleanUrl, parsed.auth);
-  const cached = qishuiAudioDecryptCache.get(key);
-  if (cached) {
-    cached.at = Date.now();
-    return cached;
-  }
-  const up = await fetch(parsed.cleanUrl, { headers: audioProxyHeadersFor(parsed.cleanUrl, '') });
-  if (!up.ok) throw new Error('Qishui encrypted audio fetch failed: HTTP ' + up.status);
-  const encryptedBuffer = Buffer.from(await up.arrayBuffer());
-  const result = qishuiAudioDecryptor.decrypt({ encryptedBuffer, spadeA: parsed.auth });
-  const payload = {
-    buffer: result.buffer,
-    contentType: result.extension === '.flac' ? 'audio/flac' : 'audio/mp4',
-    extension: result.extension,
-  };
-  rememberQishuiDecryptedAudio(key, payload);
-  return payload;
 }
 
 function sendAudioBuffer(res, buffer, contentType, range) {
@@ -3330,7 +3291,6 @@ function sendAudioBuffer(res, buffer, contentType, range) {
     }
     res.writeHead(206, {
       'Content-Type': contentType || 'audio/mp4',
-      'Access-Control-Allow-Origin': '*',
       'Accept-Ranges': 'bytes',
       'Content-Length': end - start + 1,
       'Content-Range': 'bytes ' + start + '-' + end + '/' + total,
@@ -3340,7 +3300,6 @@ function sendAudioBuffer(res, buffer, contentType, range) {
   }
   res.writeHead(200, {
     'Content-Type': contentType || 'audio/mp4',
-    'Access-Control-Allow-Origin': '*',
     'Accept-Ranges': 'bytes',
     'Content-Length': total,
   });
@@ -4833,6 +4792,14 @@ async function getLoginInfo() {
 // ====================================================================
 const server = http.createServer(async (req, res) => {
   refreshConfiguredCookieStores(false);
+  if (!requestOriginAllowed(req)) {
+    res.writeHead(403, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    res.end(JSON.stringify({ error: 'UNTRUSTED_ORIGIN' }));
+    return;
+  }
   const url = new URL(req.url, 'http://localhost:' + PORT);
   const pn = url.pathname;
 
@@ -5171,134 +5138,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (pn === '/api/qishui/status') {
-    try {
-      sendJSON(res, await handleQishuiStatus(qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiStatus]', err);
-      sendJSON(res, { provider: 'qishui', configured: false, loggedIn: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/login/token') {
-    try {
-      const body = await readRequestBody(req);
-      const token = body.token || body.accessToken || body.access_token || body.data || body.text || '';
-      sendJSON(res, saveQishuiAccessToken(token));
-    } catch (err) {
-      console.error('[QishuiLoginToken]', err);
-      const invalid = err && (err.code === 'INVALID_QISHUI_TOKEN' || err.message === 'INVALID_QISHUI_TOKEN');
-      sendJSON(res, {
-        provider: 'qishui',
-        configured: getQishuiStatus(qishuiCookie).configured,
-        loggedIn: getQishuiStatus(qishuiCookie).loggedIn,
-        error: invalid ? 'INVALID_QISHUI_TOKEN' : err.message,
-        message: invalid ? '汽水 OpenAPI token 无效或太短' : err.message,
-      }, invalid ? 400 : 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/login/cookie') {
-    try {
-      const body = await readRequestBody(req);
-      const raw = body.cookie || body.data || body.text || '';
-      const normalized = normalizeQishuiCookieInput(raw);
-      if (!qishuiCookieHasLogin(normalized)) {
-        sendJSON(res, { provider: 'qishui', loggedIn: false, error: 'INVALID_QISHUI_COOKIE', message: '汽水 cookie 无效或缺少登录态' }, 400);
-        return;
-      }
-      saveQishuiCookie(normalized);
-      sendJSON(res, { ...await handleQishuiStatus(qishuiCookie), saved: true });
-    } catch (err) {
-      console.error('[QishuiLoginCookie]', err);
-      sendJSON(res, { provider: 'qishui', loggedIn: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/logout') {
-    try {
-      saveQishuiCookie('');
-      sendJSON(res, { ...clearQishuiAccessToken(), webSession: false, cookieReady: false, configured: getQishuiStatus('').configured, loggedIn: getQishuiStatus('').loggedIn });
-    } catch (err) {
-      console.error('[QishuiLogout]', err);
-      sendJSON(res, { provider: 'qishui', ok: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/search') {
-    try {
-      const kw = url.searchParams.get('keywords') || '';
-      const limit = Math.max(4, Math.min(12, parseInt(url.searchParams.get('limit') || '8', 10) || 8));
-      sendJSON(res, await handleQishuiSearch(kw, limit));
-    } catch (err) {
-      console.error('[QishuiSearch]', err);
-      sendJSON(res, { provider: 'qishui', configured: getQishuiStatus(qishuiCookie).configured, error: err.message, songs: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/feed') {
-    try {
-      const limit = Math.max(4, Math.min(12, parseInt(url.searchParams.get('limit') || '8', 10) || 8));
-      sendJSON(res, await handleQishuiFeed(limit, qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiFeed]', err);
-      sendJSON(res, { provider: 'qishui', configured: getQishuiStatus(qishuiCookie).configured, error: err.message, songs: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/user/playlists') {
-    try {
-      sendJSON(res, await handleQishuiUserPlaylists(qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiUserPlaylists]', err);
-      sendJSON(res, { provider: 'qishui', loggedIn: getQishuiStatus(qishuiCookie).configured, configured: getQishuiStatus(qishuiCookie).configured, error: err.message, playlists: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/playlist/tracks') {
-    try {
-      const id = url.searchParams.get('id') || 'qishui-feed';
-      const limit = parseInt(url.searchParams.get('limit') || '0', 10) || 0;
-      const offset = parseInt(url.searchParams.get('offset') || '0', 10) || 0;
-      sendJSON(res, await handleQishuiPlaylistTracks(id, limit || offset ? { limit: limit || 50, offset } : {}, qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiPlaylistTracks]', err);
-      sendJSON(res, { provider: 'qishui', configured: getQishuiStatus(qishuiCookie).configured, error: err.message, tracks: [] }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/song/url') {
-    try {
-      sendJSON(res, await handleQishuiSongUrl({
-        id: url.searchParams.get('id') || '',
-        quality: url.searchParams.get('quality') || '',
-      }, qishuiCookie));
-    } catch (err) {
-      console.error('[QishuiSongUrl]', err);
-      sendJSON(res, { provider: 'qishui', url: '', playable: false, error: err.message }, 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/lyric') {
-    try {
-      const id = url.searchParams.get('id') || '';
-      sendJSON(res, await handleQishuiLyric(id));
-    } catch (err) {
-      console.error('[QishuiLyric]', err);
-      sendJSON(res, { provider: 'qishui', error: err.message, lyric: '', tlyric: '' }, 500);
-    }
-    return;
-  }
-
   if (pn === '/api/kugou/song/url') {
     try {
       const info = await handleKugouSongUrl({
@@ -5345,6 +5184,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pn === '/api/kugou/login/cookie') {
+    if (!RELEASE_POLICY.allowCredentialImport) {
+      sendJSON(res, { provider: 'kugou', loggedIn: false, error: 'CREDENTIAL_IMPORT_DISABLED', message: '公开版不支持手动导入登录凭据' }, 403);
+      return;
+    }
     try {
       const body = await readRequestBody(req);
       const raw = body.cookie || body.data || body.text || '';
@@ -5579,6 +5422,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pn === '/api/qq/login/cookie') {
+    if (!RELEASE_POLICY.allowCredentialImport) {
+      sendJSON(res, { provider: 'qq', loggedIn: false, error: 'CREDENTIAL_IMPORT_DISABLED', message: '公开版不支持手动导入登录凭据' }, 403);
+      return;
+    }
     try {
       const body = await readRequestBody(req);
       const raw = body.cookie || body.data || body.text || '';
@@ -5955,6 +5802,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pn === '/api/login/cookie') {
+    if (!RELEASE_POLICY.allowCredentialImport) {
+      sendJSON(res, { loggedIn: false, error: 'CREDENTIAL_IMPORT_DISABLED', message: '公开版不支持手动导入登录凭据' }, 403);
+      return;
+    }
     try {
       const body = await readRequestBody(req);
       const raw = body.cookie || body.data || body.text || '';
@@ -6422,7 +6273,7 @@ const server = http.createServer(async (req, res) => {
       const coverUrl = url.searchParams.get('url');
       // URL 校验: 必须是 http(s) 开头, 否则直接 404 (不要让 fetch 抛错)
       if (!coverUrl || !/^https?:\/\//i.test(coverUrl)) {
-        res.writeHead(400, { 'Access-Control-Allow-Origin': '*' });
+        res.writeHead(400);
         res.end('Invalid cover url');
         return;
       }
@@ -6437,7 +6288,6 @@ const server = http.createServer(async (req, res) => {
       const cl  = resp.headers.get('content-length');
       const hdr = {
         'Content-Type': ct,
-        'Access-Control-Allow-Origin': '*',
         'Cross-Origin-Resource-Policy': 'cross-origin',
         'Cache-Control': 'public, max-age=86400',
       };
@@ -6461,18 +6311,10 @@ const server = http.createServer(async (req, res) => {
       const audioUrl = url.searchParams.get('url');
       if (!audioUrl) { res.writeHead(400); res.end('Missing url'); return; }
       const range = req.headers.range || '';
-      if (audioUrl.includes('#auth=')) {
-        const decrypted = await getQishuiDecryptedAudio(audioUrl);
-        if (decrypted && decrypted.buffer) {
-          sendAudioBuffer(res, decrypted.buffer, decrypted.contentType, range);
-          return;
-        }
-      }
       const hdr = audioProxyHeadersFor(audioUrl, range);
       const up = await fetch(audioUrl, { headers: hdr });
       const out = {
         'Content-Type': audioContentTypeForUrl(audioUrl, up.headers.get('content-type')),
-        'Access-Control-Allow-Origin': '*',
         'Accept-Ranges': 'bytes',
       };
       const cl = up.headers.get('content-length'); if (cl) out['Content-Length'] = cl;

@@ -72,11 +72,11 @@ function bindMiniQueueLazyRender() {
   }, { passive: true });
 }
 function playlistProviderNorm(provider) {
-  return provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease')));
+  return provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'spotify' ? 'spotify' : 'netease'));
 }
 function playlistPanelCover(provider, cover, param) {
   if (!cover) return '';
-  return provider === 'netease' ? (cover + '?param=' + param) : cover;   // 只有网易云封面吃 ?param 尺寸;qishui/spotify/qq/kugou 原样
+  return provider === 'netease' ? (cover + '?param=' + param) : cover;
 }
 function playlistPanelKey(provider, id) {
   return playlistProviderNorm(provider) + ':' + String(id || '');
@@ -84,7 +84,6 @@ function playlistPanelKey(provider, id) {
 function playlistPanelProviderId(provider, id) {
   if (provider === 'qq') return 'qq:' + id;
   if (provider === 'kugou') return 'kugou:' + id;
-  if (provider === 'qishui') return 'qishui:' + id;     // loadPlaylistIntoQueueById 靠前缀路由到 /api/qishui/playlist/tracks
   if (provider === 'spotify') return 'spotify:' + id;
   return id;
 }
@@ -173,11 +172,9 @@ async function openPlaylistPanelDetail(provider, pid, title) {
       ? await apiJson('/api/qq/playlist/tracks?id=' + encodeURIComponent(pid))
       : (provider === 'kugou'
         ? await apiJson('/api/kugou/playlist/tracks?id=' + encodeURIComponent(pid))
-        : (provider === 'qishui'
-          ? await apiJson('/api/qishui/playlist/tracks?id=' + encodeURIComponent(pid))
-          : (provider === 'spotify'
-            ? await apiJson('/api/spotify/playlist/tracks?id=' + encodeURIComponent(pid))
-            : await apiJson('/api/playlist/tracks?id=' + encodeURIComponent(pid)))));
+        : (provider === 'spotify'
+          ? await apiJson('/api/spotify/playlist/tracks?id=' + encodeURIComponent(pid))
+          : await apiJson('/api/playlist/tracks?id=' + encodeURIComponent(pid))));
     if (playlistPanelDetailState.token !== token) return;
     playlistPanelDetailState.loading = false;
     playlistPanelDetailState.tracks = (r && r.tracks || []).map(cloneSong);

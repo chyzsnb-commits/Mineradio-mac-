@@ -276,7 +276,6 @@ async function loadHomeDiscover(force) {
   renderHomeDiscover();
   try {
     var requests = [apiJson('/api/discover/home?t=' + Date.now())];
-    requests.push(qishuiLoginStatus.loggedIn ? apiJson('/api/qishui/feed?limit=12&t=' + Date.now()).catch(function () { return null; }) : Promise.resolve(null));
     requests.push(kugouLoginStatus.loggedIn ? apiJson('/api/kugou/recommend/guess?limit=12&t=' + Date.now()).catch(function () { return null; }) : Promise.resolve(null));
     requests.push(qqLoginStatus.loggedIn ? apiJson('/api/qq/recommend/daily?t=' + Date.now()).catch(function () { return null; }) : Promise.resolve(null));
     requests.push(qqLoginStatus.loggedIn ? apiJson('/api/qq/recommend/radio?count=12&t=' + Date.now()).catch(function () { return null; }) : Promise.resolve(null));
@@ -289,10 +288,10 @@ async function loadHomeDiscover(force) {
     homeDiscoverState.personalFm = homeDiscoverState.loggedIn ? (data && data.personalFm || []).map(cloneSong) : [];
     homeDiscoverState.playlists = homeDiscoverState.loggedIn ? (data && data.playlists || []) : [];
     homeDiscoverState.podcasts = homeDiscoverState.loggedIn ? (data && data.podcasts || []) : [];
-    homeDiscoverState.qishuiFeed = qishuiLoginStatus.loggedIn ? (results[1] && results[1].songs || []).map(cloneSong) : [];
-    homeDiscoverState.kugouGuess = kugouLoginStatus.loggedIn ? (results[2] && results[2].songs || []).map(cloneSong) : [];
-    homeDiscoverState.qqDaily = qqLoginStatus.loggedIn ? (results[3] && results[3].songs || []).map(cloneSong) : [];
-    homeDiscoverState.qqRadio = qqLoginStatus.loggedIn ? (results[4] && results[4].songs || []).map(cloneSong) : [];
+    homeDiscoverState.qishuiFeed = [];
+    homeDiscoverState.kugouGuess = kugouLoginStatus.loggedIn ? (results[1] && results[1].songs || []).map(cloneSong) : [];
+    homeDiscoverState.qqDaily = qqLoginStatus.loggedIn ? (results[2] && results[2].songs || []).map(cloneSong) : [];
+    homeDiscoverState.qqRadio = qqLoginStatus.loggedIn ? (results[3] && results[3].songs || []).map(cloneSong) : [];
     homeDiscoverState.updatedAt = Number(data && data.updatedAt) || Date.now();
     homeDiscoverState.loaded = true;
   } catch (e) {

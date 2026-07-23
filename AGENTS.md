@@ -72,13 +72,13 @@ Mineradio 是一个 **macOS arm64** 的 Electron 桌面音乐播放器。核心�
 ├─ server.js                   本地 API 服务（~6485 行，音源代理/搜索/首页数据）
 ├─ dj-analyzer.js              节奏/音频分析
 ├─ kugou-api.js                酷狗音源
-├─ qishui-api.js               汽水音源
 ├─ qq-qrc.js                   QQ 音乐 QRC 歌词
 ├─ spotify-api.js              Spotify 音源
-├─ qishui-audio-decryptor/     汽水音频解密
 ├─ package.json                版本、构建配置（electron-builder config 在 build 字段）
 └─ CHANGELOG.md / AI_HANDOFF.md / docs/
 ```
+
+> `codex/public-release-2.0` 是删除汽水能力的公开候选分支；汽水实验仅保留在原 PR #56 开发线，不得重新移入公开分支。
 
 ## Commands
 

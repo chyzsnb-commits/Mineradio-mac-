@@ -128,25 +128,6 @@ async function logoutActiveAccount() {
     showToast('已退出 Spotify');
     return;
   }
-  if (activeAccountProvider === 'qishui') {
-    try { await apiJson('/api/qishui/logout'); } catch (e) { }
-    try {
-      if (window.desktopWindow && typeof window.desktopWindow.clearQishuiMusicLogin === 'function') {
-        await window.desktopWindow.clearQishuiMusicLogin();
-      }
-    } catch (e) { }
-    qishuiLoginStatus = { provider: 'qishui', loggedIn: false, configured: false, oauthConfigured: false, oauthMissing: [], preview: false, nickname: '汽水音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false, playbackMode: 'recommend-match' };
-    qishuiPlaylists = [];
-    userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
-    dualAccountMode = false;
-    activeAccountProvider = firstLoggedProvider();
-    renderUserBtn();
-    safeShelfRebuild('qishui-logout');
-    if (hasAnyPlatformLogin()) updateUserModalUi();
-    else closeUserModal();
-    showToast('已清除汽水音乐授权');
-    return;
-  }
   if (activeAccountProvider === 'kugou') {
     try { await apiJson('/api/kugou/logout'); } catch (e) { }
     try {

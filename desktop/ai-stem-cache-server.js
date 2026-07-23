@@ -81,7 +81,6 @@ async function serveAiStemRequest(req, res, cacheRoot, searchParams) {
   const commonHeaders = {
     'Content-Type': 'audio/flac',
     'Accept-Ranges': 'bytes',
-    'Access-Control-Allow-Origin': '*',
     'Cross-Origin-Resource-Policy': 'cross-origin',
     'Cache-Control': 'private, max-age=31536000, immutable',
   };

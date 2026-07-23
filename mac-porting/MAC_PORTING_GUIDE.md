@@ -12,7 +12,7 @@ Mineradio 原本是 Windows Electron 应用。我们把它迁移到 macOS（arm6
 
 ---
 
-## Mac 定制清单（7 个，按依赖顺序）
+## Mac 定制清单（公开分支可用 6 个，按依赖顺序）
 
 每个定制对应 `patches/` 里的一个 `.patch` 文件，可独立应用。
 
@@ -20,7 +20,6 @@ Mineradio 原本是 Windows Electron 应用。我们把它迁移到 macOS（arm6
 |---|---|---|---|---|
 | 1 | `01-telemetry-optin.patch` | 遥测改 opt-in（正式版不上报） | `desktop/telemetry.js`、`CHANGELOG.md` | 低 |
 | 2 | `02-remove-auto-update.patch` | 移除自动更新（Mac 不需要） | `package.json`、`build-mac.yml`、`AGENTS.md` | 低 |
-| 3 | `03-mac-skip-win-memory.patch` | Mac 跳过 Windows 内存死代码 + 补漏 qishui-api.js | `desktop/main.js`、`qishui-api.js`(新增) | 中 |
 | 4 | `04-icon-slim.patch` | 图标无损瘦身（851KB→568KB） | `build/icon.icns`、`build/icon.png`、`CHANGELOG.md` | 低 |
 | 5 | `05-mac-memory-panel-and-thermal.patch` | Mac 内存面板（vm_stat+purge）+ 失焦降帧 + 空闲降频 | `desktop/system-memory-mac.js`(新)、`desktop/main.js`、`public/js/modules/00-state/08-desktop-render-power.js`、`public/js/modules/11-main-loop.js` | 中 |
 | 6 | `06-x64-build.patch` | 支持 x64（Intel）打包 + CI 双架构 | `package.json`、`.github/workflows/build-mac.yml` | 低 |
@@ -138,10 +137,9 @@ windows-upstream（跟踪 XxHuberrr/Mineradio 的更新）
 - **改了什么**：删 `build.publish`；构建脚本删 `latest-mac.yml`；CI 不 publish
 - **移植注意**：`mineradio.update.disabled` 保留 true（server.js 读它，删了会报错）
 
-### 3. Mac 跳过 Windows 内存死代码 + 补漏 qishui-api
-- **为什么**：`system-memory.js` 是 Windows 专用（PowerShell），Mac 加载是死代码
-- **改了什么**：`main.js` 第 12-14 行，Mac 用 `system-memory-mac`（见 #5）替代真实模块
-- **移植注意**：`qishui-api.js` 是补漏文件（95KB），移植时必须带上
+### 3. 公开分支的汽水删除边界
+- `03-mac-skip-win-memory.patch` 含完整汽水实现，已从 2.0 公开分支删除。
+- Mac 内存模块切换已直接保留在当前 `desktop/main.js`；不要为了移植汽水而恢复旧补丁。
 
 ### 4. 图标瘦身
 - **为什么**：icon.icns 851KB 过大，无损重压到 568KB

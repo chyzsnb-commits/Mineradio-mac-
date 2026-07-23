@@ -96,7 +96,6 @@ async function loadPlaylistIntoQueueById(id, autoplay, title) {
   showLoading();
   var qqPlaylistId = String(id || '').indexOf('qq:') === 0 ? String(id).slice(3) : '';
   var kugouPlaylistId = String(id || '').indexOf('kugou:') === 0 ? String(id).slice(6) : '';
-  var qishuiPlaylistId = String(id || '').indexOf('qishui:') === 0 ? String(id).slice(7) : '';
   var spotifyPlaylistId = String(id || '').indexOf('spotify:') === 0 ? String(id).slice(8) : '';
   var r = null;
   try {
@@ -104,11 +103,9 @@ async function loadPlaylistIntoQueueById(id, autoplay, title) {
       ? await apiJson('/api/qq/playlist/tracks?id=' + encodeURIComponent(qqPlaylistId))
       : (kugouPlaylistId
         ? await apiJson('/api/kugou/playlist/tracks?id=' + encodeURIComponent(kugouPlaylistId))
-        : (qishuiPlaylistId
-          ? await apiJson('/api/qishui/playlist/tracks?id=' + encodeURIComponent(qishuiPlaylistId))
-          : (spotifyPlaylistId
-            ? await apiJson('/api/spotify/playlist/tracks?id=' + encodeURIComponent(spotifyPlaylistId))
-            : await apiJson('/api/playlist/tracks?id=' + encodeURIComponent(id)))));
+        : (spotifyPlaylistId
+          ? await apiJson('/api/spotify/playlist/tracks?id=' + encodeURIComponent(spotifyPlaylistId))
+          : await apiJson('/api/playlist/tracks?id=' + encodeURIComponent(id))));
   } catch (e) {
     console.warn('[PlaylistLoadApi]', id, e);
     showToast('歌单加载失败');

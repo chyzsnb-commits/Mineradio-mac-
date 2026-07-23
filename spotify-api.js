@@ -3,6 +3,7 @@
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
+const RELEASE_POLICY = require('./desktop/release-policy');
 
 const SPOTIFY_ACCOUNTS_BASE = (process.env.SPOTIFY_ACCOUNTS_BASE || 'https://accounts.spotify.com').replace(/\/+$/, '');
 const SPOTIFY_API_BASE = (process.env.SPOTIFY_API_BASE || 'https://api.spotify.com/v1').replace(/\/+$/, '');
@@ -18,7 +19,7 @@ const DEFAULT_SPOTIFY_SCOPES = [
   'user-library-read',
 ];
 const SPOTIFY_LIKED_PLAYLIST_ID = 'spotify-liked';
-const SPOTIFY_UA = 'Mineradio/1.1.2 (Spotify Web API bridge)';
+const SPOTIFY_UA = `Mineradio/${require('./package.json').version || '2.0.0'} (Spotify Web API bridge)`;
 const SPOTIFY_SEARCH_LIMIT_MAX = 10;
 const SPOTIFY_PLAYLIST_PAGE_LIMIT = 50;
 
@@ -87,7 +88,7 @@ function readSpotifyFileConfig() {
   for (const file of candidates) {
     try {
       if (!fs.existsSync(file)) continue;
-      const parsed = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+      const parsed = readJsonFile(file, false);
       const config = normalizeSpotifyFileConfig(parsed, file);
       if (config.clientId || config.clientSecret || config.redirectUri || config.scopes.length || config.market) return config;
     } catch (err) {
@@ -104,7 +105,9 @@ function getSpotifyConfigFile() {
 function saveSpotifyConfig(input) {
   input = input && typeof input === 'object' ? input : {};
   const clientId = normalizeText(input.clientId || input.client_id || input.id);
-  const clientSecret = normalizeText(input.clientSecret || input.client_secret || input.secret);
+  const clientSecret = RELEASE_POLICY.publicRelease
+    ? ''
+    : normalizeText(input.clientSecret || input.client_secret || input.secret);
   const redirectUri = normalizeText(input.redirectUri || input.redirect_uri || input.callbackUrl || input.callback_url) || DEFAULT_SPOTIFY_REDIRECT_URI;
   const scopes = normalizeScopes(input.scopes || input.scope);
   const market = normalizeText(input.market || input.country || DEFAULT_SPOTIFY_MARKET || 'US').toUpperCase();
@@ -145,7 +148,7 @@ function readStoredSpotifyToken() {
   const file = getSpotifyTokenFile();
   try {
     if (!file || !fs.existsSync(file)) return { file, accessToken: '', refreshToken: '', expiresAt: 0 };
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+    const raw = readJsonFile(file, true);
     return {
       file,
       accessToken: normalizeText(raw.accessToken || raw.access_token),
@@ -161,9 +164,25 @@ function readStoredSpotifyToken() {
   }
 }
 
-function writeJsonFile(file, payload) {
+function readJsonFile(file, sensitive) {
+  const text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '').trim();
+  if (!sensitive || !RELEASE_POLICY.publicRelease) return JSON.parse(text);
+  const prefix = 'mineradio-safe-storage-v1:';
+  if (!text.startsWith(prefix)) throw new Error('UNENCRYPTED_CREDENTIAL_FILE');
+  const { safeStorage } = require('electron');
+  if (!safeStorage || !safeStorage.isEncryptionAvailable()) throw new Error('SAFE_STORAGE_UNAVAILABLE');
+  return JSON.parse(safeStorage.decryptString(Buffer.from(text.slice(prefix.length), 'base64')));
+}
+
+function writeJsonFile(file, payload, options) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+  let text = JSON.stringify(payload, null, 2);
+  if (options && options.sensitive && RELEASE_POLICY.publicRelease) {
+    const { safeStorage } = require('electron');
+    if (!safeStorage || !safeStorage.isEncryptionAvailable()) throw new Error('SAFE_STORAGE_UNAVAILABLE');
+    text = 'mineradio-safe-storage-v1:' + safeStorage.encryptString(text).toString('base64');
+  }
+  fs.writeFileSync(file, text, { encoding: 'utf8', mode: 0o600 });
 }
 
 function saveSpotifyOAuthToken(payload) {
@@ -184,7 +203,7 @@ function saveSpotifyOAuthToken(payload) {
     err.code = 'SPOTIFY_TOKEN_MISSING';
     throw err;
   }
-  writeJsonFile(getSpotifyTokenFile(), saved);
+  writeJsonFile(getSpotifyTokenFile(), saved, { sensitive: true });
   return {
     provider: 'spotify',
     loggedIn: !!saved.accessToken,

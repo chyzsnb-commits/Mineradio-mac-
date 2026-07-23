@@ -1,7 +1,14 @@
 const { contextBridge, ipcRenderer, clipboard } = require('electron');
+const RELEASE_POLICY = require('./release-policy');
 
-contextBridge.exposeInMainWorld('desktopWindow', {
+const desktopWindowApi = {
   isDesktop: true,
+  releasePolicy: {
+    publicRelease: RELEASE_POLICY.publicRelease,
+    disabledProviders: RELEASE_POLICY.disabledProviders,
+    allowCredentialImport: RELEASE_POLICY.allowCredentialImport,
+    allowCredentialExport: RELEASE_POLICY.allowCredentialExport,
+  },
   minimize: () => ipcRenderer.invoke('desktop-window-minimize'),
   toggleMaximize: () => ipcRenderer.invoke('desktop-window-toggle-maximize'),
   toggleFullscreen: () => ipcRenderer.invoke('desktop-window-toggle-fullscreen'),
@@ -33,8 +40,6 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   clearQQMusicLogin: () => ipcRenderer.invoke('qq-music-clear-login'),
   openKugouMusicLogin: () => ipcRenderer.invoke('kugou-music-open-login'),
   clearKugouMusicLogin: () => ipcRenderer.invoke('kugou-music-clear-login'),
-  openQishuiMusicLogin: () => ipcRenderer.invoke('qishui-music-open-login'),
-  clearQishuiMusicLogin: () => ipcRenderer.invoke('qishui-music-clear-login'),
   openSpotifyMusicLogin: () => ipcRenderer.invoke('spotify-music-open-login'),
   clearSpotifyMusicLogin: () => ipcRenderer.invoke('spotify-music-clear-login'),
   // 手部姿态原生桥接(Vision/ANE):start 返回 {ok};frame 送 RGBA;onResult 收 21 点关键点
@@ -51,7 +56,6 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   },
   readText: () => ({ ok: true, text: clipboard.readText() || '' }),
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
-  exportLoginCookie: (provider) => ipcRenderer.invoke('mineradio-export-login-cookie', provider || ''),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
   readCurrentFxAutosaveSync: () => ipcRenderer.sendSync('mineradio-current-fx-autosave-read-sync'),
   saveCurrentFxAutosaveSync: (payload) => ipcRenderer.sendSync('mineradio-current-fx-autosave-save-sync', payload || {}),
@@ -112,10 +116,17 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     ipcRenderer.on('desktop-window-state', listener);
     return () => ipcRenderer.removeListener('desktop-window-state', listener);
   },
-});
+};
+
+if (RELEASE_POLICY.allowCredentialExport) {
+  desktopWindowApi.exportLoginCookie = (provider) => ipcRenderer.invoke('mineradio-export-login-cookie', provider || '');
+}
+
+contextBridge.exposeInMainWorld('desktopWindow', desktopWindowApi);
 
 window.addEventListener('DOMContentLoaded', () => {
   document.documentElement.classList.add('desktop-shell-root');
+  if (RELEASE_POLICY.publicRelease) document.documentElement.classList.add('mineradio-public-release');
   document.body.classList.add('desktop-shell');
   // macOS 用原生红黄绿按钮，标记后由 CSS 隐藏自带的窗口按钮
   if (process.platform === 'darwin') document.body.classList.add('desktop-mac');

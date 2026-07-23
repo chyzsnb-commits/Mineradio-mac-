@@ -401,38 +401,14 @@ function normalizeQishuiLoginStatus(info) {
   });
 }
 async function refreshQishuiLoginStatus() {
-  try {
-    var info = await apiJson('/api/qishui/status?t=' + Date.now());
-    var prevLogged = !!qishuiLoginStatus.loggedIn;
-    qishuiLoginStatus = normalizeQishuiLoginStatus(info);
-    auditProviderVipState('qishui', qishuiLoginStatus);
-    if (!qishuiLoginStatus.loggedIn) {
-      if (prevLogged || qishuiLoginWasLoggedIn) showToast('汽水音乐授权已清除');
-      qishuiPlaylists = [];
-      userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
-      homeDiscoverState.loaded = false;
-    } else if (!userPlaylists.some(function (pl) { return pl && pl.provider === 'qishui'; })) {
-      homeDiscoverState.loaded = false;
-      homeDiscoverState.loggedIn = true;
-      refreshUserPlaylists(true);
-      loadHomeDiscover(true);
-    }
-    qishuiLoginWasLoggedIn = !!qishuiLoginStatus.loggedIn;
-    if (!hasPlatformLogin(activeAccountProvider)) activeAccountProvider = firstLoggedProvider();
-    renderUserBtn();
-    return qishuiLoginStatus;
-  } catch (e) {
-    console.warn('Qishui login status failed:', e);
-    qishuiLoginStatus = normalizeQishuiLoginStatus(null);
-    renderUserBtn();
-    return qishuiLoginStatus;
-  }
+  qishuiLoginStatus = normalizeQishuiLoginStatus({ enabled: false, searchReady: false, publicCatalog: false });
+  qishuiPlaylists = [];
+  userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
+  return qishuiLoginStatus;
 }
 function startQishuiLoginStatusAutoRefresh() {
   if (qishuiLoginAutoRefreshTimer) clearInterval(qishuiLoginAutoRefreshTimer);
-  qishuiLoginAutoRefreshTimer = setInterval(function () {
-    refreshQishuiLoginStatus().catch(function (e) { console.warn('Qishui login auto refresh failed:', e); });
-  }, 45000);
+  qishuiLoginAutoRefreshTimer = null;
 }
 
 function normalizeSpotifyLoginStatus(info) {
