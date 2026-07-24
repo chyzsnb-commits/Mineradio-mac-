@@ -54,8 +54,16 @@ function waitForAudioSeekCompletion(media, timeoutMs) {
   });
 }
 
+function mediaPlaybackTargetSrc(media) {
+  // `currentSrc` is asynchronous: immediately after assigning a new `src` it can
+  // still point at the previous track. Playback request identity must follow the
+  // source we just assigned, otherwise a valid rapid switch is mistaken for a
+  // stale request and the new URL is cleared.
+  return media ? (media.src || media.currentSrc || '') : '';
+}
+
 function isSameAudioPlaybackTarget(media, src) {
-  return !!(audio && media && audio === media && (audio.currentSrc || audio.src || '') === src);
+  return !!(audio && media && audio === media && mediaPlaybackTargetSrc(audio) === src);
 }
 
 function audioPlayRequestCurrent(opts, media, src) {
@@ -83,7 +91,7 @@ function updatePlaybackResumePauseMarker(reason) {
   if (!playbackResumeRecovery) return;
   if (reason === 'pause' || reason === 'manual-pause') {
     var song = playQueue && currentIdx >= 0 && currentIdx < playQueue.length ? playQueue[currentIdx] : null;
-    var src = audio && (audio.currentSrc || audio.src || '') || '';
+    var src = mediaPlaybackTargetSrc(audio);
     if (!song || !src || !audio || audio.ended) {
       clearPlaybackResumePauseMarker();
       return;
@@ -131,7 +139,7 @@ function playbackResumePausedLongEnough(song) {
   var currentKey = typeof queueItemKey === 'function' ? queueItemKey(song) : '';
   if (markerKey && currentKey && markerKey !== currentKey) return false;
   var markerSrc = playbackResumeRecovery.pausedSrc || '';
-  var currentSrc = audio && (audio.currentSrc || audio.src || '') || '';
+  var currentSrc = mediaPlaybackTargetSrc(audio);
   if (markerSrc && currentSrc && markerSrc !== currentSrc) return false;
   return Date.now() - playbackResumeRecovery.pausedAt >= playbackResumeLongPauseThresholdMs(song);
 }
@@ -247,7 +255,7 @@ function schedulePlaybackStallRecovery(reason, opts) {
   if (!canRefreshCurrentPlaybackUrlForResume(song)) return;
   clearPlaybackResumeWatchdogs();
   var media = audio;
-  var src = media.currentSrc || media.src || '';
+  var src = mediaPlaybackTargetSrc(media);
   var token = trackSwitchToken;
   var startTime = isFinite(media.currentTime) ? media.currentTime : 0;
   var recoverySerial = playbackResumeRecovery.serial;
@@ -297,7 +305,7 @@ async function completeAudioPlayStart(opts, reason) {
   var requestMedia = opts._playRequestMedia || audio;
   var requestSrc = opts._playRequestSrc != null
     ? opts._playRequestSrc
-    : (requestMedia && (requestMedia.currentSrc || requestMedia.src || ''));
+    : mediaPlaybackTargetSrc(requestMedia);
   if (!audioPlayRequestCurrent(opts, requestMedia, requestSrc)) return false;
   switchPlaybackVisualToEmily();
   playing = true; setPlayIcon(true);
@@ -346,7 +354,7 @@ async function resumePausedAudioFast(opts) {
   opts = opts || {};
   if (!canResumePausedAudioFast(opts)) return null;
   var media = audio;
-  var src = media.currentSrc || media.src || '';
+  var src = mediaPlaybackTargetSrc(media);
   var token = trackSwitchToken;
   try {
     restorePlaybackGain();
@@ -373,7 +381,7 @@ async function resumePausedAudioFast(opts) {
 
 async function retryTrackSwitchAudioPlayOnce(opts, originalErr) {
   var retryAudio = audio;
-  var retrySrc = retryAudio && (retryAudio.currentSrc || retryAudio.src || '');
+  var retrySrc = mediaPlaybackTargetSrc(retryAudio);
   if (!retryAudio || !retrySrc) throw originalErr;
   await waitForAudioReadyToPlay(retryAudio, opts.manual ? 650 : 900);
   if (!isSameAudioPlaybackTarget(retryAudio, retrySrc)) return null;
@@ -394,7 +402,7 @@ async function attemptAudioPlay(opts) {
   try {
     if (!audio) return false;
     var seekMedia = audio;
-    var seekSrc = seekMedia.currentSrc || seekMedia.src || '';
+    var seekSrc = mediaPlaybackTargetSrc(seekMedia);
     opts._playRequestMedia = seekMedia;
     opts._playRequestSrc = seekSrc;
     if (!audioPlayRequestCurrent(opts, seekMedia, seekSrc)) return false;

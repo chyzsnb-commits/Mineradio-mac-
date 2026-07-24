@@ -306,4 +306,3 @@ function recenterCamera() {
   if (!(fx && fx.preset === SKULL_PRESET_INDEX) && ((fx && fx.lyricCameraLock) || shouldUseWallpaperLyricCameraLock())) requestStageLyricCameraSnap(14);
   showToast('视角回正');
 }
-

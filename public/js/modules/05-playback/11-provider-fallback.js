@@ -282,7 +282,10 @@ function showSourceFallbackNotice(title, body, opts) {
     card.appendChild(head);
     card.appendChild(bodyElNew);
     stack.insertBefore(card, stack.firstChild || null);
-    while (stack.children.length > 4) removeSourceFallbackCard(stack.lastElementChild);
+    // ⚠死循环根因:removeSourceFallbackCard 是 260ms 延时删卡,children.length 不会当场减少,
+    // 放在 while 里会永远 >4 → 主线程死循环冻死("点不动")。换源级联一冒出第 5 条通知就触发。
+    // 修:多余的卡片同步硬删(直接 removeChild),必定收敛。
+    while (stack.children.length > 4 && stack.lastElementChild) stack.removeChild(stack.lastElementChild);
     requestAnimationFrame(function () { card.classList.add('show'); });
     setTimeout(function () { removeSourceFallbackCard(card); }, 5600);
     return;
@@ -351,7 +354,14 @@ async function searchAlternatePlatformSong(song) {
 // 早先失败的曲目重新“解封”,导致无限跳歌把主线程和内存拖到卡死。用一个单调计数
 // 器保证级联最多跑一整圈队列就停;只有当前歌曲真正开始播放后才清零。
 var playbackSkipCascade = 0;
-function resetPlaybackSkipCascade() { playbackSkipCascade = 0; }
+// 连续失败到这个上限就停止自动跳转。原来是 >playQueue.length(整个队列),大歌单下会 storm 几百首、
+// 每首都分配封面/GPU 纹理 → 渲染层显存爆掉 SIGTRAP 崩溃(实测崩溃报告 2.2 万个 GPU 区)。8 首足够判定"系统性失败"。
+var PLAYBACK_SKIP_CASCADE_MAX = 8;
+function resetPlaybackSkipCascade() {
+  playbackSkipCascade = 0;
+  // #13 正在播放的这首清掉失败标记,避免旧标记长期挂在队列项上、被 18s 窗口误判
+  if (typeof playQueue !== 'undefined' && typeof currentIdx !== 'undefined' && playQueue[currentIdx]) delete playQueue[currentIdx]._lastPlaybackFailAt;
+}
 function confirmQueuePlaybackStarted(idx, token) {
   if (token !== trackSwitchToken || idx !== currentIdx || !audio || audio.paused || audio.ended) return false;
   resetPlaybackSkipCascade();
@@ -388,7 +398,7 @@ function skipFailedQueueItem(idx, token, message, opts) {
     return;
   }
   playbackSkipCascade++;
-  if (playbackSkipCascade > playQueue.length) {
+  if (playbackSkipCascade >= Math.min(playQueue.length, PLAYBACK_SKIP_CASCADE_MAX)) {
     playbackSkipCascade = 0;
     if (!opts.silent) showSourceFallbackNotice('队列里暂时没有可播放的歌曲', '已连续跳过整轮受限/不可播的歌曲，已停止自动跳转，避免卡顿。可手动选择其它歌曲或稍后重试。');
     return;

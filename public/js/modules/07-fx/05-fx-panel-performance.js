@@ -97,8 +97,7 @@ function updatePerformanceControls() {
   document.querySelectorAll('#performance-background-seg [data-performance-background]').forEach(function (btn) {
     btn.classList.toggle('active', btn.getAttribute('data-performance-background') === fx.performanceBackground);
   });
-  syncGpuModeSeg();
-  syncPerformanceQualitySeg();
+  syncUnifiedPerformanceModeSeg();
   var liveBackgroundKeepToggle = document.getElementById('t-liveBackgroundKeep');
   if (liveBackgroundKeepToggle) liveBackgroundKeepToggle.classList.toggle('on', fx.liveBackgroundKeep === true);
 }
@@ -116,30 +115,52 @@ function setPerformanceBackgroundMode(mode, silent) {
     showToast(next === 'keep' ? '后台策略: 保持运行' : (next === 'release' ? '后台策略: 停止并释放' : '后台策略: 自动优化'));
   }
 }
-// 性能档位分段控件 active 态同步(auto/eco/balanced/ultra),面板打开或改档时刷新
-function syncPerformanceQualitySeg() {
-  var seg = document.getElementById('performance-quality-seg');
+function performanceModeGpuMode(mode) {
+  mode = normalizePerformanceQuality(mode);
+  return mode === 'eco' ? 'low-power' : (mode === 'ultra' ? 'high-performance' : 'auto');
+}
+function unifiedPerformanceModeForSettings(performanceMode, gpuMode) {
+  var performance = normalizePerformanceQuality(performanceMode);
+  if (performance === 'eco' || performance === 'balanced' || performance === 'ultra') return performance;
+  gpuMode = window.MineradioGpuMode ? window.MineradioGpuMode.normalizeMode(gpuMode) : 'auto';
+  return gpuMode === 'low-power' ? 'eco' : (gpuMode === 'high-performance' ? 'ultra' : 'auto');
+}
+function unifiedPerformanceModeLabel(mode) {
+  mode = normalizePerformanceQuality(mode);
+  return mode === 'eco' ? '省电' : (mode === 'balanced' ? '均衡' : (mode === 'ultra' ? '高性能' : '自动'));
+}
+// 性能与显卡偏好只保留一个四档入口，避免两个设置互相打架。
+function syncUnifiedPerformanceModeSeg() {
+  var seg = document.getElementById('performance-mode-seg');
   if (!seg) return;
-  var current = normalizePerformanceQuality(fx && fx.performanceQuality);
-  seg.querySelectorAll('[data-perf-quality]').forEach(function (btn) {
-    btn.classList.toggle('active', btn.getAttribute('data-perf-quality') === current);
+  var current = unifiedPerformanceModeForSettings(fx && fx.performanceQuality, currentGpuMode());
+  seg.querySelectorAll('[data-performance-mode]').forEach(function (btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-performance-mode') === current);
   });
 }
-function setPerformanceQualityMode(mode, silent) {
+function setUnifiedPerformanceMode(mode, silent) {
   var next = normalizePerformanceQuality(mode);
+  var previousGpuMode = currentGpuMode();
+  var nextGpuMode = performanceModeGpuMode(next);
   fx.performanceQuality = next;
+  if (window.MineradioGpuMode) window.MineradioGpuMode.saveMode(window.localStorage, nextGpuMode);
   updatePerformanceControls();
   applyRendererPowerMode();
-  saveLyricLayout({ user: true, reason: 'performanceQuality' });
-  if (!silent) {
-    if (next === 'auto') {
-      showToast('性能档位: 自动(按帧率自适应)');
-    } else {
-      // 档位切换只调「真性能」(分析步长/流星门/体素额外量等 rank 语义),绝不再联动用户的渲染分辨率滑块与体素密度
-      var label = next === 'eco' ? '低配' : (next === 'balanced' ? '均衡' : (next === 'ultra' ? '高性能' : '高'));
-      showToast('性能档位: ' + label);
-    }
+  saveLyricLayout({ user: true, reason: 'performanceMode' });
+  if (window.MineradioGpuMode && currentGpuMode() !== nextGpuMode) {
+    showToast('性能模式保存失败');
+    return;
   }
+  if (!silent) {
+    if (previousGpuMode !== nextGpuMode) openGpuModeRestartPrompt(nextGpuMode, next);
+    else showToast('性能模式: ' + unifiedPerformanceModeLabel(next));
+  }
+}
+function syncPerformanceQualitySeg() {
+  syncUnifiedPerformanceModeSeg();
+}
+function setPerformanceQualityMode(mode, silent) {
+  setUnifiedPerformanceMode(mode, silent);
 }
 function currentGpuMode() {
   return window.MineradioGpuMode
@@ -152,10 +173,7 @@ function gpuModeLabel(mode) {
 }
 var gpuModeRestartPreviousFocus = null;
 function syncGpuModeSeg() {
-  var current = currentGpuMode();
-  document.querySelectorAll('#gpu-mode-seg [data-gpu-mode]').forEach(function (btn) {
-    btn.classList.toggle('active', btn.getAttribute('data-gpu-mode') === current);
-  });
+  syncUnifiedPerformanceModeSeg();
 }
 function bindGpuModeRestartPromptKeyboard(modal) {
   if (!modal || modal._gpuModeKeyboardBound) return;
@@ -180,10 +198,15 @@ function bindGpuModeRestartPromptKeyboard(modal) {
     }
   });
 }
-function openGpuModeRestartPrompt(mode) {
+function openGpuModeRestartPrompt(mode, performanceMode) {
   var modal = document.getElementById('gpu-mode-restart-modal');
   var desc = document.getElementById('gpu-mode-restart-desc');
-  if (desc) desc.textContent = gpuModeLabel(mode) + '模式将在重启后生效。';
+  if (desc) {
+    var label = unifiedPerformanceModeLabel(performanceMode == null
+      ? (mode === 'low-power' ? 'eco' : (mode === 'high-performance' ? 'ultra' : 'auto'))
+      : performanceMode);
+    desc.textContent = '性能模式“' + label + '”已应用；显卡偏好将在重启后生效。';
+  }
   if (!modal) return;
   gpuModeRestartPreviousFocus = document.activeElement;
   modal.setAttribute('aria-hidden', 'false');
@@ -225,22 +248,8 @@ async function restartForGpuMode() {
   }
 }
 function setGpuMode(mode, silent) {
-  if (!window.MineradioGpuMode) return;
-  var next = window.MineradioGpuMode.normalizeMode(mode);
-  var current = currentGpuMode();
-  if (next === current) {
-    syncGpuModeSeg();
-    if (!silent) showToast('显卡模式: ' + gpuModeLabel(next));
-    return;
-  }
-  window.MineradioGpuMode.saveMode(window.localStorage, next);
-  if (currentGpuMode() !== next) {
-    syncGpuModeSeg();
-    showToast('显卡模式保存失败');
-    return;
-  }
-  syncGpuModeSeg();
-  if (!silent) openGpuModeRestartPrompt(next);
+  var next = window.MineradioGpuMode ? window.MineradioGpuMode.normalizeMode(mode) : 'auto';
+  setUnifiedPerformanceMode(next === 'low-power' ? 'eco' : (next === 'high-performance' ? 'ultra' : 'auto'), silent);
 }
 // 总刷新率上限:用户选的全局帧率上限(0=无上限随显示器)
 function syncMaxFpsSeg() {
@@ -301,6 +310,22 @@ function setPerfHud(on) {
   else suspendPerfHudSampling();
 }
 function togglePerfHud() { setPerfHud(!perfHudOn()); }
+// 省内存一键档:把实际渲染分辨率降到 0.75(用户自愿点,非强制)。状态由 renderScale 反推,重启后仍准。
+var _memSaverPrevScale = null;
+function memorySaverActive() { return typeof getRenderScale === 'function' && getRenderScale() <= 0.80; }
+function toggleMemorySaver() {
+  if (typeof setRenderScale !== 'function' || typeof getRenderScale !== 'function') return;
+  if (memorySaverActive()) {
+    setRenderScale(_memSaverPrevScale && _memSaverPrevScale > 0.80 ? _memSaverPrevScale : 1.0);
+    _memSaverPrevScale = null;
+    if (typeof showToast === 'function') showToast('已恢复渲染分辨率 ' + Math.round(getRenderScale() * 100) + '%');
+  } else {
+    _memSaverPrevScale = getRenderScale();
+    setRenderScale(0.75);
+    if (typeof showToast === 'function') showToast('省内存档:渲染降到 75%(更凉更省内存,画面略软,再点恢复)');
+  }
+  updatePerfHud();
+}
 function updatePerfHud() {
   var hud = document.getElementById('perf-hud');
   if (!hud || hud.style.display === 'none') return;
@@ -334,27 +359,16 @@ function updatePerfHud() {
       adaptRow = '<div class="ph-r"><span>自适应</span><b>×' + (Math.round(gs.scaleMul * 100) / 100).toFixed(2) + ' · ' + govRankName + govFps + '</b></div>';
     }
   }
-  // 手势推理指标(另一任务导出 window.__gestureStats = {delegate, avgMs, ratePerSec});无则不显示
-  var gestureRow = '';
-  try {
-    var gst = window.__gestureStats;
-    if (gst && typeof gst === 'object' && Object.keys(gst).length > 0) {
-      var gMs = (typeof gst.avgMs === 'number' && isFinite(gst.avgMs)) ? (Math.round(gst.avgMs * 10) / 10) : '--';
-      var gRate = (typeof gst.ratePerSec === 'number' && isFinite(gst.ratePerSec)) ? Math.round(gst.ratePerSec) : '--';
-      var gDelg = gst.delegate ? (' (' + gst.delegate + ')') : '';
-      gestureRow = '<div class="ph-r"><span>手势</span><b>推理 ' + gMs + 'ms @ ' + gRate + '/s' + gDelg + '</b></div>';
-    }
-  } catch (e) { }
   hud.innerHTML =
-    '<div class="ph-h">MINERADIO · 负载</div>' +
+    '<div class="ph-h"><span class="ph-close" onclick="setPerfHud(false)" title="关闭负载监视器">✕</span>MINERADIO · 负载</div>' +
     '<div class="ph-r"><span>帧率</span><b>' + fps + ' FPS</b></div>' +
     '<div class="ph-r"><span>渲染分辨率</span><b>' + resLabel + '</b></div>' +
     '<div class="ph-r"><span>CPU</span><b>' + cpuLine + '</b></div>' +
     '<div class="ph-r"><span>GPU</span><b>' + gpuLine + '</b></div>' +
     adaptRow +
     '<div class="ph-r"><span>内存</span><b>' + memLine + '</b></div>' +
-    gestureRow +
-    '<div class="ph-tip">卡顿 / 发烫 → 手动调低分辨率或帧率</div>';
+    '<div class="ph-tip ph-tip-btn' + (memorySaverActive() ? ' on' : '') + '" onclick="toggleMemorySaver()" title="一键把渲染分辨率降到75%,更凉更省内存;再点恢复">' +
+    (memorySaverActive() ? '✓ 省内存档 开(渲染 75%)· 点这里恢复' : '卡顿 / 发烫 → 点这里一键省内存') + '</div>';
 }
 function updateFxInputs() {
   normalizeDevelopmentLockedFxState();

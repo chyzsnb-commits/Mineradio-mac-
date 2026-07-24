@@ -132,7 +132,9 @@ GestureOneEuro.prototype.filter = function (x, tMs) {
   this.xPrev = this.xPrev + a * (x - this.xPrev);
   return this.xPrev;
 };
-var GESTURE_EURO_MINCUTOFF = 1.35, GESTURE_EURO_BETA = 0.45;
+// One Euro:minCutoff 越高=慢速时越跟手(少滞后)但静止略抖;beta 越高=快速挥手时越不拖影。
+// 保持 30fps 低负载采样，只把滤波响应调高一档来改善跟手性；若静止抖动可再小幅回调。
+var GESTURE_EURO_MINCUTOFF = 1.6, GESTURE_EURO_BETA = 0.7;
 
 // ------------------------------------------------------------
 //  双手槽位: 每只手 21 点滤波 + 手势派生量 + 去抖状态
@@ -144,7 +146,7 @@ function makeGestureHandSlot() {
   for (var j = 0; j < 21; j++) lm.push({ x: 0, y: 0, z: 0 });
   return {
     present: false, lastSeen: 0, filters: filters, lm: lm,
-    palm: { x: 0.5, y: 0.5 }, openness: 1, openSm: 1, pinchRatio: 2,
+    palm: { x: 0.5, y: 0.5 }, pinchPt: { x: 0.5, y: 0.5 }, openness: 1, openSm: 1, pinchRatio: 2,
     pinch: false, pinchPend: 0, fist: false, fistPend: 0, fistArmed: false,
     voxAmt: 0, voxX: 0, voxZ: 0, voxOk: false,
   };
@@ -356,7 +358,7 @@ async function startGestureControl() {
   showToast('正在加载手势识别…');
   try {
     gestureStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30, max: 30 } },
+      video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30, max: 30 } },   // Worker 保持 30fps 低负载；双手跟手性由捏合中点与滤波参数改善
       audio: false,
     });
     if (gen !== gestureStartGen || fx.cam !== 'gesture') { abortGestureStart(); return; }
@@ -581,6 +583,8 @@ function filterSlotLandmarks(slot, rawLm, tNow) {
   }
   var palm = palmCenter(slot.lm);
   slot.palm.x = palm.x; slot.palm.y = palm.y;
+  slot.pinchPt.x = (slot.lm[4].x + slot.lm[8].x) / 2;
+  slot.pinchPt.y = (slot.lm[4].y + slot.lm[8].y) / 2;
   slot.openness = handOpenness(slot.lm, palm);
   slot.openSm += (slot.openness - slot.openSm) * 0.34;
   var span = Math.max(0.05, Math.hypot(slot.lm[5].x - slot.lm[17].x, slot.lm[5].y - slot.lm[17].y));
@@ -644,8 +648,8 @@ function processGestureState(tNow) {
 
   // ---- 双捏 = 拉伸缩放 + 连线角旋转 ----
   if (twoPinch) {
-    var dxh = (present[1].palm.x - present[0].palm.x) * aspect;
-    var dyh = present[1].palm.y - present[0].palm.y;
+    var dxh = (present[1].pinchPt.x - present[0].pinchPt.x) * aspect;
+    var dyh = present[1].pinchPt.y - present[0].pinchPt.y;
     var dist = Math.max(0.04, Math.hypot(dxh, dyh));
     var ang = Math.atan2(dyh, dxh);
     if (!gestureTwoHand.active || gestureTwoHand.kind !== kind) {
@@ -972,8 +976,8 @@ function drawHandsOverlay() {
   // 双捏: 两掌间连线 + 中点光斑
   if (gestureTwoHand.active && drawn.length === 2) {
     var W = innerWidth, H = innerHeight;
-    var x1 = drawn[0].palm.x * W, y1 = drawn[0].palm.y * H;
-    var x2 = drawn[1].palm.x * W, y2 = drawn[1].palm.y * H;
+    var x1 = drawn[0].pinchPt.x * W, y1 = drawn[0].pinchPt.y * H;
+    var x2 = drawn[1].pinchPt.x * W, y2 = drawn[1].pinchPt.y * H;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     var grad = ctx.createLinearGradient(x1, y1, x2, y2);

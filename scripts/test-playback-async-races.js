@@ -345,6 +345,7 @@ test('attemptAudioPlay 会等待 seeking 完成后再调用 audio.play', async (
     : 'function audioPlayRequestCurrent(opts) { return !opts.playRequestCurrent || opts.playRequestCurrent(); }';
   vm.runInNewContext([
     readFunction(source, 'waitForAudioSeekCompletion'),
+    readFunction(source, 'mediaPlaybackTargetSrc'),
     readFunction(source, 'isSameAudioPlaybackTarget'),
     requestGuardDeclaration,
     readFunction(source, 'attemptAudioPlay'),
@@ -391,6 +392,7 @@ test('等待 seeked 的旧播放请求被新拖动取代后不能启动播放', 
     : 'function audioPlayRequestCurrent(opts) { return !opts.playRequestCurrent || opts.playRequestCurrent(); }';
   vm.runInNewContext([
     readFunction(playerSource, 'waitForAudioSeekCompletion'),
+    readFunction(playerSource, 'mediaPlaybackTargetSrc'),
     readFunction(playerSource, 'isSameAudioPlaybackTarget'),
     requestGuardDeclaration,
     readFunction(playerSource, 'attemptAudioPlay'),

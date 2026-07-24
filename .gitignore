@@ -35,3 +35,10 @@ build/.omc/
 .env.local
 *.p12
 *.pfx
+.cookie
+.qq-cookie
+.kugou-cookie
+.qishui-cookie
+.spotify-token.json
+spotify-credentials.json
+kugou-vip-evidence.json

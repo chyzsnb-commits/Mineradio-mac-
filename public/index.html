@@ -679,18 +679,13 @@
             <button data-max-fps="120" onclick="setMaxRenderFps(120)">120</button>
             <button data-max-fps="0" onclick="setMaxRenderFps(0)">无上限</button>
           </div>
-          <div class="fx-section-label">显卡模式</div>
-          <div class="fx-seg gpu-mode-seg" id="gpu-mode-seg" title="切换后重启生效；自动模式由 macOS 决定渲染功耗偏好">
-            <button data-gpu-mode="auto" onclick="setGpuMode('auto')">自动</button>
-            <button data-gpu-mode="low-power" onclick="setGpuMode('low-power')">省电</button>
-            <button data-gpu-mode="high-performance" onclick="setGpuMode('high-performance')">高性能</button>
-          </div>
-          <div class="fx-section-label">性能档位</div>
-          <div class="fx-seg" id="performance-quality-seg" title="低配机器选低配或自动;高性能机器可选高性能。自动按硬件判档">
-            <button data-perf-quality="auto" onclick="setPerformanceQualityMode('auto')">自动</button>
-            <button data-perf-quality="eco" onclick="setPerformanceQualityMode('eco')">低配</button>
-            <button data-perf-quality="balanced" onclick="setPerformanceQualityMode('balanced')">均衡</button>
-            <button data-perf-quality="ultra" onclick="setPerformanceQualityMode('ultra')">高性能</button>
+          <div class="fx-section-label">性能模式</div>
+          <div class="fx-seg performance-mode-seg" id="performance-mode-seg"
+            title="同时调整播放器负载和显卡功耗偏好；显卡偏好在重启后生效">
+            <button data-performance-mode="auto" onclick="setUnifiedPerformanceMode('auto')">自动</button>
+            <button data-performance-mode="eco" onclick="setUnifiedPerformanceMode('eco')">省电</button>
+            <button data-performance-mode="balanced" onclick="setUnifiedPerformanceMode('balanced')">均衡</button>
+            <button data-performance-mode="ultra" onclick="setUnifiedPerformanceMode('ultra')">高性能</button>
           </div>
           <div class="fx-section-label">负载与性能</div>
           <div class="fx-toggle-grid">
@@ -1097,6 +1092,17 @@
                 <input id="speed-slider" type="range" min="0.5" max="3" step="0.05" value="1" aria-label="播放倍速">
                 <span id="speed-value">1.0×</span>
               </div>
+              <div class="crossfade-block">
+                <button id="crossfade-toggle" class="crossfade-toggle on" onclick="event.stopPropagation(); toggleCrossfade()" aria-pressed="true">
+                  <span>交叉淡入</span><span id="crossfade-toggle-state">开</span>
+                </button>
+                <div class="fade-control-row crossfade-secs">
+                  <label for="crossfade-slider">秒数</label>
+                  <input id="crossfade-slider" type="range" min="1" max="12" step="0.5" value="6" aria-label="交叉淡入秒数">
+                  <span id="crossfade-value">6s</span>
+                </div>
+                <div class="singing-hint">上一首结尾与下一首开头重叠淡入淡出，无缝衔接</div>
+              </div>
               <div class="crossfade-block eq-block">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
                   <span style="font-size:11.5px;font-weight:700;color:rgba(255,255,255,.82)">均衡器</span>
@@ -1451,8 +1457,8 @@
     <div id="gpu-mode-restart-modal" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true"
       aria-labelledby="gpu-mode-restart-title">
       <div class="modal gpu-mode-restart-modal">
-        <h2 id="gpu-mode-restart-title">显卡模式已保存</h2>
-        <div id="gpu-mode-restart-desc" class="desc">新模式将在重启后生效。</div>
+        <h2 id="gpu-mode-restart-title">性能模式已保存</h2>
+        <div id="gpu-mode-restart-desc" class="desc">性能参数已应用，显卡偏好将在重启后生效。</div>
         <div class="btn-row">
           <button id="gpu-mode-later-btn" class="modal-btn" type="button"
             onclick="dismissGpuModeRestartPrompt()">稍后重启</button>

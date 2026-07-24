@@ -55,19 +55,24 @@ test('显卡模式脚本先于主模块加载且两个 WebGL 上下文共用设�
   assert.match(splash, /MineradioGpuMode\.powerPreferenceForMode/);
 });
 
-test('性能面板提供三等分显卡模式和重启确认窗口', () => {
+test('性能面板把显卡偏好和性能档位融合为一个四档控件', () => {
   const html = read('public/index.html');
   const controls = read('public/js/modules/07-fx/05-fx-panel-performance.js');
-  const segment = html.match(/<div[^>]*id="gpu-mode-seg"[^>]*>[\s\S]*?<\/div>/);
+  const segment = html.match(/<div[^>]*id="performance-mode-seg"[^>]*>[\s\S]*?<\/div>/);
 
-  assert.ok(segment, '缺少 gpu-mode-seg');
+  assert.ok(segment, '缺少 performance-mode-seg');
   assert.deepEqual(
-    Array.from(segment[0].matchAll(/data-gpu-mode="([^"]+)"/g), (match) => match[1]),
-    ['auto', 'low-power', 'high-performance']
+    Array.from(segment[0].matchAll(/data-performance-mode="([^"]+)"/g), (match) => match[1]),
+    ['auto', 'eco', 'balanced', 'ultra']
   );
   assert.match(segment[0], />自动<\/button>/);
   assert.match(segment[0], />省电<\/button>/);
+  assert.match(segment[0], />均衡<\/button>/);
   assert.match(segment[0], />高性能<\/button>/);
+  assert.doesNotMatch(html, /id="gpu-mode-seg"/);
+  assert.doesNotMatch(html, /id="performance-quality-seg"/);
+  assert.match(controls, /function setUnifiedPerformanceMode/);
+  assert.match(controls, /mode === 'eco' \? 'low-power' : \(mode === 'ultra' \? 'high-performance' : 'auto'\)/);
   assert.match(html, /id="gpu-mode-restart-modal"[^>]*role="dialog"[^>]*aria-modal="true"/);
   assert.match(controls, /function setGpuMode/);
   assert.match(controls, /restartApp/);

@@ -196,6 +196,7 @@ var VOXEL_FRAG = `
     uniform float uBrightness;
     uniform float uSharpness;
     uniform float uShimmer;
+    uniform float uBgMedia;
     uniform vec3 uBaseColor1;
     uniform vec3 uBaseColor2;
     uniform vec3 uFogColor;
@@ -316,7 +317,9 @@ var VOXEL_FRAG = `
       float fogKeep = (1.0 - aerialFog * 0.35) * (1.0 - alphaBlend * 0.45);   // 未被两次雾化染黑的保留比例
       float outA = alphaFade * mix(1.0, fogKeep, uBgLight);
 
-      gl_FragColor = vec4(finalColor, outA);
+      // 优化:地形改不透明(开早期深度剔除,砍掉半透明叠画 overdraw,原生高分辨率下最大头)。
+      // 默认黑底保持不透明；自定义图片、视频或纯色背景时恢复远端透明，避免整块方形体素遮住壁纸。
+      gl_FragColor = vec4(mix(uFogColor, finalColor, outA), mix(1.0, outA, uBgMedia));
     }
 `;
 
@@ -1441,12 +1444,15 @@ function ensureVoxelCity() {
     uWarmCore: { value: new C(1.0, 0.2, 0.1) }, uWarmEdge: { value: new C(1.0, 0.6, 0.0) },
     uRippleColor: { value: new C(0.2, 0.9, 1.0) }, uRippleColorHot: { value: new C(1, 1, 1) }, uGlowIntensity: { value: 1.0 }, uScale: { value: _vscale },
     uBgLight: { value: 0 },
+    uBgMedia: { value: 0 },
     // v9 手势:两只手的掌浪场(柱体局部 xz + 强度)+ 握拳压城
     uHandA: { value: new THREE.Vector2(0, 0) }, uHandAAmt: { value: 0 },
     uHandB: { value: new THREE.Vector2(0, 0) }, uHandBAmt: { value: 0 },
     uVoxGrip: { value: 0 }
   };
-  var mat = new THREE.ShaderMaterial({ uniforms: uniforms, vertexShader: VOXEL_VERT, fragmentShader: VOXEL_FRAG, transparent: true });
+  // 不透明(去掉 transparent:true)→ 渲进不透明批次、写深度、开早期 Z 剔除,砍掉体素重叠的 overdraw。
+  // depthWrite/depthTest 默认即为 true。远端雾感由片元里 mix(uFogColor,...) 承接。
+  var mat = new THREE.ShaderMaterial({ uniforms: uniforms, vertexShader: VOXEL_VERT, fragmentShader: VOXEL_FRAG });
   var mesh = new THREE.InstancedMesh(geo, mat, count);
   mesh.frustumCulled = false;
   mesh.renderOrder = 4;
@@ -1472,7 +1478,7 @@ function ensureVoxelCity() {
     uRippleColor: { value: new C(0.2, 0.9, 1.0) }, uRippleColorHot: { value: new C(1, 1, 1) }, uGlowIntensity: { value: 1.0 },
     uBgLight: { value: 0 }
   };
-  var fbMat = new THREE.ShaderMaterial({ uniforms: _voxFbUniforms, vertexShader: VOX_FB_VERT, fragmentShader: VOX_FB_FRAG, transparent: true });
+  var fbMat = new THREE.ShaderMaterial({ uniforms: _voxFbUniforms, vertexShader: VOX_FB_VERT, fragmentShader: VOX_FB_FRAG, transparent: true, depthWrite: false });   // 透明发光块不写深度(标准做法):省带宽 + 被前面不透明地形正确遮挡(depthTest 仍开)
   _voxFbMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), fbMat, VOX_FB_COUNT);
   _voxFbMesh.frustumCulled = false; _voxFbMesh.renderOrder = 4; _voxFbMesh.visible = false;
   _voxFbBlocks = [];
@@ -1496,7 +1502,7 @@ function ensureVoxelCity() {
   _voxMeteorMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   _voxMeteorMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.4, 1.2, 0.4), _voxMeteorMat, MAX_VOX_METEORS);
   _voxMeteorMesh.frustumCulled = false; _voxMeteorMesh.renderOrder = 5; _voxMeteorMesh.visible = false;
-  _voxParticleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.6 });
+  _voxParticleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.6, depthWrite: false });   // 拖尾粒子不写深度(标准):省带宽,depthTest 仍开、被地形正确遮挡
   _voxParticleMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), _voxParticleMat, MAX_VOX_PARTICLES);
   _voxParticleMesh.frustumCulled = false; _voxParticleMesh.renderOrder = 5; _voxParticleMesh.visible = false;
 
@@ -1529,12 +1535,11 @@ function ensureVoxelCity() {
   _voxBackdrop.position.y = 0.35;
   _voxBackdrop.frustumCulled = false; _voxBackdrop.renderOrder = 2; _voxBackdrop.visible = false;   // 在地形(renderOrder 4)之下;仅自定义背景显示
   platter.add(_voxBackdrop);
-  // 缝隙封底盘:不透明、颜色跟随调色板(uBaseColor1/2 共享引用), 核心区 alpha=1 彻底堵住柱缝漏光,
-  // 边缘按柱体同款 55→78 衰减淡出无硬边;柱体/缝隙几何一根不动, 默认黑底不显示(观感逐位不变)
+  // 缝隙封底盘默认堵住柱缝；图片/视频背景时降到近透明，避免形成遮挡壁纸的黑方块。
   var _sfMat = new THREE.ShaderMaterial({
-    uniforms: { uC1: uniforms.uBaseColor1, uC2: uniforms.uBaseColor2, uScale: uniforms.uScale },
+    uniforms: { uC1: uniforms.uBaseColor1, uC2: uniforms.uBaseColor2, uScale: uniforms.uScale, uBgLight: { value: 0 } },
     vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: 'varying vec2 vP; uniform vec3 uC1, uC2; uniform float uScale; void main(){ float d = length(vP) / max(uScale, 0.001); float a = 1.0 - smoothstep(55.0, 78.0, d); gl_FragColor = vec4(mix(uC1, uC2, 0.35), a); }',
+    fragmentShader: 'varying vec2 vP; uniform vec3 uC1, uC2; uniform float uScale, uBgLight; void main(){ float d = length(vP) / max(uScale, 0.001); float a = (1.0 - smoothstep(55.0, 78.0, d)) * mix(1.0, 0.14, uBgLight); gl_FragColor = vec4(mix(uC1, uC2, 0.35), a); }',
     transparent: true, depthWrite: false });
   _voxSeamFloor = new THREE.Mesh(new THREE.CircleGeometry(82 * _vscale, 64), _sfMat);
   _voxSeamFloor.rotation.x = -Math.PI / 2;
@@ -1639,14 +1644,26 @@ function updateVoxelCity(dt) {
   // 是否自定义亮背景:体素专属背景(voxBg*)或全局背景系统(纯色/图片/视频)——此前漏了全局路径, 亮图当底时城区糊成大黑块
   var _voxBg = !!(fx && (fx.voxBgColor || fx.voxBgImage || fx.backgroundColorCustom || fx.backgroundImage || fx.backgroundMedia));
   if (u.uBgLight) u.uBgLight.value = _voxBg ? 1 : 0;   // 地形:亮背景时远端雾染黑改融向透明,消除右侧竖向暗噪
+  var _voxMedia = _voxBg ? 1 : 0;
+  if (u.uBgMedia) u.uBgMedia.value = _voxMedia;
+  if (vc.mesh && vc.mesh.material && vc.mesh.material.transparent !== !!_voxMedia) {
+    vc.mesh.material.transparent = !!_voxMedia;
+  }
   if (_voxBackdrop) {
     _voxBackdrop.visible = _voxBg;   // 暗底盘仅自定义亮背景时显示,消除露底漏条;黑底隐藏(观感逐位不变)
-    if (_voxSeamFloor) _voxSeamFloor.visible = _voxBg;   // 缝隙封底盘同门槛:柱缝露地面不露背景, 转动不再扫出亮线
+    if (_voxSeamFloor) {
+      _voxSeamFloor.visible = _voxBg;
+      var _sfu = _voxSeamFloor.material && _voxSeamFloor.material.uniforms;
+      if (_sfu && _sfu.uBgLight) {
+        _sfu.uBgLight.value = (fx && (fx.backgroundMedia || fx.backgroundImage || fx.voxBgImage)) ? 1 : 0;
+      }
+    }
     var _bdu = _voxBackdrop.material && _voxBackdrop.material.uniforms;
     if (_bdu && _bdu.uBgLight) {
       _bdu.uBgLight.value = _voxBg ? 1 : 0;   // 亮背景时暗盘不再是黑块(避免在亮底现成大黑碗)
-      if (fx && fx.voxBgColor) { _bdu.uBgColor.value.set(fx.voxBgColor); }   // 纯色背景:暗盘融向该色 → 缝隙露盘=露背景,无黑块无缝
-      else { _bdu.uBgColor.value.setRGB(0.6, 0.66, 0.74); }                  // 图片背景无单色:取中性浅色兜底,低 alpha 软垫
+      if (fx && (fx.backgroundMedia || fx.backgroundImage || fx.voxBgImage)) { _bdu.uBgColor.value.setRGB(0.6, 0.66, 0.74); }
+      else if (fx && fx.voxBgColor) { _bdu.uBgColor.value.set(fx.voxBgColor); }
+      else { _bdu.uBgColor.value.setRGB(0.6, 0.66, 0.74); }
     }
   }
 

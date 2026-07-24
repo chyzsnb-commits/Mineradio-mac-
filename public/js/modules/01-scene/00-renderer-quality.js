@@ -132,18 +132,9 @@ var MAX_RENDER_BUFFER_PX = 1600000;   // ≈ 1730×925;约为满屏 2940×1846 �
 function getRenderPixelRatio() {
   var device = window.devicePixelRatio || 1;
   if (isDeepBackgroundMode()) return Math.min(device, 0.30);
-  // 分辨率滑块 = 用户设定的天花板(所见即所得)。auto 档下自适应治理器只在此天花板之下、按实测帧率向下微调像素比,
-  // 绝不写回滑块 / localStorage;非 auto 或治理器未就绪时乘子恒为 1。
-  var ratio = Math.max(0.5, Math.min(getRenderScale(), 3));
-  var isAuto = (typeof normalizePerformanceQuality === 'function')
-    ? normalizePerformanceQuality(fx && fx.performanceQuality) === 'auto'
-    : String(fx && fx.performanceQuality) === 'auto';
-  if (isAuto && typeof autoGovScaleMul === 'function') ratio *= autoGovScaleMul();
-  // 绝对缓冲上限(见上):大窗口下把像素比再压到缓冲不超过 MAX_RENDER_BUFFER_PX;地板 0.4 保证场景不糊到不可辨。
-  var cssPx = Math.max(1, innerWidth * innerHeight);
-  var capRatio = Math.sqrt(MAX_RENDER_BUFFER_PX / cssPx);
-  if (ratio > capRatio) ratio = Math.max(0.4, capRatio);
-  return ratio;
+  // 分辨率滑块 = 用户设定的原生分辨率,所见即所得。用户明确要求:绝不自动降低渲染分辨率。
+  // (自适应治理器只允许调帧率做热保护,不再乘分辨率;省内存由用户手动拖滑块/一键档。)
+  return Math.max(0.5, Math.min(getRenderScale(), 3));
 }
 function getRenderPixelLoad() {
   var ratio = getRenderPixelRatio();

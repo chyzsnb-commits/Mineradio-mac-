@@ -85,6 +85,26 @@ function clearAlbumGaplessPreload(reason) {
   }
 }
 
+// 交叉淡入内存感知:剩余系统内存紧张时本次自动跳过(切歌瞬间两首歌资源叠加会抬高峰值 → 内存紧时反而诱发卡死)
+var CROSSFADE_MIN_FREE_MB = 1500;
+var _crossfadeFreeMemMB = Infinity;   // 乐观默认:拿不到内存数就不拦
+function _pollCrossfadeMem() {
+  try {
+    if (window.desktopWindow && typeof window.desktopWindow.deviceStats === 'function') {
+      window.desktopWindow.deviceStats().then(function (s) {
+        if (s && typeof s.memFreeMB === 'number' && isFinite(s.memFreeMB)) _crossfadeFreeMemMB = s.memFreeMB;
+      }).catch(function () { });
+    }
+  } catch (e) { }
+}
+try { setInterval(_pollCrossfadeMem, 5000); _pollCrossfadeMem(); } catch (e) { }
+
+function crossfadeActiveNow() {
+  if (!(typeof AUDIO_CROSSFADE_MS !== 'undefined' && Number(AUDIO_CROSSFADE_MS) > 0)) return false;
+  if (_crossfadeFreeMemMB < CROSSFADE_MIN_FREE_MB) return false;   // 内存紧张:本次跳过交叉淡入,回退普通切歌
+  return true;
+}
+
 function albumGaplessDefaultEnabledForContext(context) {
   var albumKey = context && context.albumKey ? String(context.albumKey) : '';
   if (albumGaplessState && albumGaplessState.enabled && albumKey && albumGaplessState.albumKey === albumKey) return true;
@@ -276,6 +296,41 @@ function runAlbumGaplessBalancedCrossfade(preload, durationMs) {
   preload.fadeFrame = requestAnimationFrame(tick);
 }
 
+function runCrossfadeEqualPower(preload, durationMs) {
+  if (!preload || !preload.media) return;
+  if (preload.fadeFrame) cancelAnimationFrame(preload.fadeFrame);
+  var media = preload.media;
+  var serial = ++audioFadeSerial;
+  clearAudioFadeTimers();
+  var startCurrent = currentAudioOutputGain();
+  var target = albumGaplessDirectVolumeTarget();
+  try {
+    media.muted = false;
+    media.volume = 0;
+  } catch (e0) { }
+  var started = performance.now();
+  durationMs = Math.max(1, Number(durationMs) || 1);
+  function tick(nowMs) {
+    if (serial !== audioFadeSerial || !preload.mixStarted || albumGaplessState.preload !== preload) return;
+    var t = clampRange((nowMs - started) / durationMs, 0, 1);
+    // 等功率交叉淡入:功率和恒定(cos²+sin²=1);新歌从 0 全程渐入,老歌全程渐出
+    var outGain = startCurrent * Math.cos(t * Math.PI * 0.5);
+    var inGain = target * Math.sin(t * Math.PI * 0.5);
+    writeAudioOutputGain(outGain);
+    try {
+      media.muted = false;
+      media.volume = clampRange(inGain, 0, 1);
+    } catch (e) { }
+    if (t < 1) preload.fadeFrame = requestAnimationFrame(tick);
+    else {
+      preload.fadeFrame = 0;
+      writeAudioOutputGain(0);
+      try { media.volume = target; } catch (e2) { }
+    }
+  }
+  preload.fadeFrame = requestAnimationFrame(tick);
+}
+
 function startAlbumGaplessMix(preload, reason, remaining) {
   if (!preload || !preload.media || preload.mixStarted || albumGaplessState.handoff) return false;
   if (!albumGaplessQueueCanAdvance(currentIdx)) return false;
@@ -284,7 +339,7 @@ function startAlbumGaplessMix(preload, reason, remaining) {
   preload.mixStartedAt = performance.now();
   preload.previousAudio = audio || null;
   if (preload.previousAudio) preload.previousAudio.onended = null;
-  if ((reason === 'boundary-crossmix-reset' || reason === 'tail-silence-fast-crossmix' || reason === 'tail-direct-silence-crossmix') && preload.prerollStarted) {
+  if ((reason === 'boundary-crossmix-reset' || reason === 'tail-silence-fast-crossmix' || reason === 'tail-direct-silence-crossmix' || reason === 'crossfade-timed') && preload.prerollStarted) {
     try {
       preload.media.pause();
       preload.media.currentTime = 0;
@@ -305,12 +360,14 @@ function startAlbumGaplessMix(preload, reason, remaining) {
     preload.prerollFailed = true;
     console.warn('[AlbumGapless] crossmix start failed:', err);
   }
-  var mixMs = Math.round(ALBUM_GAPLESS_MIX_SECONDS * 1000);
+  var crossfadeOn = reason === 'crossfade-timed' && crossfadeActiveNow();
+  var mixMs = Math.round(crossfadeOn ? AUDIO_CROSSFADE_MS : ALBUM_GAPLESS_MIX_SECONDS * 1000);
   if (isFinite(remaining) && remaining > 0) {
     mixMs = Math.min(mixMs, Math.max(ALBUM_GAPLESS_MIN_MIX_MS, Math.round(remaining * 1000 + 80)));
   }
   preload.mixDurationMs = mixMs;
-  runAlbumGaplessBalancedCrossfade(preload, mixMs);
+  if (crossfadeOn) runCrossfadeEqualPower(preload, mixMs);
+  else runAlbumGaplessBalancedCrossfade(preload, mixMs);
   var bindDelay = Math.max(120, mixMs + ALBUM_GAPLESS_BIND_AFTER_MIX_MS);
   preload.handoffTimer = setTimeout(function () {
     preload.handoffTimer = 0;
@@ -338,9 +395,15 @@ function setAlbumGaplessPlaybackContext(enabled, context, opts) {
 }
 
 function albumGaplessQueueCanAdvance(idx) {
-  if (!albumGaplessState || !albumGaplessState.enabled || !albumGaplessState.albumKey) return false;
+  var crossfadeOn = crossfadeActiveNow();
+  if (!crossfadeOn && (!albumGaplessState || !albumGaplessState.enabled || !albumGaplessState.albumKey)) return false;
   if (playMode === 'single') return false;
   if (idx < 0 || idx + 1 >= playQueue.length) return false;
+  if (crossfadeOn) {
+    // 交叉淡入(Apple Music 风格):仅顺序/列表播放。随机播放下一首索引不是 idx+1,交给普通 nextTrack。
+    if (playMode === 'shuffle') return false;
+    return true;
+  }
   var currentKey = albumGaplessSongKey(playQueue[idx]);
   var nextKey = albumGaplessSongKey(playQueue[idx + 1]);
   return currentKey === albumGaplessState.albumKey && nextKey === albumGaplessState.albumKey;
@@ -437,7 +500,11 @@ function startAlbumGaplessHandoff(preload, reason) {
 
 function albumGaplessMonitorDelay(remaining) {
   if (!audio || audio.paused || audio.ended) return ALBUM_GAPLESS_MONITOR_IDLE_MS;
-  if (!isFinite(remaining) || remaining > ALBUM_GAPLESS_MONITOR_TAIL_SECONDS) return ALBUM_GAPLESS_MONITOR_IDLE_MS;
+  var crossfadeOn = typeof crossfadeActiveNow === 'function' && crossfadeActiveNow();
+  var activeTailSeconds = crossfadeOn
+    ? Math.max(ALBUM_GAPLESS_MONITOR_TAIL_SECONDS, Number(AUDIO_CROSSFADE_MS) / 1000)
+    : ALBUM_GAPLESS_MONITOR_TAIL_SECONDS;
+  if (!isFinite(remaining) || remaining > activeTailSeconds) return ALBUM_GAPLESS_MONITOR_IDLE_MS;
   return ALBUM_GAPLESS_MONITOR_TAIL_MS;
 }
 
@@ -461,7 +528,14 @@ function runAlbumGaplessMonitorTick(token) {
   }
   var remaining = audio.duration - audio.currentTime;
   var nextDelay = albumGaplessMonitorDelay(remaining);
-  if (audio.paused || audio.ended || remaining > ALBUM_GAPLESS_MONITOR_TAIL_SECONDS) return nextDelay;
+  if (audio.paused || audio.ended) return nextDelay;
+  if (crossfadeActiveNow()) {
+    var crossSec = AUDIO_CROSSFADE_MS / 1000;
+    if (remaining > crossSec || !preload.media || preload.media.readyState < 2) return nextDelay;
+    var crossfadeStarted = startAlbumGaplessMix(preload, 'crossfade-timed', remaining);
+    return crossfadeStarted || preload.mixStarted ? 0 : nextDelay;
+  }
+  if (remaining > ALBUM_GAPLESS_MONITOR_TAIL_SECONDS) return nextDelay;
   if (remaining <= ALBUM_GAPLESS_MUTED_PREROLL_SECONDS) startAlbumGaplessPreroll(preload);
   if (!preload.media || preload.media.readyState < 2) return nextDelay;
   var nowMs = performance.now();
@@ -878,7 +952,9 @@ async function playQueueAt(idx, opts) {
       var retryPlaybackOpts = Object.assign({}, opts, { resumeAt: opts.resumeAt != null ? opts.resumeAt : restoreResumeAt });
       if (!data.url) {
         clearFailedPlaybackAudioSource(token);
-        if (isQQPlayback && await retryQQPlaybackWithCompatibleQuality(song, idx, token, retryPlaybackOpts, data, requestedQuality)) return;
+        // VIP/试听锁的歌:各音质都要 VIP,同平台切 128k/320k 必然全失败,只是白白重建音频图+联网,
+        // 在内存已满时把渲染进程压垮(卡死根因之一)。跳过同平台音质重试,直接走跨平台换源(别处可能有免费版)。
+        if (isQQPlayback && !song.vipRequired && await retryQQPlaybackWithCompatibleQuality(song, idx, token, retryPlaybackOpts, data, requestedQuality)) return;
         if (await tryAutoPlaybackFallback(song, data, idx, token, retryPlaybackOpts)) return;
         if (opts.startupAutoplay) {
           markQueueItemPlaybackFailed(idx);

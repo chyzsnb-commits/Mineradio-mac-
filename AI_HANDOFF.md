@@ -398,3 +398,16 @@
 - 布局：底栏音质胶囊最小宽度 `64px`，桌面全屏容器宽 `66px`，与红心按钮固定留白。
 - 验证：新增 `scripts/test-quality-switch-stability.js`，`npm run check` 146/146；Electron 隔离运行快速选择 `Hi-Res → 320k → 128k` 时只请求当前与最终两次，旧流保持到最终流可用，时间保留在 `57s`，歌词重建 0 次、歌词节点数不变、通知 1 张、状态锁释放，音质与红心实际间距为 `13–20px`。
 - 产物：最终 `Mineradio-2.0.0-arm64.dmg` SHA-256 `af0c5dd2ee849e3fb6670bbbb67d413b046ba9e79cb4d8b0674fdead9109bd3b`；`Mineradio-2.0.0-x64.dmg` SHA-256 `448dad83ddb47fcab65a86bcf618d1a77acb307d8c7f4ae44ec6ab6283371588`；两包和 `/Applications/Mineradio.app` 的 `app.asar` 均为 `7fc71506f0dfc60bd76ed0702d200230380540a0f1e8ee7b3b4d0a450884c953`。DMG 均已挂载，包含 `Mineradio.app` 与 `/Applications` 快捷方式；安装版 Electron 运行验收无 Runtime error。
+
+**2026-07-24：Codex 融合 Mineradio_Beat 稳定性改动并修复 QQ“我喜欢”空列表。**
+- 工作分支：`codex/mineradio-2.0-unified`，以 `codex/public-release-2.0` 的音质切换修复顶端 `4a4d076` 为基线；不覆盖 `/Users/allenli/Desktop/Mineradio_Beat` 的本地未提交改动。
+- Beat 融合：保留 QQ 播放密钥续期、CDN 404/403 判废、受限歌曲跳过无效音质重试、自动换源/整队风暴上限、代理断开释放、等功率交叉淡入、内存保护、音频欠载防护、体素自定义背景透明适配。
+- 手势：双手推拉的距离与连线从掌心改为两只手的捏合中点，滤波响应适度提高；相机仍为 320×240、30FPS Worker 管线，上下滑动方向没有修改。
+- QQ“我喜欢”根因：`fcg_musiclist_getmyfav.fcg` 的 `map` / `mapmid` 是“歌曲标识作为对象键”的集合，旧代码把对象转成 `[object Object]`，并错误按位置配对数字 ID 与 MID。现直接读取对象键，只用 MID 拉详情。
+- 真实登录状态只读验证：QQ 登录及播放密钥正常，歌单卡片显示 22 首，详情接口返回 22/22 首且每首都有名称和 MID；测试过程不打印 Cookie。
+- 发布边界：汽水继续禁用且后端实现不进入包；“水膜共振”按用户要求从本次发布完全撤下，发布后再打磨；本地 Cookie/Token/Provider 文件加入 `.gitignore`。
+- 播放竞态追加修复：`HTMLMediaElement.currentSrc` 在刚写入新 `src` 后仍可能返回上一首，旧实现因此会把有效的新请求判为过期并清空。播放请求、重试和进度恢复的身份比较统一改为优先读取 `media.src`；真实 QQ 登录状态下在“那天下雨了”和“我知道”之间交替快速切换 12 次，12/12 次进入播放。
+- 发布界面：负载监视器删除“手势 / 推理 xx ms @ xx/s”开发诊断行；没有改变用户确认过的歌单结构与上下滑动方向。
+- 成功播放视觉回归：成功路径原先调用 `switchPlaybackVisualToEmily()` 强制跳到保存的播放预设，而拿不到音频地址的失败路径没有执行，因此同一界面会因播放成功/失败呈现两套样式。现在只退出首页预览并保留当前视觉，不再在播放成功时擅自切换预设。
+- 最终验证：`npm run check` 158/158；安装版 QQ 登录有效，“我喜欢”22/22 首；“我知道 / 当你”交替快速切换 12/12 次启动，测试预设保持在选择值 `0` 而未跳到强制值 `2`；负载栏无手势推理行，汽水和水膜均不可见。壁纸模式窗口实测从普通 `1470×923 @ (0,33)` 扩展到完整显示器 `1470×956 @ (0,0)`，退出后恢复普通窗口。
+- 最终产物：`Mineradio-2.0.0-arm64.dmg` SHA-256 `1c5bbf88b0f99b9bbf15993b11fab10c7ff4b37c1ac3823557559459ad151117`；`Mineradio-2.0.0-x64.dmg` SHA-256 `3f9a02deec3f2746968599cf6cbbd05ab6afcf957c591457151ae5c79c354488`；两包和 `/Applications/Mineradio.app` 的 `app.asar` 均为 `7192f2c0af235f510c1c3b7fade88dce6df80058687e1ffb44f44de7c29b7477`。两份 DMG 均实际挂载并含 `Mineradio.app` 与 `/Applications` 快捷方式，二进制分别为 arm64 / x86_64。

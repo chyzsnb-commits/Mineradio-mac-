@@ -6123,7 +6123,7 @@ body:not(.controls-visible) .lyric-timing-control::before,
   transform: none !important
 }
 
-.quality-option.locked small::after {
+.quality-option.locked.svip-only small::after {
   content: ' · 需网易云SVIP';
   color: rgba(244, 210, 138, .88)
 }
@@ -6339,6 +6339,49 @@ body:not(.controls-visible) .lyric-timing-control::before,
   font-size: 9.5px;
   line-height: 1.5;
   color: rgba(255, 255, 255, .4)
+}
+
+.crossfade-block {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, .06)
+}
+
+.crossfade-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 5px 10px;
+  margin-bottom: 6px;
+  font-size: 10.5px;
+  letter-spacing: .3px;
+  color: rgba(255, 255, 255, .5);
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s
+}
+
+.crossfade-toggle #crossfade-toggle-state {
+  font-weight: 600;
+  opacity: .6
+}
+
+.crossfade-toggle.on {
+  color: var(--fc-accent);
+  border-color: var(--fc-accent);
+  background: rgba(255, 255, 255, .07)
+}
+
+.crossfade-toggle.on #crossfade-toggle-state {
+  opacity: 1
+}
+
+.crossfade-secs input:disabled {
+  opacity: .3;
+  cursor: default
 }
 
 #singing-control .volume-popover {
@@ -11672,7 +11715,7 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   color: var(--fc-accent)
 }
 
-.gpu-mode-seg button {
+.performance-mode-seg button {
   min-width: 0;
   letter-spacing: 0
 }
@@ -14520,11 +14563,16 @@ body.mw-wallpaper #splash,body.mw-wallpaper #hint,body.mw-wallpaper #search-area
 body.mw-wallpaper{cursor:none}
 /* 负载监视器 HUD */
 #perf-hud{position:fixed;top:64px;left:14px;z-index:10;display:none;min-width:190px;padding:12px 14px;border-radius:12px;background:rgba(12,14,18,.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.1);font-size:11.5px;color:rgba(255,255,255,.8);box-shadow:0 8px 30px rgba(0,0,0,.5);pointer-events:none;font-variant-numeric:tabular-nums}
-#perf-hud .ph-h{font-size:10px;letter-spacing:.18em;color:rgba(255,255,255,.45);margin-bottom:8px}
+#perf-hud .ph-h{position:relative;font-size:10px;letter-spacing:.18em;color:rgba(255,255,255,.45);margin-bottom:8px;padding-left:20px}
+#perf-hud .ph-close{position:absolute;left:-4px;top:-4px;width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:12px;letter-spacing:0;color:rgba(255,255,255,.55);background:rgba(255,255,255,.06);pointer-events:auto;cursor:pointer;transition:color .15s,background .15s}
+#perf-hud .ph-close:hover{color:#fff;background:rgba(255,80,80,.35)}
 #perf-hud .ph-r{display:flex;justify-content:space-between;gap:18px;margin:4px 0}
 #perf-hud .ph-r span{color:rgba(255,255,255,.55)}
 #perf-hud .ph-r b{font-weight:600;color:#fff}
 #perf-hud .ph-tip{margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08);font-size:10px;color:rgba(255,255,255,.4);line-height:1.5}
+#perf-hud .ph-tip-btn{pointer-events:auto;cursor:pointer;border-radius:7px;margin-left:-6px;margin-right:-6px;padding-left:6px;padding-right:6px;transition:color .15s,background .15s}
+#perf-hud .ph-tip-btn:hover{color:rgba(255,255,255,.72);background:rgba(255,255,255,.06)}
+#perf-hud .ph-tip-btn.on{color:var(--fc-accent,#7fe0c0)}
 /* 主页最高:在主页时把负载监视器压到主页(#empty-home z-index:4)之下,卡片完整可见;离开主页恢复 9000。不动弹窗/toast 层级。 */
 body.empty-home-active #perf-hud{z-index:3}
 

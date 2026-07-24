@@ -160,11 +160,11 @@ function switchPlaybackVisualToEmily() {
     deactivateHomeWallpaperPreview(true);
   }
   document.body.classList.remove('home-wallpaper-preview');
-  var targetPreset = typeof playbackVisualPreset === 'number' ? playbackVisualPreset : fxDefaults.preset;
   startupVisualPreviewActive = false;
-  if (typeof setPreset === 'function' && fx.preset !== targetPreset) {
-    setPreset(targetPreset, { silent: true, preserveCamera: false, noSave: true });
-  } else if (typeof syncFxUniforms === 'function') {
+  // 播放成功只退出首页预览，不再强制切换视觉预设。此前失败歌曲没有
+  // 走到这里，所以会保留用户当前画面；成功歌曲反而跳到另一个预设。
+  // 现在成功与失败都尊重用户已经选好的视觉样式。
+  if (typeof syncFxUniforms === 'function') {
     syncFxUniforms();
   }
   if (typeof updateRenderPowerClasses === 'function') updateRenderPowerClasses();

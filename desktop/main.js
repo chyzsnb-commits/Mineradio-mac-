@@ -2620,7 +2620,14 @@ async function createWindow() {
     frame: false,
     // macOS：显示原生红黄绿按钮，并关掉透明以启用原生全屏（绿色=进入全屏的双箭头）
     ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 18 }, fullscreenable: true }
+      ? {
+          titleBarStyle: 'hidden',
+          trafficLightPosition: { x: 14, y: 18 },
+          fullscreenable: true,
+          // 壁纸模式必须能覆盖 display.bounds（包括菜单栏后的像素）。
+          // 没有这个选项，macOS 会把 setBounds 自动夹回 workArea，顶部留下系统壁纸。
+          enableLargerThanScreen: true,
+        }
       : {}),
     fullscreen: false,
     transparent: process.platform !== 'darwin',

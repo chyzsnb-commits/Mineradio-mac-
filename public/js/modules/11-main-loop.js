@@ -397,7 +397,10 @@ function animate() {
   sampleRenderPerf(now, dt);
   uniforms.uTime.value += dt;
   if (isMainSceneCoveredBySplash()) {
-    if (now - splashWarmRenderLast > 520) {
+    // 开机淡入阶段(前 ~1.6s)跳过主场景热渲染:原生分辨率下每次热渲染是很重的一帧,
+    // 正好压在动画浮现上会把淡入卡出锯齿。淡入过后再热身,照样能在开机页消失前把着色器编译好,入场不掉帧。
+    var splashElapsed = (typeof splashStartedAt === 'number') ? (now - splashStartedAt) : 9999;
+    if (splashElapsed > 1600 && now - splashWarmRenderLast > 520) {
       splashWarmRenderLast = now;
       var splashRenderPerfStart = performance.now();
       renderMainSceneWithGpuSample(scene, camera);

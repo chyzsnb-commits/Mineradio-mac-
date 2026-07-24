@@ -11,13 +11,19 @@ function normalizeAudioFadeMs(value, fallback) {
   if (!isFinite(ms)) ms = fallback;
   return Math.max(AUDIO_FADE_MIN_MS, Math.min(AUDIO_FADE_MAX_MS, ms));
 }
+function normalizeCrossfadeMs(value, fallback) {
+  var ms = Math.round(Number(value));
+  if (!isFinite(ms)) ms = fallback;
+  return Math.max(AUDIO_CROSSFADE_MIN_MS, Math.min(AUDIO_CROSSFADE_MAX_MS, ms));
+}
 function readAudioFadePreference() {
-  var defaults = { fadeInMs: 460, fadeOutMs: 420 };
+  var defaults = { fadeInMs: 460, fadeOutMs: 420, crossfadeMs: 6000 };
   try {
     var raw = JSON.parse(localStorage.getItem(AUDIO_FADE_STORE_KEY) || '{}') || {};
     return {
       fadeInMs: normalizeAudioFadeMs(raw.fadeInMs, defaults.fadeInMs),
-      fadeOutMs: normalizeAudioFadeMs(raw.fadeOutMs, defaults.fadeOutMs)
+      fadeOutMs: normalizeAudioFadeMs(raw.fadeOutMs, defaults.fadeOutMs),
+      crossfadeMs: normalizeCrossfadeMs(raw.crossfadeMs, defaults.crossfadeMs)
     };
   } catch (e) {
     return defaults;
@@ -27,7 +33,8 @@ function saveAudioFadePreference() {
   try {
     localStorage.setItem(AUDIO_FADE_STORE_KEY, JSON.stringify({
       fadeInMs: AUDIO_FADE_IN_MS,
-      fadeOutMs: AUDIO_FADE_OUT_MS
+      fadeOutMs: AUDIO_FADE_OUT_MS,
+      crossfadeMs: AUDIO_CROSSFADE_MS
     }));
   } catch (e) { }
 }

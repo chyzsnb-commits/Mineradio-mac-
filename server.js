@@ -2757,24 +2757,97 @@ async function qqMusicRequest(payload, opts) {
   return parseJSONText(text);
 }
 
+// ============ QQ 音乐 登录态自动续期 ============
+// 微信登录的播放密钥 qm_keyst 每 3 天过期,一过期所有 QQ 歌 CDN 全 404 → 无限换源级联 → 卡死。
+// 用 wxrefresh_token 走 music.login.LoginServer/Login 续期(已实测可行),开机 + 每 12h 自动续,永不过期。
+let qqKeyRefreshInFlight = false;
+let qqKeyRefreshTimer = null;
+function mergeQQCookieKeys(cookieStr, updates) {
+  const segs = String(cookieStr || '').split(/;\s*/).filter(Boolean);
+  const seen = new Set();
+  const out = segs.map((seg) => {
+    const i = seg.indexOf('=');
+    if (i <= 0) return seg;
+    const k = seg.slice(0, i).trim();
+    if (Object.prototype.hasOwnProperty.call(updates, k)) { seen.add(k); return k + '=' + updates[k]; }
+    return seg;
+  });
+  Object.keys(updates).forEach((k) => { if (!seen.has(k)) out.push(k + '=' + updates[k]); });
+  return out.join('; ');
+}
+async function refreshQQMusicKey(reason) {
+  if (qqKeyRefreshInFlight) return { ok: false, skipped: 'in-flight' };
+  refreshQQConfiguredCookieStore(true);
+  const obj = qqCookieObject();
+  const wxLogin = !!(obj.wxrefresh_token && obj.wxopenid) || Number(obj.tmeLoginType) === 1;
+  const uin = qqCookieUin(obj);
+  const musickey = qqCookiePlaybackKey(obj);
+  if (!wxLogin || !obj.wxrefresh_token || !obj.wxopenid || !uin || !musickey) return { ok: false, skipped: 'not-wechat-or-missing' };
+  qqKeyRefreshInFlight = true;
+  try {
+    const body = {
+      comm: { uin, format: 'json', ct: 24, cv: 0, tmeLoginType: Number(obj.tmeLoginType) || 1 },
+      req1: {
+        module: 'music.login.LoginServer', method: 'Login',
+        param: { openid: obj.wxopenid, refresh_token: obj.wxrefresh_token, str_musicid: uin, musickey: musickey, unionid: obj.wxunionid || '', refresh_key: obj.refresh_key || '', loginMode: 2 },
+      },
+    };
+    const resp = await qqMusicRequest(body, { cookie: true, timeoutMs: 8000 });
+    const node = resp && (resp.req1 || resp.req_1);
+    const data = node && node.data;
+    const okCode = !!(resp && (resp.code === 0 || resp.code === undefined) && node && (node.code === 0 || node.code === undefined));
+    const newKey = data && data.musickey;
+    if (okCode && newKey && String(newKey).length > 10) {
+      const merged = mergeQQCookieKeys(qqCookie, { qm_keyst: newKey, qqmusic_key: newKey, wxrefresh_token: data.refresh_token || obj.wxrefresh_token });
+      saveQQCookie(merged);
+      qqVipInfoCache.clear();
+      console.log('[QQKeyRefresh] ok (' + (reason || '') + '), 有效期约 ' + (Number(data.keyExpiresIn) || 0) + 's');
+      return { ok: true };
+    }
+    console.warn('[QQKeyRefresh] 失败 code=' + (resp && resp.code) + ' req=' + (node && node.code) + ' msg=' + (data && data.errMsg));
+    return { ok: false };
+  } catch (e) {
+    console.warn('[QQKeyRefresh] 异常:', e && e.message);
+    return { ok: false, error: e && e.message };
+  } finally {
+    qqKeyRefreshInFlight = false;
+  }
+}
+function scheduleQQKeyAutoRefresh() {
+  if (qqKeyRefreshTimer) return;
+  const kick = () => { refreshQQMusicKey('startup-or-interval').catch(() => { }); };
+  setTimeout(kick, 2500);                                  // 启动 2.5s 后先续一次(赶在自动续播前把过期 key 顶上)
+  qqKeyRefreshTimer = setInterval(kick, 12 * 60 * 60 * 1000);   // 之后每 12h 续一次(3天过期,半天续留足冗余)
+  if (qqKeyRefreshTimer.unref) qqKeyRefreshTimer.unref();
+}
+scheduleQQKeyAutoRefresh();
+
 const QQ_VIP_TYPE_KEYS = [
   'vipType', 'vip_type', 'viptype', 'vipLevel', 'vip_level', 'level',
   'music_vip_level', 'musicVipLevel', 'green_vip_level', 'greenVipLevel',
   'green_level', 'greenLevel', 'vipStatus', 'vip_status', 'vipFlag', 'vipflag',
+  // QQ SRFVipQuery_V2 infoMap 真实字段名(绿钻/黄钻普通会员)
+  'iVipFlag', 'iNewVip', 'iYellowVip',
 ];
 const QQ_SVIP_TYPE_KEYS = [
   'svipType', 'svip_type', 'superVipType', 'super_vip_type',
   'superVipLevel', 'super_vip_level', 'luxury_vip_level', 'luxuryVipLevel',
   'super_vip', 'superVip', 'svip', 'greenSvip', 'green_svip',
+  // QQ SRFVipQuery_V2 infoMap 真实字段名(豪华绿钻/超级会员=SVIP)
+  'iSuperVip', 'iNewSuperVip', 'HugeVip',
 ];
 const QQ_VIP_FLAG_KEYS = [
   'isVip', 'is_vip', 'vip', 'vipFlag', 'vipflag', 'isGreenVip',
   'is_green_vip', 'greenVip', 'green_vip', 'isMember', 'is_member',
   'member', 'opened', 'active', 'valid',
+  // QQ SRFVipQuery_V2 infoMap 真实字段名
+  'iVipFlag', 'iNewVip', 'iYellowVip',
 ];
 const QQ_SVIP_FLAG_KEYS = [
   'isSvip', 'is_svip', 'svip', 'superVip', 'super_vip', 'isSuperVip',
   'is_super_vip', 'luxuryVip', 'luxury_vip', 'isLuxuryVip', 'is_luxury_vip',
+  // QQ SRFVipQuery_V2 infoMap 真实字段名(HugeVip=豪华绿钻=SVIP)
+  'iSuperVip', 'iNewSuperVip', 'HugeVip',
 ];
 
 function collectQQVipObjects(value, out, depth, pathText) {
@@ -3525,6 +3598,7 @@ async function fetchQQCollectedPlaylists(uin) {
 
 function qqListFromMapValue(value) {
   if (Array.isArray(value)) return value.map(v => String(v || '').trim()).filter(Boolean);
+  if (value && typeof value === 'object') return Object.keys(value).map(v => String(v || '').trim()).filter(Boolean);
   return String(value || '').split(/[,|;\s]+/).map(v => v.trim()).filter(Boolean);
 }
 
@@ -3623,19 +3697,16 @@ async function handleQQLikedPlaylistTracks(info, opts) {
   const sliceStart = Math.min(pageOffset, total);
   const sliceEnd = Math.min(total, sliceStart + limit);
   const slicedMids = mids.slice(sliceStart, sliceEnd);
-  const slicedIds = ids.slice(sliceStart, sliceEnd);
   const tracks = [];
   for (let i = 0; i < slicedMids.length; i += QQ_LIKED_DETAIL_BATCH_SIZE) {
     const batch = slicedMids.slice(i, i + QQ_LIKED_DETAIL_BATCH_SIZE);
-    const batchIds = slicedIds.slice(i, i + QQ_LIKED_DETAIL_BATCH_SIZE);
-    const rows = await Promise.all(batch.map((mid, index) => qqSongDetail(mid, {
+    // map / mapmid 都是“键为歌曲标识”的集合对象；数字 ID 键会被 JS 自动排序，
+    // 不能与 MID 键按下标配对。详情只用 MID 查询，真实 qqId 由详情响应返回。
+    const rows = await Promise.all(batch.map(mid => qqSongDetail(mid, {
       mid,
-      id: batchIds[index] || '',
-      qqId: batchIds[index] || '',
     }).catch(() => null)));
-    rows.forEach((song, index) => {
+    rows.forEach((song) => {
       if (!song || !song.name || !(song.mid || song.id)) return;
-      song.qqId = song.qqId || batchIds[index] || '';
       tracks.push(song);
     });
   }
@@ -4177,7 +4248,7 @@ async function handleQQSongUrl(mid, mediaMid, qualityPreference, playbackHints) 
   const sipBase = (data && data.sip && data.sip[0]) || 'https://ws.stream.qqmusic.qq.com/';
   // vkey 会给"不存在的文件"照常签名(如无 Hi-Res 版权的歌请求 RS01),CDN 一取就 404 →
   // 前端播放失败→自动降级 320。逐个候选 Range 探活,取第一个真实存在的(用户实测根因)。
-  let info = null;
+  let info = null, sawDefinite404 = false;
   for (const cand of infos) {
     if (!cand || !cand.purl) continue;
     try {
@@ -4194,7 +4265,18 @@ async function handleQQSongUrl(mid, mediaMid, qualityPreference, playbackHints) 
       clearTimeout(probeTimer);
       try { probeRes.body && probeRes.body.cancel && probeRes.body.cancel(); } catch (e) {}
       if (probeRes.status === 200 || probeRes.status === 206) { info = cand; break; }
+      if (probeRes.status === 404 || probeRes.status === 403) sawDefinite404 = true;
     } catch (e) { /* 探活超时/网络错:跳过该档 */ }
+  }
+  // 有候选但 CDN 全部明确 404/403 = 本账号拿不到可播文件(SVIP 未授权/无版权)。
+  // 不再把会 404 的死链当 playable 返回(否则前端播放→报错→换源级联,内存已满时卡死);
+  // 直接标记不可播 + vipRequired,让前端干净跳过、不做无谓的同平台音质重试。
+  if (!info && sawDefinite404) {
+    return {
+      provider: 'qq', url: '', trial: true, playable: false, playbackReady: false,
+      loggedIn: hasQQPlaybackSession, userId: hasQQPlaybackSession ? uin : '',
+      playbackKeyReady: !!(uin && playbackKey), vipRequired: true, level: '',
+    };
   }
   if (!info) info = infos.find(item => item && item.purl) || infos[0];
   const purl = info && info.purl;
@@ -6387,6 +6469,11 @@ const server = http.createServer(async (req, res) => {
 
   // ---------- 封面代理 (带 CORS 头, 给 canvas 提取像素用) ----------
   if (pn === '/api/cover') {
+    // 与 /api/audio 同理: 切歌频繁, 客户端断开时中止上游 fetch 并取消 reader, 防止累积泄漏。
+    const coverAbort = new AbortController();
+    let coverClientGone = false;
+    const onCoverClientClose = () => { coverClientGone = true; try { coverAbort.abort(); } catch (e) { } };
+    res.on('close', onCoverClientClose);
     try {
       const coverUrl = url.searchParams.get('url');
       // URL 校验: 必须是 http(s) 开头, 否则直接 404 (不要让 fetch 抛错)
@@ -6401,7 +6488,7 @@ const server = http.createServer(async (req, res) => {
         if (coverHost.includes('qq.com') || coverHost.includes('qpic.cn')) coverReferer = 'https://y.qq.com/';
         else if (coverHost.includes('kugou.com') || coverHost.includes('kgimg.com')) coverReferer = 'https://www.kugou.com/';
       } catch (e) {}
-      const resp = await fetch(coverUrl, { headers: { 'User-Agent': UA, 'Referer': coverReferer } });
+      const resp = await fetch(coverUrl, { headers: { 'User-Agent': UA, 'Referer': coverReferer }, signal: coverAbort.signal });
       const ct  = resp.headers.get('content-type') || 'image/jpeg';
       const cl  = resp.headers.get('content-length');
       const hdr = {
@@ -6412,9 +6499,19 @@ const server = http.createServer(async (req, res) => {
       if (cl) hdr['Content-Length'] = cl;
       res.writeHead(resp.status, hdr);
       const reader = resp.body.getReader();
-      while (true) { const c = await reader.read(); if (c.done) break; res.write(c.value); }
-      res.end();
-    } catch (err) { console.error('[Cover]', err); res.writeHead(500); res.end(); }
+      try {
+        while (!coverClientGone) { const c = await reader.read(); if (c.done) break; res.write(c.value); }
+      } finally {
+        try { await reader.cancel(); } catch (e) { }
+      }
+      if (!res.writableEnded) res.end();
+    } catch (err) {
+      if (!coverClientGone && !(err && err.name === 'AbortError')) console.error('[Cover]', err);
+      try { if (!res.headersSent) res.writeHead(500); } catch (e) { }
+      try { if (!res.writableEnded) res.end(); } catch (e) { }
+    } finally {
+      res.removeListener('close', onCoverClientClose);
+    }
     return;
   }
 
@@ -6425,12 +6522,21 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pn === '/api/audio') {
+    // 客户端(渲染层)切歌会中途断开本次流。必须:①中止上游 fetch 停止继续下载进内存;
+    // ②drain 等待要能在断开时 resolve,否则拉流永久挂起 + 上游持续缓冲整首 Hi-Res 到主进程 => 内存暴涨/卡死。
+    const audioAbort = new AbortController();
+    let audioClientGone = false;
+    const onAudioClientClose = () => {
+      audioClientGone = true;
+      try { audioAbort.abort(); } catch (e) { }
+    };
+    res.on('close', onAudioClientClose);
     try {
       const audioUrl = url.searchParams.get('url');
       if (!audioUrl) { res.writeHead(400); res.end('Missing url'); return; }
       const range = req.headers.range || '';
       const hdr = audioProxyHeadersFor(audioUrl, range);
-      const up = await fetch(audioUrl, { headers: hdr });
+      const up = await fetch(audioUrl, { headers: hdr, signal: audioAbort.signal });
       const out = {
         'Content-Type': audioContentTypeForUrl(audioUrl, up.headers.get('content-type')),
         'Accept-Ranges': 'bytes',
@@ -6439,22 +6545,34 @@ const server = http.createServer(async (req, res) => {
       const cr = up.headers.get('content-range');  if (cr) out['Content-Range']  = cr;
       res.writeHead(up.status, out);
       const reader = up.body.getReader();
-      while (true) {
-        const c = await reader.read();
-        if (c.done) break;
-        // 尊重背压:socket 缓冲满时等 drain 再继续拉流, 避免 Hi-Res 大码率下突发喂流/内存暴涨
-        if (!res.write(c.value)) await new Promise((resolve) => res.once('drain', resolve));
+      try {
+        while (!audioClientGone) {
+          const c = await reader.read();
+          if (c.done) break;
+          // 尊重背压:socket 缓冲满时等 drain 再继续拉流, 避免 Hi-Res 大码率下突发喂流/内存暴涨
+          if (!res.write(c.value)) {
+            await new Promise((resolve) => {
+              const finish = () => { res.removeListener('drain', finish); res.removeListener('close', finish); resolve(); };
+              res.once('drain', finish);
+              res.once('close', finish);   // 客户端切歌断开时也 resolve, 否则本次拉流永久挂起
+            });
+          }
+        }
+      } finally {
+        try { await reader.cancel(); } catch (e) { }   // 断开/切歌/正常结束: 取消上游下载, 立刻释放内存
       }
-      res.end();
+      if (!res.writableEnded) res.end();
     } catch (err) {
-      console.error('[Audio]', err);
-      if (res.destroyed || res.writableEnded) return;
-      if (res.headersSent) {
-        res.destroy();
-        return;
+      if (!audioClientGone && !(err && err.name === 'AbortError')) console.error('[Audio]', err);
+      if (!res.destroyed && !res.writableEnded) {
+        if (res.headersSent) res.destroy();
+        else {
+          try { res.writeHead(500); } catch (e) { }
+          try { res.end(); } catch (e) { }
+        }
       }
-      res.writeHead(500);
-      res.end();
+    } finally {
+      res.removeListener('close', onAudioClientClose);
     }
     return;
   }

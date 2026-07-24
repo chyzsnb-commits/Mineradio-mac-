@@ -540,7 +540,7 @@ function initAudio() {
   var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextCtor) return false;
   if (audioCtx && audioCtx.state === 'closed') replaceAudioElementForGraphRecovery('closed-context');
-  if (!audioCtx || audioCtx.state === 'closed') audioCtx = new AudioContextCtor();
+  if (!audioCtx || audioCtx.state === 'closed') audioCtx = new AudioContextCtor({ latencyHint: 'playback' });   // 大缓冲:GPU 打满/手势争抢时不欠载爆音(音质无损,仅播放延迟略增,听歌无感)
   var keepSource = !!(source && source.context === audioCtx && audioCtx.state !== 'closed');
   var sourceUsesCapture = !!(keepSource && source.__mineradioUsesCapture);
   disconnectAudioGraphNodes(keepSource);
@@ -559,7 +559,7 @@ function initAudio() {
     }
     if (!forceCapture && !mediaSource && audio.__mineradioMediaSourceBound) {
       replaceAudioElementForGraphRecovery('media-source-rebind');
-      if (!audioCtx || audioCtx.state === 'closed') audioCtx = new AudioContextCtor();
+      if (!audioCtx || audioCtx.state === 'closed') audioCtx = new AudioContextCtor({ latencyHint: 'playback' });   // 大缓冲:GPU 打满/手势争抢时不欠载爆音(音质无损,仅播放延迟略增,听歌无感)
       try {
         mediaSource = audioCtx.createMediaElementSource(audio);
       } catch (rebindingErr) {
@@ -1008,6 +1008,55 @@ function setAudioFadeSetting(kind, seconds, silent) {
   saveAudioFadePreference();
   updateAudioFadeUi();
   if (!silent) showToast((kind === 'in' ? '淡入 ' : '淡出 ') + audioFadeSecondsLabel(ms));
+}
+function crossfadeSecondsLabel(ms) {
+  ms = normalizeCrossfadeMs(ms, 0);
+  if (ms <= 0) return '关';
+  return (ms / 1000).toFixed(ms % 1000 ? 1 : 0) + 's';
+}
+function updateCrossfadeUi() {
+  var toggle = document.getElementById('crossfade-toggle');
+  var stateEl = document.getElementById('crossfade-toggle-state');
+  var slider = document.getElementById('crossfade-slider');
+  var value = document.getElementById('crossfade-value');
+  var on = Number(AUDIO_CROSSFADE_MS) > 0;
+  // 开:滑块反映当前时长;关:保留滑块当前位置作为记忆时长,不覆盖
+  if (on && slider && document.activeElement !== slider) {
+    var s = AUDIO_CROSSFADE_MS / 1000;
+    if (Math.abs(Number(slider.value) - s) > 0.001) slider.value = s;
+  }
+  if (slider) slider.disabled = !on;
+  if (toggle) { toggle.classList.toggle('on', on); toggle.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+  if (stateEl) stateEl.textContent = on ? '开' : '关';
+  if (value) value.textContent = on ? crossfadeSecondsLabel(AUDIO_CROSSFADE_MS) : '关';
+}
+function toggleCrossfade() {
+  if (Number(AUDIO_CROSSFADE_MS) > 0) {
+    setCrossfadeSetting(0, false);   // 关
+  } else {
+    var slider = document.getElementById('crossfade-slider');
+    var secs = slider ? (Number(slider.value) || 6) : 6;   // 用滑块记忆的时长,默认 6s
+    if (!(secs >= 1)) secs = 6;
+    setCrossfadeSetting(secs, false);
+  }
+}
+function setCrossfadeSetting(seconds, silent) {
+  var prev = AUDIO_CROSSFADE_MS;
+  var ms = normalizeCrossfadeMs(Number(seconds) * 1000, 0);
+  AUDIO_CROSSFADE_MS = ms;
+  saveAudioFadePreference();
+  updateCrossfadeUi();
+  // 开/关切换时,即时给当前曲目预排/清理下一首预加载,避免要等下一次切歌才生效
+  if (prev <= 0 && ms > 0) {
+    if (typeof scheduleAlbumGaplessPreloadForCurrent === 'function' && typeof trackSwitchToken !== 'undefined') {
+      try { scheduleAlbumGaplessPreloadForCurrent(trackSwitchToken, 'crossfade-enabled'); } catch (e) { }
+    }
+  } else if (prev > 0 && ms <= 0) {
+    if (typeof clearAlbumGaplessPreload === 'function' && !(typeof albumGaplessState !== 'undefined' && albumGaplessState && (albumGaplessState.handoff || (albumGaplessState.preload && albumGaplessState.preload.mixStarted)))) {
+      try { clearAlbumGaplessPreload('crossfade-disabled'); } catch (e) { }
+    }
+  }
+  if (!silent) showToast(ms > 0 ? ('交叉淡入 ' + crossfadeSecondsLabel(ms)) : '交叉淡入 关');
 }
 
 function setVolume(value, silent) {
@@ -1463,6 +1512,14 @@ function bindVolumeControls() {
     vocalSlider.addEventListener('input', function () { setSingingVocalLevel(vocalSlider.value, { silent: true }); });
     vocalSlider.addEventListener('change', function () { setSingingVocalLevel(vocalSlider.value, { silent: false }); });
   }
+  var crossfadeSlider = document.getElementById('crossfade-slider');
+  if (crossfadeSlider && !crossfadeSlider._crossfadeBound) {
+    crossfadeSlider._crossfadeBound = true;
+    crossfadeSlider.addEventListener('input', function () { setCrossfadeSetting(crossfadeSlider.value, true); });
+    crossfadeSlider.addEventListener('change', function () { setCrossfadeSetting(crossfadeSlider.value, false); });
+    crossfadeSlider.addEventListener('focus', keepVolumePanelOpen);
+    crossfadeSlider.addEventListener('blur', closeVolumePanelSoon);
+  }
   document.querySelectorAll('[data-singing-key-step]').forEach(function (button) {
     if (button._singingKeyBound) return;
     button._singingKeyBound = true;
@@ -1488,6 +1545,7 @@ function bindVolumeControls() {
   syncSpeedSliderUi();
   syncSingingVocalUi();
   syncSingingKeyShiftUi();
+  updateCrossfadeUi();
   if (typeof bindAiStemControls === 'function') bindAiStemControls();
   if (btn) {
     btn.addEventListener('dblclick', function (e) { e.stopPropagation(); toggleMute(); });
