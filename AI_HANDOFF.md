@@ -371,12 +371,16 @@
 - 验证：全量 JavaScript 语法通过；`npm run check` 131/131；arm64 打包版真实启动并监听 `127.0.0.1:3000`；`app.asar` 无汽水 API、登录桥和解密器。产物为 `Mineradio-2.0.0-arm64.dmg`（SHA-256 `6fb6cecea002db5ee0f6d352c6ea6e217ea62d9302bec9fc4d96c648076fbd6a`）与 `Mineradio-2.0.0-x64.dmg`（SHA-256 `ab97d3b50b20f6ced16031f04ad55176534a8f36ed755a03d4ce4d7575380e73`）。
 - 未验证/阻塞：本机 `security find-identity` 为 0 个有效身份，两个 DMG 未签名、未公证；Intel 仅校验二进制为 x86_64，未做真机启动；隐私主体信息和第三方音乐平台授权仍需发布者补齐。
 
-**2026-07-24：Codex 修复 2.0 公开候选的官方登录回归。**
+**2026-07-24：Codex 修复 2.0 官方登录回归并完成本机 2.0 交付。**
 - PR：#57；分支：`codex/public-release-2.0`。
 - 根因：网易、QQ、酷狗官方窗口成功取得会话后，渲染进程仍把 Cookie POST 到公开版已按策略禁用的手动导入接口，稳定返回 403；因此首批 2.0 arm64/x64 候选均表现为扫码成功后无法登录。
 - 修复：新增仅供主进程调用的官方登录桥，直接把官方窗口会话交给本地服务校验并经 `safeStorage` 加密保存；渲染进程只收到去敏后的账号状态，不再接触原始 Cookie。公开版手动导入、导出仍关闭，汽水仍删除。
 - 界面：公开版隐藏 Cookie 登录模式、手动导入面板和按钮，平台胶囊只标“官方扫码 / 官方窗口 / 官方 OAuth”。
-- 验证：官方登录桥 5 项专项测试、公开策略 6 项测试及 `npm run check` 共 137 项全部通过；`git diff --check` 通过。
-- 产物：修复版 `Mineradio-2.0.0-arm64.dmg` SHA-256 `145ad96d295baa5b493c4a250e3ef40b8e655c59b07e47d4e7c4cc4feaf67bbd`；`Mineradio-2.0.0-x64.dmg` SHA-256 `597d634881be155f3a3b0016bb9fa41d71de63c906075cd433ce412c1c32f3f7`。两份均实际挂载，应用二进制分别为 arm64 / x86_64，打包 `app.asar` 含官方登录桥。
+- 并行协作合并：保留远端 `e838282` 的旧明文登录态加密迁移和禁用音源队列保护；安全复核纠正了“无端口 Origin 按服务端口放行”的跨源风险，并要求迁移或落盘失败时拒绝继续使用明文凭据。
+- 控制条/歌单架：15 个底部控制按钮恢复 260ms 即时功能说明；3D 歌单架滚动阈值由 `190` 调到中间档 `140`，没有改变上下方向映射。
+- 验证：官方登录桥、公开策略、控制提示与歌架方向专项测试及 `npm run check` 共 140 项全部通过；从 `/Applications/Mineradio.app` 实际启动后逐一触发 15/15 个提示成功，运行态向下 `+1`、向上 `-1`，可见界面没有汽水或 `QS`；`git diff --check` 通过。
+- 产物：最终 `Mineradio-2.0.0-arm64.dmg` SHA-256 `4585bb944fb8a303e5c43b8e7277832480f880e2c57eb4420d97977f4ef21199`；`Mineradio-2.0.0-x64.dmg` SHA-256 `52de9ccfc45193e3149c0fa43c88c7bbcf24283999c3bdf9c5705c373fef6525`。两份均实际挂载，应用二进制分别为 arm64 / x86_64；两包 `app.asar` 均为 `75658b20f8b9ccfd1ee193a399375e150dc4920aaf0a1063c7fce981176839e2`。
+- 本机安装：`/Applications/Mineradio.app` 已替换为 arm64 2.0.0，并与构建版及 DMG 内源码哈希一致。桌面两个旧构建 App 和旧 1.1.3 已移入 `/Users/allenli/Desktop/Mineradio-2.0-backups.noindex` 并改为 `.app.backup`，系统只剩一份有效 `Mineradio.app`。最终两份 DMG 位于桌面根目录，文件名没有“公开版”后缀。
+- 官网教程：拖入“应用程序”、`xattr -cr /Applications/Mineradio.app` 和“隐私与安全性 → 仍要打开”仍适用；“Intel 与 Apple 芯片同一安装包”不适用于 2.0，官网上线时要改为两个架构入口。
 - 未验证：真实网易、QQ、酷狗账号仍需各完成一次人工扫码/登录验收；本轮不读取、不记录任何用户账号凭据。
 - Obsidian：当前环境仍没有 `/Users/chy/菜鸡的仓库/菜鸡的仓库/02 知识编译/Mineradio Mac 开发进度.md`，无法同步，待仓库主人侧补记。

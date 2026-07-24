@@ -179,12 +179,14 @@ var wheelOverShelf = false;
 // 歌架滚动敏感度:trackpad 一次滑动会喷几十个 wheel 事件,原来每个都滚一格 → 太快。
 // 累计 deltaY,够一个步长才滚一格(步长越大越不敏感);留余数保持平滑。
 var _shelfWheelAccum = 0;
-var SHELF_WHEEL_STEP = 190;
+// 2.0 调到中间档:比 190 更跟手,但仍保留累计阈值,不会退回最初“一事件一格”的过敏状态。
+var SHELF_WHEEL_STEP = 140;
 function shelfWheelDir(e) {
   var d = e.deltaY;
   if (e.deltaMode === 1) d *= 16; else if (e.deltaMode === 2) d *= 100;
   _shelfWheelAccum += d;
   if (Math.abs(_shelfWheelAccum) >= SHELF_WHEEL_STEP) {
+    // 锁定现有方向:向下滚为 +1,向上滚为 -1。
     var dir = _shelfWheelAccum > 0 ? 1 : -1;
     _shelfWheelAccum -= dir * SHELF_WHEEL_STEP;
     return dir;

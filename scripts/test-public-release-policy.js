@@ -101,3 +101,19 @@ test('privacy-sensitive macOS purpose strings and public notices are packaged', 
   assert.ok(fs.existsSync(path.join(root, 'PRIVACY.md')));
   assert.ok(fs.existsSync(path.join(root, 'THIRD_PARTY_NOTICES.md')));
 });
+
+test('public cookie path migrates plaintext and rejects silent write failure', () => {
+  const server = read('server.js');
+  const spotify = read('spotify-api.js');
+  assert.match(server, /migrated plaintext cookie to safeStorage/);
+  assert.match(server, /SAFE_STORAGE_UNAVAILABLE/);
+  assert.match(server, /String\(parsed\.port \|\| '80'\) === expectedPort/);
+  assert.doesNotMatch(server, /localHost \? expectedPort/);
+  assert.match(server, /plaintext cookie migration unavailable; login state ignored/);
+  assert.match(spotify, /SAFE_STORAGE_MIGRATION_FAILED/);
+  const playback = read('public/js/modules/05-playback/00-api-quality-output.js');
+  assert.match(playback, /function isPlaybackProviderDisabled/);
+  assert.match(playback, /PROVIDER_DISABLED/);
+  const start = read('public/js/modules/05-playback/13-playback-start-audio.js');
+  assert.match(start, /isPlaybackProviderDisabled\(playbackProvider\)/);
+});

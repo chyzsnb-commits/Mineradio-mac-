@@ -232,39 +232,69 @@ function getQQCookieFile() {
 function getKugouCookieFile() {
   return process.env.KUGOU_COOKIE_FILE || DEFAULT_KUGOU_COOKIE_FILE;
 }
+const SAFE_STORAGE_PREFIX = 'mineradio-safe-storage-v1:';
+function encryptPublicSecret(plaintext) {
+  try {
+    const { safeStorage } = require('electron');
+    if (!safeStorage || !safeStorage.isEncryptionAvailable()) return '';
+    return SAFE_STORAGE_PREFIX + safeStorage.encryptString(String(plaintext || '')).toString('base64');
+  } catch (_) {
+    return '';
+  }
+}
+function decryptPublicSecret(stored) {
+  try {
+    if (!String(stored || '').startsWith(SAFE_STORAGE_PREFIX)) return '';
+    const { safeStorage } = require('electron');
+    if (!safeStorage || !safeStorage.isEncryptionAvailable()) return '';
+    return safeStorage.decryptString(Buffer.from(String(stored).slice(SAFE_STORAGE_PREFIX.length), 'base64')).trim();
+  } catch (_) {
+    return '';
+  }
+}
 function readConfiguredCookieFile(file) {
   try {
     if (!file || !fs.existsSync(file)) return '';
     const stored = fs.readFileSync(file, 'utf8').trim();
+    if (!stored) return '';
     if (!RELEASE_POLICY.publicRelease) return stored;
-    const prefix = 'mineradio-safe-storage-v1:';
-    if (!stored.startsWith(prefix)) return '';
-    try {
-      const { safeStorage } = require('electron');
-      if (!safeStorage || !safeStorage.isEncryptionAvailable()) return '';
-      return safeStorage.decryptString(Buffer.from(stored.slice(prefix.length), 'base64')).trim();
-    } catch (_) {
-      return '';
+    if (stored.startsWith(SAFE_STORAGE_PREFIX)) {
+      return decryptPublicSecret(stored);
     }
+    // 公开版升级迁移：旧版明文 cookie 自动加密落盘，避免登录态静默丢失
+    const encrypted = encryptPublicSecret(stored);
+    if (encrypted) {
+      try {
+        fs.writeFileSync(file, encrypted, { encoding: 'utf8', mode: 0o600 });
+        console.info('[Cookie] migrated plaintext cookie to safeStorage:', file);
+        return stored;
+      } catch (err) {
+        console.warn('[Cookie] migrate write failed:', file, err && err.message);
+      }
+    }
+    console.warn('[Cookie] plaintext cookie migration unavailable; login state ignored:', file);
+    return '';
   } catch (_) {}
   return '';
 }
 function writeConfiguredCookieFile(file, value) {
   try {
-    if (!file) return;
+    if (!file) return { ok: false, error: 'MISSING_FILE' };
     fs.mkdirSync(path.dirname(file), { recursive: true });
     let stored = String(value || '');
     if (RELEASE_POLICY.publicRelease && stored) {
-      try {
-        const { safeStorage } = require('electron');
-        if (!safeStorage || !safeStorage.isEncryptionAvailable()) return;
-        stored = 'mineradio-safe-storage-v1:' + safeStorage.encryptString(stored).toString('base64');
-      } catch (_) {
-        return;
+      const encrypted = encryptPublicSecret(stored);
+      if (!encrypted) {
+        console.warn('[Cookie] safeStorage unavailable; cookie not persisted:', file);
+        return { ok: false, error: 'SAFE_STORAGE_UNAVAILABLE' };
       }
+      stored = encrypted;
     }
     fs.writeFileSync(file, stored, { encoding: 'utf8', mode: 0o600 });
-  } catch (_) {}
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err && err.message) || 'COOKIE_WRITE_FAILED' };
+  }
 }
 const configuredCookieStores = {
   netease: { file: '', value: '', getFile: getCookieFile },
@@ -283,7 +313,12 @@ function saveConfiguredCookieStore(store, value) {
   const file = store.getFile();
   store.file = file;
   store.value = String(value || '');
-  writeConfiguredCookieFile(file, store.value);
+  const result = writeConfiguredCookieFile(file, store.value);
+  if (result && result.ok === false) {
+    store.lastPersistError = result.error || 'COOKIE_WRITE_FAILED';
+  } else {
+    store.lastPersistError = '';
+  }
   return store.value;
 }
 let userCookie = '';
@@ -4806,6 +4841,9 @@ async function acceptOfficialLoginCookie(provider, rawCookie) {
       throw officialLoginError('INVALID_NETEASE_SESSION', '网易云官方登录会话缺少 MUSIC_U');
     }
     saveCookie(normalized);
+    if (configuredCookieStores.netease.lastPersistError) {
+      throw officialLoginError(configuredCookieStores.netease.lastPersistError, '网易云官方登录会话无法安全保存');
+    }
     let info = await getLoginInfo();
     if (!info.loggedIn && userCookie) {
       info = {
@@ -4830,6 +4868,9 @@ async function acceptOfficialLoginCookie(provider, rawCookie) {
       throw officialLoginError('INVALID_QQ_SESSION', 'QQ 官方登录会话缺少账号或授权票据');
     }
     saveQQCookie(normalized);
+    if (configuredCookieStores.qq.lastPersistError) {
+      throw officialLoginError(configuredCookieStores.qq.lastPersistError, 'QQ 官方登录会话无法安全保存');
+    }
     const info = await getQQLoginInfo({ forceVip: true, forceCookie: true });
     return {
       ...info,
@@ -4847,6 +4888,9 @@ async function acceptOfficialLoginCookie(provider, rawCookie) {
       throw officialLoginError('INVALID_KUGOU_SESSION', '酷狗官方登录会话缺少账号授权');
     }
     saveKugouCookie(normalized);
+    if (configuredCookieStores.kugou.lastPersistError) {
+      throw officialLoginError(configuredCookieStores.kugou.lastPersistError, '酷狗官方登录会话无法安全保存');
+    }
     const info = await getKugouLoginInfo(kugouCookie);
     return {
       ...info,
