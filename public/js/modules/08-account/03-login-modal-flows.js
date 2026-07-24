@@ -446,6 +446,12 @@ function updateLoginNodeGraphUi() {
     var btn = document.getElementById('login-provider-' + provider);
     if (!btn) return;
     updateLoginProviderCapsuleStatus(provider, btn);
+    var providerSub = btn.querySelector('small');
+    if (providerSub && !MINERADIO_ALLOW_CREDENTIAL_IMPORT) {
+      providerSub.textContent = provider === 'spotify'
+        ? '官方 OAuth'
+        : (provider === 'kugou' ? '官方窗口' : '官方扫码');
+    }
     btn.classList.toggle('active', provider === loginProvider);
     btn.classList.toggle('external-on', isAccountProviderExternallyVisible(provider));
     btn.classList.toggle('connected', connected.indexOf(provider) >= 0);
@@ -463,6 +469,7 @@ function updateLoginNodeGraphUi() {
     official.classList.toggle('active', !isManualCookieOpenForProvider(loginProvider));
   }
   if (cookie) {
+    cookie.hidden = !MINERADIO_ALLOW_CREDENTIAL_IMPORT;
     var cookieTitle = cookie.querySelector('b');
     var cookieSub = cookie.querySelector('small');
     if (cookieTitle) cookieTitle.textContent = loginProvider === 'qishui' ? 'Token / Cookie' : 'Cookie';
@@ -808,7 +815,7 @@ function updateLoginProviderUi() {
   }
   if (qqPanel) qqPanel.classList.toggle('show', isManualCookieProvider && manualCookieOpen);
   if (qqCookieToggle) {
-    qqCookieToggle.classList.toggle('show', isManualCookieProvider);
+    qqCookieToggle.classList.toggle('show', MINERADIO_ALLOW_CREDENTIAL_IMPORT && isManualCookieProvider);
     qqCookieToggle.textContent = manualCookieOpen ? '收起导入' : (isQishui ? 'Token/Cookie 导入' : 'Cookie 导入');
   }
   if (qqCookieInput) qqCookieInput.placeholder = isQishui ? 'access-token，或含 sessionid 的完整 Cookie' : (isKugou ? 'KuGoo=...; token=...; userid=...; kg_mid=...' : (isNetease ? 'MUSIC_U=...; __csrf=...' : 'uin=...; qqmusic_key=...; qm_keyst=...'));
@@ -1052,8 +1059,8 @@ async function openNeteaseWebLogin() {
   var statusEl = document.getElementById('qr-status');
   var api = window.desktopWindow;
   if (!api || !api.isDesktop || typeof api.openNeteaseMusicLogin !== 'function') {
-    if (statusEl) { statusEl.textContent = '当前环境不支持官方网页登录，正在尝试旧二维码…'; statusEl.className = 'fail'; }
-    return refreshQr();
+    if (statusEl) { statusEl.textContent = '当前安装包缺少官方登录桥，请重新安装最新版 Mineradio。'; statusEl.className = 'fail'; }
+    return;
   }
 
   neteaseWebLoginBusy = true;
@@ -1061,15 +1068,10 @@ async function openNeteaseWebLogin() {
   if (statusEl) { statusEl.textContent = '已打开网易云窗口，请在官方页面扫码登录…'; statusEl.className = 'preview'; }
   try {
     var result = await api.openNeteaseMusicLogin();
-    if (!result || !result.ok || !result.cookie) {
+    if (!result || !result.ok || !result.sessionApplied || !result.loginInfo) {
       throw new Error((result && (result.message || result.error)) || '网易云登录未完成');
     }
-    if (statusEl) { statusEl.textContent = '正在同步网易云会话…'; statusEl.className = 'preview'; }
-    var info = await apiJson('/api/login/cookie', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cookie: result.cookie })
-    });
+    var info = result.loginInfo;
     if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || '网易云会话不可用');
     loginStatus = info;
     activeAccountProvider = 'netease';
@@ -1098,9 +1100,11 @@ async function openQQWebLogin() {
   var statusEl = document.getElementById('qr-status');
   var api = window.desktopWindow;
   if (!api || !api.isDesktop || typeof api.openQQMusicLogin !== 'function') {
-    qqManualCookieOpen = true;
-    updateLoginProviderUi();
-    if (statusEl) { statusEl.textContent = '当前环境不支持自动网页登录，可先使用手动导入。'; statusEl.className = 'fail'; }
+    if (MINERADIO_ALLOW_CREDENTIAL_IMPORT) {
+      qqManualCookieOpen = true;
+      updateLoginProviderUi();
+    }
+    if (statusEl) { statusEl.textContent = MINERADIO_ALLOW_CREDENTIAL_IMPORT ? '当前环境不支持自动网页登录，可先使用手动导入。' : '当前安装包缺少官方登录桥，请重新安装最新版 Mineradio。'; statusEl.className = 'fail'; }
     return;
   }
 
@@ -1109,15 +1113,10 @@ async function openQQWebLogin() {
   if (statusEl) { statusEl.textContent = '已打开 QQ 音乐窗口，请扫码并确认登录…'; statusEl.className = 'preview'; }
   try {
     var result = await api.openQQMusicLogin();
-    if (!result || !result.ok || !result.cookie) {
+    if (!result || !result.ok || !result.sessionApplied || !result.loginInfo) {
       throw new Error((result && (result.message || result.error)) || 'QQ 登录未完成');
     }
-    if (statusEl) { statusEl.textContent = '正在同步 QQ 音乐会话…'; statusEl.className = 'preview'; }
-    var info = await apiJson('/api/qq/login/cookie', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cookie: result.cookie })
-    });
+    var info = result.loginInfo;
     if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || 'QQ 会话不可用');
     qqLoginStatus = normalizeQQLoginStatus(info);
     auditProviderVipState('qq', qqLoginStatus);
@@ -1153,9 +1152,11 @@ async function openKugouWebLogin() {
   var statusEl = document.getElementById('qr-status');
   var api = window.desktopWindow;
   if (!api || !api.isDesktop || typeof api.openKugouMusicLogin !== 'function') {
-    kugouManualCookieOpen = true;
-    updateLoginProviderUi();
-    if (statusEl) { statusEl.textContent = '当前环境不支持自动网页登录，可先使用手动导入。'; statusEl.className = 'fail'; }
+    if (MINERADIO_ALLOW_CREDENTIAL_IMPORT) {
+      kugouManualCookieOpen = true;
+      updateLoginProviderUi();
+    }
+    if (statusEl) { statusEl.textContent = MINERADIO_ALLOW_CREDENTIAL_IMPORT ? '当前环境不支持自动网页登录，可先使用手动导入。' : '当前安装包缺少官方登录桥，请重新安装最新版 Mineradio。'; statusEl.className = 'fail'; }
     return;
   }
 
@@ -1164,15 +1165,10 @@ async function openKugouWebLogin() {
   if (statusEl) { statusEl.textContent = '已打开酷狗音乐窗口，请完成官方登录…'; statusEl.className = 'preview'; }
   try {
     var result = await api.openKugouMusicLogin();
-    if (!result || !result.ok || !result.cookie) {
+    if (!result || !result.ok || !result.sessionApplied || !result.loginInfo) {
       throw new Error((result && (result.message || result.error)) || '酷狗登录未完成');
     }
-    if (statusEl) { statusEl.textContent = '正在同步酷狗音乐会话…'; statusEl.className = 'preview'; }
-    var info = await apiJson('/api/kugou/login/cookie', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cookie: result.cookie })
-    });
+    var info = result.loginInfo;
     if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || '酷狗会话不可用');
     kugouLoginStatus = normalizeKugouLoginStatus(info);
     kugouLoginWasLoggedIn = true;

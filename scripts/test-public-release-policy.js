@@ -13,6 +13,14 @@ function read(file) {
   return fs.readFileSync(path.join(root, file), 'utf8');
 }
 
+function asyncFunctionBlock(source, name, nextName) {
+  const start = source.indexOf(`async function ${name}(`);
+  assert.notEqual(start, -1, name);
+  const end = source.indexOf(`async function ${nextName}(`, start + 1);
+  assert.notEqual(end, -1, nextName);
+  return source.slice(start, end);
+}
+
 test('2.0 uses formal public identity', () => {
   assert.equal(pkg.name, 'mineradio');
   assert.equal(pkg.version, '2.0.0');
@@ -59,6 +67,32 @@ test('public renderer and server enforce release boundary', () => {
   assert.match(server, /mineradio-safe-storage-v1/);
   assert.doesNotMatch(index, /qishui|汽水/i);
   assert.doesNotMatch(rendererModules, /\/api\/qishui|openQishuiMusicLogin|clearQishuiMusicLogin/i);
+});
+
+test('official provider login bypasses blocked manual import without exposing cookies', () => {
+  const main = read('desktop/main.js');
+  const server = read('server.js');
+  const loginFlows = read('public/js/modules/08-account/03-login-modal-flows.js');
+  const css = read('public/css/index.css');
+  const bridge = read('desktop/official-login-bridge.js');
+  const officialFunctions = [
+    asyncFunctionBlock(loginFlows, 'openNeteaseWebLogin', 'openQQWebLogin'),
+    asyncFunctionBlock(loginFlows, 'openQQWebLogin', 'openKugouWebLogin'),
+    asyncFunctionBlock(loginFlows, 'openKugouWebLogin', 'submitQQCookieLogin'),
+  ].join('\n');
+
+  assert.match(main, /applyOfficialProviderLogin/);
+  assert.match(main, /applyOfficialProviderLogin\(localServer,\s*'netease'/);
+  assert.match(main, /applyOfficialProviderLogin\(localServer,\s*'qq'/);
+  assert.match(main, /applyOfficialProviderLogin\(localServer,\s*'kugou'/);
+  assert.match(server, /server\.acceptOfficialLoginCookie\s*=\s*acceptOfficialLoginCookie/);
+  assert.match(bridge, /server\.acceptOfficialLoginCookie/);
+  assert.doesNotMatch(bridge, /cookie\s*:/);
+  assert.match(officialFunctions, /result\.sessionApplied/);
+  assert.match(officialFunctions, /result\.loginInfo/);
+  assert.doesNotMatch(officialFunctions, /result\.cookie|\/api\/(?:qq\/|kugou\/)?login\/cookie/);
+  assert.match(css, /mineradio-public-release #login-mode-cookie/);
+  assert.match(loginFlows, /MINERADIO_ALLOW_CREDENTIAL_IMPORT && isManualCookieProvider/);
 });
 
 test('privacy-sensitive macOS purpose strings and public notices are packaged', () => {

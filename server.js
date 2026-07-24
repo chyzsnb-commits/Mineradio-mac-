@@ -4787,6 +4787,80 @@ async function getLoginInfo() {
   }
 }
 
+function officialLoginError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+async function acceptOfficialLoginCookie(provider, rawCookie) {
+  provider = String(provider || '').trim().toLowerCase();
+  const input = typeof rawCookie === 'string' ? rawCookie.trim() : '';
+  if (!input || Buffer.byteLength(input, 'utf8') > 64 * 1024) {
+    throw officialLoginError('INVALID_OFFICIAL_SESSION', '官方登录会话为空或过大');
+  }
+
+  if (provider === 'netease') {
+    const normalized = normalizeCookieHeader(input);
+    if (!parseCookieString(normalized).MUSIC_U) {
+      throw officialLoginError('INVALID_NETEASE_SESSION', '网易云官方登录会话缺少 MUSIC_U');
+    }
+    saveCookie(normalized);
+    let info = await getLoginInfo();
+    if (!info.loggedIn && userCookie) {
+      info = {
+        loggedIn: true,
+        pendingProfile: true,
+        nickname: '网易云用户',
+        avatar: '',
+        vipType: 0,
+        vipLevel: 'none',
+        isVip: false,
+        isSvip: false,
+        vipLabel: '无VIP',
+      };
+    }
+    return { ...info, provider: 'netease', saved: true, officialLogin: true, hasCookie: !!userCookie };
+  }
+
+  if (provider === 'qq') {
+    const normalized = normalizeQQCookieInput(input);
+    const obj = parseCookieString(normalized);
+    if (!qqCookieUin(obj) || !qqCookieMusicKey(obj)) {
+      throw officialLoginError('INVALID_QQ_SESSION', 'QQ 官方登录会话缺少账号或授权票据');
+    }
+    saveQQCookie(normalized);
+    const info = await getQQLoginInfo({ forceVip: true, forceCookie: true });
+    return {
+      ...info,
+      provider: 'qq',
+      saved: true,
+      officialLogin: true,
+      partial: !qqCookiePlaybackKey(obj),
+    };
+  }
+
+  if (provider === 'kugou') {
+    const normalized = normalizeKugouCookieInput(input);
+    const auth = extractKugouAuth(normalized);
+    if (!auth.loggedIn) {
+      throw officialLoginError('INVALID_KUGOU_SESSION', '酷狗官方登录会话缺少账号授权');
+    }
+    saveKugouCookie(normalized);
+    const info = await getKugouLoginInfo(kugouCookie);
+    return {
+      ...info,
+      provider: 'kugou',
+      saved: true,
+      officialLogin: true,
+      partial: !auth.playbackReady,
+      playbackKeyReady: !!auth.playbackReady,
+    };
+  }
+
+  throw officialLoginError('UNSUPPORTED_LOGIN_PROVIDER', '当前平台不支持官方网页登录');
+}
+
 // ====================================================================
 //  HTTP Server
 // ====================================================================
@@ -6359,4 +6433,5 @@ server.listen(PORT, HOST, () => {
   console.log('======================================================');
 });
 
+server.acceptOfficialLoginCookie = acceptOfficialLoginCookie;
 module.exports = server;

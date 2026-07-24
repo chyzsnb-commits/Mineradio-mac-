@@ -1,6 +1,6 @@
 # Mineradio 2.0 公开发布审计
 
-审计日期：2026-07-23
+审计日期：2026-07-24
 
 ## 结论
 
@@ -11,11 +11,18 @@
 - 正式产品身份：`mineradio`、`2.0.0`、`com.mineradio.desktop`，`internalBeta=false`。
 - 汽水音乐后端、登录桥、本地 Cookie 数据库读取、Token/Cookie 导入、模拟客户端扫码与音频解密器已从公开分支删除。
 - 登录凭据手动导入、导出在公开版关闭；支持平台的本机会话与 Spotify token 使用 Electron `safeStorage` 加密保存。
+- 网易云、QQ 音乐和酷狗的官方登录结果由 Electron 主进程直接交给本地服务验证和保存，不再经过公开版禁止的手动 Cookie 导入 HTTP 接口，也不向渲染进程返回原始 Cookie。
 - 本地服务默认仅监听 `127.0.0.1`，并拒绝外部网页 Origin 调用本地 API。
 - 匿名遥测在正式版完全不启动；崩溃记录、摄像头画面、麦克风音频和 AI 分轨结果不上传。
 - 增加摄像头/麦克风用途说明、隐私说明、第三方组件说明和 MediaPipe Apache 2.0 许可证。
 - 生产依赖执行 `npm audit --omit=dev` 后为 0 个已知漏洞。
 - 已生成并验证 Apple Silicon arm64 与 Intel x64 DMG。
+
+## 2.0 登录回归修复
+
+首批 2.0 候选包存在登录回归：官方登录窗口成功取得会话后，渲染进程仍调用 `/api/login/cookie`、`/api/qq/login/cookie` 或 `/api/kugou/login/cookie`；这些手动导入接口按公开版策略返回 403，因此网易云、QQ 音乐和酷狗表现为“扫码成功但登录不上”。
+
+修复后，官方窗口取得的会话只在 Electron 主进程和本地服务之间流转，并通过 `safeStorage` 加密落盘；渲染进程只收到去敏后的账号状态。手动 Cookie 导入与导出仍保持关闭，汽水音乐仍保持删除。自动回归覆盖官方登录桥、Cookie 不外泄、三平台前端不再调用手动导入接口，以及公开版继续隐藏手动导入入口。
 
 ## 汽水音乐判断
 
@@ -32,8 +39,8 @@
 
 | 架构 | 文件名 | SHA-256 |
 |---|---|---|
-| Apple Silicon | `Mineradio-2.0.0-arm64.dmg` | `6fb6cecea002db5ee0f6d352c6ea6e217ea62d9302bec9fc4d96c648076fbd6a` |
-| Intel | `Mineradio-2.0.0-x64.dmg` | `ab97d3b50b20f6ced16031f04ad55176534a8f36ed755a03d4ce4d7575380e73` |
+| Apple Silicon | `Mineradio-2.0.0-arm64.dmg` | `145ad96d295baa5b493c4a250e3ef40b8e655c59b07e47d4e7c4cc4feaf67bbd` |
+| Intel | `Mineradio-2.0.0-x64.dmg` | `597d634881be155f3a3b0016bb9fa41d71de63c906075cd433ce412c1c32f3f7` |
 
 ## 正式公开前的阻塞项
 

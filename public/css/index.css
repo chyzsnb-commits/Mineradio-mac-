@@ -14554,3 +14554,9 @@ html.control-glass-svg-ok #user-btn.multi-account.external-account-pills:hover {
 html.mineradio-public-release #cookie-export-prompt {
   display: none !important;
 }
+
+html.mineradio-public-release #login-mode-cookie,
+html.mineradio-public-release #qq-cookie-toggle-btn,
+html.mineradio-public-release #qq-cookie-panel {
+  display: none !important;
+}

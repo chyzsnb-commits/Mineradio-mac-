@@ -5,6 +5,8 @@
 - 正式版身份统一为 `mineradio` / `com.mineradio.desktop`，关闭 `internalBeta` 与匿名遥测，Intel x64 和 Apple Silicon arm64 使用独立产物名。
 - 公开包不再包含汽水音乐模块与音频解密器；禁用本地 Cookie 数据库读取、Cookie/Token 粘贴、模拟官方客户端扫码和汽水直接播放，保留在私有历史分支中的内部实验不进入 DMG。
 - 公开版关闭所有登录 Cookie 手动导入与导出；网易、QQ、酷狗的运行会话改用 macOS `safeStorage` 加密落盘，Spotify OAuth token 同样加密保存。
+- 修复公开版把网易云、QQ 音乐和酷狗的官方登录结果误送到已禁用的手动 Cookie 导入接口，导致扫码成功后仍无法登录的问题；官方窗口会话现在由 Electron 主进程直接验证并加密保存，原始 Cookie 不再返回渲染进程。
+- 登录界面在公开版只显示官方扫码、官方窗口与 Spotify OAuth，不再显示不可用的 Cookie 模式或手动导入按钮。
 - 本地 HTTP 服务默认只监听 `127.0.0.1`，拒绝非本机同源页面调用账号/播放 API，移除宽松的 `Access-Control-Allow-Origin: *`。
 - 增加摄像头与麦克风用途说明、`PRIVACY.md` 和第三方组件说明；手势画面、麦克风音频、AI 分轨结果与崩溃诊断均不上传。
 - 公开发布前仍需 Developer ID 签名与 Apple 公证；当前本机没有有效签名证书时只能生成测试用未公证包。

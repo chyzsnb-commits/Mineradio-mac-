@@ -15,6 +15,7 @@ const systemMemory = process.platform === 'win32'
 const { readSystemGpuUsage } = require('./gpu-usage');
 const { createAiStemService } = require('./ai-stem-separator');
 const { createCrashDiagnostics } = require('./crash-diagnostics');
+const { applyOfficialProviderLogin } = require('./official-login-bridge');
 const RELEASE_POLICY = require('./release-policy');
 // macOS Touch Bar 播放控制（2016-2019 Intel MBP）。无 Touch Bar 的机器安全 no-op。
 const touchbar = require('./touchbar');
@@ -2322,7 +2323,8 @@ ipcMain.handle('mineradio-current-fx-autosave-save', async (_event, payload = {}
 });
 
 ipcMain.handle('netease-music-open-login', async (event) => {
-  return openNeteaseMusicLoginWindow(getSenderWindow(event));
+  const result = await openNeteaseMusicLoginWindow(getSenderWindow(event));
+  return applyOfficialProviderLogin(localServer, 'netease', result);
 });
 
 ipcMain.handle('netease-music-clear-login', async () => {
@@ -2330,7 +2332,8 @@ ipcMain.handle('netease-music-clear-login', async () => {
 });
 
 ipcMain.handle('qq-music-open-login', async (event) => {
-  return openQQMusicLoginWindow(getSenderWindow(event));
+  const result = await openQQMusicLoginWindow(getSenderWindow(event));
+  return applyOfficialProviderLogin(localServer, 'qq', result);
 });
 
 ipcMain.handle('qq-music-clear-login', async () => {
@@ -2338,7 +2341,8 @@ ipcMain.handle('qq-music-clear-login', async () => {
 });
 
 ipcMain.handle('kugou-music-open-login', async (event) => {
-  return openKugouMusicLoginWindow(getSenderWindow(event));
+  const result = await openKugouMusicLoginWindow(getSenderWindow(event));
+  return applyOfficialProviderLogin(localServer, 'kugou', result);
 });
 
 ipcMain.handle('kugou-music-clear-login', async () => {
