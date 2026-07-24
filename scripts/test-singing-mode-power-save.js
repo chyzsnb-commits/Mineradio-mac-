@@ -332,13 +332,14 @@ test('不同 AudioContext 的 Worklet 逆序完成也分别保持就绪', async 
   assert.equal(sandbox.readyB, true);
 });
 
-test('原唱 100% 开关唱歌模式不重建播放音频图', () => {
+test('开关唱歌模式始终重建播放音频图，确保去人声链与麦克风接线生效', () => {
   const source = audioGraphSource();
   let rebuildCount = 0;
   const toasts = [];
   const sandbox = {
     singingModeEnabled: false,
     singingVocalLevel: 1,
+    singingAccompanimentLevel: 1,
     _singingMicPermissionBlocked: false,
     rebuildAudioGraphNow() { rebuildCount += 1; },
     syncSingingMicPowerState() { return Promise.resolve(false); },
@@ -361,7 +362,8 @@ test('原唱 100% 开关唱歌模式不重建播放音频图', () => {
     sandbox,
   );
   vm.runInNewContext('setSingingMode(true); setSingingMode(false);', sandbox);
-  assert.equal(rebuildCount, 0);
+  // 开/关各重建一次：避免“模式已开但音频图仍是旧接线”导致去人声/开麦不生效。
+  assert.equal(rebuildCount, 2);
   assert.equal(toasts[0], '唱歌模式:伴奏人声混音已开启,正在开麦…');
   assert.doesNotMatch(source, /播放后自动开麦/);
 });

@@ -6384,6 +6384,12 @@ body:not(.controls-visible) .lyric-timing-control::before,
   cursor: default
 }
 
+#singing-control {
+  /* 压过左侧音量/词校准的 hover 桥接层，避免点不到麦克风按钮 */
+  position: relative;
+  z-index: 3
+}
+
 #singing-control .volume-popover {
   min-width: 228px
 }

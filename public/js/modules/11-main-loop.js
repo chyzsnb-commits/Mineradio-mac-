@@ -215,18 +215,66 @@ var mainLoopAnimationRequested = false;
 
 // 判断前台是否处于"空闲"状态：不播放 + 无交互 + 歌单架未打开/预览。
 // 空闲时 renderer.render 降到极低帧率（uTime 仍累积，粒子不会冻住，只是低帧更新）。
+// 暂停后：等舞台歌词完全褪去，再等 IDLE_AFTER_LYRIC_FADE_MS 才真正进入空闲降帧，避免字幕还在淡出就掉帧。
+var IDLE_AFTER_LYRIC_FADE_MS = 3000;
+var idleLyricClearSince = 0;
+function stageLyricsStillVisible() {
+  try {
+    if (typeof fx !== 'undefined' && fx && fx.particleLyrics === false) return false;
+    if (typeof stageLyrics === 'undefined' || !stageLyrics) return false;
+    if (stageLyrics.outgoing && stageLyrics.outgoing.length) return true;
+    if (stageLyrics.current) {
+      var data = stageLyrics.current.userData;
+      var op = data && (data.globalOpacity != null
+        ? Number(data.globalOpacity)
+        : (data.textMat && data.textMat.uniforms && data.textMat.uniforms.uOpacity
+          ? Number(data.textMat.uniforms.uOpacity.value)
+          : 1));
+      if (!(op < 0.05)) return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
 function isForegroundIdleForRender(now) {
+  now = now || performance.now();
   // 正在播放 → 不算空闲（音频驱动的视觉必须跟帧）
-  if (playing && audio && !audio.paused) return false;
+  if (playing && audio && !audio.paused) {
+    idleLyricClearSince = 0;
+    return false;
+  }
   // 正在加载/换源/切歌中 → 不算空闲（避免渲染停-启搞崩 WebGL 上下文导致黑屏）
-  if (typeof playToggleBusy !== 'undefined' && playToggleBusy) return false;
+  if (typeof playToggleBusy !== 'undefined' && playToggleBusy) {
+    idleLyricClearSince = 0;
+    return false;
+  }
   // 最近有交互（鼠标/键盘）→ 不算空闲
-  if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive(now)) return false;
+  if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive(now)) {
+    idleLyricClearSince = 0;
+    return false;
+  }
   // 歌单架打开或预览中 → 歌单架有持续动效，不算空闲
-  if (typeof shelfManager !== 'undefined' && shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return false;
-  if (typeof shelfPreviewIsVisible === 'function' && shelfPreviewIsVisible()) return false;
-  // 桌面歌词/壁纸模式激活 → 这些需要持续渲染
-  if (fx && (fx.desktopLyrics || fx.wallpaperMode)) return false;
+  if (typeof shelfManager !== 'undefined' && shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) {
+    idleLyricClearSince = 0;
+    return false;
+  }
+  if (typeof shelfPreviewIsVisible === 'function' && shelfPreviewIsVisible()) {
+    idleLyricClearSince = 0;
+    return false;
+  }
+  // 桌面歌词需要持续渲染；壁纸模式允许在真正空闲后降帧省电（但绝不能误进深睡眠砍分辨率，见 isDeepBackgroundMode）
+  if (fx && fx.desktopLyrics) {
+    idleLyricClearSince = 0;
+    return false;
+  }
+  // 字幕仍在显示或淡出中 → 保持满帧；完全消失后开始计 3s 阀值
+  if (stageLyricsStillVisible()) {
+    idleLyricClearSince = 0;
+    return false;
+  }
+  if (!idleLyricClearSince) idleLyricClearSince = now;
+  if (now - idleLyricClearSince < IDLE_AFTER_LYRIC_FADE_MS) return false;
   return true;
 }
 function mainLoopDeepBackgroundSleeping() {

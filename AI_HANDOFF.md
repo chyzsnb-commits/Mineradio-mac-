@@ -2,11 +2,12 @@
 
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**
 
-## 当前权威入口（2026-07-23）
+## 当前权威入口（2026-07-24）
 
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
 - **main 最新 commit**：`a2d8145`（PR #26 已合并：唱歌模式、倍速、防爆音、歌架与卡死修复）。
+- **当前 2.0 融合线**：草稿 PR #58，分支 `codex/mineradio-2.0-unified`（基于 `codex/public-release-2.0`，融合 Beat 修复）。2026-07-24 在 #58 上补修：唱歌模式开/关强制重建音频图 + 健康检查识别缺失去人声链；壁纸模式不进深睡眠/失焦 15fps；暂停后字幕褪去再等 3s 才空闲 2fps 降帧。`npm run check` **163/163**。
 - **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）→ PR #34（最近播放滚动降载与 GPU 文案）→ PR #36（播放定时器降载）→ PR #37（本地 AI 分轨）→ PR #38（AI 提速与实时精准度）→ PR #39（软件 Logo）→ PR #40（歌词选项切换降卡）→ PR #41（音频上游断线保护）→ PR #42（整队不可播保护）→ PR #43（本机崩溃记录）→ PR #44（构建缓存排除）→ PR #45（双架构 CI 运行器）→ PR #46（Touch Bar 歌曲状态）→ PR #47（K 歌升降 Key 与启动开关对齐）→ PR #48（GPU 系统/播放器占用）→ PR #49（AI 分轨热管理与实时去人声增强）→ PR #50（实时人声轨净化）→ PR #51（CoreML 全图加速）→ PR #52（切歌与进度竞态修复）均为叠加关系。
 - **协作者最新工作**：PR #28，分支 `codex/fix-gesture-latency`，优化双手手势延迟与 GPU 负载；当前仍待合并，本分支未修改其手势文件。
 - **2.0 公开候选**：从 PR #56 线单独创建 `codex/public-release-2.0`。公开分支删除汽水后端、登录桥、本地 Cookie 读取和音频解密器；原 PR #56 开发线保留汽水实验，后续继续在原线开发。2026-07-24 已修复首批候选中网易/QQ/酷狗官方登录被手动导入策略误拦截的回归，以及连续切换音质导致的 `0:00` 卡死、通知堆叠和巨型歌词残影：官方会话由主进程直接验证并加密保存，音质改为同曲串行换流，不重建歌词。最终 2.0.0 arm64/x64 未签名 DMG 已重新打包、挂载和安装验证，正式公开仍受 Developer ID、公证、隐私联系信息与音乐平台授权阻塞。
@@ -371,6 +372,13 @@
 - 隐私/许可：加入 `PRIVACY.md`、`THIRD_PARTY_NOTICES.md`、MediaPipe Apache 2.0 许可证与 `docs/PUBLIC_RELEASE_2.0_AUDIT.md`；补齐摄像头和麦克风用途说明。
 - 验证：全量 JavaScript 语法通过；`npm run check` 131/131；arm64 打包版真实启动并监听 `127.0.0.1:3000`；`app.asar` 无汽水 API、登录桥和解密器。产物为 `Mineradio-2.0.0-arm64.dmg`（SHA-256 `6fb6cecea002db5ee0f6d352c6ea6e217ea62d9302bec9fc4d96c648076fbd6a`）与 `Mineradio-2.0.0-x64.dmg`（SHA-256 `ab97d3b50b20f6ced16031f04ad55176534a8f36ed755a03d4ce4d7575380e73`）。
 - 未验证/阻塞：本机 `security find-identity` 为 0 个有效身份，两个 DMG 未签名、未公证；Intel 仅校验二进制为 x86_64，未做真机启动；隐私主体信息和第三方音乐平台授权仍需发布者补齐。
+
+**2026-07-24：Codex 修复 PR #58 唱歌模式不可用与桌面/壁纸掉帧。**
+- 分支：`codex/mineradio-2.0-unified`（草稿 PR #58）。
+- 唱歌：`setSingingMode` 开/关强制 `rebuildAudioGraphNow()`；`audioGraphHealthy` 识别“需要去人声但 `vocalCutChain` 缺失”；`#singing-control` 抬高 z-index，避免被音量 hover 桥接层挡住。
+- 桌面/壁纸：`isDeepBackgroundMode` / `isVisibleBackgroundMode` 在壁纸模式下返回 false，防止 4×4 缓冲与 15fps 后台；暂停后等舞台歌词褪去再计 `IDLE_AFTER_LYRIC_FADE_MS = 3000` 才空闲 2fps 降帧。
+- 测试：新增 `test-wallpaper-idle-throttle.js`、`test-singing-mode-graph-rebuild.js`；更新省电测试中“100% 不重建”的过时预期。`npm run check` **163/163**。
+- 未重打包 DMG；源码修复推到 PR #58 后由用户决定是否再打安装包。
 
 **2026-07-24：Codex 修复 2.0 官方登录回归并完成本机 2.0 交付。**
 - PR：#57；分支：`codex/public-release-2.0`。

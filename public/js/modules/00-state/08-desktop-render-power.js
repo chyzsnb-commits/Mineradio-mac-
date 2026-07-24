@@ -138,6 +138,9 @@ function runtimeAnalysisStride(kind, length) {
 }
 function isDeepBackgroundMode() {
   if (isLiveBackgroundKeepMode()) return false;
+  // 壁纸模式：主窗口被降到桌面层后，系统常标 isOccluded/失焦。
+  // 若仍进深睡眠，applyRendererPowerMode 会把缓冲打成 4×4、像素比 0.3 → 分辨率/帧率双崩。
+  if (typeof fx !== 'undefined' && fx && fx.wallpaperMode) return false;
   return !!(document.hidden || desktopRuntimeState.minimized || desktopRuntimeState.visible === false || desktopRuntimeState.occluded);
 }
 function currentPerformanceBackgroundMode() {
@@ -157,6 +160,8 @@ function isVisibleBackgroundMode() {
   // 1.1.3 曾把这里改成 return false，导致切到别的软件时仍满帧渲染 → 发烫。
   // 现在恢复：失去焦点即降到 RENDER_BACKGROUND_FPS（15 FPS），大幅降温。
   if (isLiveBackgroundKeepMode()) return false;
+  // 壁纸模式：用户在看桌面时主窗口通常失焦，绝不能当“后台省电”降到 15fps / 连带治理器砍画质。
+  if (typeof fx !== 'undefined' && fx && fx.wallpaperMode) return false;
   return !!(!document.hidden
     && !desktopRuntimeState.minimized
     && desktopRuntimeState.visible !== false

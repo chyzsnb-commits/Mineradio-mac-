@@ -5,7 +5,12 @@ function audioGraphHealthy() {
   var keyShiftHealthy = !singingKeyShiftProcessingNeeded()
     || !singingKeyShiftWorkletReady(audioCtx)
     || !!singingKeyShiftNode;
-  return !!(audio && audioReady && audioCtx && audioCtx.state !== 'closed' && source && analyser && beatAnalyser && (gainNode || analysisSinkNode) && aiHealthy && keyShiftHealthy);
+  // 唱歌去人声链缺失时视为不健康，避免 initAudio 早退导致“开了唱歌模式却仍原声直通/无声”。
+  // 捕获流回退路径本身不做去人声，不要求 vocalCutChain。
+  var vocalHealthy = !singingVocalProcessingNeeded()
+    || !!(source && source.__mineradioUsesCapture)
+    || !!vocalCutChain;
+  return !!(audio && audioReady && audioCtx && audioCtx.state !== 'closed' && source && analyser && beatAnalyser && (gainNode || analysisSinkNode) && aiHealthy && keyShiftHealthy && vocalHealthy);
 }
 function disconnectAudioGraphNodes(keepSource) {
   [source, aiStemVocalSource, aiStemMixNode, aiStemAccompanimentGain, aiStemVocalGain, singingKeyShiftNode, analyser, beatAnalyser, gainNode, analysisSinkNode].forEach(function (node) {
@@ -1428,13 +1433,12 @@ function ensureSingingLyrics(on) {
 function setSingingMode(on) {
   on = !!on;
   if (on === singingModeEnabled) { syncSingingModeUi(); return; }
-  var wasVocalProcessing = singingVocalProcessingNeeded();
-  var wasKeyShiftProcessing = singingKeyShiftProcessingNeeded();
   singingModeEnabled = on;
   var needsVocalProcessing = singingVocalProcessingNeeded();
   var needsKeyShiftProcessing = singingKeyShiftProcessingNeeded();
   _singingKeyShiftChangeSerial++;
-  if (wasVocalProcessing !== needsVocalProcessing || wasKeyShiftProcessing !== needsKeyShiftProcessing) rebuildAudioGraphNow();
+  // 开/关都强制重建：仅靠“处理边界变化”会漏掉已健康图未挂链、或关闭后残留节点的情况。
+  rebuildAudioGraphNow();
   if (on) {
     _singingMicPermissionBlocked = false;
     if (needsVocalProcessing) prepareSingingVocalProcessor();
