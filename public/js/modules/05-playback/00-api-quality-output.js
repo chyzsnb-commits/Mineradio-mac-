@@ -316,25 +316,230 @@ function canReloadCurrentTrackForQuality() {
   if (!song || song.type === 'local' || song.source === 'local') return false;
   return songProviderKey(song) === 'netease' || songProviderKey(song) === 'qq' || songProviderKey(song) === 'kugou';
 }
+var playbackQualitySwitchState = {
+  running: false,
+  pending: null,
+  active: null,
+  promise: null,
+  serial: 0
+};
+function playbackQualitySwitchSongKey(song) {
+  if (!song) return '';
+  if (typeof queueItemKey === 'function') return queueItemKey(song);
+  return playbackQualityTrackKey(song, songProviderKey(song));
+}
+function playbackQualitySwitchTargetsCurrentSong(request) {
+  if (!request || request.index !== currentIdx || currentIdx < 0 || currentIdx >= playQueue.length) return false;
+  if (request.trackToken !== trackSwitchToken) return false;
+  var song = playQueue[currentIdx];
+  return !!(song && playbackQualitySwitchSongKey(song) === request.songKey && normalizePlaybackProvider(songProviderKey(song)) === request.provider);
+}
+function playbackQualityStreamUrl(song, provider, requestedQuality) {
+  var qualityParam = '&quality=' + encodeURIComponent(requestedQuality);
+  if (provider === 'qq') {
+    var evidence = typeof qqPlaybackEvidenceQuery === 'function'
+      ? qqPlaybackEvidenceQuery(song)
+      : '&vipRequired=' + encodeURIComponent(song && (song.vipRequired || song.needVip || song.onlyVipPlayable) ? '1' : '');
+    return '/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') +
+      '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || '') + evidence + qualityParam;
+  }
+  if (provider === 'kugou') {
+    return '/api/kugou/song/url?hash=' + encodeURIComponent(song.hash || song.fileHash || song.audioHash || song.id || '') +
+      '&albumId=' + encodeURIComponent(song.albumId || song.album_id || '') +
+      '&albumAudioId=' + encodeURIComponent(song.albumAudioId || song.album_audio_id || song.mixSongId || '') +
+      '&mixSongId=' + encodeURIComponent(song.mixSongId || '') +
+      '&hqHash=' + encodeURIComponent(song.hqHash || song.hq_hash || '') +
+      '&sqHash=' + encodeURIComponent(song.sqHash || song.sq_hash || '') +
+      '&resHash=' + encodeURIComponent(song.resHash || song.res_hash || '') +
+      '&vipRequired=' + encodeURIComponent(song.vipRequired || song.needVip || song.onlyVipPlayable || song.only_vip_playable ? '1' : '') +
+      '&privilege=' + encodeURIComponent(song.privilege || song.Privilege || song.mediaPrivilege || song.media_privilege || '') +
+      '&fee=' + encodeURIComponent(song.fee || song.Fee || '') + qualityParam;
+  }
+  return '/api/song/url?id=' + encodeURIComponent(song.id || '') + qualityParam;
+}
+async function resolvePlaybackQualityStream(request) {
+  var song = playQueue[request.index];
+  var requestedQuality = normalizePlaybackQualityForProvider(request.quality, request.provider);
+  var runtimeCap = playbackQualityCapValue(song, request.provider);
+  if (playbackQualityAboveCap(requestedQuality, request.provider, runtimeCap)) requestedQuality = runtimeCap;
+  var candidates = [requestedQuality];
+  var tried = [];
+  var lastData = null;
+  while (candidates.length) {
+    var candidate = normalizePlaybackQualityForProvider(candidates.shift(), request.provider);
+    if (tried.indexOf(candidate) >= 0) continue;
+    tried.push(candidate);
+    lastData = await apiJson(playbackQualityStreamUrl(song, request.provider, candidate), { timeoutMs: 12000 });
+    if (!playbackQualitySwitchTargetsCurrentSong(request) || request.serial !== playbackQualitySwitchState.serial) {
+      return { cancelled: true };
+    }
+    if (lastData && lastData.url) {
+      return {
+        data: lastData,
+        requestedQuality: requestedQuality,
+        resolvedRequestQuality: candidate,
+        usedCompatibilityFallback: candidate !== requestedQuality
+      };
+    }
+    if (request.provider === 'qq' && !song.vipRequired && typeof qqPlaybackRetryQualities === 'function') {
+      qqPlaybackRetryQualities(candidate, lastData && lastData.level).forEach(function (quality) {
+        quality = normalizePlaybackQualityForProvider(quality, request.provider);
+        if (tried.indexOf(quality) < 0 && candidates.indexOf(quality) < 0) candidates.push(quality);
+      });
+    }
+  }
+  return { data: lastData, requestedQuality: requestedQuality };
+}
+async function restorePlaybackQualityAudio(media, src, resumeAt, wasPlaying) {
+  if (!media || !src) return false;
+  try {
+    media.pause();
+    media.src = src;
+    bindPlaybackProgressEvents(media);
+    applyVolumeToAudio();
+    await applyAudioOutputDevice(media);
+    scheduleAudioResumePosition(media, resumeAt, trackSwitchToken);
+    media.load();
+    if (wasPlaying) return !!(await playAudio({ silent: true, trackSwitch: true, fade: false }));
+    updatePlaybackProgressUi();
+    return true;
+  } catch (restoreErr) {
+    console.warn('[QualitySwitchRestore]', restoreErr);
+    return false;
+  }
+}
+async function switchPlaybackQualityInPlace(request) {
+  if (!playbackQualitySwitchTargetsCurrentSong(request) || !audio || !audio.src) return { cancelled: true };
+  var media = audio;
+  var oldSrc = media.currentSrc || media.src || '';
+  var oldTime = isFinite(media.currentTime) ? media.currentTime : Math.max(0, Number(request.resumeAt) || 0);
+  var wasPlaying = !media.paused && !media.ended;
+  var resolved = await resolvePlaybackQualityStream(request);
+  if (resolved.cancelled || !playbackQualitySwitchTargetsCurrentSong(request)) return { cancelled: true };
+  if (!resolved.data || !resolved.data.url) {
+    return { ok: false, requestedQuality: resolved.requestedQuality, data: resolved.data };
+  }
+  if (request.serial !== playbackQualitySwitchState.serial) return { cancelled: true };
+  var proxyAudioUrl = '/api/audio?url=' + encodeURIComponent(resolved.data.url);
+  try {
+    oldTime = isFinite(media.currentTime) ? media.currentTime : oldTime;
+    media.pause();
+    media.autoplay = true;
+    media.preload = 'auto';
+    if (typeof applyPlaybackSpeedToAudio === 'function') applyPlaybackSpeedToAudio();
+    resetPlaybackAudioGraphForSourceSwitch('quality-switch');
+    bindPlaybackProgressEvents(media);
+    applyVolumeToAudio();
+    await applyAudioOutputDevice(media);
+    if (!playbackQualitySwitchTargetsCurrentSong(request) || media !== audio) {
+      await restorePlaybackQualityAudio(media, oldSrc, oldTime, wasPlaying);
+      return { cancelled: true };
+    }
+    media.src = proxyAudioUrl;
+    scheduleAudioResumePosition(media, oldTime, trackSwitchToken);
+    media.load();
+    var playbackStarted = wasPlaying
+      ? await playAudio({ silent: true, trackSwitch: true, fade: false })
+      : true;
+    if (!playbackStarted) throw new Error('quality stream did not start');
+    window.__playbackResolvedLevel = resolved.data.level || resolved.resolvedRequestQuality || '';
+    var song = playQueue[request.index];
+    song.playbackLevel = resolved.data.level || song.playbackLevel || '';
+    song.playbackSource = resolved.data.source || resolved.data.provider || song.playbackSource || '';
+    var downgraded = playbackQualityWasDowngraded(resolved.requestedQuality, resolved.data.level || resolved.resolvedRequestQuality, request.provider);
+    if (downgraded) {
+      markPlaybackQualityRuntimeCap(song, request.provider, resolved.data.level || resolved.resolvedRequestQuality, 'quality-switch-resolved-lower');
+    }
+    updatePlaybackQualityUi();
+    updatePlaybackProgressUi();
+    if (typeof markStageLyricsPlaybackResume === 'function') markStageLyricsPlaybackResume('quality-switch-in-place');
+    return {
+      ok: true,
+      requestedQuality: resolved.requestedQuality,
+      data: resolved.data,
+      downgraded: downgraded,
+      usedCompatibilityFallback: resolved.usedCompatibilityFallback
+    };
+  } catch (err) {
+    console.warn('[QualitySwitchInPlace]', err);
+    var restored = await restorePlaybackQualityAudio(media, oldSrc, oldTime, wasPlaying);
+    return { ok: false, error: err, restored: restored, requestedQuality: resolved.requestedQuality, data: resolved.data };
+  }
+}
+function showPlaybackQualitySwitchResult(request, result) {
+  if (!result || result.cancelled || request.serial !== playbackQualitySwitchState.serial) return;
+  if (!result.ok) {
+    showSourceFallbackNotice(
+      '音质切换失败',
+      result.restored === false ? '新音质无法启动，请重新选择当前歌曲。' : '新音质不可用，已继续播放切换前的音频。',
+      { kind: 'quality-switch', replace: true }
+    );
+    return;
+  }
+  var actual = playbackResolvedQualityText(result.data, request.provider);
+  var title = result.downgraded || result.usedCompatibilityFallback
+    ? ((request.provider === 'qq' ? 'QQ' : (request.provider === 'kugou' ? '酷狗' : '网易云')) + ' 音质自动兼容')
+    : '音质已切换';
+  var body = result.downgraded || result.usedCompatibilityFallback
+    ? ('请求 ' + playbackQualityLabel(result.requestedQuality, request.provider) + '，实际播放 ' + actual + '。')
+    : ('实际播放: ' + actual + '。');
+  showSourceFallbackNotice(title, body, { kind: 'quality-switch', replace: true });
+}
+async function drainPlaybackQualitySwitches() {
+  while (playbackQualitySwitchState.pending) {
+    var request = playbackQualitySwitchState.pending;
+    playbackQualitySwitchState.pending = null;
+    playbackQualitySwitchState.active = request;
+    var result;
+    try {
+      result = await switchPlaybackQualityInPlace(request);
+    } catch (err) {
+      console.warn('[QualitySwitchDrain]', err);
+      result = { ok: false, error: err };
+    }
+    playbackQualitySwitchState.active = null;
+    if (!playbackQualitySwitchState.pending) showPlaybackQualitySwitchResult(request, result);
+  }
+  return true;
+}
 function applyPlaybackQualityToCurrentTrack(nextQuality, provider) {
   var song = currentIdx >= 0 && currentIdx < playQueue.length ? playQueue[currentIdx] : null;
   provider = normalizePlaybackProvider(provider || songProviderKey(song));
   var label = playbackQualityLabel(nextQuality || getProviderPlaybackQuality(provider), provider);
-  if (!canReloadCurrentTrackForQuality()) {
+  var songKey = playbackQualitySwitchSongKey(song);
+  var continuingCurrentSwitch = !!(
+    playbackQualitySwitchState.running &&
+    songKey &&
+    (
+      (playbackQualitySwitchState.pending && playbackQualitySwitchState.pending.songKey === songKey) ||
+      (playbackQualitySwitchState.active && playbackQualitySwitchState.active.songKey === songKey)
+    )
+  );
+  if (!canReloadCurrentTrackForQuality() && !continuingCurrentSwitch) {
     showToast('音质偏好: ' + label + ' · 下次播放生效');
     return;
   }
   var resumeAt = audio && isFinite(audio.currentTime) ? audio.currentTime : 0;
   showToast('正在切换音质: ' + label);
-  Promise.resolve(playQueueAt(currentIdx, {
-    qualityOverride: nextQuality || getProviderPlaybackQuality(provider),
-    qualitySwitch: true,
-    resumeAt: resumeAt,
-    preserveHomeState: true,
-  })).catch(function (e) {
-    console.warn('[QualitySwitch]', e);
-    showToast('音质切换失败，已保留偏好');
-  }).finally(forcePlaybackControlsInteractive);
+  playbackQualitySwitchState.pending = {
+    serial: ++playbackQualitySwitchState.serial,
+    index: currentIdx,
+    trackToken: trackSwitchToken,
+    songKey: songKey,
+    provider: provider,
+    quality: nextQuality || getProviderPlaybackQuality(provider),
+    resumeAt: resumeAt
+  };
+  if (playbackQualitySwitchState.running) return playbackQualitySwitchState.promise;
+  playbackQualitySwitchState.running = true;
+  playbackQualitySwitchState.promise = Promise.resolve(drainPlaybackQualitySwitches()).finally(function () {
+    playbackQualitySwitchState.running = false;
+    playbackQualitySwitchState.pending = null;
+    playbackQualitySwitchState.active = null;
+    playbackQualitySwitchState.promise = null;
+    forcePlaybackControlsInteractive();
+  });
+  return playbackQualitySwitchState.promise;
 }
 function toggleQualityPanel(e) {
   if (e) e.stopPropagation();

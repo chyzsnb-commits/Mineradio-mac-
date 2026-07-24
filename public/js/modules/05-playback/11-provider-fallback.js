@@ -245,7 +245,8 @@ function removeSourceFallbackCard(card) {
 // 节流：同样的通知 800ms 内不重复弹（防止失败链路疯狂创建 DOM 卡死）
 var _lastFallbackNotice = '';
 var _lastFallbackNoticeAt = 0;
-function showSourceFallbackNotice(title, body) {
+function showSourceFallbackNotice(title, body, opts) {
+  opts = opts || {};
   var noticeKey = String(title) + '|' + String(body);
   var now = Date.now();
   if (noticeKey === _lastFallbackNotice && now - _lastFallbackNoticeAt < 800) return;
@@ -253,8 +254,16 @@ function showSourceFallbackNotice(title, body) {
   _lastFallbackNoticeAt = now;
   var stack = ensureSourceFallbackStack();
   if (stack) {
+    if (opts.kind && opts.replace) {
+      Array.prototype.slice.call(stack.children || []).forEach(function (existing) {
+        if (existing && existing.dataset && existing.dataset.noticeKind === opts.kind) {
+          if (existing.parentNode) existing.parentNode.removeChild(existing);
+        }
+      });
+    }
     var card = document.createElement('div');
     card.className = 'source-fallback-card';
+    if (opts.kind) card.dataset.noticeKind = opts.kind;
     var head = document.createElement('div');
     head.className = 'source-fallback-head';
     var titleElNew = document.createElement('div');

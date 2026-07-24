@@ -281,11 +281,6 @@ function finishLoginProviderPointer(e) {
   setTimeout(function () { loginProviderClickSuppressed = false; }, 120);
   scheduleLoginWorkflowEdges('sort-finish');
 }
-function loginProviderVipLabel(provider, status) {
-  if (!status || !status.loggedIn) return '';
-  var level = providerVipLevel(provider, status);
-  return level === 'svip' ? 'SVIP' : (level === 'vip' ? 'VIP' : '普通');
-}
 function handleLoginProviderExternalSwitchEvent(e, provider) {
   if (e) {
     e.preventDefault();
@@ -320,11 +315,7 @@ function updateLoginProviderCapsuleStatus(provider, btn) {
     }
   }
   var badge = btn.querySelector('.login-provider-state-badge');
-  if (!badge) {
-    badge = document.createElement('span');
-    badge.className = 'login-provider-state-badge';
-    btn.appendChild(badge);
-  }
+  if (badge) badge.remove();
   var externalSwitch = btn.querySelector('.login-provider-external-switch');
   if (!externalSwitch) {
     externalSwitch = document.createElement('span');
@@ -354,10 +345,6 @@ function updateLoginProviderCapsuleStatus(provider, btn) {
     });
   }
   externalSwitch.title = isAccountProviderExternallyVisible(provider) ? '已在右上角展示，点击关闭' : '未在右上角展示，点击开启';
-  var label = loginProviderVipLabel(provider, st);
-  var level = providerVipLevel(provider, st);
-  badge.textContent = label;
-  badge.className = 'login-provider-state-badge ' + (st.loggedIn ? (level === 'none' ? 'normal' : level) : 'hidden');
 }
 function bindLoginWorkflowPointerEvents() {
   var graph = document.getElementById('login-node-graph');
@@ -607,11 +594,11 @@ function qishuiLoginStatusText(info) {
 }
 function spotifyLoginStatusText(info) {
   info = info || spotifyLoginStatus || {};
-  if (info.loggedIn) return 'Spotify 已连接 / ' + (info.product === 'premium' ? 'Premium' : 'Free') + ' / 可同步歌单和 Liked Songs';
+  if (info.loggedIn) return 'Spotify 已连接 / 可同步歌单和 Liked Songs';
   if (info.stale) return 'Spotify 登录已过期，请重新连接官方 OAuth';
   if (info.localConfigMissing) return 'Spotify 未连接：粘贴 Spotify Client ID 后点击“保存并授权”';
   if (info.oauthConfigured) return 'Spotify Client ID 已保存，点击“连接 Spotify”打开官方授权窗口';
-  if (info.configured || info.searchReady) return 'Spotify 搜索已可用；登录后可同步会员状态、歌单和红心歌单';
+  if (info.configured || info.searchReady) return 'Spotify 搜索已可用；登录后可同步歌单和红心歌单';
   var missing = info.oauthMissing && info.oauthMissing.length ? (' 缺少: ' + info.oauthMissing.join(', ')) : '';
   return '粘贴 Spotify Client ID，并在 Spotify Developer Dashboard 登记回调地址 http://127.0.0.1:43879/callback' + missing;
 }
@@ -737,7 +724,7 @@ function updateLoginProviderUi() {
     if (spotifyBtn) spotifyBtn.classList.toggle('active', true);
     if (title) title.textContent = '连接 Spotify';
     if (desc) desc.innerHTML = canOpenSpotifyOAuth
-      ? '粘贴 <b>Spotify Client ID</b> 后保存并授权，用于同步 Premium/Free 状态、歌单和 Liked Songs；播放仍按匹配源自动换源。'
+      ? '粘贴 <b>Spotify Client ID</b> 后保存并授权，用于同步账号、歌单和 Liked Songs；播放仍按匹配源自动换源。'
       : '当前环境不支持桌面授权桥；请在 Mineradio 桌面版中连接 Spotify。';
     if (shell) {
       shell.classList.add('web-login-preview');
@@ -828,7 +815,7 @@ function updateLoginProviderUi() {
     var cardLabel = qqCard.querySelector('span');
     if (cardMark) cardMark.textContent = isQQ ? 'QQ' : (isKugou ? 'KG' : (isQishui ? 'QS' : 'NE'));
     if (cardLabel) cardLabel.textContent = isQQ
-      ? (qqWebLoginBusy ? '等待扫码确认' : (qqLoginStatus.loggedIn ? '重新打开官方窗口同步会员' : '打开官方扫码窗口'))
+      ? (qqWebLoginBusy ? '等待扫码确认' : (qqLoginStatus.loggedIn ? '重新打开官方登录窗口' : '打开官方扫码窗口'))
       : (isKugou ? (kugouWebLoginBusy ? '等待登录确认' : '打开官方登录窗口') : (isQishui ? (qishuiOAuthBusy ? '读取中' : '读取本地汽水') : (neteaseWebLoginBusy ? '等待扫码确认' : '打开官方登录窗口')));
   }
   if (st) {
@@ -844,9 +831,8 @@ function updateLoginProviderUi() {
   if (refreshBtn) {
     refreshBtn.disabled = isQishui ? qishuiBusy : (isQQ ? !!qqWebLoginBusy : (isKugou ? !!kugouWebLoginBusy : !!neteaseWebLoginBusy));
     var qqNeedsAuthRefresh = isQQ && qqLoginNeedsAuthorizationRefresh(qqLoginStatus);
-    var qqNeedsMembershipSync = isQQ && qqLoginStatus.loggedIn && !hasProviderVip('qq', qqLoginStatus);
-    refreshBtn.textContent = isQishui ? (qishuiOAuthBusy ? '读取中…' : (qishuiTokenBusy ? '保存中…' : (canOpenQishuiOAuth ? '读取本地汽水' : (qishuiSearchReady ? '读取本地汽水' : '保存授权')))) : (isQQ ? (qqWebLoginBusy ? '等待扫码…' : (qqNeedsAuthRefresh ? '重新授权' : (qqNeedsMembershipSync ? '同步会员' : (qqLoginStatus.loggedIn ? '刷新状态' : '扫码登录')))) : (isKugou ? (kugouWebLoginBusy ? '等待登录…' : '登录') : (canOpenNeteaseWeb ? (neteaseWebLoginBusy ? '等待扫码…' : '网页登录') : '刷新二维码')));
-    refreshBtn.onclick = isQishui ? (canOpenQishuiOAuth ? openQishuiWebLogin : (qishuiSearchReady ? openQishuiPublicSearch : submitQishuiManualLogin)) : (isQQ ? ((qqNeedsAuthRefresh || qqNeedsMembershipSync) ? openQQWebLogin : (qqLoginStatus.loggedIn ? refreshQr : openQQWebLogin)) : (isKugou ? openKugouWebLogin : (canOpenNeteaseWeb ? openNeteaseWebLogin : refreshQr)));
+    refreshBtn.textContent = isQishui ? (qishuiOAuthBusy ? '读取中…' : (qishuiTokenBusy ? '保存中…' : (canOpenQishuiOAuth ? '读取本地汽水' : (qishuiSearchReady ? '读取本地汽水' : '保存授权')))) : (isQQ ? (qqWebLoginBusy ? '等待扫码…' : (qqNeedsAuthRefresh ? '重新授权' : (qqLoginStatus.loggedIn ? '刷新状态' : '扫码登录'))) : (isKugou ? (kugouWebLoginBusy ? '等待登录…' : '登录') : (canOpenNeteaseWeb ? (neteaseWebLoginBusy ? '等待扫码…' : '网页登录') : '刷新二维码')));
+    refreshBtn.onclick = isQishui ? (canOpenQishuiOAuth ? openQishuiWebLogin : (qishuiSearchReady ? openQishuiPublicSearch : submitQishuiManualLogin)) : (isQQ ? (qqNeedsAuthRefresh ? openQQWebLogin : (qqLoginStatus.loggedIn ? refreshQr : openQQWebLogin)) : (isKugou ? openKugouWebLogin : (canOpenNeteaseWeb ? openNeteaseWebLogin : refreshQr)));
   }
   if (isQishui && canOpenQishuiOfficialWindow) {
     if (qqCard) {
@@ -993,7 +979,7 @@ async function openSpotifyWebLogin() {
       }
       throw new Error((result && (result.message || result.error)) || 'Spotify 授权未完成');
     }
-    if (statusEl) { statusEl.textContent = '正在同步 Spotify 账号、会员状态和歌单…'; statusEl.className = 'preview'; }
+    if (statusEl) { statusEl.textContent = '正在同步 Spotify 账号和歌单…'; statusEl.className = 'preview'; }
     var info = await refreshSpotifyLoginStatus();
     if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || 'Spotify 登录态不可用');
     activeAccountProvider = 'spotify';

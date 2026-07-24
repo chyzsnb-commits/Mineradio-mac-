@@ -680,7 +680,7 @@ async function playQueueAt(idx, opts) {
   function markPlayPhase(name) { playPhase = name; }
   try {
     markPlayPhase('session-finalize');
-    safePlaybackStep('session-finalize', function () { finalizeListenSession(false); });
+    safePlaybackStep('session-finalize', function () { if (!qualitySwitch) finalizeListenSession(false); });
     homeForcedOpen = false;
     if (!opts.preserveHomeState) homeSuppressed = false;
     currentIdx = idx;
@@ -726,8 +726,8 @@ async function playQueueAt(idx, opts) {
     }
     var playbackContext = opts.context || (song && song.radioContext) || null;
     activeRadioContext = playbackContext || null;
-    safeRenderQueuePanel('play-queue-at-switch', { scrollCurrent: miniQueueOpen });
-    safePlaybackStep('shelf-preview-suppress', suppressShelfPreviewForPlaybackSwitch);
+    if (!qualitySwitch) safeRenderQueuePanel('play-queue-at-switch', { scrollCurrent: miniQueueOpen });
+    if (!qualitySwitch) safePlaybackStep('shelf-preview-suppress', suppressShelfPreviewForPlaybackSwitch);
     if (!albumGaplessHandoff) pauseCurrentAudioForTrackSwitch();
     else {
       playToggleBusy = false;
@@ -736,11 +736,11 @@ async function playQueueAt(idx, opts) {
     var bmKey = safePlaybackStep('beatmap-key', function () { return beatMapSongKey(song); }) || '';
     var podcastDjMode = !!safePlaybackStep('podcast-mode', function () { return isPodcastSong(song); });
     safePlaybackStep('dj-mode', function () { setDjModeActive(podcastDjMode, song); });
-    safePlaybackStep('visual-switch', switchPlaybackVisualToEmily);
-    currentLocalSong = null;
-    safePlaybackStep('cover-button', updateCustomCoverButton);
-    safePlaybackStep('like-buttons', function () { updateLikeButtons(song); });
-    safePlaybackStep('like-status', function () { syncLikeStatusForSong(song); });
+    if (!qualitySwitch) safePlaybackStep('visual-switch', switchPlaybackVisualToEmily);
+    if (!qualitySwitch) currentLocalSong = null;
+    if (!qualitySwitch) safePlaybackStep('cover-button', updateCustomCoverButton);
+    if (!qualitySwitch) safePlaybackStep('like-buttons', function () { updateLikeButtons(song); });
+    if (!qualitySwitch) safePlaybackStep('like-status', function () { syncLikeStatusForSong(song); });
     safePlaybackStep('cinema-track-profile', function () { if (!qualitySwitch) resetCinemaTrackProfile(song); });
     safePlaybackStep('empty-home', function () { if (!opts.preserveHomeState) updateEmptyHomeVisibility(); });
     markPlayPhase('lyric-prep');
@@ -748,7 +748,6 @@ async function playQueueAt(idx, opts) {
       if (qualitySwitch) {
         if (typeof cancelPendingTrackFallbackLyrics === 'function') cancelPendingTrackFallbackLyrics();
         if (typeof markStageLyricsPlaybackResume === 'function') markStageLyricsPlaybackResume('quality-switch-preserve-lyrics');
-        applyPreferredLyricsForCurrent(true);
       } else {
         if (typeof resetLyricsForTrackSwitch === 'function') resetLyricsForTrackSwitch(song, token);
         else {
@@ -1054,7 +1053,7 @@ async function playQueueAt(idx, opts) {
         }, 220);
       }
       markPlayPhase('session-begin');
-      safePlaybackStep('listen-session-begin', function () { beginListenSession(song, playbackContext); });
+      safePlaybackStep('listen-session-begin', function () { if (!qualitySwitch) beginListenSession(song, playbackContext); });
       markPlayPhase('lyrics-fetch');
       if (song.type === 'podcast') {
         if (typeof cancelPendingTrackFallbackLyrics === 'function') cancelPendingTrackFallbackLyrics();
@@ -1073,8 +1072,8 @@ async function playQueueAt(idx, opts) {
         safeRenderQueuePanel('play-queue-at');
         scheduleShelfRebuild('play-queue-at', true);
       }
-      scheduleAlbumGaplessPreloadForCurrent(token, albumGaplessHandoff ? 'album-gapless-handoff-started' : 'track-started');
-      safePlaybackStep('shelf-preview-suppress-end', suppressShelfPreviewForPlaybackSwitch);
+      if (!qualitySwitch) scheduleAlbumGaplessPreloadForCurrent(token, albumGaplessHandoff ? 'album-gapless-handoff-started' : 'track-started');
+      if (!qualitySwitch) safePlaybackStep('shelf-preview-suppress-end', suppressShelfPreviewForPlaybackSwitch);
     } catch (err) {
       if (typeof token !== 'undefined') clearFailedPlaybackAudioSource(token);
       console.error('Play failed:', { phase: playPhase, error: err }, err);

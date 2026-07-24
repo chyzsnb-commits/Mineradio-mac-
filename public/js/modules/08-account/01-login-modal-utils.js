@@ -305,16 +305,8 @@ function providerAvatarSrc(provider, status) {
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
 }
 function providerVipBadge(provider, status, idAttr, includeNormal) {
-  status = status || platformStatus(provider) || {};
-  if (!status.loggedIn) return '';
-  var pendingQQSync = provider === 'qq' && typeof qqLoginNeedsAuthorizationRefresh === 'function' && qqLoginNeedsAuthorizationRefresh(status);
-  var level = providerVipLevel(provider, status);
-  if (level === 'none' && !includeNormal && !pendingQQSync) return '';
-  var id = idAttr ? ' id="' + idAttr + '"' : '';
-  var badgeLevel = pendingQQSync ? 'pending' : (level === 'none' ? 'normal' : level);
-  var cls = 'top-account-vip ' + escHtml(provider || 'netease') + ' ' + badgeLevel;
-  var label = pendingQQSync ? '待同步' : (level === 'svip' ? 'SVIP' : (level === 'vip' ? 'VIP' : '普通'));
-  return '<span' + id + ' class="' + cls + '">' + label + '</span>';
+  // 平台会员字段经常缺失或延迟,只用于后台播放能力判断,不再作为用户身份徽标展示。
+  return '';
 }
 function renderTopAccountPill(provider, opts) {
   opts = opts || {};
@@ -324,11 +316,9 @@ function renderTopAccountPill(provider, opts) {
   var meta = platformMeta(provider);
   st = st || {};
   var displayName = loggedIn ? ((provider === 'qq' && st.preview) ? '待接入' : (st.nickname || meta.label)) : meta.label;
-  var vipTag = providerVipBadge(provider, st, '', true);
   return '<span class="top-account-pill ' + (loggedIn ? 'online' : 'offline') + '" data-account-provider="' + escHtml(provider) + '">' +
     '<img src="' + providerAvatarSrc(provider, st) + '" alt="">' +
     '<span class="top-account-name">' + escHtml(displayName) + '</span>' +
-    vipTag +
     '</span>';
 }
 function bindTopAccountPillSorting() {
