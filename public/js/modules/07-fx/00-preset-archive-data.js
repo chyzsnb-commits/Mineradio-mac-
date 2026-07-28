@@ -9,7 +9,7 @@ var presetMeta = [
   { name: '安魂', desc: '骷髅·YUI7W', descHtml: '骷髅·<span class="pc-yui7w">YUI7W</span>' },
   { name: '黑洞', desc: '吸积盘 · 引力漩涡' },
   { name: '极光', desc: '丝带翻涌 · 中频流动' },
-  { name: '声波走廊', desc: '穿过声音 · 隧道流动' },
+  { name: '雨境', desc: '节奏雨丝 · 频段风向' },
   { name: '音域回响', desc: '频谱方块 · 反应堆核心' },
 ];
 var presetIcons = [
@@ -22,10 +22,10 @@ var presetIcons = [
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.2h4v6.2h4.2v3.8H14v7.6h-4v-7.6H5.8V9.4H10z"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="9" ry="3.4"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M2.5 9c3-3.5 6-1 9-4M3 14c3-3.5 6-1 9-4M4 19c3-3.5 6-1 9-4"/><path d="M14 5c2.5-2 5-1 7.5-2M15 10c2.5-2 5-1 7.5-2"/></svg>',
-  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7.6" y="7.6" width="8.8" height="8.8" rx="1.4"/><path d="M3 3l4.6 4.6M21 3l-4.6 4.6M3 21l4.6-4.6M21 21l-4.6-4.6"/></svg>',
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M7 3v10M12 5v12M17 2v11"/><path d="M7 15c0 1.7 1.1 3 2.5 3S12 16.7 12 15M12 19c0 1.5.9 2.6 2.1 2.6S16.2 20.5 16.2 19M17 15c0 1.2.8 2.2 1.8 2.2"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 21h18"/><rect x="4.5" y="11" width="3" height="10"/><rect x="9.5" y="6" width="3" height="15"/><rect x="14.5" y="13" width="3" height="8"/><rect x="19" y="9" width="0.1" height="12"/></svg>',
 ];
-var presetDisplayOrder = [0, 10, 6, 5, 4, 2, 1, 3, 7, 8];   // 9=声波走廊 已按用户要求下架(索引保留,存档遇 9 回落 0);11/12 上游 sonic 预设已按用户要求删除(2026-07-10)
+var presetDisplayOrder = [0, 10, 9, 6, 5, 4, 2, 1, 3, 7, 8];   // 9=雨境(节奏雨丝,复用原声波走廊索引);11/12 上游 sonic 预设已按用户要求删除(2026-07-10)
 var lyricColorPresets = [
   { name: '雾蓝', color: '#a9b8c8' },
   { name: '银蓝', color: '#9db8cf' },
@@ -214,7 +214,7 @@ function archiveMode(raw, key, pattern, fallback) {
 function normalizeFxArchiveSnapshot(raw) {
   if (!raw || typeof raw !== 'object') return null;
   var savedPreset = clampRange(Number(raw.preset) || 0, 0, presetMeta.length - 1);
-  if (savedPreset === 9) savedPreset = 0;   // 声波走廊已下架
+  // 9 现为雨境(节奏雨丝);旧声波走廊存档会自然落到雨境,可接受
   if (savedPreset === 3 && raw.visualPresetSchema !== VISUAL_PRESET_SCHEMA) savedPreset = 5;
   var archiveShelfMode = archiveMode(raw, 'shelf', /^(side|stage|both)$/, fxDefaults.shelf);
   var archiveShelfPresence = archiveShelfMode === 'off' ? 'auto' : archiveMode(raw, 'shelfPresence', /^(auto|always)$/, fxDefaults.shelfPresence);

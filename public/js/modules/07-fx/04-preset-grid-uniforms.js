@@ -1,7 +1,7 @@
 function buildPresetGrid() {
   var grid = document.getElementById('preset-grid');
   if (!grid) return;
-  var seen = { 9: true };   // 9=声波走廊 已下架:不进网格,也不被下面的补位循环捞回来
+  var seen = {};
   var order = presetDisplayOrder.filter(function (id) {
     var ok = id >= 0 && id < presetMeta.length && !seen[id];
     seen[id] = true;
@@ -84,7 +84,7 @@ function setPreset(p, opts) {
     else if (p === 6) { orbit.userRadius = 7.4; orbit.userPhi = 0.10; orbit.userTheta = 0.18; orbit.baselineRadius = 7.4; orbit.baselinePhi = 0.10; }
     else if (p === 7) { orbit.userRadius = 7.2; orbit.userPhi = 0.34; orbit.userTheta = 0.0; orbit.baselineRadius = 7.2; orbit.baselinePhi = 0.34; }
     else if (p === 8) { orbit.userRadius = 8.4; orbit.userPhi = 0.08; orbit.userTheta = 0.0; orbit.baselineRadius = 8.4; orbit.baselinePhi = 0.08; }
-    else if (p === 9) { orbit.userRadius = 7.6; orbit.userPhi = 0.55; orbit.userTheta = 0.0; orbit.baselineRadius = 7.6; orbit.baselinePhi = 0.55; }
+    else if (p === 9) { orbit.userRadius = 7.2; orbit.userPhi = 0.06; orbit.userTheta = 0.0; orbit.baselineRadius = 7.2; orbit.baselinePhi = 0.06; }   // 雨境：正视雨幕
     else if (p === 10){ orbit.userRadius = 50.0; orbit.userPhi = 0.20; orbit.userTheta = 0.0; orbit.baselineRadius = 50.0; orbit.baselinePhi = 0.20; }   // 音域回响：远处低角度横扫整片地形
     else { orbit.userRadius = 6.6; orbit.userPhi = 0.08; orbit.userTheta = 0.0; orbit.baselineRadius = 6.6; orbit.baselinePhi = 0.08; }
     // 音域回响体素地形场景很大,放开半径夹紧;其它预设保持原值

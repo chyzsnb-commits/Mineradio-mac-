@@ -12,7 +12,7 @@ function readSavedPlaybackVisualPreset() {
     var raw = readCurrentFxAutosaveRaw();
     if (!Object.prototype.hasOwnProperty.call(raw, 'preset')) return fxDefaults.preset;
     var savedPreset = clampRange(Number(raw.preset) || 0, 0, MAX_VISUAL_PRESET_INDEX);
-    if (savedPreset === 9) savedPreset = 0;   // 声波走廊已下架
+    // 9 现为雨境;旧声波走廊存档自然落到雨境
     if (savedPreset === 3 && raw.visualPresetSchema !== VISUAL_PRESET_SCHEMA) savedPreset = 5;
     return savedPreset;
   } catch (e) {

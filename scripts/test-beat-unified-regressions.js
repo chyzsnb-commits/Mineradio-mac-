@@ -56,6 +56,11 @@ test('keeps custom-background voxel transparency without the deferred water pres
   assert.doesNotMatch(presets, /水膜共振/);
   assert.doesNotMatch(presets, /presetDisplayOrder = \[[^\]]*11/);
   assert.equal(fs.existsSync(path.join(root, 'public/js/modules/02-visual/18-water-membrane.js')), false);
+  // 雨境复用索引 9，不是水膜；对象池模块存在且已进 loader
+  assert.match(loader, /18-rain-mood\.js/);
+  assert.match(presets, /name: '雨境'/);
+  assert.match(presets, /presetDisplayOrder = \[[^\]]*9/);
+  assert.equal(fs.existsSync(path.join(root, 'public/js/modules/02-visual/18-rain-mood.js')), true);
 });
 
 test('does not expose gesture inference diagnostics in the load monitor', () => {

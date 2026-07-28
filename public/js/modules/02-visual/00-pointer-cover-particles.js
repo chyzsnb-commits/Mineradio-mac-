@@ -806,25 +806,11 @@ maxRippleAmp = max(maxRippleAmp, edge * (0.2 + uBeat * 0.4 + uTreble * 0.25));
   }
 
   // ====================================================
-  //  Preset 9: WAVE CORRIDOR — 声波走廊 (向前穿过声音的隧道，专属律动)
+  //  Preset 9: 雨境 — 主粒子由 JS 侧隐藏，独立雨丝引擎渲染
   // ====================================================
   else if (uPreset < 9.5) {
-float ang = aUv.x * 2.0 * PI;                     // 环上角度
-float along = aUv.y;                              // 沿走廊
-// 专属律动：向前流动(低频加速)，墙面随中/高频起伏，沿廊低频脉动
-float flow = fract(along - t * 0.12 * (1.0 + uBass * 0.6));
-float zPos = (flow - 0.5) * 16.0;
-float wave = sin(ang * 6.0 + flow * 30.0 + t * 2.0) * (0.12 + uMid * 0.55)
-           + sin(ang * 12.0 - flow * 50.0) * uTreble * 0.20;
-float baseR = 2.6 + uBass * 0.8 * K + sin(flow * 12.0 + t * 1.5) * 0.40;
-float r = baseR + wave;
-pos.x = cos(ang) * r;
-pos.y = sin(ang) * r;
-pos.z = zPos;
-float depthFade = smoothstep(-8.0, 4.5, zPos);     // 近亮远暗
-vColor = mix(vColor, vec3(0.58, 0.86, 1.0), 0.28 + clamp(wave, 0.0, 1.0) * 0.6);
-vAlpha = (0.30 + depthFade * 0.70) * (0.7 + uTreble * 0.3);
-maxRippleAmp = max(maxRippleAmp, abs(wave) * 0.8 + uBeat * 0.4);
+pos = vec3((aUv.x - 0.5) * 0.01, (aUv.y - 0.5) * 0.01, -90.0);
+vAlpha = 0.0;
   }
 
   // 兜底 (Preset 10 音域回响：主粒子由 JS 侧隐藏，独立体素引擎渲染)
@@ -1145,7 +1131,9 @@ scene.add(backgroundStarRiverParticles);
 function backgroundStarRiverTargetAlpha() {
   if (!fx || fx.backgroundStarRiver === false) return 0;
   if (Number(fx.preset) === 5) return 0;
+  if (Number(fx.preset) === 9) return 0;    // 雨境:自有暗底与雨丝,星河叠上发脏
   if (Number(fx.preset) === 10) return 0;   // 音域回响(我方体素预设,上游不识):有自己的暗底盘/封底体系,星河叠上去是杂色
+  if (typeof rainMoodActive === 'function' && rainMoodActive()) return 0;
   if (typeof voxelCityActive === 'function' && voxelCityActive()) return 0;
   if (typeof SKULL_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SKULL_PRESET_INDEX) return 0.38;
   return 0.34;

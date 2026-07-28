@@ -709,9 +709,10 @@ function animate() {
   tickGestureRotation(dt);
   var skullPresetActive = fx && fx.preset === SKULL_PRESET_INDEX;
   var voxelActive = typeof voxelCityActive === 'function' && voxelCityActive();
+  var rainActive = typeof rainMoodActive === 'function' && rainMoodActive();
   var presetUsesStarRiverParticles = fx && Number(fx.preset) === 5;
   var presetStarRiverMuted = presetUsesStarRiverParticles && fx.backgroundStarRiver === false;
-  var hidePoints = skullPresetActive || voxelActive;
+  var hidePoints = skullPresetActive || voxelActive || rainActive;
   particles.visible = !hidePoints && !presetStarRiverMuted;
   if (bloomParticles) bloomParticles.visible = !hidePoints && !presetStarRiverMuted && fx.bloom && fx.bloomStrength > 0.01;
   if (floatGroup) floatGroup.visible = !hidePoints;
@@ -735,6 +736,9 @@ function animate() {
   var voxelEchoPerfStart = performance.now();
   if (typeof updateVoxelCity === 'function') updateVoxelCity(dt);   // 音域回响每帧更新(内部按预设显隐);须在舞台歌词之前,避免歌词用上一帧体素相机而滞后抖动
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.voxel-echo', voxelEchoPerfStart);
+  var rainMoodPerfStart = performance.now();
+  if (typeof updateRainMood === 'function') updateRainMood(dt);   // 雨境节奏雨丝(内部按预设显隐);跟随主 rAF / 空闲降帧
+  if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.rain-mood', rainMoodPerfStart);
   var skullPerfStart = performance.now();
   var skullStepDt = consumeFrameGate(mainFrameGates.skullParticles, now, dt, targetMainSkullParticleFps(now), false, 'skull-particles');
   if (skullStepDt > 0) updateSkullParticleLayer(skullStepDt);
