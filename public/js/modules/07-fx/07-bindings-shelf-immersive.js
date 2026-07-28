@@ -31,6 +31,9 @@ function bindFxPanel() {
     ['fx-voxrotspeed', 'voxRotateSpeed'],
     ['fx-rainamount', 'rainAmount'],
     ['fx-rainthunder', 'rainThunder'],
+    ['fx-rainglassamount', 'rainGlassAmount'],
+    ['fx-rainglassspeed', 'rainGlassSpeed'],
+    ['fx-rainglasssize', 'rainGlassSize'],
   ];
   ids.forEach(function (pair) {
     var el = document.getElementById(pair[0]);
@@ -122,6 +125,9 @@ function bindFxPanel() {
       if (pair[1] === 'lyricLineHeight') fx.lyricLineHeight = clampRange(fx.lyricLineHeight, 0.72, 1.80);
       if (pair[1] === 'rainAmount') fx.rainAmount = clampRange(fx.rainAmount, 0.1, 2.5);
       if (pair[1] === 'rainThunder') fx.rainThunder = clampRange(fx.rainThunder, 0.15, 0.95);
+      if (pair[1] === 'rainGlassAmount') fx.rainGlassAmount = clampRange(fx.rainGlassAmount, 0.25, 1.5);
+      if (pair[1] === 'rainGlassSpeed') fx.rainGlassSpeed = clampRange(fx.rainGlassSpeed, 0.2, 2.2);
+      if (pair[1] === 'rainGlassSize') fx.rainGlassSize = clampRange(fx.rainGlassSize, 0.6, 1.8);
       if (/^rain/.test(pair[1]) && typeof saveRainToggles === 'function') saveRainToggles();
       if (pair[1] === 'lyricContextSpread') fx.lyricContextSpread = clampRange(fx.lyricContextSpread, 0.60, 2.40);
       if (pair[1] === 'lyricTranslationGap') fx.lyricTranslationGap = clampRange(fx.lyricTranslationGap, 0.28, 2.20);
@@ -337,6 +343,9 @@ function toggleFx(key) {
   if (toggle) toggle.classList.toggle('on', fx[key]);
   if (key === 'rainGhostCover' && typeof showToast === 'function') {
     showToast(fx.rainGhostCover !== false ? '雨境封面图已开启' : '雨境封面图已关闭');
+  }
+  if (key === 'rainGlassEnabled' && typeof showToast === 'function') {
+    showToast(fx.rainGlassEnabled !== false ? '玻璃水珠已开启' : '玻璃水珠已关闭');
   }
   if (key === 'lyricGlow' || key === 'lyricGlowBeat') updateLyricGlowControls();
   syncFxUniforms();

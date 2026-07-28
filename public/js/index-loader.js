@@ -39,6 +39,7 @@
     'js/modules/02-visual/16-voxel-echo.js',
     'js/modules/02-visual/17-video-bg-store.js',
     'js/modules/02-visual/18-rain-mood.js',
+    'js/modules/02-visual/19-rain-glass.js',
     'js/modules/03-beat/00-tempo-worker-cache-prefetch.js',
     'js/modules/03-beat/01-audio-beat-analysis.js',
     'js/modules/03-beat/02-podcast-dj-analysis.js',

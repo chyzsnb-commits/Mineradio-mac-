@@ -497,6 +497,9 @@ function updateFxInputs() {
   if (typeof setRange === 'function') setRange('fx-voxrotspeed', fx.voxRotateSpeed == null ? 0.5 : fx.voxRotateSpeed);
   if (typeof setRange === 'function') setRange('fx-rainamount', fx.rainAmount == null ? 1 : fx.rainAmount);
   if (typeof setRange === 'function') setRange('fx-rainthunder', fx.rainThunder == null ? 0.55 : fx.rainThunder);
+  if (typeof setRange === 'function') setRange('fx-rainglassamount', fx.rainGlassAmount == null ? 0.70 : fx.rainGlassAmount);
+  if (typeof setRange === 'function') setRange('fx-rainglassspeed', fx.rainGlassSpeed == null ? 1.00 : fx.rainGlassSpeed);
+  if (typeof setRange === 'function') setRange('fx-rainglasssize', fx.rainGlassSize == null ? 1.00 : fx.rainGlassSize);
   var voxCoverColorToggle = document.getElementById('t-voxCoverColor');
   if (voxCoverColorToggle) voxCoverColorToggle.classList.toggle('on', fx.voxCoverColor !== false);
   var voxMeteorsToggle = document.getElementById('t-voxMeteors');
@@ -505,6 +508,8 @@ function updateFxInputs() {
   if (voxGhostCoverToggle) voxGhostCoverToggle.classList.toggle('on', fx.voxGhostCover !== false);
   var rainGhostCoverToggle = document.getElementById('t-rainGhostCover');
   if (rainGhostCoverToggle) rainGhostCoverToggle.classList.toggle('on', fx.rainGhostCover !== false);
+  var rainGlassToggle = document.getElementById('t-rainGlassEnabled');
+  if (rainGlassToggle) rainGlassToggle.classList.toggle('on', fx.rainGlassEnabled !== false);
   var voxFloatBlocksToggle = document.getElementById('t-voxFloatBlocks');
   if (voxFloatBlocksToggle) voxFloatBlocksToggle.classList.toggle('on', fx.voxFloatBlocks !== false);
   var voxShimmerToggle = document.getElementById('t-voxShimmer');

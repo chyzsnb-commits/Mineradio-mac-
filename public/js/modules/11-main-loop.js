@@ -739,6 +739,9 @@ function animate() {
   var rainMoodPerfStart = performance.now();
   if (typeof updateRainMood === 'function') updateRainMood(dt);   // 雨境节奏雨丝(内部按预设显隐);跟随主 rAF / 空闲降帧
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.rain-mood', rainMoodPerfStart);
+  var rainGlassPerfStart = performance.now();
+  if (typeof updateRainGlass === 'function') updateRainGlass(dt);
+  if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.rain-glass-update', rainGlassPerfStart);
   var skullPerfStart = performance.now();
   var skullStepDt = consumeFrameGate(mainFrameGates.skullParticles, now, dt, targetMainSkullParticleFps(now), false, 'skull-particles');
   if (skullStepDt > 0) updateSkullParticleLayer(skullStepDt);
@@ -763,7 +766,12 @@ function animate() {
   }
 
   var rendererPerfStart = performance.now();
-  renderMainSceneWithGpuSample(scene, camera);
+  var renderedRainGlass = false;
+  if (typeof rainGlassActive === 'function' && rainGlassActive()
+      && typeof renderRainGlassScene === 'function') {
+    renderedRainGlass = renderRainGlassScene(renderer, scene, camera);
+  }
+  if (!renderedRainGlass) renderMainSceneWithGpuSample(scene, camera);
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('renderer.render', rendererPerfStart);
   var frameCostMs = performance.now() - framePerfStart;
   if (typeof sampleAdaptiveFrameCost === 'function') {
