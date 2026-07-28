@@ -407,12 +407,11 @@
 - 持久化：写入 `mineradio-rain-toggles-v1` 的 amount/thunder；启动 `loadRainToggles` 恢复。
 - 验证：`test-rain-mood-visual.js` 增断言；`npm run check` **171/171**。
 
+**2026-07-28：移除未完成的玻璃水珠原型。**
+- 原因：玻璃水珠/屏幕水滴桌面效果观感不合格、当前不可用；用户仍在另线修复，产品线先不带。
+- 删除：`public/rain-window.html`（metaball 水珠实验页）、`.claude/launch.json`（仅服务该预览）、雨境注释与交接文档中的水珠条目。
+- 保留：雨丝、湿玻璃幽灵封面、雨量/打雷阈值、封面图开关。
 
-**2026-07-28：雨境玻璃水珠叠层。**
-- 近景对象池 ≤220，贴 `z≈-1.35` 页面玻璃；雨丝撞击/随机拍打生成，粘滞下滑。
-- UI：动态 tab 雨境区「玻璃水珠」开关 + 阈值/大小/数量滑条；默认开。
-- 持久化：`mineradio-rain-toggles-v1` 增 beads/beadThreshold/beadSize/beadAmount。
-- 验证：`test-rain-mood-visual.js`；`npm run check` **171/171**。
 **2026-07-28：雨境封面图开关（动态 tab）。**
 - UI：`#rain-fx-section` → 动态 tab；仅 `body.rain-on` 显示；`t-rainGhostCover` 与音域回响「封面图」同构。
 - 状态：`fx.rainGhostCover` 默认 true；独立持久化 `mineradio-rain-toggles-v1`；启动 `loadRainToggles()`；`toggleFx` 写盘并 toast。

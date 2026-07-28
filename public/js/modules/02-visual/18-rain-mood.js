@@ -3,7 +3,6 @@
 // 只吃主循环已算好的 bass / mid / treble / beatPulse / audioEnergy。
 // THREE.Points 对象池，挂主场景，跟随主 rAF / 空闲降帧。
 // 幽灵封面：雨幕后的湿玻璃海报，复用主 coverTex；按雨境近机位缩到可读海报。
-// 玻璃水珠/屏幕水滴桌面效果：已放弃（观感不合格），不再实现。
 
 var RAIN_MOOD_PRESET_INDEX = 9;
 var RAIN_MOOD_MAX_DROPS = 900;
