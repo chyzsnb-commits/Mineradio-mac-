@@ -108,11 +108,17 @@ test('麦克风只在唱歌模式播放前台运行', () => {
   const state = { deep: false };
   const sandbox = {
     singingModeEnabled: true,
+    singingMicEnabled: true, // 显式开麦才申请
     audio: { src: 'song.mp3', paused: false, ended: false, error: null },
     isDeepBackgroundMode() { return state.deep; },
   };
   vm.runInNewContext(`${readFunction(source, 'singingMicShouldRun')}; result = singingMicShouldRun();`, sandbox);
   assert.equal(sandbox.result, true);
+
+  sandbox.singingMicEnabled = false;
+  vm.runInNewContext('result = singingMicShouldRun();', sandbox);
+  assert.equal(sandbox.result, false, '默认/关闭 mic 开关时不跑麦克风');
+  sandbox.singingMicEnabled = true;
 
   sandbox.audio.paused = true;
   vm.runInNewContext('result = singingMicShouldRun();', sandbox);
@@ -136,6 +142,7 @@ test('并发播放事件只申请一次麦克风且暂停后丢弃过期流', as
   const mediaPromise = new Promise((resolve) => { resolveMedia = resolve; });
   const sandbox = {
     singingModeEnabled: true,
+    singingMicEnabled: true,
     audio: { src: 'song.mp3', paused: false, ended: false, error: null },
     micStream: null,
     micSource: null,
@@ -186,6 +193,7 @@ test('麦克风请求期间快速暂停恢复仍只保留一个请求', async ()
   const stream = { getTracks() { return [{ stop() {} }]; } };
   const sandbox = {
     singingModeEnabled: true,
+    singingMicEnabled: true,
     audio: { src: 'song.mp3', paused: false, ended: false, error: null },
     micStream: null,
     micSource: null,
@@ -226,6 +234,7 @@ test('麦克风权限失败后本次开启期间不重复申请', async () => {
   let requestCount = 0;
   const sandbox = {
     singingModeEnabled: true,
+    singingMicEnabled: true,
     audio: { src: 'song.mp3', paused: false, ended: false, error: null },
     micStream: null,
     micSource: null,
@@ -260,6 +269,7 @@ test('麦克风临时设备错误不会锁死后续重试', async () => {
   let requestCount = 0;
   const sandbox = {
     singingModeEnabled: true,
+    singingMicEnabled: true,
     audio: { src: 'song.mp3', paused: false, ended: false, error: null },
     micStream: null,
     micSource: null,
@@ -338,6 +348,7 @@ test('开关唱歌模式始终重建播放音频图，确保去人声链与麦�
   const toasts = [];
   const sandbox = {
     singingModeEnabled: false,
+    singingMicEnabled: false, // 默认不开麦
     singingVocalLevel: 1,
     singingAccompanimentLevel: 1,
     _singingMicPermissionBlocked: false,
@@ -362,18 +373,67 @@ test('开关唱歌模式始终重建播放音频图，确保去人声链与麦�
     sandbox,
   );
   vm.runInNewContext('setSingingMode(true); setSingingMode(false);', sandbox);
-  // 开/关各重建一次：避免“模式已开但音频图仍是旧接线”导致去人声/开麦不生效。
+  // 开/关各重建一次：避免“模式已开但音频图仍是旧接线”导致去人声不生效。
   assert.equal(rebuildCount, 2);
-  assert.equal(toasts[0], '唱歌模式:伴奏人声混音已开启,正在开麦…');
+  assert.equal(toasts[0], '唱歌模式:伴奏人声混音已开启');
+  assert.doesNotMatch(toasts[0], /开麦/);
   assert.doesNotMatch(source, /播放后自动开麦/);
+});
+
+test('唱歌模式默认不开麦克风，不申请 getUserMedia', () => {
+  const source = audioGraphSource();
+  assert.match(source, /singingMicEnabled/);
+  assert.match(source, /!singingModeEnabled \|\| !singingMicEnabled/);
+  assert.match(source, /默认不开麦/);
+
+  let requestCount = 0;
+  let stopCount = 0;
+  let micSyncCount = 0;
+  const toasts = [];
+  const sandbox = {
+    singingModeEnabled: false,
+    singingMicEnabled: false,
+    singingVocalLevel: 1,
+    singingAccompanimentLevel: 1,
+    _singingMicPermissionBlocked: true,
+    rebuildAudioGraphNow() {},
+    syncSingingMicPowerState() { micSyncCount += 1; return Promise.resolve(false); },
+    stopSingingMic() { stopCount += 1; },
+    ensureSingingLyrics() {},
+    syncSingingModeUi() {},
+    prepareSingingVocalProcessor() {},
+    prepareSingingKeyShiftProcessor() {},
+    singingKeyShiftProcessingNeeded() { return false; },
+    _singingKeyShiftChangeSerial: 0,
+    showToast(message) { toasts.push(message); },
+    navigator: { mediaDevices: { getUserMedia() { requestCount += 1; return Promise.resolve({ getTracks() { return []; } }); } } },
+    Promise,
+    Number,
+    isFinite,
+  };
+  vm.runInNewContext(
+    `${readFunction(source, 'singingVocalProcessingNeeded')};`
+      + `${readFunction(source, 'setSingingMode')};`,
+    sandbox,
+  );
+  vm.runInNewContext('setSingingMode(true);', sandbox);
+  assert.equal(requestCount, 0, '默认开唱歌模式不 getUserMedia');
+  assert.equal(micSyncCount, 0, '默认不开 mic 同步');
+  assert.equal(stopCount, 1, '开启时确保停掉残留麦');
+  assert.equal(toasts[0], '唱歌模式:伴奏人声混音已开启');
+  assert.equal(sandbox._singingMicPermissionBlocked, false);
 });
 
 test('播放状态和窗口电源状态都会同步麦克风生命周期', () => {
   const playback = read('public/js/modules/05-playback/12-playback-switch-core.js');
   const power = read('public/js/modules/00-state/08-desktop-render-power.js');
   const audioGraph = audioGraphSource();
+  const core = read('public/js/modules/00-state/00-core-stores.js');
+  assert.match(core, /singingMicEnabled = false/);
   assert.match(playback, /function syncPlaybackStateFromAudioEvent[\s\S]*syncSingingMicPowerState/);
   assert.match(playback, /function syncPlaybackStateFromAudioEvent[\s\S]*prepareSingingVocalProcessor/);
   assert.match(power, /function updateRenderPowerClasses[\s\S]*syncSingingMicPowerState/);
-  assert.match(audioGraph, /function setSingingMode[\s\S]*syncSingingMicPowerState/);
+  // setSingingMode 仍保留 mic 同步路径(仅 singingMicEnabled 时走)
+  assert.match(audioGraph, /function setSingingMode[\s\S]*singingMicEnabled[\s\S]*syncSingingMicPowerState/);
+  assert.match(audioGraph, /function setSingingMode[\s\S]*stopSingingMic/);
 });

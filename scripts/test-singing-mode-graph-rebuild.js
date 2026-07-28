@@ -69,6 +69,7 @@ test('开启/关闭唱歌模式都会强制 rebuildAudioGraphNow', () => {
   let rebuildCount = 0;
   const sandbox = {
     singingModeEnabled: false,
+    singingMicEnabled: false,
     singingVocalLevel: 0,
     singingAccompanimentLevel: 1,
     singingKeyShift: 0,

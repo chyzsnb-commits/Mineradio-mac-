@@ -63,6 +63,33 @@ test('keeps custom-background voxel transparency without the deferred water pres
   assert.equal(fs.existsSync(path.join(root, 'public/js/modules/02-visual/18-rain-mood.js')), true);
 });
 
+test('音域回响幽灵封面保留开关，且 depthTest 关闭以免被不透明地形挡住', () => {
+  const voxel = read('public/js/modules/02-visual/16-voxel-echo.js');
+  const defaults = read('public/js/modules/00-state/04-fx-defaults.js');
+  const html = read('public/index.html');
+  const panel = read('public/js/modules/07-fx/05-fx-panel-performance.js');
+  const bindings = read('public/js/modules/07-fx/07-bindings-shelf-immersive.js');
+
+  // 默认开、设置里可关、独立持久化
+  assert.match(defaults, /voxGhostCover:\s*true/);
+  assert.match(html, /id="t-voxGhostCover"/);
+  assert.match(html, /toggleFx\('voxGhostCover'\)/);
+  assert.match(html, /封面图/);
+  assert.match(panel, /t-voxGhostCover/);
+  assert.match(voxel, /ghostCover:\s*fx\.voxGhostCover/);
+  assert.match(voxel, /if \('ghostCover' in raw\) fx\.voxGhostCover = !!raw\.ghostCover/);
+  assert.match(bindings, /\^vox\/\.test\(key\).*saveVoxToggles/);
+
+  // 显隐仍看 uHasCover + 开关
+  assert.match(voxel, /uniforms\.uHasCover && uniforms\.uHasCover\.value > 0\.5/);
+  assert.match(voxel, /fx\.voxGhostCover === false/);
+  assert.match(voxel, /vc\.coverPlane\.visible = _cvShow/);
+
+  // 地形改不透明写深度后，封面必须关 depthTest，否则远景柱体把 (110,24,-110) 整块挡掉
+  assert.match(voxel, /depthWrite:\s*false,\s*depthTest:\s*false/);
+  assert.match(voxel, /_coverPlane\.renderOrder = 6/);
+});
+
 test('does not expose gesture inference diagnostics in the load monitor', () => {
   const performancePanel = read('public/js/modules/07-fx/05-fx-panel-performance.js');
 

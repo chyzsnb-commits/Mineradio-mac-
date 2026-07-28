@@ -1559,11 +1559,13 @@ function ensureVoxelCity() {
     uTextureSize: { value: new THREE.Vector2(512.0, 512.0) },
     uTime: { value: 0 }, uPulse: { value: 0 }, uBgLight: { value: 0 }
   };
-  var _coverMat = new THREE.ShaderMaterial({ uniforms: _coverUniforms, vertexShader: VOX_COVER_VERT, fragmentShader: VOX_COVER_FRAG, transparent: true, depthWrite: false });
+  // 地形改不透明写深度后(b8c557e),远端柱体把远景 z 全写满 → 封面平面(110,24,-110)
+  // 若仍开 depthTest 会被整块剔除。幽灵封面本就是叠层氛围,不参与物理遮挡。
+  var _coverMat = new THREE.ShaderMaterial({ uniforms: _coverUniforms, vertexShader: VOX_COVER_VERT, fragmentShader: VOX_COVER_FRAG, transparent: true, depthWrite: false, depthTest: false });
   var _coverPlane = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), _coverMat);
   _coverPlane.position.set(110, 24, -110);
   _coverPlane.rotation.set(0, -Math.PI / 4, 0);
-  _coverPlane.frustumCulled = false; _coverPlane.renderOrder = 3; _coverPlane.visible = false;
+  _coverPlane.frustumCulled = false; _coverPlane.renderOrder = 6; _coverPlane.visible = false;
   scene.add(_coverPlane);
 
   // 原作无地板:柱体透明处直接露出 app 背景(voxBg 系统 / scene.background),行为等同原作叠 HTML 背景。

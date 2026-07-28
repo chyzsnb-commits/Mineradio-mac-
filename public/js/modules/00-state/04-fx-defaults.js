@@ -136,6 +136,9 @@ var fxDefaults = {
   voxCoverColor: true,
   voxMeteors: true,
   voxGhostCover: true,   // 音域回响:上方封面图层
+  rainGhostCover: true,  // 雨境:湿玻璃幽灵封面
+  rainAmount: 1.0,       // 雨境:雨量倍率(0.1 毛毛雨 ~ 2.5 暴雨)
+  rainThunder: 0.55,     // 雨境:打雷节奏阈值(低=更易闪,高=更稀)
   voxFloatBlocks: true,  // 音域回响:悬浮方块(蓝方块+白线框)
   voxShimmer: true,      // 音域回响:地形散落发光小方块的顶面闪烁/棱边火花/微光(关=uShimmer 0)
   voxSensitivity: 1.0,

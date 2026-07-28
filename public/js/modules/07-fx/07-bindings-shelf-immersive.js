@@ -29,6 +29,8 @@ function bindFxPanel() {
     ['fx-color', 'color'], ['fx-bloom', 'bloomStrength'], ['fx-scatter', 'scatter'], ['fx-bgfade', 'bgFade'],
     ['fx-voxsens', 'voxSensitivity'],
     ['fx-voxrotspeed', 'voxRotateSpeed'],
+    ['fx-rainamount', 'rainAmount'],
+    ['fx-rainthunder', 'rainThunder'],
   ];
   ids.forEach(function (pair) {
     var el = document.getElementById(pair[0]);
@@ -118,6 +120,9 @@ function bindFxPanel() {
       if (pair[1] === 'lyricOffsetZ') fx.lyricOffsetZ = clampRange(fx.lyricOffsetZ, -3.2, 3.2);
       if (pair[1] === 'lyricTiltX' || pair[1] === 'lyricTiltY') fx[pair[1]] = Math.round(clampRange(fx[pair[1]], -84, 84));
       if (pair[1] === 'lyricLineHeight') fx.lyricLineHeight = clampRange(fx.lyricLineHeight, 0.72, 1.80);
+      if (pair[1] === 'rainAmount') fx.rainAmount = clampRange(fx.rainAmount, 0.1, 2.5);
+      if (pair[1] === 'rainThunder') fx.rainThunder = clampRange(fx.rainThunder, 0.15, 0.95);
+      if (/^rain/.test(pair[1]) && typeof saveRainToggles === 'function') saveRainToggles();
       if (pair[1] === 'lyricContextSpread') fx.lyricContextSpread = clampRange(fx.lyricContextSpread, 0.60, 2.40);
       if (pair[1] === 'lyricTranslationGap') fx.lyricTranslationGap = clampRange(fx.lyricTranslationGap, 0.28, 2.20);
       if (pair[1] === 'lyricTranslationScale') fx.lyricTranslationScale = clampRange(fx.lyricTranslationScale, 0.46, 1.12);
@@ -326,9 +331,13 @@ function toggleFx(key) {
   }
   fx[key] = !fx[key];
   if (/^vox/.test(key) && typeof saveVoxToggles === 'function') saveVoxToggles();   // 体素开关独立持久化
+  if (/^rain/.test(key) && typeof saveRainToggles === 'function') saveRainToggles(); // 雨境开关独立持久化
   var toggleId = 't-' + (key === 'floatLayer' ? 'float' : key === 'aiDepth' ? 'aidepth' : key);
   var toggle = document.getElementById(toggleId);
   if (toggle) toggle.classList.toggle('on', fx[key]);
+  if (key === 'rainGhostCover' && typeof showToast === 'function') {
+    showToast(fx.rainGhostCover !== false ? '雨境封面图已开启' : '雨境封面图已关闭');
+  }
   if (key === 'lyricGlow' || key === 'lyricGlowBeat') updateLyricGlowControls();
   syncFxUniforms();
   if (key === 'lyricCameraLock' || key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles' || key === 'bloom' || key === 'edge' || key === 'cinema' || key === 'aiDepth' || key === 'desktopLyrics' || key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight' || key === 'wallpaperMode' || key === 'shelfShowPodcasts' || key === 'shelfMergeCollections' || key === 'liveBackgroundKeep' || key === 'memoryAutoTrimApp' || key === 'memoryAutoTrimOnBackground' || key === 'memoryAutoSystemTrim' || key === 'memorySystemAutoElevate') saveLyricLayout({ user: true, reason: key });

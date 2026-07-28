@@ -12,6 +12,7 @@ try {
 } catch (e) { }
 if (typeof loadVoxBg === 'function') loadVoxBg();   // 音域回响:恢复自定义背景/歌单颜色(须在控件绑定读 fx.vox* 之前)
 if (typeof loadVoxToggles === 'function') loadVoxToggles();   // 恢复体素/侧边歌词开关(自转/取色/流星/封面图/悬浮方块/闪烁点/侧边歌词/柱数)
+if (typeof loadRainToggles === 'function') loadRainToggles(); // 恢复雨境开关(封面图)
 bindFxPanel();
 if (typeof _voxApplyBg === 'function') _voxApplyBg();   // 音域回响:恢复「所有预设通用」背景(非体素预设也生效)
 if (typeof _voxApplyPlaylistColor === 'function') _voxApplyPlaylistColor();

@@ -1354,7 +1354,8 @@ var _singingMicRequestPromise = null;
 var _singingMicRequestSerial = 0;
 var _singingMicPermissionBlocked = false;
 function singingMicShouldRun() {
-  if (!singingModeEnabled || !audio) return false;
+  // 默认不开麦：唱歌模式只做伴奏/人声混音。只有显式 singingMicEnabled 才申请麦克风。
+  if (!singingModeEnabled || !singingMicEnabled || !audio) return false;
   if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) return false;
   var src = audio.currentSrc || audio.src || '';
   return !!(src && !audio.paused && !audio.ended && !audio.error);
@@ -1443,9 +1444,13 @@ function setSingingMode(on) {
     _singingMicPermissionBlocked = false;
     if (needsVocalProcessing) prepareSingingVocalProcessor();
     if (needsKeyShiftProcessing) prepareSingingKeyShiftProcessor();
-    syncSingingMicPowerState({ silent: false });
+    // 默认不开麦；仅当用户显式打开 singingMicEnabled 才申请权限
+    if (singingMicEnabled) syncSingingMicPowerState({ silent: false });
+    else stopSingingMic();
     ensureSingingLyrics(true);
-    showToast('唱歌模式:伴奏人声混音已开启,正在开麦…');
+    showToast(singingMicEnabled
+      ? '唱歌模式:伴奏人声混音已开启,正在开麦…'
+      : '唱歌模式:伴奏人声混音已开启');
   } else {
     if (typeof setAiStemMode === 'function') setAiStemMode('realtime', { silent: true });
     stopSingingMic();

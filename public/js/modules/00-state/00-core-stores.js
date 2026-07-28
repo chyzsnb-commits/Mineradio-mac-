@@ -11,9 +11,9 @@ var MINERADIO_QISHUI_ENABLED = MINERADIO_DISABLED_PROVIDERS.indexOf('qishui') < 
 var MINERADIO_ALLOW_CREDENTIAL_IMPORT = MINERADIO_RELEASE_POLICY.allowCredentialImport === true;
 var MINERADIO_ALLOW_CREDENTIAL_EXPORT = MINERADIO_RELEASE_POLICY.allowCredentialExport === true;
 var audio = null, audioCtx = null, source = null, analyser = null, beatAnalyser = null, gainNode = null, analysisSinkNode = null, audioReady = false;
-// 唱歌模式:伴奏/人声独立混音 + 麦克风驱动可视化(graph 由 initAudio 按状态重建)
+// 唱歌模式:伴奏/人声独立混音。麦克风可视化是可选的(默认关,不开麦也能唱/调伴奏人声)。
 // 默认伴奏满、人声零。micVisualNode 只进分析器死端,不进扬声器。
-var singingModeEnabled = false, singingAccompanimentLevel = 1, singingVocalLevel = 0, vocalCutChain = null, micStream = null, micSource = null, micVisualNode = null;
+var singingModeEnabled = false, singingMicEnabled = false, singingAccompanimentLevel = 1, singingVocalLevel = 0, vocalCutChain = null, micStream = null, micSource = null, micVisualNode = null;
 var singingKeyShift = 0, singingKeyShiftNode = null;
 var singingSeparationMode = 'realtime';
 var aiStemRuntime = { status: 'idle', stage: 'idle', percent: 0, trackKey: '', id: '', jobId: 0, active: false, original: null, error: '' };

@@ -14541,6 +14541,9 @@ body.vox-on #playlist-panel{width:280px;right:14px;max-height:calc(100vh - 220px
 body.vox-on .pl-detail-list{max-height:42vh;overflow:auto}
 /* 体素专属开关:只在体素预设的视觉控制台里显示,其它预设隐藏 */
 body:not(.vox-on) #vox-fx-section{display:none}
+/* 雨境专属开关:只在雨境预设的「动态」tab 显示 */
+body:not(.rain-on) #rain-fx-section{display:none}
+body.rain-on [data-fx-page="motion"] > *:not(#rain-fx-section):not(#fx-stage-fold){display:none}
 /* 外观 tab:体素城市预设下隐藏默认「界面与背景」控件(仅保留通用背景);音域回响控件已移至「动态」tab */
 body.vox-on #appearance-default-wrap{display:none}
 /* 体素城市:自定义背景层(色/图),只体素显示,在 canvas 透明处透出 */

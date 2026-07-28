@@ -7,7 +7,7 @@
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
 - **main 最新 commit**：`a2d8145`（PR #26 已合并：唱歌模式、倍速、防爆音、歌架与卡死修复）。
-- **当前 2.0 融合线**：PR #58，分支 `codex/mineradio-2.0-unified`（基于 `codex/public-release-2.0`，融合 Beat 修复）。2026-07-24 补修唱歌/壁纸/3s 空闲降帧；2026-07-28 落地**雨境**视觉预设（复用索引 9，THREE 雨丝对象池，主循环 bass/mid/treble 驱动；**水膜共振仍先不要**）。`npm run check` **165/165**。
+- **当前 2.0 融合线**：PR #58，分支 `codex/mineradio-2.0-unified`（基于 `codex/public-release-2.0`，融合 Beat 修复）。2026-07-24 补修唱歌/壁纸/3s 空闲降帧；2026-07-28 落地**雨境**视觉预设（复用索引 9，THREE 雨丝对象池，主循环 bass/mid/treble 驱动；**水膜共振仍先不要**）；同日修**音域回响幽灵封面**被不透明地形深度挡住（`depthTest: false`，设置「封面图」开关仍在）；雨境加**湿玻璃幽灵封面**（正视海报，雨丝前景）。`npm run check` **171/171**。
 - **当前 Codex 任务链**：PR #27（显卡模式与快速启动）→ PR #29（Mac 真实显卡占用）→ PR #30（主循环真正休眠）→ PR #31（唱歌模式省电）→ PR #32（Mac 安全内存释放）→ PR #33（伴奏/人声双滑块）→ PR #34（最近播放滚动降载与 GPU 文案）→ PR #36（播放定时器降载）→ PR #37（本地 AI 分轨）→ PR #38（AI 提速与实时精准度）→ PR #39（软件 Logo）→ PR #40（歌词选项切换降卡）→ PR #41（音频上游断线保护）→ PR #42（整队不可播保护）→ PR #43（本机崩溃记录）→ PR #44（构建缓存排除）→ PR #45（双架构 CI 运行器）→ PR #46（Touch Bar 歌曲状态）→ PR #47（K 歌升降 Key 与启动开关对齐）→ PR #48（GPU 系统/播放器占用）→ PR #49（AI 分轨热管理与实时去人声增强）→ PR #50（实时人声轨净化）→ PR #51（CoreML 全图加速）→ PR #52（切歌与进度竞态修复）均为叠加关系。
 - **协作者最新工作**：PR #28，分支 `codex/fix-gesture-latency`，优化双手手势延迟与 GPU 负载；当前仍待合并，本分支未修改其手势文件。
 - **2.0 公开候选**：从 PR #56 线单独创建 `codex/public-release-2.0`。公开分支删除汽水后端、登录桥、本地 Cookie 读取和音频解密器；原 PR #56 开发线保留汽水实验，后续继续在原线开发。2026-07-24 已修复首批候选中网易/QQ/酷狗官方登录被手动导入策略误拦截的回归，以及连续切换音质导致的 `0:00` 卡死、通知堆叠和巨型歌词残影：官方会话由主进程直接验证并加密保存，音质改为同曲串行换流，不重建歌词。最终 2.0.0 arm64/x64 未签名 DMG 已重新打包、挂载和安装验证，正式公开仍受 Developer ID、公证、隐私联系信息与音乐平台授权阻塞。
@@ -82,6 +82,7 @@
 19. **快速切歌与进度跳转竞态修复**（PR #52）：快速下一首合并到最终歌曲并立即卸载旧源；20 次快速拖动只执行当前和最后目标，过期任务恢复增益；AI 副轨到达最终时间后才继续播放。
 20. **2.0 官方登录回归修复**（PR #57）：公开版网易/QQ/酷狗官方窗口不再把 Cookie 发回渲染进程或调用被禁用的手动导入接口；主进程直接验证并通过 `safeStorage` 保存，手动导入仍关闭。
 21. **2.0 音质换流卡死与歌词残影修复**（PR #57）：音质选择不再复用完整切歌；同曲换流串行合并到最后一次，旧流保留到新流可用，失败恢复旧流与时间，歌词舞台和听歌会话不重建，通知按单卡替换。
+22. **音域回响幽灵封面被挡**（PR #58 线）：体素地形改不透明写深度后，远景柱体 depth-test 掉 `(110,24,-110)` 封面平面；封面材质关 `depthTest`、`renderOrder=6`。设置「封面图」开关与 `mineradio-vox-toggles-v1` 持久化本来就在，未删功能。
 
 ### 基础设施
 17. **协作规则**（#8）：`.github/AGENT_COLLABORATION.md`（Codex+GLM 协作规则、术语解释、rollback、PR 四要素）
@@ -387,6 +388,41 @@
 - 硬约束：用户确认**水膜共振先不要**。
 - 验证：`scripts/test-rain-mood-visual.js` + 更新 beat-unified；`npm run check` **165/165**；`git diff --check` 通过。
 - 未验证：真实歌曲听感与壁纸模式下的雨境观感需用户手测。
+
+**2026-07-28：修复音域回响幽灵封面被不透明地形挡住。**
+- 现象：用户反馈「专辑唱片图片不能打开了」；代码里功能并未删除——`fx.voxGhostCover` 默认 true，设置 → 动态 → 音域回响 →「封面图」可开关，独立持久化 `mineradio-vox-toggles-v1`。
+- 根因：`b8c557e` 把体素地形改成不透明写深度后，远景柱体把 `(110,24,-110)` 的封面平面整块 depth-test 掉；封面材质此前只关了 `depthWrite`，没关 `depthTest`。
+- 修复：`16-voxel-echo.js` 幽灵封面 `ShaderMaterial` 加 `depthTest: false`，`renderOrder` 提到 6（在流星/粒子之上画氛围层）。
+- 验证：`test-beat-unified-regressions.js` 新增幽灵封面断言；`npm run check` **166/166**。
+
+**2026-07-28：雨境加湿玻璃幽灵封面。**
+- 不复用体素 140 大斜面：雨境机位 radius≈7.2，做成居中海报 `5.6×5.6 @ (0, 0.55, -7.2)`。
+- 效果：冷调 + 竖向雨痕 UV 扭曲 + 软边/底部溶进黑场；鼓点轻呼吸、随风微偏；约 55% 雨丝落在封面前。
+- 管线：复用主 `coverTex` / `uHasCover`；无封面隐藏；切走关平面。层级：暗底 < 封面 < 雨丝 < 闪白。
+- 验证：`test-rain-mood-visual.js` 增封面断言；`npm run check` **171/171**。
+
+**2026-07-28：雨境雨量与打雷阈值可调。**
+- UI：动态 tab 雨境区顶部加「雨量」「打雷阈值」滑条；`fx.rainAmount` 默认 1.0（0.1–2.5）、`fx.rainThunder` 默认 0.55（0.15–0.95）。
+- 驱动：spawn 乘雨量倍率；flash 的 treb/beat/energy 门与随机通过率由 `rainThunder` 控制（低=更易闪）。
+- 持久化：写入 `mineradio-rain-toggles-v1` 的 amount/thunder；启动 `loadRainToggles` 恢复。
+- 验证：`test-rain-mood-visual.js` 增断言；`npm run check` **171/171**。
+
+
+**2026-07-28：雨境玻璃水珠叠层。**
+- 近景对象池 ≤220，贴 `z≈-1.35` 页面玻璃；雨丝撞击/随机拍打生成，粘滞下滑。
+- UI：动态 tab 雨境区「玻璃水珠」开关 + 阈值/大小/数量滑条；默认开。
+- 持久化：`mineradio-rain-toggles-v1` 增 beads/beadThreshold/beadSize/beadAmount。
+- 验证：`test-rain-mood-visual.js`；`npm run check` **171/171**。
+**2026-07-28：雨境封面图开关（动态 tab）。**
+- UI：`#rain-fx-section` → 动态 tab；仅 `body.rain-on` 显示；`t-rainGhostCover` 与音域回响「封面图」同构。
+- 状态：`fx.rainGhostCover` 默认 true；独立持久化 `mineradio-rain-toggles-v1`；启动 `loadRainToggles()`；`toggleFx` 写盘并 toast。
+- 显隐：`updateRainMoodCover` 要求有封面且开关未关；切走清 `rain-on`。
+- 验证：`test-rain-mood-visual.js` 增开关断言；`npm run check` **171/171**。
+
+**2026-07-28：唱歌模式默认不开麦。**
+- 根因：开唱歌模式会走 `syncSingingMicPowerState` → `getUserMedia`，只为可视化跟嗓，不是混音必需。
+- 修复：新增 `singingMicEnabled` 默认 false；`singingMicShouldRun` 双门；`setSingingMode(true)` 默认不申请麦、toast 去掉“正在开麦”。
+- 验证：更新 power-save / graph-rebuild 测试；`npm run check` **171/171**。
 
 **2026-07-24：Codex 修复 2.0 官方登录回归并完成本机 2.0 交付。**
 - PR：#57；分支：`codex/public-release-2.0`。

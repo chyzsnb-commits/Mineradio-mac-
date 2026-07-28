@@ -495,12 +495,16 @@ function updateFxInputs() {
   if (voxResSeg) voxResSeg.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b.dataset.voxres === ((fx && fx.voxRes) || 'mid')); });
   if (typeof setRange === 'function') setRange('fx-voxsens', fx.voxSensitivity == null ? 1 : fx.voxSensitivity);
   if (typeof setRange === 'function') setRange('fx-voxrotspeed', fx.voxRotateSpeed == null ? 0.5 : fx.voxRotateSpeed);
+  if (typeof setRange === 'function') setRange('fx-rainamount', fx.rainAmount == null ? 1 : fx.rainAmount);
+  if (typeof setRange === 'function') setRange('fx-rainthunder', fx.rainThunder == null ? 0.55 : fx.rainThunder);
   var voxCoverColorToggle = document.getElementById('t-voxCoverColor');
   if (voxCoverColorToggle) voxCoverColorToggle.classList.toggle('on', fx.voxCoverColor !== false);
   var voxMeteorsToggle = document.getElementById('t-voxMeteors');
   if (voxMeteorsToggle) voxMeteorsToggle.classList.toggle('on', fx.voxMeteors !== false);
   var voxGhostCoverToggle = document.getElementById('t-voxGhostCover');
   if (voxGhostCoverToggle) voxGhostCoverToggle.classList.toggle('on', fx.voxGhostCover !== false);
+  var rainGhostCoverToggle = document.getElementById('t-rainGhostCover');
+  if (rainGhostCoverToggle) rainGhostCoverToggle.classList.toggle('on', fx.rainGhostCover !== false);
   var voxFloatBlocksToggle = document.getElementById('t-voxFloatBlocks');
   if (voxFloatBlocksToggle) voxFloatBlocksToggle.classList.toggle('on', fx.voxFloatBlocks !== false);
   var voxShimmerToggle = document.getElementById('t-voxShimmer');
@@ -636,6 +640,7 @@ function fxPanelTargetForNode(node, current) {
   var inputId = fxPanelInputId(node);
   if (id === 'preset-grid' || id === 'user-archive-grid') return 'presets';
   if (id === 'vox-fx-section') return 'motion';   // 音域回响控件 → 动态 tab
+  if (id === 'rain-fx-section') return 'motion';  // 雨境控件 → 动态 tab
   if (id === 'app-bg-section') return 'appearance';   // 全局背景 → 外观 tab
   if (id === 'fx-lyric-fold') return 'lyrics';
   if (id === 'fx-overlay-fold' || id === 'fx-stage-fold') return 'motion';
@@ -703,6 +708,15 @@ function organizeFxPanel() {
     var fold = document.getElementById(id);
     if (fold) fold.classList.add('open');
   });
+  // 动态 tab:雨境/音域回响自定义区固定置顶,避免被镜头/粒子滑条挤到下面
+  var motionPage = panel.querySelector('[data-fx-page="motion"]');
+  if (motionPage) {
+    var rainFxSection = document.getElementById('rain-fx-section');
+    var voxFxSection = document.getElementById('vox-fx-section');
+    // 顺序:雨境 → 音域回响 → 其余(摄像头/粒子等)
+    if (voxFxSection) motionPage.insertBefore(voxFxSection, motionPage.firstChild);
+    if (rainFxSection) motionPage.insertBefore(rainFxSection, motionPage.firstChild);
+  }
   // 外观 tab:默认「界面与背景」控件包进 wrap(体素预设时 CSS 隐藏);背景移出 wrap 置顶(体素/非体素通用)。音域回响(#vox-fx-section)已改由路由进「动态」tab
   var appearancePage = panel.querySelector('[data-fx-page="appearance"]');
   if (appearancePage) {

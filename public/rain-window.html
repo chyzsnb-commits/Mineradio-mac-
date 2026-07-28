@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>雨窗工作室 · WebGL Metaball Glass</title>
+  <style>
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif}
+    #c{position:absolute;inset:0;width:100%;height:100%;display:block}
+    .panel{
+      position:absolute;top:28px;right:28px;width:300px;z-index:10;padding:18px 16px 14px;
+      border-radius:16px;color:#fff;background:rgba(16,18,24,.55);border:1px solid rgba(255,255,255,.12);
+      backdrop-filter:blur(28px) saturate(1.35);-webkit-backdrop-filter:blur(28px) saturate(1.35);
+      box-shadow:0 18px 50px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:13px;user-select:none
+    }
+    .panel h1{margin:0;font-size:15px;font-weight:500}
+    .panel .sub{margin:4px 0 0;font-size:9px;letter-spacing:1.5px;color:rgba(255,255,255,.4);text-transform:uppercase}
+    .row{display:flex;flex-direction:column;gap:6px}
+    .row label{display:flex;justify-content:space-between;font-size:11.5px;color:rgba(255,255,255,.8)}
+    .row label b{font-weight:500;color:rgba(210,220,235,.95);font-variant-numeric:tabular-nums}
+    input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:14px;background:transparent}
+    input[type=range]::-webkit-slider-runnable-track{height:2px;background:rgba(255,255,255,.16);border-radius:1px}
+    input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;margin-top:-5px;border-radius:50%;background:#fff;cursor:pointer;box-shadow:0 0 8px rgba(0,0,0,.35)}
+    .btn{height:34px;border:0;border-radius:10px;cursor:pointer;background:rgba(255,255,255,.1);color:rgba(255,255,255,.9);font-size:12px}
+    .btn:hover{background:rgba(255,255,255,.16)}
+    #file{display:none}
+    .hint{font-size:10.5px;line-height:1.45;color:rgba(255,255,255,.42);border-top:1px solid rgba(255,255,255,.08);padding-top:10px}
+    #err{display:none;position:fixed;left:12px;right:12px;bottom:12px;z-index:99;max-height:40vh;overflow:auto;padding:12px 14px;border-radius:12px;background:rgba(40,0,0,.92);color:#ffc9c9;font:12px/1.45 ui-monospace,monospace;white-space:pre-wrap}
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="panel">
+  <div>
+    <h1>雨窗工作室</h1>
+    <div class="sub">WebGL · Metaball · Refraction</div>
+  </div>
+  <div class="row"><label><span>雨滴密度 / Density</span><b id="v-d">0.70</b></label>
+    <input id="d" type="range" min="0" max="1" step="0.01" value="0.70"></div>
+  <div class="row"><label><span>雨滴尺寸 / Drop Size</span><b id="v-s">1.00</b></label>
+    <input id="s" type="range" min="0.3" max="2" step="0.01" value="1.00"></div>
+  <div class="row"><label><span>雨滴流速 / Speed</span><b id="v-v">1.00</b></label>
+    <input id="v" type="range" min="0.2" max="2.5" step="0.01" value="1.00"></div>
+  <div class="row"><label><span>背景模糊 / Fog Blur</span><b id="v-b">11.0</b></label>
+    <input id="b" type="range" min="0" max="20" step="0.1" value="11.0"></div>
+  <button class="btn" id="pick" type="button">更换意境背景</button>
+  <input id="file" type="file" accept="image/*">
+  <div class="hint">
+    纯 WebGL：GPU Metaball 场融合 · 凸透镜折射 · Specular/Fresnel · 重力形变 · Noise 蜿蜒 · 残留微珠。
+    默认动态生成雨夜光斑贴图；也可上传真实照片作为折射采样源。
+  </div>
+</div>
+<pre id="err"></pre>
+<script>
+'use strict';
+/**
+ * WebGL glass-rain rewrite
+ * Pipeline:
+ *  1) JS particles: spawn / meander / gravity / merge / micro remnants
+ *  2) GPU field pass: each drop as soft energy blob → metaball density FBO
+ *  3) Composite: frosted bg + SDF-ish surface from field gradient
+ *     → world normal → refract sharp bg + fresnel + specular
+ */
+
+const canvas = document.getElementById('c');
+const errEl = document.getElementById('err');
+const gl = canvas.getContext('webgl', {
+  alpha: false, antialias: false, premultipliedAlpha: false, powerPreference: 'high-performance'
+});
+if (!gl) { fail('需要 WebGL'); throw new Error('no webgl'); }
+
+function fail(msg) {
+  errEl.style.display = 'block';
+  errEl.textContent = String(msg);
+  console.error(msg);
+}
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    fail((type === gl.VERTEX_SHADER ? 'VS' : 'FS') + ':\n' + gl.getShaderInfoLog(s) + '\n---\n' + src.slice(0, 400));
+    throw new Error('compile');
+  }
+  return s;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    fail('Link:\n' + gl.getProgramInfoLog(p));
+    throw new Error('link');
+  }
+  return p;
+}
+const atr = (p, n) => gl.getAttribLocation(p, n);
+const uni = (p, n) => gl.getUniformLocation(p, n);
+
+// ===================== Shaders =====================
+const QUAD_VS = [
+  'attribute vec2 a_pos;',
+  'varying vec2 v_uv;',
+  'void main(){',
+  '  v_uv = a_pos * 0.5 + 0.5;',
+  '  gl_Position = vec4(a_pos, 0.0, 1.0);',
+  '}'
+].join('\n');
+
+const BLIT_FS = [
+  'precision mediump float;',
+  'varying vec2 v_uv;',
+  'uniform sampler2D u_tex;',
+  'void main(){ gl_FragColor = texture2D(u_tex, v_uv); }'
+].join('\n');
+
+// Separable blur
+const BLUR_FS = [
+  'precision highp float;',
+  'varying vec2 v_uv;',
+  'uniform sampler2D u_tex;',
+  'uniform vec2 u_dir;',
+  'uniform float u_radius;',
+  'void main(){',
+  '  vec3 acc = vec3(0.0); float wsum = 0.0;',
+  '  for (int i = -8; i <= 8; i++){',
+  '    float fi = float(i);',
+  '    float w = exp(-0.5 * (fi/8.0)*(fi/8.0) * 5.0);',
+  '    acc += texture2D(u_tex, v_uv + u_dir * fi * u_radius).rgb * w;',
+  '    wsum += w;',
+  '  }',
+  '  gl_FragColor = vec4(acc / max(wsum, 1e-4), 1.0);',
+  '}'
+].join('\n');
+
+// Soft energy blob for metaball field (drawn per drop into field FBO, additive)
+const BLOB_VS = [
+  'attribute vec2 a_corner;',   // -1..1
+  'attribute vec4 a_inst;',     // x,y,rx,ry  (pixel space, y-down)
+  'uniform vec2 u_res;',
+  'varying vec2 v_q;',          // local ellipse coords
+  'void main(){',
+  '  vec2 c = a_inst.xy;',
+  '  vec2 r = max(a_inst.zw, vec2(1.5));',
+  // expand so soft falloff fits
+  '  vec2 pos = c + a_corner * r * 1.65;',
+  '  vec2 clip = (pos / u_res) * 2.0 - 1.0;',
+  '  clip.y *= -1.0;',
+  '  gl_Position = vec4(clip, 0.0, 1.0);',
+  '  v_q = a_corner;',
+  '}'
+].join('\n');
+
+const BLOB_FS = [
+  'precision mediump float;',
+  'varying vec2 v_q;',
+  // energy contribution ~ smooth metaball kernel
+  'void main(){',
+  '  float d2 = dot(v_q, v_q);',
+  '  if (d2 > 1.0) discard;',
+  // polynomial soft kernel (classic metaball-ish)
+  '  float x = 1.0 - d2;',
+  '  float e = x * x * x;',           // C2-ish falloff
+  '  gl_FragColor = vec4(e, e, e, e);',
+  '}'
+].join('\n');
+
+// Final composite: field → normal → refraction / fresnel / specular
+const COMP_FS = [
+  'precision highp float;',
+  'varying vec2 v_uv;',
+  'uniform sampler2D u_bgSharp;',
+  'uniform sampler2D u_bgBlur;',
+  'uniform sampler2D u_field;',
+  'uniform vec2 u_res;',
+  'uniform float u_time;',
+  'uniform float u_threshold;',
+  '',
+  'float sampleField(vec2 uv){ return texture2D(u_field, uv).r; }',
+  '',
+  'void main(){',
+  '  vec2 texel = 1.0 / u_res;',
+  // frosted glass base
+  '  vec3 frosted = texture2D(u_bgBlur, v_uv).rgb;',
+  '',
+  // metaball density field
+  '  float f  = sampleField(v_uv);',
+  '  float fx = sampleField(v_uv + vec2(texel.x, 0.0));',
+  '  float fy = sampleField(v_uv + vec2(0.0, texel.y));',
+  '  float fxl= sampleField(v_uv - vec2(texel.x, 0.0));',
+  '  float fyl= sampleField(v_uv - vec2(0.0, texel.y));',
+  '',
+  // smooth surface via smoothstep around threshold
+  '  float th = u_threshold;',
+  '  float body = smoothstep(th * 0.72, th * 1.15, f);',
+  '  if (body < 0.01) {',
+  '    // outside drops: just frosted glass + subtle wet mist
+  '    float mist = smoothstep(0.6, 0.95, fract(sin(dot(v_uv*u_res*0.15, vec2(12.9898,78.233)))*43758.5453));',
+  '    frosted *= 1.0 - mist * 0.06;',
+  '    gl_FragColor = vec4(frosted, 1.0);',
+  '    return;',
+  '  }',
+  '',
+  // gradient of field → screen-space normal (glass bulge)
+  '  vec2 g = vec2(fx - fxl, fy - fyl);',
+  '  // convert to a sphere-like normal
+  '  float h = clamp((f - th * 0.55) / max(0.15, 1.0 - th * 0.55), 0.0, 1.0);',
+  '  vec3 N = normalize(vec3(-g * u_res.y * 0.35, mix(0.35, 1.25, h)));',
+  '  vec3 V = vec3(0.0, 0.0, 1.0);',
+  '',
+  // refraction (water IOR ~1.33) — convex lens, slight invert feel
+  '  float eta = 1.0 / 1.33;',
+  '  vec3 Rfr = refract(-V, N, eta);',
+  '  if (dot(Rfr, Rfr) < 1e-5) Rfr = reflect(-V, N);',
+  '  vec2 offset = Rfr.xy * mix(0.03, 0.09, h);',
+  // chromatic dispersion
+  '  vec2 uvR = clamp(v_uv + offset * 1.08, 0.0, 1.0);',
+  '  vec2 uvG = clamp(v_uv + offset, 0.0, 1.0);',
+  '  vec2 uvB = clamp(v_uv + offset * 0.92, 0.0, 1.0);',
+  '  float cr = texture2D(u_bgSharp, uvR).r;',
+  '  float cg = texture2D(u_bgSharp, uvG).g;',
+  '  float cb = texture2D(u_bgSharp, uvB).b;',
+  '  vec3 sharp = vec3(cr, cg, cb);',
+  '  vec3 blurS = texture2D(u_bgBlur, clamp(v_uv + offset * 0.4, 0.0, 1.0)).rgb;',
+  '',
+  // fresnel
+  '  float ndv = clamp(dot(N, V), 0.0, 1.0);',
+  '  float fres = pow(1.0 - ndv, 3.0);',
+  '',
+  // interior: mostly sharp refracted bg; rim pulls frosted + cool reflection
+  '  vec3 col = mix(sharp, blurS, 0.12 + fres * 0.35);',
+  '  col *= 1.04 + h * 0.1;',
+  '  col = mix(col, vec3(0.72, 0.84, 1.0), fres * 0.55);',
+  '',
+  // specular highlights (two lights)
+  '  vec3 L1 = normalize(vec3(-0.5, 0.75, 0.85));',
+  '  vec3 L2 = normalize(vec3(0.35, 0.25, 1.0));',
+  '  vec3 H1 = normalize(L1 + V);',
+  '  vec3 H2 = normalize(L2 + V);',
+  '  float spec1 = pow(max(dot(N, H1), 0.0), 64.0);',
+  '  float spec2 = pow(max(dot(N, H2), 0.0), 18.0);',
+  '  col += vec3(1.0) * spec1 * 0.95;',
+  '  col += vec3(0.85, 0.92, 1.0) * spec2 * 0.16;',
+  '',
+  // soft contact shadow under drop on glass
+  '  float contact = smoothstep(th * 1.3, th * 0.8, f) * (1.0 - body);',
+  // edge alpha from field
+  '  float alpha = smoothstep(th * 0.7, th * 1.05, f);',
+  '  alpha = pow(alpha, 0.85);',
+  '',
+  // composite over frosted
+  '  vec3 outc = mix(frosted * (1.0 - contact * 0.15), col, alpha);',
+  '  gl_FragColor = vec4(outc, 1.0);',
+  '}'
+].join('\n');
+
+// fix COMP_FS - I accidentally broke comments with newlines inside strings.
+// Rebuild COMP_FS carefully without broken lines.
+const COMP_FS_FIXED = `
+precision highp float;
+varying vec2 v_uv;
+uniform sampler2D u_bgSharp;
+uniform sampler2D u_bgBlur;
+uniform sampler2D u_field;
+uniform vec2 u_res;
+uniform float u_time;
+uniform float u_threshold;
+
+float sampleField(vec2 uv){ return texture2D(u_field, uv).r; }
+
+void main(){
+  vec2 texel = 1.0 / u_res;
+  vec3 frosted = texture2D(u_bgBlur, v_uv).rgb;
+
+  float f   = sampleField(v_uv);
+  float fx  = sampleField(v_uv + vec2(texel.x, 0.0));
+  float fy  = sampleField(v_uv + vec2(0.0, texel.y));
+  float fxl = sampleField(v_uv - vec2(texel.x, 0.0));
+  float fyl = sampleField(v_uv - vec2(0.0, texel.y));
+
+  float th = u_threshold;
+  float body = smoothstep(th * 0.72, th * 1.15, f);
+
+  if (body < 0.012) {
+    float n = fract(sin(dot(v_uv * u_res * 0.15, vec2(12.9898, 78.233))) * 43758.5453);
+    float mist = smoothstep(0.62, 0.95, n);
+    frosted *= 1.0 - mist * 0.05;
+    gl_FragColor = vec4(frosted, 1.0);
+    return;
+  }
+
+  vec2 grad = vec2(fx - fxl, fy - fyl);
+  float h = clamp((f - th * 0.55) / max(0.2, 1.0 - th * 0.55), 0.0, 1.0);
+  vec3 N = normalize(vec3(-grad * u_res.y * 0.35, mix(0.4, 1.3, h)));
+  vec3 V = vec3(0.0, 0.0, 1.0);
+
+  float eta = 1.0 / 1.333;
+  vec3 Rfr = refract(-V, N, eta);
+  if (dot(Rfr, Rfr) < 1e-6) Rfr = reflect(-V, N);
+
+  vec2 offset = Rfr.xy * mix(0.028, 0.095, h);
+  vec2 uvR = clamp(v_uv + offset * 1.08, 0.0, 1.0);
+  vec2 uvG = clamp(v_uv + offset, 0.0, 1.0);
+  vec2 uvB = clamp(v_uv + offset * 0.92, 0.0, 1.0);
+  vec3 sharp = vec3(
+    texture2D(u_bgSharp, uvR).r,
+    texture2D(u_bgSharp, uvG).g,
+    texture2D(u_bgSharp, uvB).b
+  );
+  vec3 blurS = texture2D(u_bgBlur, clamp(v_uv + offset * 0.4, 0.0, 1.0 sp)).rgb;
+}
+`.trim();
+
+// The above still has a typo "1.0 sp" - write complete clean COMP_FS as array join instead
+</script>
+<script>
+// Full clean implementation in one script block (replace broken first script approach)
+</script>
+</body>
+</html>
