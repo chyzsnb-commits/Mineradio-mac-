@@ -142,7 +142,8 @@ test('雨境雨量与打雷阈值可调，驱动 spawn / flash，独立持久化
 
   // 默认值 + UI 滑条
   assert.match(defaults, /rainAmount:\s*1(?:\.0)?/);
-  assert.match(defaults, /rainThunder:\s*0\.55/);
+  assert.match(defaults, /rainThunder:\s*0\.70/);
+  assert.match(rain, /rainThunder\)\) \? Number\(fx\.rainThunder\) : 0\.70/);
   assert.match(html, /id="fx-rainamount"/);
   assert.match(html, /id="fx-rainthunder"/);
   assert.match(html, /雨量/);

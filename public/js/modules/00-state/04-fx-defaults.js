@@ -138,10 +138,10 @@ var fxDefaults = {
   voxGhostCover: true,   // 音域回响:上方封面图层
   rainGhostCover: true,  // 雨境:湿玻璃幽灵封面
   rainAmount: 1.0,       // 雨境:雨量倍率(0.05 毛毛雨 ~ 4.0 暴雨)
-  rainThunder: 0.55,     // 雨境:打雷节奏阈值(低=更易闪,高=更稀)
+  rainThunder: 0.70,     // 雨境:打雷节奏阈值(低=更易闪,高=更稀)
   rainGlassEnabled: true, // 雨境:玻璃水珠滑落后处理
   rainGlassAmount: 0.70,  // 雨境:玻璃水珠数量(0.15~2.5)
-  rainGlassSpeed: 1.00,   // 雨境:玻璃水珠流速(0.2~2.2)
+  rainGlassSpeed: 1.00,   // 雨境:玻璃水珠流速(0.2~8.0)
   rainGlassSize: 1.00,    // 雨境:玻璃水珠尺寸(0.6~1.8)
   voxFloatBlocks: true,  // 音域回响:悬浮方块(蓝方块+白线框)
   voxShimmer: true,      // 音域回响:地形散落发光小方块的顶面闪烁/棱边火花/微光(关=uShimmer 0)

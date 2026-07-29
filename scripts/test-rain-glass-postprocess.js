@@ -48,11 +48,13 @@ test('雨境玻璃水珠具有独立开关、数量、流速、尺寸设置并�
   assert.match(bindings, /\['fx-rainglassspeed',\s*'rainGlassSpeed'\]/);
   assert.match(bindings, /\['fx-rainglasssize',\s*'rainGlassSize'\]/);
   assert.match(bindings, /rainGlassAmount.*clampRange\(fx\.rainGlassAmount,\s*0\.15,\s*2\.5\)/);
-  assert.match(html, /id="fx-rainglassspeed" type="range" min="0\.2" max="4"/);
-  assert.match(bindings, /rainGlassSpeed.*clampRange\(fx\.rainGlassSpeed,\s*0\.2,\s*4\)/);
-  assert.match(read('public/js/modules/02-visual/19-rain-glass.js'), /rainGlassClamp\(Math\.sqrt\(speed\) \* \(0\.90 \+ energy \* 0\.10\), 0\.45, 2\.00\)/);
-  assert.match(read('public/js/modules/02-visual/19-rain-glass.js'), /rainGlassClamp\(Math\.sqrt\(speed\), 0\.45, 2\.00\)/);
-  assert.match(read('public/js/modules/02-visual/19-rain-glass.js'), /\n\s*30,\n\s*240\n\s*\);/);
+  assert.match(html, /id="fx-rainglassspeed" type="range" min="0\.2" max="8"/);
+  assert.match(bindings, /rainGlassSpeed.*clampRange\(fx\.rainGlassSpeed,\s*0\.2,\s*8\)/);
+  assert.match(read('public/js/modules/02-visual/19-rain-glass.js'), /rainGlassClamp\(Math\.sqrt\(speed\) \* \(0\.90 \+ energy \* 0\.10\), 0\.45, 3\.00\)/);
+  assert.match(read('public/js/modules/02-visual/19-rain-glass.js'), /rainGlassClamp\(Math\.sqrt\(speed\), 0\.45, 3\.00\)/);
+  assert.match(read('public/js/modules/02-visual/19-rain-glass.js'), /\n\s*30,\n\s*336\n\s*\);/);
+  assert.match(rain, /rainGlassSpeed\)\) \? Number\(fx\.rainGlassSpeed\) : 1\.00[\s\S]*Math\.min\(8, v\)/);
+  assert.match(rain, /'glassSpeed' in raw[\s\S]*Math\.min\(8, Number\(raw\.glassSpeed\)\)/);
   assert.match(bindings, /rainGlassSize.*clampRange\(fx\.rainGlassSize,\s*0\.6,\s*1\.8\)/);
   assert.match(panel, /fx-rainglassamount/);
   assert.match(panel, /fx-rainglassspeed/);

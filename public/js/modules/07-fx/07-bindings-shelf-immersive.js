@@ -126,7 +126,7 @@ function bindFxPanel() {
       if (pair[1] === 'rainAmount') fx.rainAmount = clampRange(fx.rainAmount, 0.05, 4);
       if (pair[1] === 'rainThunder') fx.rainThunder = clampRange(fx.rainThunder, 0.15, 0.95);
       if (pair[1] === 'rainGlassAmount') fx.rainGlassAmount = clampRange(fx.rainGlassAmount, 0.15, 2.5);
-      if (pair[1] === 'rainGlassSpeed') fx.rainGlassSpeed = clampRange(fx.rainGlassSpeed, 0.2, 4);
+      if (pair[1] === 'rainGlassSpeed') fx.rainGlassSpeed = clampRange(fx.rainGlassSpeed, 0.2, 8);
       if (pair[1] === 'rainGlassSize') fx.rainGlassSize = clampRange(fx.rainGlassSize, 0.6, 1.8);
       if (/^rain/.test(pair[1]) && typeof saveRainToggles === 'function') saveRainToggles();
       if (pair[1] === 'lyricContextSpread') fx.lyricContextSpread = clampRange(fx.lyricContextSpread, 0.60, 2.40);

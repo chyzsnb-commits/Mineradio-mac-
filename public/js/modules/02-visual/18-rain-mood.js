@@ -21,8 +21,8 @@ function rainAmountValue() {
 }
 
 function rainThunderValue() {
-  // 打雷节奏阈值:低=更易闪,高=更稀;默认 0.55 对齐旧 hardcode
-  var v = (typeof fx !== 'undefined' && fx && isFinite(fx.rainThunder)) ? Number(fx.rainThunder) : 0.55;
+  // 打雷节奏阈值:低=更易闪,高=更稀;默认 0.70
+  var v = (typeof fx !== 'undefined' && fx && isFinite(fx.rainThunder)) ? Number(fx.rainThunder) : 0.70;
   return Math.max(0.15, Math.min(0.95, v));
 }
 
@@ -37,7 +37,7 @@ function rainGlassAmountValue() {
 
 function rainGlassSpeedValue() {
   var v = (typeof fx !== 'undefined' && fx && isFinite(fx.rainGlassSpeed)) ? Number(fx.rainGlassSpeed) : 1.00;
-  return Math.max(0.2, Math.min(2.2, v));
+  return Math.max(0.2, Math.min(8, v));
 }
 
 function rainGlassSizeValue() {
@@ -70,7 +70,7 @@ function loadRainToggles() {
     if ('thunder' in raw && isFinite(raw.thunder)) fx.rainThunder = Math.max(0.15, Math.min(0.95, Number(raw.thunder)));
     if ('glassEnabled' in raw) fx.rainGlassEnabled = raw.glassEnabled !== false;
     if ('glassAmount' in raw && isFinite(raw.glassAmount)) fx.rainGlassAmount = Math.max(0.15, Math.min(2.5, Number(raw.glassAmount)));
-    if ('glassSpeed' in raw && isFinite(raw.glassSpeed)) fx.rainGlassSpeed = Math.max(0.2, Math.min(2.2, Number(raw.glassSpeed)));
+    if ('glassSpeed' in raw && isFinite(raw.glassSpeed)) fx.rainGlassSpeed = Math.max(0.2, Math.min(8, Number(raw.glassSpeed)));
     if ('glassSize' in raw && isFinite(raw.glassSize)) fx.rainGlassSize = Math.max(0.6, Math.min(1.8, Number(raw.glassSize)));
   } catch (e) {}
 }
