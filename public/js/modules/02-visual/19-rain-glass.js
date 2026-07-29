@@ -235,12 +235,12 @@ function rainGlassDensity() {
 function rainGlassSpeed() {
   var speed = (typeof rainGlassSpeedValue === 'function') ? rainGlassSpeedValue() : 1;
   var energy = (typeof rainMood !== 'undefined' && rainMood && isFinite(rainMood.energyS)) ? rainMood.energyS : 0;
-  return rainGlassClamp(Math.sqrt(speed) * (0.90 + energy * 0.10), 0.45, 1.50);
+  return rainGlassClamp(Math.sqrt(speed) * (0.90 + energy * 0.10), 0.45, 2.00);
 }
 
 function rainGlassMotionSpeedFactor() {
   var speed = (typeof rainGlassSpeedValue === 'function') ? rainGlassSpeedValue() : 1;
-  return rainGlassClamp(Math.sqrt(speed), 0.45, 1.50);
+  return rainGlassClamp(Math.sqrt(speed), 0.45, 2.00);
 }
 
 function rainGlassPhaseRate() {
@@ -264,7 +264,7 @@ function rainGlassSlipMaxSpeed(drop) {
   return rainGlassClamp(
     (72 + drop.r * 2.8) * rainGlassMotionSpeedFactor() * rainGlassSizeMotionFactor(drop) / rainGlassAdhesionResistance(drop),
     30,
-    168
+    240
   );
 }
 
