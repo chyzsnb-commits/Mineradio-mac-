@@ -268,6 +268,18 @@ function rainGlassSlipMaxSpeed(drop) {
   );
 }
 
+function rainGlassSlipDistance(drop) {
+  var speedFactor = rainGlassMotionSpeedFactor();
+  var sizeFactor = rainGlassClamp(drop.r / RAIN_GLASS_MOTION_REFERENCE_RADIUS, 0.78, 1.42);
+  return rainGlassRandom(28, 96) * (0.70 + speedFactor * 0.58) * sizeFactor;
+}
+
+function rainGlassRestartAdhesionThreshold(drop) {
+  var speedFactor = rainGlassMotionSpeedFactor();
+  var adhesionScale = rainGlassClamp(1.16 - speedFactor * 0.12, 0.60, 1.08);
+  return Math.max(62, drop.r * drop.r * rainGlassRandom(0.80, 1.04) * adhesionScale);
+}
+
 function rainGlassTargetDropCount() {
   return Math.min(RAIN_GLASS_MAX_DROPS, Math.round(22 + rainGlassDensity() * 58));
 }
@@ -399,7 +411,7 @@ function rainGlassBeginBreaking(drop) {
 function rainGlassBeginSlipping(drop) {
   drop.state = RAIN_GLASS_DROP_STATE.SLIPPING;
   drop.stateTime = 0;
-  drop.slipDistance = rainGlassRandom(20, 100);
+  drop.slipDistance = rainGlassSlipDistance(drop);
   drop.slipRemaining = drop.slipDistance;
   drop.trailDistance = 0;
   drop.nextRemnantDistance = rainGlassRandom(18, 34);
@@ -526,7 +538,7 @@ function rainGlassUpdateSettling(drop, dt) {
   drop.state = RAIN_GLASS_DROP_STATE.PINNED;
   drop.stateTime = 0;
   drop.holdTime = rainGlassRandom(1, 5);
-  drop.adhesionThreshold = Math.max(82, drop.r * drop.r * rainGlassRandom(0.88, 1.14));
+  drop.adhesionThreshold = rainGlassRestartAdhesionThreshold(drop);
   drop.vx = 0;
   drop.vy = 0;
 }
