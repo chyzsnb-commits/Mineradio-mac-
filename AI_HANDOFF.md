@@ -481,6 +481,13 @@
 - 边界：`providerVipLevel`、`hasProviderVip`、`hasProviderSvip` 等后台能力判断仍保留，音质和受限歌曲播放逻辑未删除。
 - 验证：新增 `scripts/test-account-tier-display.js`；`npm run check` 共 142 项通过。Electron 隔离状态分别模拟普通、VIP、SVIP，三种状态均无等级徽标或等级文字，卡片四列布局正常。
 
+**2026-07-29：云瀑共振官网结构对齐与开场尺寸校准。**
+- 移除独立 `topRain` 顶部包络线。顶部高低峰现在只由基础雨链、暴雨雨链和细丝的实际高度共同构成，避免出现脱离雨幕的“波形线”。
+- 25 点横向雨势直接采样真实 `frequencyData` 的 25 段频谱，并做轻度时间平滑；旋律换音会改变峰谷横向位置，不再用固定正弦波伪造旋律。
+- 新增 `768×384` 双 RenderTarget 高度场。雨链落水会把冲击写入高度场，水面读取高度和梯度生成可衰减的涟漪、暗色浅水反射、Fresnel 与局部镜面高光；资源在切换预设时释放，目标创建失败时仍可回退旧水面。
+- 开场基础珍珠缩放到 `0.62`，瀑布珠缩放到 `0.56`，保留原有音频能量驱动的增长，让静态/低能量时雨景更细密而非大颗粒。
+- 验证：专项 `scripts/test-rainfall-resonance.js` 13/13、`node --check public/js/modules/02-visual/20-rainfall-resonance.js`、`npm run check` 189/189 通过。未验证：需在 Electron 中选择预设 11 并播放旋律和鼓点明显的歌曲，人工确认水面透视、峰谷跟随与控件即时响应。[来源: `public/js/modules/02-visual/20-rainfall-resonance.js`、`scripts/test-rainfall-resonance.js`，2026-07-29]
+
 **2026-07-24：Codex 修复音质切换卡死、歌词残影和控制按钮拥挤。**
 - 根因：音质选择复用 `playQueueAt` 完整切歌，每次点击都提前清空当前音频并并发重建播放状态；QQ 自动降级又递归进入同一路径，造成令牌互相取消、`0:00`、多张通知和歌词舞台重复生成。
 - 修复：新增同曲原地换流队列，当前与最后一次选择串行执行；新地址可用前保留旧流，新流失败恢复旧地址与原时间。换流不再调用 `playQueueAt`，不重建歌词、歌架、封面、喜欢状态或听歌会话；音质通知使用 `quality-switch` 单卡替换。

@@ -150,15 +150,53 @@ test('云瀑共振把底部做成可见的水平水面，并由旋律曲线驱�
   assert.match(rain, /updateRainformSurface\(rr, rainResonanceClock\)/);
 });
 
-test('云瀑共振用顶部雨幕包络显示随旋律移动的雨峰', () => {
+test('云瀑共振让分层雨幕的高度自然形成随旋律移动的雨峰', () => {
   const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
 
-  assert.match(rain, /RAINFORM_TOP_EDGE_SAMPLES/);
-  assert.match(rain, /createRainformTopRainSystem\(/);
-  assert.match(rain, /updateRainformTopRain\(/);
-  assert.match(rain, /topRain/);
-  assert.match(rain, /rainformDataDrivenCeiling\(topRain\.normX/);
-  assert.match(rain, /updateRainformTopRain\(rr, rainResonanceClock\)/);
+  assert.doesNotMatch(rain, /RAINFORM_TOP_EDGE_SAMPLES/);
+  assert.doesNotMatch(rain, /topRain/);
+  assert.match(rain, /rainformDataDrivenCeiling\(xNorm\)/);
+  assert.match(rain, /rainformDataDrivenCeiling\(filament\.normX\[i\]\)/);
+});
+
+test('云瀑共振由分层雨幕本身形成峰谷，不再绘制独立顶部波形', () => {
+  const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
+
+  assert.doesNotMatch(rain, /createRainformTopRainSystem\(/);
+  assert.doesNotMatch(rain, /updateRainformTopRain\(/);
+  assert.match(rain, /rainformDataDrivenCeiling\(xNorm\)/);
+  assert.match(rain, /rainformDataDrivenCeiling\(filament\.normX\[i\]\)/);
+});
+
+test('云瀑共振水面使用可衰减的雨点击高度场，而不是固定正弦波', () => {
+  const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
+
+  assert.match(rain, /RAINFORM_HEIGHTFIELD_WIDTH/);
+  assert.match(rain, /RAINFORM_HEIGHTFIELD_HEIGHT/);
+  assert.match(rain, /createRainformHeightField\(/);
+  assert.match(rain, /updateRainformHeightField\(/);
+  assert.match(rain, /rainformInjectRipple\(/);
+  assert.match(rain, /uHeightField/);
+  assert.match(rain, /WebGLRenderTarget/);
+});
+
+test('云瀑共振从真实 FFT 频段生成 25 点雨势，不用固定正弦波伪造旋律', () => {
+  const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
+
+  assert.match(rain, /function rainformAudioBinAt\(/);
+  assert.match(rain, /frequencyData/);
+  assert.match(rain, /var tonal = rainformAudioBinAt\(normalized\)/);
+  assert.doesNotMatch(rain, /var broad = 0\.5 \+ 0\.5 \* Math\.sin/);
+  assert.doesNotMatch(rain, /var detail = 0\.5 \+ 0\.5 \* Math\.sin/);
+});
+
+test('云瀑共振开场使用细密雨链，尺寸只在音乐能量升高时增加', () => {
+  const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
+
+  assert.match(rain, /RAINFORM_INITIAL_PEARL_SCALE = 0\.62/);
+  assert.match(rain, /RAINFORM_INITIAL_WATERFALL_SCALE = 0\.56/);
+  assert.match(rain, /baseSize \*= RAINFORM_INITIAL_PEARL_SCALE/);
+  assert.match(rain, /sizes\[index\] \*= RAINFORM_INITIAL_WATERFALL_SCALE/);
 });
 
 test('Rainform 音乐映射通过 25 点雨量曲线驱动，不改变现有主循环入口', () => {

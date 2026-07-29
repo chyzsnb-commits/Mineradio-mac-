@@ -27,7 +27,11 @@ var RAINFORM_ZERO_RAIN_SUPPRESSION = 0.012;
 var RAINFORM_WATERLINE = -2.58;
 var RAINFORM_WATER_SURFACE_WIDTH = 12.4;
 var RAINFORM_WATER_SURFACE_DEPTH = 5.8;
-var RAINFORM_TOP_EDGE_SAMPLES = 256;
+var RAINFORM_WATER_SURFACE_Z = -0.5;
+var RAINFORM_HEIGHTFIELD_WIDTH = 768;
+var RAINFORM_HEIGHTFIELD_HEIGHT = 384;
+var RAINFORM_INITIAL_PEARL_SCALE = 0.62;
+var RAINFORM_INITIAL_WATERFALL_SCALE = 0.56;
 var RAINFORM_METAL = Object.freeze({
   pearlBandFrequency: 5.5,
   pearlBandSpeed: -2.55,
@@ -156,10 +160,24 @@ function rainformMelodyWaveAt(normalizedX, time) {
   var rainfall = rainformRainfallResponse(x);
   var slope = right - left;
   var melody = rainResonanceMelodyValue();
-  var phase = Number(time);
-  if (!isFinite(phase)) phase = rainformMelodyPhase;
-  var carrier = Math.sin(x * Math.PI * 5.4 - phase * (0.82 + melody * 0.66));
-  return (rainfall * 0.20 + slope * 1.9) * carrier * (0.38 + melody * 0.28);
+  return slope * (0.28 + melody * 0.42) + rainfall * 0.04 * melody;
+}
+
+function rainformAudioBinAt(normalizedX) {
+  var bins = typeof frequencyData !== 'undefined' ? frequencyData : null;
+  if (!bins || !bins.length) return 0;
+  var x = Math.max(0, Math.min(1, Number(normalizedX) || 0));
+  var center = Math.floor((0.012 + Math.pow(x, 1.42) * 0.82) * (bins.length - 1));
+  var radius = Math.max(2, Math.floor(bins.length * 0.008));
+  var total = 0;
+  var weight = 0;
+  for (var offset = -radius; offset <= radius; offset++) {
+    var index = Math.max(0, Math.min(bins.length - 1, center + offset));
+    var amount = 1 - Math.abs(offset) / (radius + 1);
+    total += (bins[index] || 0) / 255 * amount;
+    weight += amount;
+  }
+  return total / Math.max(0.0001, weight);
 }
 
 function createRainformCurveTexture() {
@@ -213,16 +231,18 @@ function buildRainformAudioCurve(time) {
 
   for (var point = 0; point < RAINFORM_CURVE_POINTS; point++) {
     var normalized = point / (RAINFORM_CURVE_POINTS - 1);
-    var broad = 0.5 + 0.5 * Math.sin(normalized * Math.PI * 2.0 + time * (0.34 + melody * 0.32));
-    var detail = 0.5 + 0.5 * Math.sin(normalized * Math.PI * 7.0 - time * 0.82 + point * 1.91);
-    var beatAccent = rawBeat * beatGain * Math.pow(Math.max(0, Math.sin(normalized * Math.PI * 4.0 + time * 1.7)), 8);
-    var value = intensity <= RAINFORM_ZERO_RAIN_SUPPRESSION ? 0
-      : 0.015
-      + rawBass * intensity * (0.34 + broad * 0.42)
-      + rawMid * melody * (0.16 + broad * 0.28 + detail * 0.10)
-      + rawTreble * (0.045 + detail * 0.10)
-      + beatAccent * (0.22 + rawBass * 0.28);
-    rainformCurve[point] = rainResonanceClamp(value, 0.015, 2.0, 0.06);
+    var tonal = rainformAudioBinAt(normalized);
+    var neighbour = (rainformAudioBinAt(Math.max(0, normalized - 0.035)) + rainformAudioBinAt(Math.min(1, normalized + 0.035))) * 0.5;
+    var beatAccent = rawBeat * beatGain * Math.max(0, tonal - neighbour * 0.64);
+    var target = intensity <= RAINFORM_ZERO_RAIN_SUPPRESSION ? 0
+      : 0.012
+      + rawBass * intensity * 0.34
+      + rawMid * 0.16
+      + rawTreble * 0.04
+      + tonal * (0.48 + melody * 0.64)
+      + beatAccent * (0.24 + rawBass * 0.22);
+    var current = isFinite(rainformCurve[point]) ? rainformCurve[point] : target;
+    rainformCurve[point] = rainResonanceClamp(rainformLerp(current, target, 0.16 + melody * 0.18), 0.0, 2.0, 0.06);
   }
   buildRainformCurveLut();
   return rainformCurve;
@@ -498,6 +518,7 @@ function createRainformChainSystem() {
 
     var baseSize = role === RAINFORM_CHAIN_ROLE.AMBIENT ? 0.45 + seed2 * 0.35
       : 0.78 + seed2 * 0.55 + chain.near[i] * 0.24;
+    baseSize *= RAINFORM_INITIAL_PEARL_SCALE;
     for (var bead = 0; bead < beads; bead++) {
       var fraction = beads <= 1 ? 0 : bead / (beads - 1);
       var pSeed = rainformHash(pearlTotal + bead, 7.2);
@@ -609,6 +630,7 @@ function createRainformWaterfallSystem() {
     for (var b = 0; b < beadsPerColumn; b++) {
       var index = c * beadsPerColumn + b;
       sizes[index] = 0.65 + rainformHash(index, 81) * 0.62;
+      sizes[index] *= RAINFORM_INITIAL_WATERFALL_SCALE;
       alphas[index] = 0;
       aspects[index] = 1.2 + rainformHash(index, 19) * 1.4;
       seeds[index] = rainformHash(index, 33);
@@ -673,7 +695,172 @@ function createRainformFilamentSystem() {
   return { mesh: mesh, geometry: geometry, material: material, count: count, normX: normX, depth: depth, phase: phase, width: width, alpha: alpha, heightBias: heightBias };
 }
 
-function createRainformWaterSurface(rainLut) {
+function createRainformHeightField() {
+  var targetOptions = {
+    format: THREE.RGBAFormat,
+    type: typeof THREE.HalfFloatType !== 'undefined' ? THREE.HalfFloatType : THREE.UnsignedByteType,
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    depthBuffer: false,
+    stencilBuffer: false
+  };
+  var readTarget = new THREE.WebGLRenderTarget(RAINFORM_HEIGHTFIELD_WIDTH, RAINFORM_HEIGHTFIELD_HEIGHT, targetOptions);
+  var writeTarget = new THREE.WebGLRenderTarget(RAINFORM_HEIGHTFIELD_WIDTH, RAINFORM_HEIGHTFIELD_HEIGHT, targetOptions);
+  readTarget.texture.generateMipmaps = false;
+  writeTarget.texture.generateMipmaps = false;
+  var material = new THREE.ShaderMaterial({
+    uniforms: {
+      uHeightField: { value: readTarget.texture },
+      uTexel: { value: new THREE.Vector2(1 / RAINFORM_HEIGHTFIELD_WIDTH, 1 / RAINFORM_HEIGHTFIELD_HEIGHT) },
+      uImpact: { value: new THREE.Vector3(-2, -2, 0) },
+      uDamping: { value: 0.986 },
+      uReset: { value: 1 }
+    },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: [
+      'precision highp float;',
+      'uniform sampler2D uHeightField;',
+      'uniform vec2 uTexel;',
+      'uniform vec3 uImpact;',
+      'uniform float uDamping;',
+      'uniform float uReset;',
+      'varying vec2 vUv;',
+      'void main() {',
+      '  if (uReset > 0.5) { gl_FragColor = vec4(0.5, 0.5, 0.0, 1.0); return; }',
+      '  float center = texture2D(uHeightField, vUv).r - 0.5;',
+      '  float velocity = texture2D(uHeightField, vUv).g - 0.5;',
+      '  float north = texture2D(uHeightField, vUv + vec2(0.0, uTexel.y)).r - 0.5;',
+      '  float south = texture2D(uHeightField, vUv - vec2(0.0, uTexel.y)).r - 0.5;',
+      '  float east = texture2D(uHeightField, vUv + vec2(uTexel.x, 0.0)).r - 0.5;',
+      '  float west = texture2D(uHeightField, vUv - vec2(uTexel.x, 0.0)).r - 0.5;',
+      '  velocity = (velocity + (north + south + east + west - center * 4.0) * 0.19) * uDamping;',
+      '  float impact = exp(-dot(vUv - uImpact.xy, vUv - uImpact.xy) * 900.0) * uImpact.z;',
+      '  center = (center + velocity + impact) * uDamping;',
+      '  gl_FragColor = vec4(clamp(center + 0.5, 0.0, 1.0), clamp(velocity + impact * 0.45 + 0.5, 0.0, 1.0), 0.0, 1.0);',
+      '}'
+    ].join('\\n'),
+    depthWrite: false,
+    depthTest: false
+  });
+  var fieldScene = new THREE.Scene();
+  var quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+  fieldScene.add(quad);
+  return {
+    readTarget: readTarget,
+    writeTarget: writeTarget,
+    material: material,
+    quad: quad,
+    scene: fieldScene,
+    camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1),
+    impact: new THREE.Vector3(-2, -2, 0),
+    reset: true,
+    failed: false
+  };
+}
+
+function rainformInjectRipple(rr, x, z, strength) {
+  var field = rr && rr.heightField;
+  if (!field || field.failed) return;
+  var uvX = (x - RAINFORM_WORLD_LEFT) / (RAINFORM_WORLD_RIGHT - RAINFORM_WORLD_LEFT);
+  var uvY = (z - (RAINFORM_WATER_SURFACE_Z - RAINFORM_WATER_SURFACE_DEPTH * 0.5)) / RAINFORM_WATER_SURFACE_DEPTH;
+  if (uvX < 0 || uvX > 1 || uvY < 0 || uvY > 1 || strength < field.impact.z) return;
+  field.impact.set(uvX, uvY, Math.min(0.15, 0.025 + strength * 0.055));
+}
+
+function updateRainformHeightField(rr, dt) {
+  var field = rr && rr.heightField;
+  if (!field || field.failed || typeof renderer === 'undefined' || !renderer) return;
+  var previousTarget = renderer.getRenderTarget ? renderer.getRenderTarget() : null;
+  try {
+    field.material.uniforms.uHeightField.value = field.readTarget.texture;
+    field.material.uniforms.uImpact.value.copy(field.impact);
+    field.material.uniforms.uDamping.value = Math.pow(0.986, Math.max(0.5, Math.min(2.4, (Number(dt) || 0.016) * 60)));
+    field.material.uniforms.uReset.value = field.reset ? 1 : 0;
+    renderer.setRenderTarget(field.writeTarget);
+    renderer.render(field.scene, field.camera);
+    var swap = field.readTarget;
+    field.readTarget = field.writeTarget;
+    field.writeTarget = swap;
+    field.impact.set(-2, -2, 0);
+    field.reset = false;
+  } catch (e) {
+    field.failed = true;
+  } finally {
+    renderer.setRenderTarget(previousTarget || null);
+  }
+}
+
+function createRainformWaterSurface(rainLut, heightField) {
+  var geometry = new THREE.PlaneGeometry(RAINFORM_WATER_SURFACE_WIDTH, RAINFORM_WATER_SURFACE_DEPTH, 150, 92);
+  geometry.rotateX(-Math.PI * 0.5);
+  var material = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uRainfall: { value: 0 },
+      uRainLut: { value: rainLut ? rainLut.texture : null },
+      uHeightField: { value: heightField ? heightField.readTarget.texture : null },
+      uFieldTexel: { value: new THREE.Vector2(1 / RAINFORM_HEIGHTFIELD_WIDTH, 1 / RAINFORM_HEIGHTFIELD_HEIGHT) }
+    },
+    vertexShader: [
+      'uniform sampler2D uHeightField;',
+      'uniform sampler2D uRainLut;',
+      'uniform vec2 uFieldTexel;',
+      'varying vec2 vUv;',
+      'varying vec3 vWorld;',
+      'varying vec3 vNormal;',
+      'varying float vRainfall;',
+      'void main() {',
+      '  vUv = uv;',
+      '  float height = texture2D(uHeightField, uv).r - 0.5;',
+      '  float left = texture2D(uHeightField, uv - vec2(uFieldTexel.x, 0.0)).r - 0.5;',
+      '  float right = texture2D(uHeightField, uv + vec2(uFieldTexel.x, 0.0)).r - 0.5;',
+      '  float near = texture2D(uHeightField, uv - vec2(0.0, uFieldTexel.y)).r - 0.5;',
+      '  float far = texture2D(uHeightField, uv + vec2(0.0, uFieldTexel.y)).r - 0.5;',
+      '  vec3 p = position;',
+      '  p.y += height * 1.65;',
+      '  vNormal = normalize(normalMatrix * vec3((left - right) * 24.0, 1.0, (near - far) * 24.0));',
+      '  vWorld = (modelMatrix * vec4(p, 1.0)).xyz;',
+      '  vRainfall = texture2D(uRainLut, vec2(uv.x, 0.5)).r;',
+      '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
+      '}'
+    ].join('\\n'),
+    fragmentShader: [
+      'precision highp float;',
+      'uniform float uTime;',
+      'uniform float uRainfall;',
+      'varying vec2 vUv;',
+      'varying vec3 vWorld;',
+      'varying vec3 vNormal;',
+      'varying float vRainfall;',
+      'void main() {',
+      '  vec3 normal = normalize(vNormal);',
+      '  vec3 viewDir = normalize(cameraPosition - vWorld);',
+      '  vec3 lightDir = normalize(vec3(-0.42, 0.86, 0.31));',
+      '  float fresnel = pow(1.0 - max(0.0, dot(normal, viewDir)), 4.0);',
+      '  float specular = pow(max(0.0, dot(reflect(-lightDir, normal), viewDir)), 42.0);',
+      '  float rainColumns = pow(0.5 + 0.5 * sin(vUv.x * 232.0 + uTime * 1.45), 18.0);',
+      '  float reflection = rainColumns * (0.10 + vRainfall * 0.82) * smoothstep(0.0, 0.78, vUv.y);',
+      '  float shoreline = exp(-pow((vUv.y - 0.58) * 4.7, 2.0)) * (0.14 + uRainfall * 0.18);',
+      '  vec3 color = mix(vec3(0.002, 0.008, 0.012), vec3(0.09, 0.18, 0.23), fresnel * 0.54 + reflection * 0.42 + shoreline);',
+      '  color += vec3(0.50, 0.70, 0.78) * (specular * 0.65 + reflection * 0.36 + shoreline * 0.45);',
+      '  float edge = smoothstep(0.0, 0.05, vUv.x) * (1.0 - smoothstep(0.94, 1.0, vUv.x));',
+      '  gl_FragColor = vec4(color, edge * (0.22 + uRainfall * 0.18 + fresnel * 0.18));',
+      '}'
+    ].join('\\n'),
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    blending: THREE.NormalBlending,
+    side: THREE.DoubleSide
+  });
+  var mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'rainform-water-surface';
+  mesh.position.set(0, RAINFORM_WATER_LEVEL, RAINFORM_WATER_SURFACE_Z);
+  mesh.renderOrder = 0;
+  return { mesh: mesh, geometry: geometry, material: material };
+}
+
+function createRainformLegacyWaterSurface(rainLut) {
   var geometry = new THREE.PlaneGeometry(RAINFORM_WATER_SURFACE_WIDTH, RAINFORM_WATER_SURFACE_DEPTH, 96, 56);
   geometry.rotateX(-Math.PI * 0.5);
   var material = new THREE.ShaderMaterial({
@@ -779,46 +966,6 @@ function createRainformMistBand(rainLut) {
   return { mesh: mesh, geometry: geometry, material: material };
 }
 
-function createRainformTopRainSystem() {
-  var count = RAINFORM_TOP_EDGE_SAMPLES;
-  var positions = new Float32Array(count * 6);
-  var colors = new Float32Array(count * 6);
-  var alphas = new Float32Array(count * 2);
-  var phases = new Float32Array(count * 2);
-  var normX = new Float32Array(count);
-  for (var i = 0; i < count; i++) {
-    var x = i / Math.max(1, count - 1);
-    normX[i] = x;
-    colors[i * 6] = 0.42;
-    colors[i * 6 + 1] = 0.56;
-    colors[i * 6 + 2] = 0.70;
-    colors[i * 6 + 3] = 0.62;
-    colors[i * 6 + 4] = 0.76;
-    colors[i * 6 + 5] = 0.88;
-    phases[i * 2] = x * Math.PI * 2;
-    phases[i * 2 + 1] = phases[i * 2];
-  }
-  var geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
-  geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
-  geometry.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1).setUsage(THREE.DynamicDrawUsage));
-  geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
-  var material = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 } },
-    vertexShader: RAINFORM_LINE_VERT,
-    fragmentShader: RAINFORM_LINE_FRAG,
-    transparent: true,
-    depthWrite: false,
-    depthTest: false,
-    blending: THREE.AdditiveBlending
-  });
-  var lines = new THREE.LineSegments(geometry, material);
-  lines.name = 'rainform-top-rain-envelope';
-  lines.frustumCulled = false;
-  lines.renderOrder = 3;
-  return { lines: lines, geometry: geometry, material: material, positions: positions, alphas: alphas, normX: normX, count: count };
-}
-
 function createRainformSplashSystem() {
   var count = RAINFORM_SPLASH_LIMIT;
   var positions = new Float32Array(count * 3);
@@ -920,15 +1067,16 @@ function ensureRainResonance() {
   var chains = createRainformChainSystem();
   var waterfall = createRainformWaterfallSystem();
   var filaments = createRainformFilamentSystem();
-  var waterSurface = createRainformWaterSurface(rainLut);
+  var heightField = null;
+  try { heightField = createRainformHeightField(); } catch (e) { }
+  var waterSurface = heightField ? createRainformWaterSurface(rainLut, heightField) : createRainformLegacyWaterSurface(rainLut);
   var mistBand = createRainformMistBand(rainLut);
-  var topRain = createRainformTopRainSystem();
   var splash = createRainformSplashSystem();
   var ripple = createRainformRippleSystem();
   var backdrop = null;
   var floor = null;
   waterfall.points.visible = false;
-  group.add(waterSurface.mesh, mistBand.mesh, chains.lines, filaments.mesh, topRain.lines, chains.points, ripple.lines, splash.points);
+  group.add(waterSurface.mesh, mistBand.mesh, chains.lines, filaments.mesh, chains.points, ripple.lines, splash.points);
   scene.add(group);
   group.visible = false;
   rainResonance = {
@@ -938,9 +1086,9 @@ function ensureRainResonance() {
     filaments: filaments,
     filamentDummy: new THREE.Object3D(),
     rainLut: rainLut,
+    heightField: heightField,
     waterSurface: waterSurface,
     mistBand: mistBand,
-    topRain: topRain,
     splash: splash,
     ripple: ripple,
     backdrop: backdrop,
@@ -961,7 +1109,7 @@ function disposeRainResonance() {
   if (!rainResonance) return;
   var rr = rainResonance;
   if (rr.group && typeof scene !== 'undefined' && scene) scene.remove(rr.group);
-  var objects = [rr.chains && rr.chains.points, rr.chains && rr.chains.lines, rr.waterfall && rr.waterfall.points, rr.filaments && rr.filaments.mesh, rr.topRain && rr.topRain.lines, rr.splash && rr.splash.points, rr.ripple && rr.ripple.lines];
+  var objects = [rr.chains && rr.chains.points, rr.chains && rr.chains.lines, rr.waterfall && rr.waterfall.points, rr.filaments && rr.filaments.mesh, rr.splash && rr.splash.points, rr.ripple && rr.ripple.lines];
   for (var i = 0; i < objects.length; i++) {
     var object = objects[i];
     if (!object) continue;
@@ -975,6 +1123,12 @@ function disposeRainResonance() {
     if (surfaces[s].material && surfaces[s].material.dispose) surfaces[s].material.dispose();
   }
   if (rr.rainLut && rr.rainLut.texture && rr.rainLut.texture.dispose) rr.rainLut.texture.dispose();
+  if (rr.heightField) {
+    if (rr.heightField.readTarget && rr.heightField.readTarget.dispose) rr.heightField.readTarget.dispose();
+    if (rr.heightField.writeTarget && rr.heightField.writeTarget.dispose) rr.heightField.writeTarget.dispose();
+    if (rr.heightField.quad && rr.heightField.quad.geometry) rr.heightField.quad.geometry.dispose();
+    if (rr.heightField.material && rr.heightField.material.dispose) rr.heightField.material.dispose();
+  }
   if (rr.backdrop) { if (rr.backdrop.geometry) rr.backdrop.geometry.dispose(); if (rr.backdrop.material) rr.backdrop.material.dispose(); }
   if (rr.floor) { if (rr.floor.geometry) rr.floor.geometry.dispose(); if (rr.floor.material) rr.floor.material.dispose(); }
   rainResonance = null;
@@ -1024,6 +1178,7 @@ function rainformEmitRipple(rr, x, z, strength, time) {
 
 function emitRainformSplash(rr, x, z, strength, near, time) {
   rainformEmitSplash(rr, x, z, strength, near, time);
+  rainformInjectRipple(rr, x, z, strength);
   if (rr.rippleCredit >= 1) {
     rr.rippleCredit -= 1;
     rainformEmitRipple(rr, x, z, strength, time);
@@ -1166,32 +1321,6 @@ function updateRainformFilaments(rr, dt, time) {
   return rr.filamentRainfall;
 }
 
-function updateRainformTopRain(rr, time) {
-  var topRain = rr.topRain;
-  var intensity = rainResonanceIntensityValue();
-  for (var i = 0; i < topRain.count; i++) {
-    var rainfall = rainformRainfallResponse(topRain.normX[i]);
-    var ceiling = rainformDataDrivenCeiling(topRain.normX[i]);
-    var wave = rainformMelodyWaveAt(topRain.normX[i], time);
-    var x = rainformLerp(RAINFORM_WORLD_LEFT, RAINFORM_WORLD_RIGHT, topRain.normX[i]);
-    var p6 = i * 6;
-    var alpha = intensity <= RAINFORM_ZERO_RAIN_SUPPRESSION ? 0 : Math.min(0.44, rainfall * 0.36 + Math.abs(wave) * 0.2);
-    var length = 0.045 + rainfall * 0.42 + Math.abs(wave) * 0.26;
-    topRain.positions[p6] = x;
-    topRain.positions[p6 + 1] = ceiling + wave * 0.16;
-    topRain.positions[p6 + 2] = -1.18;
-    topRain.positions[p6 + 3] = x;
-    topRain.positions[p6 + 4] = ceiling - length;
-    topRain.positions[p6 + 5] = -1.18;
-    topRain.alphas[i * 2] = alpha * 0.58;
-    topRain.alphas[i * 2 + 1] = alpha;
-  }
-  topRain.geometry.attributes.position.needsUpdate = true;
-  topRain.geometry.attributes.aAlpha.needsUpdate = true;
-  topRain.material.uniforms.uTime.value = time;
-  topRain.lines.visible = intensity > RAINFORM_ZERO_RAIN_SUPPRESSION;
-}
-
 function updateRainformSurface(rr, time) {
   rainformUploadCurveLut(rr.rainLut);
   var rainfall = rr.filamentRainfall || rainformRainfallResponse(0.5);
@@ -1200,7 +1329,10 @@ function updateRainformSurface(rr, time) {
     rr.waterSurface.material.uniforms.uTime.value = time;
     rr.waterSurface.material.uniforms.uRainfall.value = rainfall;
     rr.waterSurface.material.uniforms.uRainLut.value = rr.rainLut.texture;
-    rr.waterSurface.material.uniforms.uMelodyPhase.value = phase;
+    if (rr.waterSurface.material.uniforms.uHeightField && rr.heightField && !rr.heightField.failed) {
+      rr.waterSurface.material.uniforms.uHeightField.value = rr.heightField.readTarget.texture;
+    }
+    if (rr.waterSurface.material.uniforms.uMelodyPhase) rr.waterSurface.material.uniforms.uMelodyPhase.value = phase;
     rr.waterSurface.mesh.visible = rainfall > RAINFORM_ZERO_RAIN_SUPPRESSION;
   }
   if (rr.mistBand && rr.mistBand.material) {
@@ -1303,7 +1435,7 @@ function updateRainResonance(dt) {
   updateRainformChains(rr, step, rainResonanceClock);
   updateRainformWaterfall(rr, step, rainResonanceClock);
   updateRainformFilaments(rr, step, rainResonanceClock);
-  updateRainformTopRain(rr, rainResonanceClock);
+  updateRainformHeightField(rr, step);
   updateRainformSurface(rr, rainResonanceClock);
   if (rr.splashCredit >= 1 && rr.bassS > 0.08 && rainformRainfallResponse(0.5) > 0.42) {
     rr.splashCredit -= 1;
