@@ -53,13 +53,11 @@ test('云瀑共振把低中高频和节拍分别映射到雨瀑运动', () => {
   assert.match(rain, /resonanceIntensityValue\(\)/);
   assert.match(rain, /resonanceMelodyValue\(\)/);
   assert.match(rain, /resonanceBeatValue\(\)/);
-  assert.match(rain, /aColumn/);
+  assert.match(rain, /aAspect/);
   assert.match(rain, /aSeed/);
   assert.match(rain, /aAlpha/);
-  assert.match(rain, /uMelody/);
-  assert.match(rain, /uBeat/);
-  assert.match(rain, /uBass/);
-  assert.match(rain, /uTreble/);
+  assert.match(rain, /uWaterfall/);
+  assert.match(rain, /RAINFORM_PEARL_FRAG/);
   assert.match(rain, /rainResonanceEase/);
 });
 
@@ -88,4 +86,41 @@ test('云瀑共振控件独立持久化并支持强度、旋律起伏、拍点�
   assert.match(panel, /fx-rainresonancebeat/);
   assert.match(rain, /RAIN_RESONANCE_STORE_KEY/);
   assert.match(rain, /localStorage/);
+});
+
+test('云瀑共振采用 Rainform 的分层雨景结构而不是单一点云雨柱', () => {
+  const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
+
+  assert.match(rain, /Required Notice: Rainform \/ 数据成雨/);
+  assert.match(rain, /RAINFORM_DERIVED_SOURCE/);
+  assert.match(rain, /RAINFORM_CURVE_POINTS = 25/);
+  assert.match(rain, /createRainformChainSystem\(/);
+  assert.match(rain, /updateRainformChains\(/);
+  assert.match(rain, /createRainformWaterfallSystem\(/);
+  assert.match(rain, /updateRainformWaterfall\(/);
+  assert.match(rain, /createRainformSplashSystem\(/);
+  assert.match(rain, /emitRainformSplash\(/);
+  assert.match(rain, /createRainformRippleSystem\(/);
+  assert.match(rain, /updateRainformRipples\(/);
+  assert.match(rain, /aAspect/);
+  assert.match(rain, /reflectionWave/);
+  assert.match(rain, /uWaterfall/);
+  assert.match(rain, /RAINFORM_CHAIN_ROLE/);
+  assert.doesNotMatch(rain, /RAIN_RESONANCE_COLUMN_COUNT/);
+  assert.doesNotMatch(rain, /RAIN_RESONANCE_ROWS_PER_COLUMN/);
+});
+
+test('Rainform 音乐映射通过 25 点雨量曲线驱动，不改变现有主循环入口', () => {
+  const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
+
+  assert.match(rain, /buildRainformAudioCurve\(/);
+  assert.match(rain, /rainformCurve\.length = RAINFORM_CURVE_POINTS/);
+  assert.match(rain, /bass/);
+  assert.match(rain, /mid/);
+  assert.match(rain, /treble/);
+  assert.match(rain, /beatPulse/);
+  assert.match(rain, /rainformCurveAt\(/);
+  assert.match(rain, /rainformChainCount/);
+  assert.match(rain, /rainformWaterfallCount/);
+  assert.match(rain, /rainformSplashCount/);
 });

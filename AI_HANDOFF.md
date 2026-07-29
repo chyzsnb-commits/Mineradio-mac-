@@ -14,7 +14,15 @@
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
 - **网络注意**：本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI）正常。**用 gh API 推送代码，不要用 git push**。
-- **本轮新增**：预设 11「云瀑共振」已接入 `codex/mineradio-2.0-unified`。新模块 `public/js/modules/02-visual/20-rainfall-resonance.js` 使用 18 列 × 64 点透明 GPU 雨幕对象池，低/中/高频和拍点分别驱动雨幕、旋律起伏、细雨亮点和爆发；不创建第二个 Canvas 或动画循环，不复制 Rainform 代码/资产。动态面板新增强度 `0–1.6`、旋律 `0–1.8`、拍点 `0–1.8`，独立存储键 `mineradio-rain-resonance-v1`；全局预设上限同步为 11。设计规格：`docs/superpowers/specs/2026-07-29-rainfall-resonance-design.md`；专项测试 3/3，`npm run check` **179/179**。待用户用真实歌曲手测音乐喷泉起伏和三个滑块即时响应。
+- **本轮新增**：预设 11「云瀑共振」已接入 `codex/mineradio-2.0-unified`。新模块 `public/js/modules/02-visual/20-rainfall-resonance.js` 按项目所有者确认的授权，采用 Rainform 派生的分层雨景结构：基础/环境/暴雨雨链、珍珠雨滴、暴雨瀑布、撞击水花和涟漪；25 点音乐雨量曲线把低/中/高频和拍点分布到横向雨景。不创建第二个 Canvas 或动画循环；动态面板保留强度 `0–1.6`、旋律 `0–1.8`、拍点 `0–1.8`，独立存储键 `mineradio-rain-resonance-v1`。源码保留 Rainform Required Notice、来源标识和 PolyForm Noncommercial 许可说明。设计规格：`docs/superpowers/specs/2026-07-29-rainfall-resonance-design.md`；专项测试 5/5，`npm run check` **181/181**。待用户用真实歌曲手测音乐雨景起伏和三个滑块即时响应。
+
+**2026-07-29：云瀑共振改为 Rainform 授权派生的分层音乐雨景。**
+
+- 分支：`codex/mineradio-2.0-unified`，继续使用预设索引 11，不修改雨境预设 9 的玻璃水珠逻辑。
+- 视觉：替换原先单一的点云为基础/环境/暴雨三层雨链、珍珠雨滴、暴雨瀑布、撞击水花和涟漪；雨滴 shader 加入球面法线、镜面高光、菲涅尔和反射波。
+- 音乐：新增 25 点雨量曲线，将 bass/mid/treble/beatPulse 沿横向分布；保留强度、旋律起伏、拍点爆发三个控件和独立持久化。
+- 归属：采用用户声明已取得的 Rainform 二创授权；源码保留 Required Notice、`afterimage-lab/Rainform` 来源标识、PolyForm Noncommercial 许可说明。没有接入 Rainform 天气 API 或独立运行时。
+- 验证：专项测试 5/5；`npm run check` 181/181；`node --check` 和 `git diff --check` 通过。待用户用真实歌曲确认视觉层次和音乐同步。
 
 ## 最终整合（agents/final-integration，2026-07-14）
 
@@ -116,7 +124,7 @@
 
 - [x] **重新接入崩溃记录**：本机 crashReporter 已在最新代码启用，真实测试生成 `.dmp`，上传关闭。
 - [x] **雨境玻璃水珠迁移与写实增强**：独立 RG Metaball 后处理已接入预设 9；动态控件支持开关、数量/流速/尺寸，雨量扩大并驱动尺寸，新增撞击凝结态；背景保持锐利；已消除合成噪声造成的规则像素点阵；`npm run check` 176/176。
-- [x] **云瀑共振音乐雨幕预设**：新增索引 11 与独立 GPU 点云模块；低/中/高频和拍点分层驱动，动态面板支持雨幕强度、旋律起伏、拍点爆发并独立持久化；未复制 Rainform 代码或资产；专项测试 3/3，`npm run check` 179/179。
+- [x] **云瀑共振音乐雨幕预设**：新增索引 11 与 Rainform 授权派生的分层雨景；包含雨链、珍珠雨滴、暴雨瀑布、撞击水花、涟漪和 25 点音乐雨量曲线，动态面板支持雨幕强度、旋律起伏、拍点爆发并独立持久化；保留 Required Notice、来源和 PolyForm Noncommercial 许可说明；专项测试 5/5，`npm run check` 181/181。
 - [ ] **渲染进程崩溃根因**：在用户真实资料复现后分析 `.dmp` 和 `crash-diagnostics.json`（上面详述）。
 - [ ] **真机对比三种显卡模式**：分别重启到自动/省电/高性能，播放同一首歌 10 分钟，对比温度、CPU 和流畅度。
 - [x] **继续发烫优化**：主循环空闲时从高频 RAF 唤醒改成真正休眠；idle guide 在禁用无内容和深后台时彻底停止。
