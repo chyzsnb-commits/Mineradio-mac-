@@ -53,6 +53,8 @@ test('雨境玻璃水珠具有独立开关、数量、流速、尺寸设置并�
   assert.match(read('public/js/modules/02-visual/19-rain-glass.js'), /rainGlassClamp\(Math\.sqrt\(speed\) \* \(0\.90 \+ energy \* 0\.10\), 0\.45, 3\.00\)/);
   assert.match(read('public/js/modules/02-visual/19-rain-glass.js'), /rainGlassClamp\(Math\.sqrt\(speed\), 0\.45, 3\.00\)/);
   assert.match(read('public/js/modules/02-visual/19-rain-glass.js'), /\n\s*30,\n\s*336\n\s*\);/);
+  assert.match(read('public/js/modules/02-visual/19-rain-glass.js'), /return rainGlassClamp\(0\.86 \+ rainGlassMotionSpeedFactor\(\) \* 0\.14, 0\.92, 1\.30\)/);
+  assert.match(read('public/js/modules/02-visual/19-rain-glass.js'), /drop\.stateTime \* rainGlassMotionSpeedFactor\(\) >= drop\.holdTime/);
   assert.match(rain, /rainGlassSpeed\)\) \? Number\(fx\.rainGlassSpeed\) : 1\.00[\s\S]*Math\.min\(8, v\)/);
   assert.match(rain, /'glassSpeed' in raw[\s\S]*Math\.min\(8, Number\(raw\.glassSpeed\)\)/);
   assert.match(bindings, /rainGlassSize.*clampRange\(fx\.rainGlassSize,\s*0\.6,\s*1\.8\)/);

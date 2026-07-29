@@ -244,7 +244,7 @@ function rainGlassMotionSpeedFactor() {
 }
 
 function rainGlassPhaseRate() {
-  return rainGlassClamp(0.86 + rainGlassMotionSpeedFactor() * 0.14, 0.92, 1.08);
+  return rainGlassClamp(0.86 + rainGlassMotionSpeedFactor() * 0.14, 0.92, 1.30);
 }
 
 function rainGlassSizeMotionFactor(drop) {
@@ -449,7 +449,7 @@ function rainGlassUpdatePinned(drop, dt) {
     if (drop.age > drop.lifetime) drop.alpha -= dt * 0.08;
     return;
   }
-  if (drop.stateTime >= drop.holdTime && drop.r * drop.r >= drop.adhesionThreshold) rainGlassBeginBreaking(drop);
+  if (drop.stateTime * rainGlassMotionSpeedFactor() >= drop.holdTime && drop.r * drop.r >= drop.adhesionThreshold) rainGlassBeginBreaking(drop);
 }
 
 function rainGlassUpdateGrowing(drop, dt) {
