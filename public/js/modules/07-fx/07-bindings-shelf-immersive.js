@@ -123,9 +123,9 @@ function bindFxPanel() {
       if (pair[1] === 'lyricOffsetZ') fx.lyricOffsetZ = clampRange(fx.lyricOffsetZ, -3.2, 3.2);
       if (pair[1] === 'lyricTiltX' || pair[1] === 'lyricTiltY') fx[pair[1]] = Math.round(clampRange(fx[pair[1]], -84, 84));
       if (pair[1] === 'lyricLineHeight') fx.lyricLineHeight = clampRange(fx.lyricLineHeight, 0.72, 1.80);
-      if (pair[1] === 'rainAmount') fx.rainAmount = clampRange(fx.rainAmount, 0.1, 2.5);
+      if (pair[1] === 'rainAmount') fx.rainAmount = clampRange(fx.rainAmount, 0.05, 4);
       if (pair[1] === 'rainThunder') fx.rainThunder = clampRange(fx.rainThunder, 0.15, 0.95);
-      if (pair[1] === 'rainGlassAmount') fx.rainGlassAmount = clampRange(fx.rainGlassAmount, 0.25, 1.5);
+      if (pair[1] === 'rainGlassAmount') fx.rainGlassAmount = clampRange(fx.rainGlassAmount, 0.15, 2.5);
       if (pair[1] === 'rainGlassSpeed') fx.rainGlassSpeed = clampRange(fx.rainGlassSpeed, 0.2, 2.2);
       if (pair[1] === 'rainGlassSize') fx.rainGlassSize = clampRange(fx.rainGlassSize, 0.6, 1.8);
       if (/^rain/.test(pair[1]) && typeof saveRainToggles === 'function') saveRainToggles();

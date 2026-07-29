@@ -47,7 +47,7 @@ test('雨境玻璃水珠具有独立开关、数量、流速、尺寸设置并�
   assert.match(bindings, /\['fx-rainglassamount',\s*'rainGlassAmount'\]/);
   assert.match(bindings, /\['fx-rainglassspeed',\s*'rainGlassSpeed'\]/);
   assert.match(bindings, /\['fx-rainglasssize',\s*'rainGlassSize'\]/);
-  assert.match(bindings, /rainGlassAmount.*clampRange\(fx\.rainGlassAmount,\s*0\.25,\s*1\.5\)/);
+  assert.match(bindings, /rainGlassAmount.*clampRange\(fx\.rainGlassAmount,\s*0\.15,\s*2\.5\)/);
   assert.match(bindings, /rainGlassSpeed.*clampRange\(fx\.rainGlassSpeed,\s*0\.2,\s*2\.2\)/);
   assert.match(bindings, /rainGlassSize.*clampRange\(fx\.rainGlassSize,\s*0\.6,\s*1\.8\)/);
   assert.match(panel, /fx-rainglassamount/);
@@ -61,6 +61,26 @@ test('雨境玻璃水珠具有独立开关、数量、流速、尺寸设置并�
   assert.match(rain, /'glassAmount' in raw/);
   assert.match(rain, /'glassSpeed' in raw/);
   assert.match(rain, /'glassSize' in raw/);
+});
+
+test('雨量扩大范围，并驱动玻璃水珠尺寸与撞击凝结', () => {
+  const rain = read('public/js/modules/02-visual/18-rain-mood.js');
+  const glass = read('public/js/modules/02-visual/19-rain-glass.js');
+  const html = read('public/index.html');
+
+  assert.match(html, /id="fx-rainamount" type="range" min="0\.05" max="4"/);
+  assert.match(html, /id="fx-rainglassamount" type="range" min="0\.15" max="2\.5"/);
+  assert.match(rain, /Math\.min\(4, v\)/);
+  assert.match(glass, /RAIN_GLASS_FIELD_SCALE = 1(?:\.0)?/);
+  assert.match(glass, /RAIN_GLASS_FIELD_MAX_WIDTH = 2048/);
+  assert.match(glass, /RAIN_GLASS_FIELD_MAX_HEIGHT = 1280/);
+  assert.match(glass, /function rainGlassRainSizeFactor\(/);
+  assert.match(glass, /rainAmountValue\(\)/);
+  assert.match(glass, /IMPACTING: 'impacting'/);
+  assert.match(glass, /function rainGlassSpawnImpactDrop\(/);
+  assert.match(glass, /function rainGlassUpdateImpacting\(/);
+  assert.match(glass, /RAIN_GLASS_DROP_STATE\.IMPACTING/);
+  assert.match(glass, /rainGlassImpactCarry/);
 });
 
 test('水滴模块在关闭或切出雨境时释放 GPU 资源并回退原始雨境渲染', () => {

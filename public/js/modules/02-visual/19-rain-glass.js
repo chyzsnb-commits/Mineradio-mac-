@@ -1,11 +1,11 @@
 // ============================================================
 // 雨境前景挂壁水珠：复用主 renderer 与主循环，不创建第二个 Canvas / RAF。
 var RAIN_GLASS_PRESET_INDEX = 9;
-var RAIN_GLASS_FIELD_SCALE = 0.82;
+var RAIN_GLASS_FIELD_SCALE = 1.0;
 var RAIN_GLASS_BLUR_SCALE = 0.55;
-var RAIN_GLASS_FIELD_MAX_WIDTH = 1440;
-var RAIN_GLASS_FIELD_MAX_HEIGHT = 900;
-var RAIN_GLASS_MAX_DROPS = 120;
+var RAIN_GLASS_FIELD_MAX_WIDTH = 2048;
+var RAIN_GLASS_FIELD_MAX_HEIGHT = 1280;
+var RAIN_GLASS_MAX_DROPS = 180;
 var RAIN_GLASS_MAX_LOBES = RAIN_GLASS_MAX_DROPS * 3;
 var RAIN_GLASS_PINNED_SHARE = 0.84;
 var RAIN_GLASS_DROP_STATE = Object.freeze({
@@ -13,12 +13,14 @@ var RAIN_GLASS_DROP_STATE = Object.freeze({
   GROWING: 'growing',
   BREAKING: 'breaking',
   SLIPPING: 'slipping',
-  SETTLING: 'settling'
+  SETTLING: 'settling',
+  IMPACTING: 'impacting'
 });
 
 var rainGlassState = null;
 var rainGlassDrops = [];
 var rainGlassSpawnCarry = 0;
+var rainGlassImpactCarry = 0;
 var rainGlassBufferWidth = 1;
 var rainGlassBufferHeight = 1;
 var rainGlassSessionDisabled = false;
@@ -83,7 +85,7 @@ var RAIN_GLASS_FIELD_VERT = [
 ].join('\n');
 
 var RAIN_GLASS_FIELD_FRAG = [
-  'precision mediump float;',
+  'precision highp float;',
   'varying vec2 vLocal;',
   'varying float vStrength;',
   'varying float vOpticalClass;',
@@ -229,7 +231,13 @@ function rainGlassClamp(value, min, max) {
 
 function rainGlassDensity() {
   var amount = (typeof rainGlassAmountValue === 'function') ? rainGlassAmountValue() : 0.70;
-  return rainGlassClamp(amount, 0.25, 1.5);
+  return rainGlassClamp(amount, 0.15, 2.5);
+}
+
+function rainGlassRainSizeFactor() {
+  var amount = (typeof rainAmountValue === 'function') ? rainAmountValue() : 1;
+  var normalized = rainGlassClamp((amount - 0.05) / 3.95, 0, 1);
+  return rainGlassClamp(0.78 + Math.sqrt(normalized) * 0.64, 0.78, 1.42);
 }
 
 function rainGlassSpeed() {
@@ -269,7 +277,7 @@ function rainGlassSlipMaxSpeed(drop) {
 }
 
 function rainGlassTargetDropCount() {
-  return Math.min(RAIN_GLASS_MAX_DROPS, Math.round(28 + rainGlassDensity() * 52));
+  return Math.min(RAIN_GLASS_MAX_DROPS, Math.round(22 + rainGlassDensity() * 58));
 }
 
 function rainGlassChannelOffsetAt(drop, y) {
@@ -322,7 +330,8 @@ function rainGlassSpawnDrop(forceHero, nearBreaking) {
   if (rainGlassDrops.length >= RAIN_GLASS_MAX_DROPS || rainGlassBufferWidth < 16 || rainGlassBufferHeight < 16) return;
   var isHero = !!forceHero || Math.random() > RAIN_GLASS_PINNED_SHARE;
   var size = (typeof rainGlassSizeValue === 'function') ? rainGlassSizeValue() : 1;
-  var radius = (isHero ? rainGlassRandom(10.5, 19.5) : rainGlassRandom(1.5, 5.0)) * size;
+  var rainSize = rainGlassRainSizeFactor();
+  var radius = (isHero ? rainGlassRandom(10.5, 19.5) : rainGlassRandom(1.5, 5.0)) * size * rainSize;
   var x = rainGlassRandom(radius + 8, Math.max(radius + 9, rainGlassBufferWidth - radius - 8));
   var y = rainGlassRandom(rainGlassBufferHeight * 0.05, rainGlassBufferHeight * 0.90);
   var drop = rainGlassMakeDrop(x, y, radius, isHero);
@@ -330,6 +339,47 @@ function rainGlassSpawnDrop(forceHero, nearBreaking) {
     drop.adhesionThreshold = drop.r * drop.r * rainGlassRandom(0.82, 0.96);
     drop.holdTime = rainGlassRandom(0.35, 1.1);
   }
+  rainGlassDrops.push(drop);
+}
+
+function rainGlassMakeImpactRoom(targetCount) {
+  if (rainGlassDrops.length < targetCount) return true;
+  var candidateIndex = -1;
+  var candidateScore = Infinity;
+  for (var i = 0; i < rainGlassDrops.length; i++) {
+    var candidate = rainGlassDrops[i];
+    if (candidate.isHero || candidate.state === RAIN_GLASS_DROP_STATE.IMPACTING) continue;
+    var score = candidate.r + candidate.age * 0.008 + (candidate.state === RAIN_GLASS_DROP_STATE.PINNED ? 0 : 10);
+    if (score < candidateScore) {
+      candidateIndex = i;
+      candidateScore = score;
+    }
+  }
+  if (candidateIndex < 0) return false;
+  rainGlassDrops.splice(candidateIndex, 1);
+  return true;
+}
+
+function rainGlassSpawnImpactDrop(targetCount) {
+  if (rainGlassDrops.length >= RAIN_GLASS_MAX_DROPS || rainGlassBufferWidth < 16 || rainGlassBufferHeight < 16) return;
+  if (!rainGlassMakeImpactRoom(targetCount || rainGlassTargetDropCount())) return;
+  var size = (typeof rainGlassSizeValue === 'function') ? rainGlassSizeValue() : 1;
+  var rainSize = rainGlassRainSizeFactor();
+  var isHero = Math.random() > 0.78;
+  var targetRadius = (isHero ? rainGlassRandom(7.5, 14.5) : rainGlassRandom(2.0, 5.6)) * size * rainSize;
+  var x = rainGlassRandom(targetRadius + 8, Math.max(targetRadius + 9, rainGlassBufferWidth - targetRadius - 8));
+  var y = rainGlassRandom(rainGlassBufferHeight * 0.04, rainGlassBufferHeight * 0.82);
+  var drop = rainGlassMakeDrop(x, y, Math.max(0.8, targetRadius * rainGlassRandom(0.20, 0.34)), isHero);
+  drop.state = RAIN_GLASS_DROP_STATE.IMPACTING;
+  drop.stateTime = 0;
+  drop.impactDuration = rainGlassRandom(0.12, 0.28);
+  drop.impactRadius = drop.r;
+  drop.radiusTarget = targetRadius;
+  drop.impactSpread = rainGlassRandom(0.10, 0.24);
+  drop.deformation = 0.82;
+  drop.alpha = 0.16;
+  drop.holdTime = isHero ? rainGlassRandom(0.6, 2.4) : Infinity;
+  drop.adhesionThreshold = isHero ? drop.radiusTarget * drop.radiusTarget * rainGlassRandom(0.94, 1.20) : Infinity;
   rainGlassDrops.push(drop);
 }
 
@@ -430,6 +480,20 @@ function rainGlassUpdateGrowing(drop, dt) {
   }
 }
 
+function rainGlassUpdateImpacting(drop) {
+  var progress = rainGlassClamp(drop.stateTime / drop.impactDuration, 0, 1);
+  var eased = 1 - Math.pow(1 - progress, 3);
+  drop.r = drop.impactRadius + (drop.radiusTarget - drop.impactRadius) * eased;
+  drop.alpha = rainGlassClamp(0.16 + eased * 0.84, 0, 1);
+  drop.deformation = (1 - eased) * (0.72 + drop.impactSpread) + eased * (drop.isHero ? 0.16 : 0.02);
+  if (progress < 1) return;
+  drop.r = drop.radiusTarget;
+  drop.alpha = 1;
+  drop.state = RAIN_GLASS_DROP_STATE.PINNED;
+  drop.stateTime = 0;
+  drop.holdTime = drop.isHero ? rainGlassRandom(0.6, 2.8) : Infinity;
+}
+
 function rainGlassUpdateBreaking(drop) {
   var progress = rainGlassClamp(drop.stateTime * rainGlassPhaseRate() / drop.breakDuration, 0, 1);
   var eased = progress * progress * (3 - 2 * progress);
@@ -488,22 +552,32 @@ function updateRainGlass(dt) {
     if (rainGlassState) disposeRainGlass();
     rainGlassDrops.length = 0;
     rainGlassSpawnCarry = 0;
+    rainGlassImpactCarry = 0;
     return;
   }
   if (rainGlassSessionDisabled || rainGlassBufferWidth < 16 || rainGlassBufferHeight < 16) return;
   rainGlassSeedDrops();
   var step = Math.max(0.008, Math.min(0.05, Number(dt) || 0.016));
   var density = rainGlassDensity();
+  var rainAmount = (typeof rainAmountValue === 'function') ? rainAmountValue() : 1;
+  var rainEnergy = (typeof rainMood !== 'undefined' && rainMood && isFinite(rainMood.energyS)) ? rainMood.energyS : 0;
+  var targetCount = rainGlassTargetDropCount();
   rainGlassSpawnCarry += density * (1.1 + density * 1.8) * step;
-  while (rainGlassSpawnCarry >= 1 && rainGlassDrops.length < rainGlassTargetDropCount()) {
+  while (rainGlassSpawnCarry >= 1 && rainGlassDrops.length < targetCount) {
     rainGlassSpawnCarry -= 1;
-    rainGlassSpawnDrop(false, false);
+    rainGlassSpawnImpactDrop(targetCount);
+  }
+  rainGlassImpactCarry += (0.20 + rainAmount * 0.70) * (0.60 + rainEnergy * 0.40) * step;
+  while (rainGlassImpactCarry >= 1) {
+    rainGlassImpactCarry -= 1;
+    rainGlassSpawnImpactDrop(targetCount);
   }
   for (var i = 0; i < rainGlassDrops.length; i++) {
     var drop = rainGlassDrops[i];
     drop.age += step;
     drop.stateTime += step;
     if (drop.state === RAIN_GLASS_DROP_STATE.PINNED) rainGlassUpdatePinned(drop, step);
+    else if (drop.state === RAIN_GLASS_DROP_STATE.IMPACTING) rainGlassUpdateImpacting(drop);
     else if (drop.state === RAIN_GLASS_DROP_STATE.GROWING) rainGlassUpdateGrowing(drop, step);
     else if (drop.state === RAIN_GLASS_DROP_STATE.BREAKING) rainGlassUpdateBreaking(drop);
     else if (drop.state === RAIN_GLASS_DROP_STATE.SLIPPING) rainGlassUpdateSlipping(drop, step);

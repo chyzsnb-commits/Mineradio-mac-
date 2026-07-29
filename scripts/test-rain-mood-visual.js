@@ -151,7 +151,7 @@ test('雨境雨量与打雷阈值可调，驱动 spawn / flash，独立持久化
   assert.match(panel, /setRange\('fx-rainthunder'/);
   assert.match(bindings, /\['fx-rainamount',\s*'rainAmount'\]/);
   assert.match(bindings, /\['fx-rainthunder',\s*'rainThunder'\]/);
-  assert.match(bindings, /rainAmount.*clampRange\(fx\.rainAmount,\s*0\.1,\s*2\.5\)/);
+  assert.match(bindings, /rainAmount.*clampRange\(fx\.rainAmount,\s*0\.05,\s*4\)/);
   assert.match(bindings, /rainThunder.*clampRange\(fx\.rainThunder,\s*0\.15,\s*0\.95\)/);
   assert.match(bindings, /saveRainToggles/);
 

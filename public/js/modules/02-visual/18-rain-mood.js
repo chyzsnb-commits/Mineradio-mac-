@@ -17,7 +17,7 @@ var RAIN_COVER_POS = [0, 0.55, -7.2];
 
 function rainAmountValue() {
   var v = (typeof fx !== 'undefined' && fx && isFinite(fx.rainAmount)) ? Number(fx.rainAmount) : 1;
-  return Math.max(0.1, Math.min(2.5, v));
+  return Math.max(0.05, Math.min(4, v));
 }
 
 function rainThunderValue() {
@@ -32,7 +32,7 @@ function rainGlassEnabledValue() {
 
 function rainGlassAmountValue() {
   var v = (typeof fx !== 'undefined' && fx && isFinite(fx.rainGlassAmount)) ? Number(fx.rainGlassAmount) : 0.70;
-  return Math.max(0.25, Math.min(1.5, v));
+  return Math.max(0.15, Math.min(2.5, v));
 }
 
 function rainGlassSpeedValue() {
@@ -66,10 +66,10 @@ function loadRainToggles() {
     var raw = JSON.parse(localStorage.getItem(RAIN_TOGGLE_STORE_KEY) || '{}') || {};
     if (typeof fx === 'undefined' || !fx) return;
     if ('ghostCover' in raw) fx.rainGhostCover = !!raw.ghostCover;
-    if ('amount' in raw && isFinite(raw.amount)) fx.rainAmount = Math.max(0.1, Math.min(2.5, Number(raw.amount)));
+    if ('amount' in raw && isFinite(raw.amount)) fx.rainAmount = Math.max(0.05, Math.min(4, Number(raw.amount)));
     if ('thunder' in raw && isFinite(raw.thunder)) fx.rainThunder = Math.max(0.15, Math.min(0.95, Number(raw.thunder)));
     if ('glassEnabled' in raw) fx.rainGlassEnabled = raw.glassEnabled !== false;
-    if ('glassAmount' in raw && isFinite(raw.glassAmount)) fx.rainGlassAmount = Math.max(0.25, Math.min(1.5, Number(raw.glassAmount)));
+    if ('glassAmount' in raw && isFinite(raw.glassAmount)) fx.rainGlassAmount = Math.max(0.15, Math.min(2.5, Number(raw.glassAmount)));
     if ('glassSpeed' in raw && isFinite(raw.glassSpeed)) fx.rainGlassSpeed = Math.max(0.2, Math.min(2.2, Number(raw.glassSpeed)));
     if ('glassSize' in raw && isFinite(raw.glassSize)) fx.rainGlassSize = Math.max(0.6, Math.min(1.8, Number(raw.glassSize)));
   } catch (e) {}
