@@ -102,3 +102,12 @@ test('水滴场之外保持锐利背景，模糊纹理只参与水滴内部光�
   assert.match(glass, /vec3 glassBase = sharpSample\.rgb/);
   assert.match(glass, /vec3 softened = texture2D\(uBlur/);
 });
+
+test('玻璃水珠只保留低频平滑微表面，不能出现像素点阵', () => {
+  const glass = read('public/js/modules/02-visual/19-rain-glass.js');
+
+  assert.match(glass, /uFieldResolution \* 0\.028/);
+  assert.match(glass, /edgeNoise\(vUv \* 0\.62/);
+  assert.doesNotMatch(glass, /edgeNoise\(vUv \* 3\.7/);
+  assert.doesNotMatch(glass, /vUv \* uFieldResolution \+ uTime/);
+});
