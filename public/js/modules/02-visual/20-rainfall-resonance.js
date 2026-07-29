@@ -32,6 +32,7 @@ var RAINFORM_HEIGHTFIELD_WIDTH = 768;
 var RAINFORM_HEIGHTFIELD_HEIGHT = 384;
 var RAINFORM_INITIAL_PEARL_SCALE = 0.62;
 var RAINFORM_INITIAL_WATERFALL_SCALE = 0.56;
+var RAINFORM_DEFAULT_STAGE_SCALE = 1.42;
 var RAINFORM_METAL = Object.freeze({
   pearlBandFrequency: 5.5,
   pearlBandSpeed: -2.55,
@@ -48,8 +49,6 @@ var RAINFORM_METAL = Object.freeze({
   filamentMirrorStrength: 0.58,
   highlightMirrorStrength: 0.9
 });
-var RAINFORM_SPLASH_LIMIT = 900;
-var RAINFORM_RIPPLE_LIMIT = 88;
 var RAINFORM_CHAIN_ROLE = Object.freeze({ BASE: 0, AMBIENT: 1, DOWNPOUR: 2 });
 
 var rainResonance = null;
@@ -79,6 +78,10 @@ function rainResonanceBeatValue() {
 function resonanceIntensityValue() { return rainResonanceIntensityValue(); }
 function resonanceMelodyValue() { return rainResonanceMelodyValue(); }
 function resonanceBeatValue() { return rainResonanceBeatValue(); }
+
+function rainformLyricScale() {
+  return rainResonanceClamp(typeof fx !== 'undefined' && fx ? Number(fx.lyricScale) : 1, 0.35, 1.65, 1);
+}
 
 function saveRainResonanceSettings() {
   try {
@@ -838,13 +841,13 @@ function createRainformWaterSurface(rainLut, heightField) {
       '  vec3 lightDir = normalize(vec3(-0.42, 0.86, 0.31));',
       '  float fresnel = pow(1.0 - max(0.0, dot(normal, viewDir)), 4.0);',
       '  float specular = pow(max(0.0, dot(reflect(-lightDir, normal), viewDir)), 42.0);',
-      '  float rainColumns = pow(0.5 + 0.5 * sin(vUv.x * 232.0 + uTime * 1.45), 18.0);',
-      '  float reflection = rainColumns * (0.10 + vRainfall * 0.82) * smoothstep(0.0, 0.78, vUv.y);',
-      '  float shoreline = exp(-pow((vUv.y - 0.58) * 4.7, 2.0)) * (0.14 + uRainfall * 0.18);',
-      '  vec3 color = mix(vec3(0.002, 0.008, 0.012), vec3(0.09, 0.18, 0.23), fresnel * 0.54 + reflection * 0.42 + shoreline);',
-      '  color += vec3(0.50, 0.70, 0.78) * (specular * 0.65 + reflection * 0.36 + shoreline * 0.45);',
+      '  float lakeSheen = 0.5 + 0.5 * sin(vUv.x * 10.0 + vUv.y * 14.0 + uTime * 0.36);',
+      '  float reflection = lakeSheen * (0.035 + vRainfall * 0.075) * smoothstep(0.05, 0.88, vUv.y);',
+      '  float shoreline = exp(-pow((vUv.y - 0.66) * 3.1, 2.0)) * (0.06 + uRainfall * 0.06);',
+      '  vec3 color = mix(vec3(0.004, 0.014, 0.021), vec3(0.035, 0.090, 0.115), fresnel * 0.66 + reflection + shoreline);',
+      '  color += vec3(0.32, 0.48, 0.54) * (specular * 0.32 + reflection * 0.44 + shoreline * 0.28);',
       '  float edge = smoothstep(0.0, 0.05, vUv.x) * (1.0 - smoothstep(0.94, 1.0, vUv.x));',
-      '  gl_FragColor = vec4(color, edge * (0.22 + uRainfall * 0.18 + fresnel * 0.18));',
+      '  gl_FragColor = vec4(color, edge * (0.68 + uRainfall * 0.10 + fresnel * 0.12));',
       '}'
     ].join('\\n'),
     transparent: true,
@@ -966,80 +969,6 @@ function createRainformMistBand(rainLut) {
   return { mesh: mesh, geometry: geometry, material: material };
 }
 
-function createRainformSplashSystem() {
-  var count = RAINFORM_SPLASH_LIMIT;
-  var positions = new Float32Array(count * 3);
-  var colors = new Float32Array(count * 3);
-  var sizes = new Float32Array(count);
-  var aspects = new Float32Array(count);
-  var alphas = new Float32Array(count);
-  var active = new Uint8Array(count);
-  var life = new Float32Array(count);
-  var age = new Float32Array(count);
-  var vx = new Float32Array(count);
-  var vy = new Float32Array(count);
-  var vz = new Float32Array(count);
-  var cursor = 0;
-  for (var i = 0; i < count; i++) {
-    positions[i * 3 + 1] = -30;
-    colors[i * 3] = 0.58;
-    colors[i * 3 + 1] = 0.72;
-    colors[i * 3 + 2] = 0.84;
-    sizes[i] = 0.8;
-    aspects[i] = 1;
-  }
-  var geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
-  geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
-  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1).setUsage(THREE.DynamicDrawUsage));
-  geometry.setAttribute('aAspect', new THREE.BufferAttribute(aspects, 1).setUsage(THREE.DynamicDrawUsage));
-  geometry.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1).setUsage(THREE.DynamicDrawUsage));
-  var material = new THREE.ShaderMaterial({
-    uniforms: {},
-    vertexShader: RAINFORM_SPLASH_VERT,
-    fragmentShader: RAINFORM_SPLASH_FRAG,
-    transparent: true,
-    depthWrite: false,
-    depthTest: false,
-    blending: THREE.AdditiveBlending
-  });
-  var points = new THREE.Points(geometry, material);
-  points.frustumCulled = false;
-  points.renderOrder = 6;
-  return { points: points, geometry: geometry, positions: positions, sizes: sizes, aspects: aspects, alphas: alphas, active: active, life: life, age: age, vx: vx, vy: vy, vz: vz, cursor: cursor, count: count };
-}
-
-function createRainformRippleSystem() {
-  var count = RAINFORM_RIPPLE_LIMIT;
-  var positions = new Float32Array(count * 2 * 3);
-  var alphas = new Float32Array(count * 2);
-  var active = new Uint8Array(count);
-  var age = new Float32Array(count);
-  var life = new Float32Array(count);
-  var originX = new Float32Array(count);
-  var originZ = new Float32Array(count);
-  var radius = new Float32Array(count);
-  var cursor = 0;
-  var geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
-  geometry.setAttribute('aColor', new THREE.BufferAttribute(new Float32Array(count * 2 * 3).fill(0.78), 3));
-  geometry.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1).setUsage(THREE.DynamicDrawUsage));
-  geometry.setAttribute('aPhase', new THREE.BufferAttribute(new Float32Array(count * 2), 1));
-  var material = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 } },
-    vertexShader: RAINFORM_LINE_VERT,
-    fragmentShader: RAINFORM_LINE_FRAG,
-    transparent: true,
-    depthWrite: false,
-    depthTest: false,
-    blending: THREE.AdditiveBlending
-  });
-  var lines = new THREE.LineSegments(geometry, material);
-  lines.frustumCulled = false;
-  lines.renderOrder = 5;
-  return { lines: lines, geometry: geometry, positions: positions, alphas: alphas, active: active, age: age, life: life, originX: originX, originZ: originZ, radius: radius, cursor: cursor, count: count };
-}
-
 function createRainformBackdrop() {
   var geometry = new THREE.PlaneGeometry(22, 15);
   var material = new THREE.MeshBasicMaterial({ color: 0x05080e, transparent: true, opacity: 0.56, depthWrite: false, depthTest: false });
@@ -1071,12 +1000,10 @@ function ensureRainResonance() {
   try { heightField = createRainformHeightField(); } catch (e) { }
   var waterSurface = heightField ? createRainformWaterSurface(rainLut, heightField) : createRainformLegacyWaterSurface(rainLut);
   var mistBand = createRainformMistBand(rainLut);
-  var splash = createRainformSplashSystem();
-  var ripple = createRainformRippleSystem();
   var backdrop = null;
   var floor = null;
   waterfall.points.visible = false;
-  group.add(waterSurface.mesh, mistBand.mesh, chains.lines, filaments.mesh, chains.points, ripple.lines, splash.points);
+  group.add(waterSurface.mesh, mistBand.mesh, chains.lines, filaments.mesh, chains.points);
   scene.add(group);
   group.visible = false;
   rainResonance = {
@@ -1089,18 +1016,13 @@ function ensureRainResonance() {
     heightField: heightField,
     waterSurface: waterSurface,
     mistBand: mistBand,
-    splash: splash,
-    ripple: ripple,
     backdrop: backdrop,
     floor: floor,
     bassS: 0,
     midS: 0,
     trebS: 0,
     beatS: 0,
-    splashCredit: 0,
-    rippleCredit: 0,
-    aliveSplash: 0,
-    activeRipples: 0
+    stageScale: RAINFORM_DEFAULT_STAGE_SCALE
   };
   return rainResonance;
 }
@@ -1109,7 +1031,7 @@ function disposeRainResonance() {
   if (!rainResonance) return;
   var rr = rainResonance;
   if (rr.group && typeof scene !== 'undefined' && scene) scene.remove(rr.group);
-  var objects = [rr.chains && rr.chains.points, rr.chains && rr.chains.lines, rr.waterfall && rr.waterfall.points, rr.filaments && rr.filaments.mesh, rr.splash && rr.splash.points, rr.ripple && rr.ripple.lines];
+  var objects = [rr.chains && rr.chains.points, rr.chains && rr.chains.lines, rr.waterfall && rr.waterfall.points, rr.filaments && rr.filaments.mesh];
   for (var i = 0; i < objects.length; i++) {
     var object = objects[i];
     if (!object) continue;
@@ -1132,57 +1054,6 @@ function disposeRainResonance() {
   if (rr.backdrop) { if (rr.backdrop.geometry) rr.backdrop.geometry.dispose(); if (rr.backdrop.material) rr.backdrop.material.dispose(); }
   if (rr.floor) { if (rr.floor.geometry) rr.floor.geometry.dispose(); if (rr.floor.material) rr.floor.material.dispose(); }
   rainResonance = null;
-}
-
-function rainformEmitSplash(rr, x, z, strength, near, time) {
-  var splash = rr.splash;
-  var spawn = Math.max(3, Math.min(11, Math.round(4 + strength * 4 + near * 2)));
-  for (var s = 0; s < spawn; s++) {
-    var i = splash.cursor++ % splash.count;
-    var angle = rainformHash(i + Math.floor(time * 10), 71) * Math.PI * 2;
-    var radial = 0.08 + rainformHash(i, 23) * (0.24 + strength * 0.26);
-    var index = i * 3;
-    splash.active[i] = 1;
-    splash.age[i] = 0;
-    splash.life[i] = 0.42 + rainformHash(i, 29) * 0.74;
-    splash.positions[index] = x + Math.cos(angle) * radial;
-    splash.positions[index + 1] = RAINFORM_WATER_LEVEL + 0.04;
-    splash.positions[index + 2] = z + Math.sin(angle) * radial * 0.48;
-    splash.vx[i] = Math.cos(angle) * (0.25 + strength * 0.48);
-    splash.vy[i] = 0.26 + rainformHash(i, 37) * (0.42 + near * 0.3);
-    splash.vz[i] = Math.sin(angle) * (0.16 + strength * 0.22);
-    splash.sizes[i] = 0.68 + rainformHash(i, 43) * (1.2 + near * 1.4);
-    splash.aspects[i] = 1.3 + rainformHash(i, 47) * 2.6;
-    splash.alphas[i] = 0.72 + strength * 0.18;
-  }
-  rr.splash.geometry.attributes.position.needsUpdate = true;
-  rr.splash.geometry.attributes.aSize.needsUpdate = true;
-  rr.splash.geometry.attributes.aAspect.needsUpdate = true;
-  rr.splash.geometry.attributes.aAlpha.needsUpdate = true;
-  rr.aliveSplash = Math.min(splash.count, rr.aliveSplash + spawn);
-}
-
-function rainformEmitRipple(rr, x, z, strength, time) {
-  var ripple = rr.ripple;
-  var i = ripple.cursor++ % ripple.count;
-  ripple.active[i] = 1;
-  ripple.age[i] = 0;
-  ripple.life[i] = 0.8 + strength * 0.55;
-  ripple.originX[i] = x;
-  ripple.originZ[i] = z;
-  ripple.radius[i] = 0.08 + strength * 0.12;
-  rr.activeRipples = Math.min(ripple.count, rr.activeRipples + 1);
-  ripple.geometry.attributes.aPhase.array[i * 2] = time;
-  ripple.geometry.attributes.aPhase.array[i * 2 + 1] = time;
-}
-
-function emitRainformSplash(rr, x, z, strength, near, time) {
-  rainformEmitSplash(rr, x, z, strength, near, time);
-  rainformInjectRipple(rr, x, z, strength);
-  if (rr.rippleCredit >= 1) {
-    rr.rippleCredit -= 1;
-    rainformEmitRipple(rr, x, z, strength, time);
-  }
 }
 
 function updateRainformChains(rr, dt, time) {
@@ -1210,8 +1081,7 @@ function updateRainformChains(rr, dt, time) {
     var pathX = data.baseX[c] + wind + Math.sin(time * 0.17 + data.phase[c] * 1.7) * rr.midS * 0.08;
     var pathZ = data.baseZ[c] + Math.cos(time * 0.27 + data.phase[c]) * 0.06;
     if (role !== RAINFORM_CHAIN_ROLE.AMBIENT && previousTail >= RAINFORM_WATER_LEVEL && tail < RAINFORM_WATER_LEVEL && data.impactCooldown[c] <= 0) {
-      var near = data.near[c];
-      emitRainformSplash(rr, pathX, pathZ, curveValue, near, time);
+      rainformInjectRipple(rr, pathX, pathZ, curveValue);
       data.impactCooldown[c] = 0.24;
     }
     data.impactCooldown[c] = Math.max(0, data.impactCooldown[c] - dt);
@@ -1344,70 +1214,6 @@ function updateRainformSurface(rr, time) {
   }
 }
 
-function updateRainformSplashes(rr, dt) {
-  var splash = rr.splash;
-  var active = 0;
-  for (var i = 0; i < splash.count; i++) {
-    if (!splash.active[i]) continue;
-    splash.age[i] += dt;
-    var progress = splash.age[i] / Math.max(0.001, splash.life[i]);
-    var p3 = i * 3;
-    if (progress >= 1) {
-      splash.active[i] = 0;
-      splash.alphas[i] = 0;
-      splash.positions[p3 + 1] = -30;
-      continue;
-    }
-    splash.positions[p3] += splash.vx[i] * dt;
-    splash.positions[p3 + 1] += splash.vy[i] * dt;
-    splash.positions[p3 + 2] += splash.vz[i] * dt;
-    splash.vy[i] -= 1.8 * dt;
-    splash.sizes[i] *= 1 + dt * 0.38;
-    splash.alphas[i] = (1 - rainformSmoothstep(0.62, 1, progress)) * (0.8 + Math.sin(progress * Math.PI) * 0.2);
-    active++;
-  }
-  splash.geometry.attributes.position.needsUpdate = true;
-  splash.geometry.attributes.aSize.needsUpdate = true;
-  splash.geometry.attributes.aAlpha.needsUpdate = true;
-  rr.aliveSplash = active;
-  return active;
-}
-
-function updateRainformRipples(rr, dt, time) {
-  var ripple = rr.ripple;
-  var active = 0;
-  for (var i = 0; i < ripple.count; i++) {
-    if (!ripple.active[i]) continue;
-    ripple.age[i] += dt;
-    var progress = ripple.age[i] / Math.max(0.001, ripple.life[i]);
-    var p6 = i * 6;
-    if (progress >= 1) {
-      ripple.active[i] = 0;
-      ripple.alphas[i * 2] = 0;
-      ripple.alphas[i * 2 + 1] = 0;
-      ripple.positions[p6 + 1] = -30;
-      ripple.positions[p6 + 4] = -30;
-      continue;
-    }
-    var r = ripple.radius[i] + progress * (0.36 + rr.bassS * 0.46);
-    ripple.positions[p6] = ripple.originX[i] - r;
-    ripple.positions[p6 + 1] = RAINFORM_WATER_LEVEL + 0.015;
-    ripple.positions[p6 + 2] = ripple.originZ[i];
-    ripple.positions[p6 + 3] = ripple.originX[i] + r;
-    ripple.positions[p6 + 4] = RAINFORM_WATER_LEVEL + 0.015;
-    ripple.positions[p6 + 5] = ripple.originZ[i];
-    var alpha = (1 - progress) * (0.22 + rr.beatS * 0.46);
-    ripple.alphas[i * 2] = alpha;
-    ripple.alphas[i * 2 + 1] = alpha;
-    active++;
-  }
-  ripple.geometry.attributes.position.needsUpdate = true;
-  ripple.geometry.attributes.aAlpha.needsUpdate = true;
-  ripple.lines.material.uniforms.uTime.value = time;
-  rr.activeRipples = active;
-  return active;
-}
-
 function updateRainResonance(dt) {
   if (!rainResonanceActive()) {
     disposeRainResonance();
@@ -1429,28 +1235,22 @@ function updateRainResonance(dt) {
   rr.midS = rainResonanceEase(rr.midS, playingNow ? rawMid : rawMid * 0.12, 0.20, 0.10, step);
   rr.trebS = rainResonanceEase(rr.trebS, playingNow ? rawTreble : rawTreble * 0.10, 0.26, 0.13, step);
   rr.beatS = rainResonanceEase(rr.beatS, playingNow ? rawBeat : 0, 0.72, 0.18, step);
+  var stageTarget = RAINFORM_DEFAULT_STAGE_SCALE * rainformLyricScale();
+  rr.stageScale = rainResonanceEase(rr.stageScale, stageTarget, 0.20, 0.14, step);
+  rr.group.scale.setScalar(rr.stageScale);
+  rr.group.position.y = RAINFORM_WATER_LEVEL * (1 - rr.stageScale);
   buildRainformAudioCurve(rainResonanceClock);
-  rr.splashCredit = Math.min(26, rr.splashCredit + (5 + rr.bassS * 24 + rr.beatS * 12) * step);
-  rr.rippleCredit = Math.min(9, rr.rippleCredit + (1.6 + rr.bassS * 5 + rr.beatS * 3) * step);
   updateRainformChains(rr, step, rainResonanceClock);
   updateRainformWaterfall(rr, step, rainResonanceClock);
   updateRainformFilaments(rr, step, rainResonanceClock);
   updateRainformHeightField(rr, step);
   updateRainformSurface(rr, rainResonanceClock);
-  if (rr.splashCredit >= 1 && rr.bassS > 0.08 && rainformRainfallResponse(0.5) > 0.42) {
-    rr.splashCredit -= 1;
-    var impactX = rainformLerp(RAINFORM_WORLD_LEFT, RAINFORM_WORLD_RIGHT, rainformHash(Math.floor(rainResonanceClock * 12), 91));
-    rainformEmitSplash(rr, impactX, -0.94, rr.bassS, 0.6, rainResonanceClock);
-  }
-  updateRainformSplashes(rr, step);
-  updateRainformRipples(rr, step, rainResonanceClock);
   if (rr.backdrop && rr.backdrop.material) rr.backdrop.material.opacity = 0.48 + rr.bassS * 0.10;
   if (rr.floor && rr.floor.material) rr.floor.material.opacity = 0.22 + rr.bassS * 0.16;
   if (typeof document !== 'undefined' && document.body) {
     document.body.dataset.rainformCurvePoints = String(RAINFORM_CURVE_POINTS);
     document.body.dataset.rainformChainCount = String(rr.chains.data.count);
     document.body.dataset.rainformWaterfallCount = String(rr.waterfall.activeCount || 0);
-    document.body.dataset.rainformSplashCount = String(rr.aliveSplash || 0);
-    document.body.dataset.rainformRippleCount = String(rr.activeRipples || 0);
+    document.body.dataset.rainformLakeSurface = 'heightfield';
   }
 }

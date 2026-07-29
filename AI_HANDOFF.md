@@ -507,3 +507,9 @@
 - 成功播放视觉回归：成功路径原先调用 `switchPlaybackVisualToEmily()` 强制跳到保存的播放预设，而拿不到音频地址的失败路径没有执行，因此同一界面会因播放成功/失败呈现两套样式。现在只退出首页预览并保留当前视觉，不再在播放成功时擅自切换预设。
 - 最终验证：`npm run check` 158/158；安装版 QQ 登录有效，“我喜欢”22/22 首；“我知道 / 当你”交替快速切换 12/12 次启动，测试预设保持在选择值 `0` 而未跳到强制值 `2`；负载栏无手势推理行，汽水和水膜均不可见。壁纸模式窗口实测从普通 `1470×923 @ (0,33)` 扩展到完整显示器 `1470×956 @ (0,0)`，退出后恢复普通窗口。
 - 最终产物：`Mineradio-2.0.0-arm64.dmg` SHA-256 `1c5bbf88b0f99b9bbf15993b11fab10c7ff4b37c1ac3823557559459ad151117`；`Mineradio-2.0.0-x64.dmg` SHA-256 `3f9a02deec3f2746968599cf6cbbd05ab6afcf957c591457151ae5c79c354488`；两包和 `/Applications/Mineradio.app` 的 `app.asar` 均为 `7192f2c0af235f510c1c3b7fade88dce6df80058687e1ffb44f44de7c29b7477`。两份 DMG 均实际挂载并含 `Mineradio.app` 与 `/Applications` 快捷方式，二进制分别为 arm64 / x86_64。
+
+**2026-07-29：云瀑共振湖面与歌词构图修复。**
+- 用户截图中的底部白色点阵来自独立水花粒子与线段涟漪层，不是高度场水面。两层现已移除，雨链撞击只写入 `768×384` 高度场，连续湖面根据高度梯度显示暗水、细波、反射、Fresnel 与局部高光。
+- 湖面材质改用低频 `lakeSheen`，去除高密度雨幕反射条纹，底部不再呈现白色粒子带。
+- 新增 `RAINFORM_DEFAULT_STAGE_SCALE = 1.42`。云瀑默认采用局部构图，不再完整展示整个瀑布；每帧读取 `fx.lyricScale`，云瀑组平滑跟随“歌词大小”缩放，歌词自身位置、字体和动画保持原逻辑。
+- 验证：专项 `scripts/test-rainfall-resonance.js` 14/14、`node --check public/js/modules/02-visual/20-rainfall-resonance.js`、`npm run check` 190/190 通过；`npm start` 已启动本地 Electron 服务，无启动错误。未验证：需要用户在真实歌曲中确认湖面亮度与默认局部裁切是否符合观感。[来源: `public/js/modules/02-visual/20-rainfall-resonance.js`、`scripts/test-rainfall-resonance.js`，2026-07-29]

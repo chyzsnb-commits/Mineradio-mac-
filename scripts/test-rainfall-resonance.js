@@ -98,10 +98,13 @@ test('云瀑共振采用 Rainform 的分层雨景结构而不是单一点云雨�
   assert.match(rain, /updateRainformChains\(/);
   assert.match(rain, /createRainformWaterfallSystem\(/);
   assert.match(rain, /updateRainformWaterfall\(/);
-  assert.match(rain, /createRainformSplashSystem\(/);
-  assert.match(rain, /emitRainformSplash\(/);
-  assert.match(rain, /createRainformRippleSystem\(/);
-  assert.match(rain, /updateRainformRipples\(/);
+  assert.match(rain, /rainformInjectRipple\(/);
+  assert.doesNotMatch(rain, /createRainformSplashSystem\(/);
+  assert.doesNotMatch(rain, /rainformEmitSplash\(/);
+  assert.doesNotMatch(rain, /createRainformRippleSystem\(/);
+  assert.doesNotMatch(rain, /rainformEmitRipple\(/);
+  assert.doesNotMatch(rain, /updateRainformSplashes\(/);
+  assert.doesNotMatch(rain, /updateRainformRipples\(/);
   assert.match(rain, /aAspect/);
   assert.match(rain, /reflectionWave/);
   assert.match(rain, /uWaterfall/);
@@ -199,6 +202,16 @@ test('云瀑共振开场使用细密雨链，尺寸只在音乐能量升高时�
   assert.match(rain, /sizes\[index\] \*= RAINFORM_INITIAL_WATERFALL_SCALE/);
 });
 
+test('云瀑共振让歌词缩放带动局部云瀑构图，默认不展示整幅瀑布', () => {
+  const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
+
+  assert.match(rain, /RAINFORM_DEFAULT_STAGE_SCALE = 1\.42/);
+  assert.match(rain, /function rainformLyricScale\(/);
+  assert.match(rain, /Number\(fx\.lyricScale\)/);
+  assert.match(rain, /rr\.group\.scale\.setScalar\(rr\.stageScale\)/);
+  assert.match(rain, /RAINFORM_DEFAULT_STAGE_SCALE \* rainformLyricScale\(\)/);
+});
+
 test('Rainform 音乐映射通过 25 点雨量曲线驱动，不改变现有主循环入口', () => {
   const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
 
@@ -211,5 +224,5 @@ test('Rainform 音乐映射通过 25 点雨量曲线驱动，不改变现有主�
   assert.match(rain, /rainformCurveAt\(/);
   assert.match(rain, /rainformChainCount/);
   assert.match(rain, /rainformWaterfallCount/);
-  assert.match(rain, /rainformSplashCount/);
+  assert.match(rain, /rainformLakeSurface/);
 });
