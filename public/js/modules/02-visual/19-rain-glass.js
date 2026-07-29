@@ -20,7 +20,6 @@ var RAIN_GLASS_DROP_STATE = Object.freeze({
 var rainGlassState = null;
 var rainGlassDrops = [];
 var rainGlassSpawnCarry = 0;
-var rainGlassImpactCarry = 0;
 var rainGlassBufferWidth = 1;
 var rainGlassBufferHeight = 1;
 var rainGlassSessionDisabled = false;
@@ -233,12 +232,6 @@ function rainGlassDensity() {
   return rainGlassClamp(amount, 0.15, 2.5);
 }
 
-function rainGlassRainSizeFactor() {
-  var amount = (typeof rainAmountValue === 'function') ? rainAmountValue() : 1;
-  var normalized = rainGlassClamp((amount - 0.05) / 3.95, 0, 1);
-  return rainGlassClamp(0.78 + Math.sqrt(normalized) * 0.64, 0.78, 1.42);
-}
-
 function rainGlassSpeed() {
   var speed = (typeof rainGlassSpeedValue === 'function') ? rainGlassSpeedValue() : 1;
   var energy = (typeof rainMood !== 'undefined' && rainMood && isFinite(rainMood.energyS)) ? rainMood.energyS : 0;
@@ -329,8 +322,7 @@ function rainGlassSpawnDrop(forceHero, nearBreaking) {
   if (rainGlassDrops.length >= RAIN_GLASS_MAX_DROPS || rainGlassBufferWidth < 16 || rainGlassBufferHeight < 16) return;
   var isHero = !!forceHero || Math.random() > RAIN_GLASS_PINNED_SHARE;
   var size = (typeof rainGlassSizeValue === 'function') ? rainGlassSizeValue() : 1;
-  var rainSize = rainGlassRainSizeFactor();
-  var radius = (isHero ? rainGlassRandom(10.5, 19.5) : rainGlassRandom(1.5, 5.0)) * size * rainSize;
+  var radius = (isHero ? rainGlassRandom(10.5, 19.5) : rainGlassRandom(1.5, 5.0)) * size;
   var x = rainGlassRandom(radius + 8, Math.max(radius + 9, rainGlassBufferWidth - radius - 8));
   var y = rainGlassRandom(rainGlassBufferHeight * 0.05, rainGlassBufferHeight * 0.90);
   var drop = rainGlassMakeDrop(x, y, radius, isHero);
@@ -363,9 +355,8 @@ function rainGlassSpawnImpactDrop(targetCount) {
   if (rainGlassDrops.length >= RAIN_GLASS_MAX_DROPS || rainGlassBufferWidth < 16 || rainGlassBufferHeight < 16) return;
   if (!rainGlassMakeImpactRoom(targetCount || rainGlassTargetDropCount())) return;
   var size = (typeof rainGlassSizeValue === 'function') ? rainGlassSizeValue() : 1;
-  var rainSize = rainGlassRainSizeFactor();
   var isHero = Math.random() > 0.78;
-  var targetRadius = (isHero ? rainGlassRandom(7.5, 14.5) : rainGlassRandom(2.0, 5.6)) * size * rainSize;
+  var targetRadius = (isHero ? rainGlassRandom(7.5, 14.5) : rainGlassRandom(2.0, 5.6)) * size;
   var x = rainGlassRandom(targetRadius + 8, Math.max(targetRadius + 9, rainGlassBufferWidth - targetRadius - 8));
   var y = rainGlassRandom(rainGlassBufferHeight * 0.04, rainGlassBufferHeight * 0.82);
   var drop = rainGlassMakeDrop(x, y, Math.max(0.8, targetRadius * rainGlassRandom(0.20, 0.34)), isHero);
@@ -551,24 +542,16 @@ function updateRainGlass(dt) {
     if (rainGlassState) disposeRainGlass();
     rainGlassDrops.length = 0;
     rainGlassSpawnCarry = 0;
-    rainGlassImpactCarry = 0;
     return;
   }
   if (rainGlassSessionDisabled || rainGlassBufferWidth < 16 || rainGlassBufferHeight < 16) return;
   rainGlassSeedDrops();
   var step = Math.max(0.008, Math.min(0.05, Number(dt) || 0.016));
   var density = rainGlassDensity();
-  var rainAmount = (typeof rainAmountValue === 'function') ? rainAmountValue() : 1;
-  var rainEnergy = (typeof rainMood !== 'undefined' && rainMood && isFinite(rainMood.energyS)) ? rainMood.energyS : 0;
   var targetCount = rainGlassTargetDropCount();
   rainGlassSpawnCarry += density * (1.1 + density * 1.8) * step;
   while (rainGlassSpawnCarry >= 1 && rainGlassDrops.length < targetCount) {
     rainGlassSpawnCarry -= 1;
-    rainGlassSpawnImpactDrop(targetCount);
-  }
-  rainGlassImpactCarry += (0.20 + rainAmount * 0.70) * (0.60 + rainEnergy * 0.40) * step;
-  while (rainGlassImpactCarry >= 1) {
-    rainGlassImpactCarry -= 1;
     rainGlassSpawnImpactDrop(targetCount);
   }
   for (var i = 0; i < rainGlassDrops.length; i++) {

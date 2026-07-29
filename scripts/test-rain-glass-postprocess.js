@@ -63,7 +63,7 @@ test('雨境玻璃水珠具有独立开关、数量、流速、尺寸设置并�
   assert.match(rain, /'glassSize' in raw/);
 });
 
-test('雨量扩大范围，并驱动玻璃水珠尺寸与撞击凝结', () => {
+test('雨量不放大水珠，而是以雨点击中玻璃的方式生成水珠', () => {
   const rain = read('public/js/modules/02-visual/18-rain-mood.js');
   const glass = read('public/js/modules/02-visual/19-rain-glass.js');
   const html = read('public/index.html');
@@ -74,13 +74,15 @@ test('雨量扩大范围，并驱动玻璃水珠尺寸与撞击凝结', () => {
   assert.match(glass, /RAIN_GLASS_FIELD_SCALE = 1(?:\.0)?/);
   assert.match(glass, /RAIN_GLASS_FIELD_MAX_WIDTH = 2048/);
   assert.match(glass, /RAIN_GLASS_FIELD_MAX_HEIGHT = 1280/);
-  assert.match(glass, /function rainGlassRainSizeFactor\(/);
-  assert.match(glass, /rainAmountValue\(\)/);
   assert.match(glass, /IMPACTING: 'impacting'/);
   assert.match(glass, /function rainGlassSpawnImpactDrop\(/);
   assert.match(glass, /function rainGlassUpdateImpacting\(/);
   assert.match(glass, /RAIN_GLASS_DROP_STATE\.IMPACTING/);
-  assert.match(glass, /rainGlassImpactCarry/);
+  assert.match(glass, /rainGlassSpawnCarry \+= density \* \(1\.1 \+ density \* 1\.8\) \* step/);
+  assert.doesNotMatch(glass, /function rainGlassRainSizeFactor\(/);
+  assert.doesNotMatch(glass, /rainSize\s*=/);
+  assert.doesNotMatch(glass, /rainGlassImpactCarry/);
+  assert.doesNotMatch(glass, /rainAmountValue\(\)/);
 });
 
 test('水滴模块在关闭或切出雨境时释放 GPU 资源并回退原始雨境渲染', () => {
