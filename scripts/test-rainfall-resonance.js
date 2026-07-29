@@ -110,6 +110,34 @@ test('云瀑共振采用 Rainform 的分层雨景结构而不是单一点云雨�
   assert.doesNotMatch(rain, /RAIN_RESONANCE_ROWS_PER_COLUMN/);
 });
 
+test('云瀑共振保留官网 Rainform 的高密度雨幕比例和液态金属材质', () => {
+  const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
+
+  assert.match(rain, /RAINFORM_BASE_CHAIN_COUNT = 2000/);
+  assert.match(rain, /RAINFORM_AMBIENT_CHAIN_COUNT = 800/);
+  assert.match(rain, /RAINFORM_DOWNPOUR_CHAIN_COUNT = 1400/);
+  assert.match(rain, /RAINFORM_WATERFALL_FILAMENT_COUNT = 1900/);
+  assert.match(rain, /InstancedMesh/);
+  assert.match(rain, /RAINFORM_RAIN_LUT_SIZE = 256/);
+  assert.match(rain, /RAINFORM_ZERO_RAIN_SUPPRESSION/);
+  assert.match(rain, /uPearlBandFrequency/);
+  assert.match(rain, /uPearlSpecularPower/);
+  assert.match(rain, /uPearlFresnelStrength/);
+  assert.match(rain, /procedural-liquid-metal/);
+});
+
+test('云瀑共振包含官网底部水线、雾带和曲线包络，而不是仅在空中生成水滴', () => {
+  const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
+
+  assert.match(rain, /createRainformWaterSurface\(/);
+  assert.match(rain, /createRainformMistBand\(/);
+  assert.match(rain, /RAINFORM_WATERLINE/);
+  assert.match(rain, /rainformCurveLut/);
+  assert.match(rain, /rainformRainfallResponse/);
+  assert.match(rain, /rainformDataDrivenCeiling/);
+  assert.match(rain, /InstancedBufferGeometry/);
+});
+
 test('Rainform 音乐映射通过 25 点雨量曲线驱动，不改变现有主循环入口', () => {
   const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
 

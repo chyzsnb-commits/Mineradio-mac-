@@ -6,6 +6,7 @@
 // own visual modules and preserve the source notice when redistributing.
 //
 // RAINFORM_DERIVED_SOURCE: afterimage-lab/Rainform, main/src/main.js
+// procedural-liquid-metal: multi-frequency pearl bands, mirror response and Fresnel edge.
 // Adaptation boundary: Mineradio's existing scene, renderer and audio loop.
 // No second canvas and no second animation loop are created here.
 
@@ -16,10 +17,30 @@ var RAINFORM_WATER_LEVEL = -2.75;
 var RAINFORM_CEILING = 5.55;
 var RAINFORM_WORLD_LEFT = -5.15;
 var RAINFORM_WORLD_RIGHT = 5.15;
-var RAINFORM_CHAIN_LIMIT = 430;
-var RAINFORM_BASE_CHAIN_COUNT = 290;
-var RAINFORM_AMBIENT_CHAIN_COUNT = 74;
-var RAINFORM_DOWNPOUR_CHAIN_COUNT = 66;
+var RAINFORM_CHAIN_LIMIT = 4200;
+var RAINFORM_BASE_CHAIN_COUNT = 2000;
+var RAINFORM_AMBIENT_CHAIN_COUNT = 800;
+var RAINFORM_DOWNPOUR_CHAIN_COUNT = 1400;
+var RAINFORM_WATERFALL_FILAMENT_COUNT = 1900;
+var RAINFORM_RAIN_LUT_SIZE = 256;
+var RAINFORM_ZERO_RAIN_SUPPRESSION = 0.012;
+var RAINFORM_WATERLINE = -2.58;
+var RAINFORM_METAL = Object.freeze({
+  pearlBandFrequency: 5.5,
+  pearlBandSpeed: -2.55,
+  pearlSpecularPower: 30,
+  pearlFresnelStrength: 1.56,
+  threadBandDensity: 0.081,
+  threadBandSpeed: -0.9,
+  threadMirrorStrength: 0.93,
+  bodyBandDensity: 5.4,
+  bodyBandSpeed: -1.1,
+  bodyMirrorStrength: 0.78,
+  filamentBandDensity: 2.35,
+  filamentBandSpeed: 0.84,
+  filamentMirrorStrength: 0.58,
+  highlightMirrorStrength: 0.9
+});
 var RAINFORM_SPLASH_LIMIT = 900;
 var RAINFORM_RIPPLE_LIMIT = 88;
 var RAINFORM_CHAIN_ROLE = Object.freeze({ BASE: 0, AMBIENT: 1, DOWNPOUR: 2 });
@@ -27,6 +48,7 @@ var RAINFORM_CHAIN_ROLE = Object.freeze({ BASE: 0, AMBIENT: 1, DOWNPOUR: 2 });
 var rainResonance = null;
 var rainResonanceClock = 0;
 var rainformCurve = [];
+var rainformCurveLut = new Float32Array(RAINFORM_RAIN_LUT_SIZE);
 
 function rainResonanceClamp(value, min, max, fallback) {
   var n = Number(value);
@@ -106,6 +128,34 @@ function rainformCurveAt(x) {
   return rainformLerp(rainformCurve[left], rainformCurve[right], position - left);
 }
 
+function rainformRainfallResponse(normalizedX) {
+  if (rainResonanceIntensityValue() <= RAINFORM_ZERO_RAIN_SUPPRESSION) return 0;
+  if (!rainformCurve.length) return 0.25;
+  var x = Math.max(0, Math.min(1, Number(normalizedX) || 0));
+  var index = x * (RAINFORM_RAIN_LUT_SIZE - 1);
+  var left = Math.floor(index);
+  var right = Math.min(RAINFORM_RAIN_LUT_SIZE - 1, left + 1);
+  return rainformLerp(rainformCurveLut[left], rainformCurveLut[right], index - left);
+}
+
+function rainformDataDrivenCeiling(normalizedX) {
+  var rainfall = rainformRainfallResponse(normalizedX);
+  return RAINFORM_WATER_LEVEL + 0.55 + Math.pow(Math.min(1.85, rainfall), 0.72) * (RAINFORM_CEILING - RAINFORM_WATER_LEVEL - 0.65);
+}
+
+function buildRainformCurveLut() {
+  for (var i = 0; i < RAINFORM_RAIN_LUT_SIZE; i++) {
+    var x = i / Math.max(1, RAINFORM_RAIN_LUT_SIZE - 1);
+    var source = x * (RAINFORM_CURVE_POINTS - 1);
+    var left = Math.floor(source);
+    var right = Math.min(RAINFORM_CURVE_POINTS - 1, left + 1);
+    var value = rainformLerp(rainformCurve[left] || 0, rainformCurve[right] || 0, source - left);
+    var previous = i ? rainformCurveLut[i - 1] : value;
+    rainformCurveLut[i] = rainformLerp(previous, value, i ? 0.58 : 1);
+  }
+  return rainformCurveLut;
+}
+
 function buildRainformAudioCurve(time) {
   var rawBass = rainResonanceClamp(typeof bass !== 'undefined' ? bass : 0, 0, 1.4, 0);
   var rawMid = rainResonanceClamp(typeof mid !== 'undefined' ? mid : 0, 0, 1.4, 0);
@@ -121,13 +171,15 @@ function buildRainformAudioCurve(time) {
     var broad = 0.5 + 0.5 * Math.sin(normalized * Math.PI * 2.0 + time * (0.34 + melody * 0.32));
     var detail = 0.5 + 0.5 * Math.sin(normalized * Math.PI * 7.0 - time * 0.82 + point * 1.91);
     var beatAccent = rawBeat * beatGain * Math.pow(Math.max(0, Math.sin(normalized * Math.PI * 4.0 + time * 1.7)), 8);
-    var value = 0.06
+    var value = intensity <= RAINFORM_ZERO_RAIN_SUPPRESSION ? 0
+      : 0.015
       + rawBass * intensity * (0.34 + broad * 0.42)
       + rawMid * melody * (0.16 + broad * 0.28 + detail * 0.10)
       + rawTreble * (0.045 + detail * 0.10)
       + beatAccent * (0.22 + rawBass * 0.28);
     rainformCurve[point] = rainResonanceClamp(value, 0.015, 2.0, 0.06);
   }
+  buildRainformCurveLut();
   return rainformCurve;
 }
 
@@ -164,6 +216,14 @@ var RAINFORM_PEARL_VERT = [
 var RAINFORM_PEARL_FRAG = [
   'precision highp float;',
   'uniform float uTime;',
+  'uniform float uPearlBandFrequency;',
+  'uniform float uPearlBandSpeed;',
+  'uniform float uPearlSpecularPower;',
+  'uniform float uPearlFresnelStrength;',
+  'uniform float uBodyBandDensity;',
+  'uniform float uBodyBandSpeed;',
+  'uniform float uBodyMirrorStrength;',
+  'uniform float uHighlightMirrorStrength;',
   'varying vec3 vColor;',
   'varying float vAlpha;',
   'varying float vAspect;',
@@ -180,16 +240,18 @@ var RAINFORM_PEARL_FRAG = [
   '  float normalZ = sqrt(max(0.0, 1.0 - dot(normalXY, normalXY)));',
   '  vec3 n = normalize(vec3(normalXY, normalZ));',
   '  vec3 key = normalize(vec3(-0.44, 0.62, 1.0));',
-  '  float spec = pow(max(0.0, dot(n, key)), 28.0);',
-  '  float fresnel = pow(1.0 - clamp(n.z, 0.0, 1.0), 2.35);',
-  '  float reflectionWave = 0.5 + 0.5 * sin(n.y * 5.4 + n.x * 2.3 - uTime * 2.3 + vStorm * 2.2);',
-  '  float mirror = smoothstep(0.34, 0.86, reflectionWave);',
-  '  float shadow = smoothstep(0.70, 0.98, 1.0 - reflectionWave);',
+  '  float spec = pow(max(0.0, dot(n, key)), uPearlSpecularPower);',
+  '  float fresnel = pow(1.0 - clamp(n.z, 0.0, 1.0), 2.35) * uPearlFresnelStrength;',
+  '  float bodyBand = 0.5 + 0.5 * sin((n.y + n.x * 0.42) * uBodyBandDensity + uTime * uBodyBandSpeed + vStorm * 2.2);',
+  '  float pearlBand = 0.5 + 0.5 * sin((n.x * 1.4 + n.y * 0.7) * uPearlBandFrequency + uTime * uPearlBandSpeed);',
+  '  float reflectionWave = mix(bodyBand, pearlBand, 0.68);',
+  '  float mirror = smoothstep(0.26, 0.82, reflectionWave) * uBodyMirrorStrength;',
+  '  float shadow = smoothstep(0.72, 0.98, 1.0 - reflectionWave);',
   '  float core = exp(-dot(spherePoint, spherePoint) * 5.5);',
   '  vec3 color = mix(vec3(0.08, 0.12, 0.17), vColor, mirror * 0.82 + core * 0.12);',
-  '  color = mix(color, vec3(0.93, 0.98, 1.0), clamp(spec * 1.25 + fresnel * 1.18, 0.0, 1.0));',
+  '  color = mix(color, vec3(0.93, 0.98, 1.0), clamp(spec * 1.25 + fresnel * 0.96, 0.0, 1.0));',
   '  color = mix(color, vec3(0.02, 0.035, 0.055), shadow * 0.46);',
-  '  color += vec3(1.0) * vHighlight * spec * 0.44;',
+  '  color += vec3(1.0) * vHighlight * spec * uHighlightMirrorStrength;',
   '  float alpha = edge * vAlpha * (0.72 + core * 0.32 + spec * 0.22);',
   '  gl_FragColor = vec4(color, min(0.96, alpha));',
   '}'
@@ -305,7 +367,15 @@ function createRainformPearlMaterial() {
       uTime: { value: 0 },
       uPixelRatio: { value: (typeof window !== 'undefined' && window.devicePixelRatio) ? Math.min(2, window.devicePixelRatio) : 1 },
       uBeadScale: { value: 1 },
-      uWaterfall: { value: 0 }
+      uWaterfall: { value: 0 },
+      uPearlBandFrequency: { value: RAINFORM_METAL.pearlBandFrequency },
+      uPearlBandSpeed: { value: RAINFORM_METAL.pearlBandSpeed },
+      uPearlSpecularPower: { value: RAINFORM_METAL.pearlSpecularPower },
+      uPearlFresnelStrength: { value: RAINFORM_METAL.pearlFresnelStrength },
+      uBodyBandDensity: { value: RAINFORM_METAL.bodyBandDensity },
+      uBodyBandSpeed: { value: RAINFORM_METAL.bodyBandSpeed },
+      uBodyMirrorStrength: { value: RAINFORM_METAL.bodyMirrorStrength },
+      uHighlightMirrorStrength: { value: RAINFORM_METAL.highlightMirrorStrength }
     },
     vertexShader: RAINFORM_PEARL_VERT,
     fragmentShader: RAINFORM_PEARL_FRAG,
@@ -520,6 +590,119 @@ function createRainformWaterfallSystem() {
   return { points: points, geometry: geometry, material: material, positions: positions, alphas: alphas, columns: columns, beadsPerColumn: beadsPerColumn };
 }
 
+function createRainformFilamentSystem() {
+  var count = RAINFORM_WATERFALL_FILAMENT_COUNT;
+  var sourceGeometry = new THREE.PlaneGeometry(1, 1);
+  var geometry = new THREE.InstancedBufferGeometry();
+  geometry.copy(sourceGeometry);
+  sourceGeometry.dispose();
+  geometry.instanceCount = count;
+  var material = new THREE.MeshBasicMaterial({
+    color: 0x8eaec7,
+    transparent: true,
+    opacity: 0.16,
+    depthWrite: false,
+    depthTest: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide
+  });
+  var mesh = new THREE.InstancedMesh(geometry, material, count);
+  mesh.name = 'rainform-waterfall-filaments';
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 1;
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  var normX = new Float32Array(count);
+  var depth = new Float32Array(count);
+  var phase = new Float32Array(count);
+  var width = new Float32Array(count);
+  var alpha = new Float32Array(count);
+  var heightBias = new Float32Array(count);
+  for (var i = 0; i < count; i++) {
+    normX[i] = rainformHash(i, 101);
+    depth[i] = -1.34 + rainformHash(i, 103) * 0.75;
+    phase[i] = rainformHash(i, 107) * Math.PI * 2;
+    width[i] = 0.006 + rainformHash(i, 109) * 0.018;
+    alpha[i] = 0.2 + rainformHash(i, 113) * 0.8;
+    heightBias[i] = rainformHash(i, 127);
+  }
+  return { mesh: mesh, geometry: geometry, material: material, count: count, normX: normX, depth: depth, phase: phase, width: width, alpha: alpha, heightBias: heightBias };
+}
+
+function createRainformWaterSurface() {
+  var geometry = new THREE.PlaneGeometry(12, 1.35, 48, 6);
+  var material = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uRainfall: { value: 0 } },
+    vertexShader: [
+      'uniform float uTime;',
+      'varying vec2 vUv;',
+      'void main() {',
+      '  vUv = uv;',
+      '  vec3 p = position;',
+      '  p.y += sin(p.x * 3.2 + uTime * 0.8) * 0.018;',
+      '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
+      '}'
+    ].join('\\n'),
+    fragmentShader: [
+      'precision highp float;',
+      'uniform float uTime;',
+      'uniform float uRainfall;',
+      'varying vec2 vUv;',
+      'void main() {',
+      '  float edge = smoothstep(0.0, 0.18, vUv.y) * (1.0 - smoothstep(0.58, 1.0, vUv.y));',
+      '  float line = pow(0.5 + 0.5 * sin(vUv.x * 76.0 - uTime * 1.8), 12.0);',
+      '  vec3 color = mix(vec3(0.13, 0.25, 0.36), vec3(0.74, 0.9, 1.0), line);',
+      '  gl_FragColor = vec4(color, edge * (0.025 + uRainfall * 0.11));',
+      '}'
+    ].join('\\n'),
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide
+  });
+  var mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'rainform-water-surface';
+  mesh.position.set(0, RAINFORM_WATERLINE, -1.05);
+  mesh.renderOrder = 2;
+  return { mesh: mesh, geometry: geometry, material: material };
+}
+
+function createRainformMistBand() {
+  var geometry = new THREE.PlaneGeometry(12, 1.8, 32, 4);
+  var material = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uRainfall: { value: 0 } },
+    vertexShader: [
+      'varying vec2 vUv;',
+      'void main() {',
+      '  vUv = uv;',
+      '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+      '}'
+    ].join('\\n'),
+    fragmentShader: [
+      'precision highp float;',
+      'uniform float uTime;',
+      'uniform float uRainfall;',
+      'varying vec2 vUv;',
+      'void main() {',
+      '  float band = smoothstep(0.06, 0.45, vUv.y) * (1.0 - smoothstep(0.56, 0.98, vUv.y));',
+      '  float drift = 0.5 + 0.5 * sin(vUv.x * 9.0 + uTime * 0.16);',
+      '  vec3 color = mix(vec3(0.16, 0.25, 0.33), vec3(0.42, 0.62, 0.74), drift);',
+      '  gl_FragColor = vec4(color, band * (0.008 + uRainfall * 0.035));',
+      '}'
+    ].join('\\n'),
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide
+  });
+  var mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'rainform-mist-band';
+  mesh.position.set(0, RAINFORM_WATER_LEVEL + 0.38, -1.22);
+  mesh.renderOrder = 0;
+  return { mesh: mesh, geometry: geometry, material: material };
+}
+
 function createRainformSplashSystem() {
   var count = RAINFORM_SPLASH_LIMIT;
   var positions = new Float32Array(count * 3);
@@ -619,17 +802,25 @@ function ensureRainResonance() {
   group.name = 'rainform-derived-rainfall';
   var chains = createRainformChainSystem();
   var waterfall = createRainformWaterfallSystem();
+  var filaments = createRainformFilamentSystem();
+  var waterSurface = createRainformWaterSurface();
+  var mistBand = createRainformMistBand();
   var splash = createRainformSplashSystem();
   var ripple = createRainformRippleSystem();
-  var backdrop = createRainformBackdrop();
-  var floor = createRainformFloor();
-  group.add(backdrop, floor, chains.lines, waterfall.points, chains.points, ripple.lines, splash.points);
+  var backdrop = null;
+  var floor = null;
+  waterfall.points.visible = false;
+  group.add(waterSurface.mesh, mistBand.mesh, chains.lines, filaments.mesh, chains.points, ripple.lines, splash.points);
   scene.add(group);
   group.visible = false;
   rainResonance = {
     group: group,
     chains: chains,
     waterfall: waterfall,
+    filaments: filaments,
+    filamentDummy: new THREE.Object3D(),
+    waterSurface: waterSurface,
+    mistBand: mistBand,
     splash: splash,
     ripple: ripple,
     backdrop: backdrop,
@@ -650,12 +841,18 @@ function disposeRainResonance() {
   if (!rainResonance) return;
   var rr = rainResonance;
   if (rr.group && typeof scene !== 'undefined' && scene) scene.remove(rr.group);
-  var objects = [rr.chains && rr.chains.points, rr.chains && rr.chains.lines, rr.waterfall && rr.waterfall.points, rr.splash && rr.splash.points, rr.ripple && rr.ripple.lines];
+  var objects = [rr.chains && rr.chains.points, rr.chains && rr.chains.lines, rr.waterfall && rr.waterfall.points, rr.filaments && rr.filaments.mesh, rr.splash && rr.splash.points, rr.ripple && rr.ripple.lines];
   for (var i = 0; i < objects.length; i++) {
     var object = objects[i];
     if (!object) continue;
     if (object.geometry && object.geometry.dispose) object.geometry.dispose();
     if (object.material && object.material.dispose) object.material.dispose();
+  }
+  var surfaces = [rr.waterSurface, rr.mistBand];
+  for (var s = 0; s < surfaces.length; s++) {
+    if (!surfaces[s]) continue;
+    if (surfaces[s].geometry && surfaces[s].geometry.dispose) surfaces[s].geometry.dispose();
+    if (surfaces[s].material && surfaces[s].material.dispose) surfaces[s].material.dispose();
   }
   if (rr.backdrop) { if (rr.backdrop.geometry) rr.backdrop.geometry.dispose(); if (rr.backdrop.material) rr.backdrop.material.dispose(); }
   if (rr.floor) { if (rr.floor.geometry) rr.floor.geometry.dispose(); if (rr.floor.material) rr.floor.material.dispose(); }
@@ -720,14 +917,17 @@ function updateRainformChains(rr, dt, time) {
   var pearlStorm = data.pearlStorm;
   for (var c = 0; c < data.count; c++) {
     var role = data.role[c];
-    var curveValue = rainformCurveAt((data.baseX[c] - RAINFORM_WORLD_LEFT) / (RAINFORM_WORLD_RIGHT - RAINFORM_WORLD_LEFT) * 24);
+    var xNorm = (data.baseX[c] - RAINFORM_WORLD_LEFT) / (RAINFORM_WORLD_RIGHT - RAINFORM_WORLD_LEFT);
+    var curveValue = rainformRainfallResponse(xNorm);
+    var localCeiling = rainformDataDrivenCeiling(xNorm);
+    var rainAlpha = curveValue <= RAINFORM_ZERO_RAIN_SUPPRESSION ? 0 : Math.min(1, curveValue * 1.35);
     var storm = rainformSmoothstep(0.64, 1.18, curveValue);
     var previousTail = data.headY[c] - data.length[c];
     data.previousTail[c] = previousTail;
     if (role !== RAINFORM_CHAIN_ROLE.AMBIENT) {
       data.headY[c] -= data.speed[c] * dt * (0.72 + curveValue * 0.38 + rr.bassS * 0.18) * (0.72 + intensity * 0.2);
     } else {
-      data.headY[c] = RAINFORM_CEILING + 0.2;
+      data.headY[c] = localCeiling + 0.2;
     }
     var tail = data.headY[c] - data.length[c];
     var wind = Math.sin(time * (0.34 + rr.midS * 0.28) + data.phase[c]) * data.drift[c] * (0.7 + rr.midS * 0.55);
@@ -740,7 +940,8 @@ function updateRainformChains(rr, dt, time) {
     }
     data.impactCooldown[c] = Math.max(0, data.impactCooldown[c] - dt);
     if (role !== RAINFORM_CHAIN_ROLE.AMBIENT && tail < RAINFORM_WATER_LEVEL) {
-      data.headY[c] = RAINFORM_WATER_LEVEL + data.length[c] + 0.28 + rainformHash(c + Math.floor(time * 4), 61) * 5.2;
+      data.headY[c] = RAINFORM_WATER_LEVEL + data.length[c] + 0.28
+        + rainformHash(c + Math.floor(time * 4), 61) * Math.max(0.55, localCeiling - RAINFORM_WATER_LEVEL - 0.35);
     }
 
     var start = data.beadStart[c];
@@ -751,13 +952,13 @@ function updateRainformChains(rr, dt, time) {
       var y = data.headY[c] - fraction * data.length[c];
       var p3 = pearl * 3;
       data.pearlPositions[p3] = pathX;
-      data.pearlPositions[p3 + 1] = Math.min(RAINFORM_CEILING + 0.25, y);
+      data.pearlPositions[p3 + 1] = Math.min(localCeiling + 0.25, y);
       data.pearlPositions[p3 + 2] = pathZ + (fraction - 0.5) * 0.035;
       var topFade = 1 - rainformSmoothstep(RAINFORM_CEILING - 0.35, RAINFORM_CEILING + 0.25, y);
       var floorFade = rainformSmoothstep(RAINFORM_WATER_LEVEL, RAINFORM_WATER_LEVEL + 0.18, y);
       var topNoise = role === RAINFORM_CHAIN_ROLE.AMBIENT ? 0.7 : 0.85 + 0.15 * rainformHash(pearl, 11);
       data.pearlAlphas[pearl] = Math.max(0, Math.min(0.96,
-        data.pearlBaseAlpha[pearl] * topFade * floorFade * topNoise * (0.34 + curveValue * 0.78) * (1 + beat * 0.18)
+        data.pearlBaseAlpha[pearl] * topFade * floorFade * topNoise * rainAlpha * (0.34 + curveValue * 0.78) * (1 + beat * 0.18)
       ));
       pearlStorm[pearl] = storm;
     }
@@ -773,7 +974,7 @@ function updateRainformChains(rr, dt, time) {
       data.linePositions[l6 + 3] = data.pearlPositions[bIndex];
       data.linePositions[l6 + 4] = data.pearlPositions[bIndex + 1];
       data.linePositions[l6 + 5] = data.pearlPositions[bIndex + 2];
-      data.lineAlphas[line * 2] = data.lineAlpha[line] * (0.32 + curveValue * 0.68);
+      data.lineAlphas[line * 2] = data.lineAlpha[line] * rainAlpha * (0.32 + curveValue * 0.68);
       data.lineAlphas[line * 2 + 1] = data.lineAlphas[line * 2];
     }
   }
@@ -796,7 +997,7 @@ function updateRainformWaterfall(rr, dt, time) {
   var active = 0;
   for (var c = 0; c < count; c++) {
     var x = rainformLerp(RAINFORM_WORLD_LEFT, RAINFORM_WORLD_RIGHT, waterfall.columns[c]);
-    var value = rainformCurveAt(waterfall.columns[c] * 24);
+    var value = rainformRainfallResponse(waterfall.columns[c]);
     var height = 0.55 + Math.pow(Math.min(1.4, value), 0.72) * 4.9;
     var columnAlpha = rainformSmoothstep(0.56, 0.9, value) * (0.24 + rr.bassS * 0.66);
     if (columnAlpha > 0.02) active++;
@@ -817,6 +1018,45 @@ function updateRainformWaterfall(rr, dt, time) {
   waterfall.material.uniforms.uWaterfall.value = Math.min(1, rr.bassS * rainResonanceIntensityValue() * 1.18 + rr.beatS * 0.22);
   rr.waterfall.activeCount = active;
   return curve;
+}
+
+function updateRainformFilaments(rr, dt, time) {
+  var filament = rr.filaments;
+  var dummy = rr.filamentDummy;
+  var rainfallTotal = 0;
+  var intensity = rainResonanceIntensityValue();
+  for (var i = 0; i < filament.count; i++) {
+    var rainfall = rainformRainfallResponse(filament.normX[i]);
+    rainfallTotal += rainfall;
+    var height = Math.max(0.001, (rainformDataDrivenCeiling(filament.normX[i]) - RAINFORM_WATER_LEVEL - 0.42)
+      * (0.38 + filament.heightBias[i] * 0.62));
+    var x = rainformLerp(RAINFORM_WORLD_LEFT, RAINFORM_WORLD_RIGHT, filament.normX[i]);
+    var sway = Math.sin(time * (0.42 + rr.midS * 0.22) + filament.phase[i]) * (0.018 + rr.midS * 0.07);
+    dummy.position.set(x + sway, RAINFORM_WATER_LEVEL + 0.2 + height * 0.5, filament.depth[i]);
+    dummy.rotation.set(0, 0, Math.sin(time * 0.24 + filament.phase[i]) * 0.045);
+    dummy.scale.set(filament.width[i] * (0.72 + rainfall * 0.8), height, 1);
+    dummy.updateMatrix();
+    filament.mesh.setMatrixAt(i, dummy.matrix);
+  }
+  filament.mesh.instanceMatrix.needsUpdate = true;
+  filament.mesh.visible = intensity > RAINFORM_ZERO_RAIN_SUPPRESSION;
+  filament.material.opacity = 0.055 + Math.min(0.14, (rainfallTotal / filament.count) * 0.14 + rr.trebS * 0.035);
+  rr.filamentRainfall = rainfallTotal / Math.max(1, filament.count);
+  return rr.filamentRainfall;
+}
+
+function updateRainformSurface(rr, time) {
+  var rainfall = rainformRainfallResponse(0.5);
+  if (rr.waterSurface && rr.waterSurface.material) {
+    rr.waterSurface.material.uniforms.uTime.value = time;
+    rr.waterSurface.material.uniforms.uRainfall.value = rainfall;
+    rr.waterSurface.mesh.visible = rainfall > RAINFORM_ZERO_RAIN_SUPPRESSION;
+  }
+  if (rr.mistBand && rr.mistBand.material) {
+    rr.mistBand.material.uniforms.uTime.value = time;
+    rr.mistBand.material.uniforms.uRainfall.value = rainfall;
+    rr.mistBand.mesh.visible = rainfall > RAINFORM_ZERO_RAIN_SUPPRESSION;
+  }
 }
 
 function updateRainformSplashes(rr, dt) {
@@ -909,7 +1149,9 @@ function updateRainResonance(dt) {
   rr.rippleCredit = Math.min(9, rr.rippleCredit + (1.6 + rr.bassS * 5 + rr.beatS * 3) * step);
   updateRainformChains(rr, step, rainResonanceClock);
   updateRainformWaterfall(rr, step, rainResonanceClock);
-  if (rr.splashCredit >= 1 && rr.bassS > 0.08 && rainformCurveAt(12) > 0.42) {
+  updateRainformFilaments(rr, step, rainResonanceClock);
+  updateRainformSurface(rr, rainResonanceClock);
+  if (rr.splashCredit >= 1 && rr.bassS > 0.08 && rainformRainfallResponse(0.5) > 0.42) {
     rr.splashCredit -= 1;
     var impactX = rainformLerp(RAINFORM_WORLD_LEFT, RAINFORM_WORLD_RIGHT, rainformHash(Math.floor(rainResonanceClock * 12), 91));
     rainformEmitSplash(rr, impactX, -0.94, rr.bassS, 0.6, rainResonanceClock);

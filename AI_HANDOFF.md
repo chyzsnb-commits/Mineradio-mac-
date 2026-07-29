@@ -14,7 +14,7 @@
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
 - **网络注意**：本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI）正常。**用 gh API 推送代码，不要用 git push**。
-- **本轮新增**：预设 11「云瀑共振」已接入 `codex/mineradio-2.0-unified`。新模块 `public/js/modules/02-visual/20-rainfall-resonance.js` 按项目所有者确认的授权，采用 Rainform 派生的分层雨景结构：基础/环境/暴雨雨链、珍珠雨滴、暴雨瀑布、撞击水花和涟漪；25 点音乐雨量曲线把低/中/高频和拍点分布到横向雨景。不创建第二个 Canvas 或动画循环；动态面板保留强度 `0–1.6`、旋律 `0–1.8`、拍点 `0–1.8`，独立存储键 `mineradio-rain-resonance-v1`。源码保留 Rainform Required Notice、来源标识和 PolyForm Noncommercial 许可说明。设计规格：`docs/superpowers/specs/2026-07-29-rainfall-resonance-design.md`；专项测试 5/5，`npm run check` **181/181**。待用户用真实歌曲手测音乐雨景起伏和三个滑块即时响应。
+- **本轮优化**：预设 11「云瀑共振」已按 Rainform 官网比例重做。模块现在使用 2000 条基础雨链、800 条环境雨链、1400 条暴雨雨链和 1900 条 `InstancedMesh` 细丝；25 点音乐曲线先烘焙为 256 点 `rainformCurveLut`，驱动雨幕高度、强度、水线和雾带，强度归零时整层硬抑制。珍珠 shader 加入多频 procedural liquid metal、镜面反射、Fresnel 和高光参数；不创建第二个 Canvas 或动画循环，不修改预设 9 的玻璃水珠逻辑。专项测试 7/7，Three r128 runtime smoke 通过，`npm run check` **183/183**。
 
 **2026-07-29：云瀑共振改为 Rainform 授权派生的分层音乐雨景。**
 
@@ -23,6 +23,13 @@
 - 音乐：新增 25 点雨量曲线，将 bass/mid/treble/beatPulse 沿横向分布；保留强度、旋律起伏、拍点爆发三个控件和独立持久化。
 - 归属：采用用户声明已取得的 Rainform 二创授权；源码保留 Required Notice、`afterimage-lab/Rainform` 来源标识、PolyForm Noncommercial 许可说明。没有接入 Rainform 天气 API 或独立运行时。
 - 验证：专项测试 5/5；`npm run check` 181/181；`node --check` 和 `git diff --check` 通过。待用户用真实歌曲确认视觉层次和音乐同步。
+
+**2026-07-29：云瀑共振按官网视觉比例重做。**
+
+- 生产模块：`public/js/modules/02-visual/20-rainfall-resonance.js` 不再用旧的 430 条上限，恢复官网分层数量：基础 2000、环境 800、暴雨 1400、细丝 1900。
+- 视觉：珍珠材质采用多频液态金属 band、镜面/Fresnel 高光；细丝使用共享 `InstancedBufferGeometry` + `InstancedMesh`；新增底部水线和雾带，移除该预设自己的背景板，继续透出 Mineradio 场景背景。
+- 数据：25 点音乐曲线通过 `rainformCurveLut` 烘焙到 256 点采样，`rainformRainfallResponse` 和 `rainformDataDrivenCeiling` 控制横向雨势峰值、可见高度和低雨量收缩；`RAINFORM_ZERO_RAIN_SUPPRESSION` 负责强度归零时关闭所有雨层。
+- 验证：`node --check public/js/modules/02-visual/20-rainfall-resonance.js`；专项测试 7/7；Three r128 runtime smoke 通过；`npm run check` 183/183；Electron 已启动，本地页面 `http://localhost:3000/` 可返回。
 
 ## 最终整合（agents/final-integration，2026-07-14）
 
