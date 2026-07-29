@@ -11,6 +11,7 @@ var presetMeta = [
   { name: '极光', desc: '丝带翻涌 · 中频流动' },
   { name: '雨境', desc: '节奏雨丝 · 频段风向' },
   { name: '音域回响', desc: '频谱方块 · 反应堆核心' },
+  { name: '云瀑共振', desc: '音乐喷泉 · 频谱雨瀑' },
 ];
 var presetIcons = [
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 14c3-2 5-2 8 0s5 2 8 0M3 10c3-2 5-2 8 0s5 2 8 0M3 18c3-2 5-2 8 0s5 2 8 0"/></svg>',
@@ -24,8 +25,9 @@ var presetIcons = [
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M2.5 9c3-3.5 6-1 9-4M3 14c3-3.5 6-1 9-4M4 19c3-3.5 6-1 9-4"/><path d="M14 5c2.5-2 5-1 7.5-2M15 10c2.5-2 5-1 7.5-2"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M7 3v10M12 5v12M17 2v11"/><path d="M7 15c0 1.7 1.1 3 2.5 3S12 16.7 12 15M12 19c0 1.5.9 2.6 2.1 2.6S16.2 20.5 16.2 19M17 15c0 1.2.8 2.2 1.8 2.2"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 21h18"/><rect x="4.5" y="11" width="3" height="10"/><rect x="9.5" y="6" width="3" height="15"/><rect x="14.5" y="13" width="3" height="8"/><rect x="19" y="9" width="0.1" height="12"/></svg>',
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 20c3-6 5-6 8 0s5 6 10 0"/><path d="M3 14c3-6 5-6 8 0s5 6 10 0"/><path d="M3 8c3-6 5-6 8 0s5 6 10 0"/></svg>',
 ];
-var presetDisplayOrder = [0, 10, 9, 6, 5, 4, 2, 1, 3, 7, 8];   // 9=雨境(节奏雨丝,复用原声波走廊索引);11/12 上游 sonic 预设已按用户要求删除(2026-07-10)
+var presetDisplayOrder = [0, 10, 9, 11, 6, 5, 4, 2, 1, 3, 7, 8];   // 9=雨境;11=云瀑共振
 var lyricColorPresets = [
   { name: '雾蓝', color: '#a9b8c8' },
   { name: '银蓝', color: '#9db8cf' },

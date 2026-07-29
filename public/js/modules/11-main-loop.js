@@ -710,9 +710,10 @@ function animate() {
   var skullPresetActive = fx && fx.preset === SKULL_PRESET_INDEX;
   var voxelActive = typeof voxelCityActive === 'function' && voxelCityActive();
   var rainActive = typeof rainMoodActive === 'function' && rainMoodActive();
+  var resonanceActive = typeof rainResonanceActive === 'function' && rainResonanceActive();
   var presetUsesStarRiverParticles = fx && Number(fx.preset) === 5;
   var presetStarRiverMuted = presetUsesStarRiverParticles && fx.backgroundStarRiver === false;
-  var hidePoints = skullPresetActive || voxelActive || rainActive;
+  var hidePoints = skullPresetActive || voxelActive || rainActive || resonanceActive;
   particles.visible = !hidePoints && !presetStarRiverMuted;
   if (bloomParticles) bloomParticles.visible = !hidePoints && !presetStarRiverMuted && fx.bloom && fx.bloomStrength > 0.01;
   if (floatGroup) floatGroup.visible = !hidePoints;
@@ -739,6 +740,9 @@ function animate() {
   var rainMoodPerfStart = performance.now();
   if (typeof updateRainMood === 'function') updateRainMood(dt);   // 雨境节奏雨丝(内部按预设显隐);跟随主 rAF / 空闲降帧
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.rain-mood', rainMoodPerfStart);
+  var rainResonancePerfStart = performance.now();
+  if (typeof updateRainResonance === 'function') updateRainResonance(dt);   // 云瀑共振:音乐频谱雨幕
+  if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.rain-resonance', rainResonancePerfStart);
   var rainGlassPerfStart = performance.now();
   if (typeof updateRainGlass === 'function') updateRainGlass(dt);
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.rain-glass-update', rainGlassPerfStart);

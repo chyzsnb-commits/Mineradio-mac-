@@ -143,6 +143,9 @@ var fxDefaults = {
   rainGlassAmount: 0.70,  // 雨境:玻璃水珠数量(0.15~2.5)
   rainGlassSpeed: 5.00,   // 雨境:玻璃水珠流速(0.2~16.0)
   rainGlassSize: 1.00,    // 雨境:玻璃水珠尺寸(0.6~1.8)
+  rainResonanceIntensity: 0.90, // 云瀑共振:整体雨幕强度(0~1.6)
+  rainResonanceMelody: 0.80,    // 云瀑共振:中频旋律起伏(0~1.8)
+  rainResonanceBeat: 0.75,      // 云瀑共振:拍点爆发(0~1.8)
   voxFloatBlocks: true,  // 音域回响:悬浮方块(蓝方块+白线框)
   voxShimmer: true,      // 音域回响:地形散落发光小方块的顶面闪烁/棱边火花/微光(关=uShimmer 0)
   voxSensitivity: 1.0,

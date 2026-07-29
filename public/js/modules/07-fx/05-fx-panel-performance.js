@@ -500,6 +500,9 @@ function updateFxInputs() {
   if (typeof setRange === 'function') setRange('fx-rainglassamount', fx.rainGlassAmount == null ? 0.70 : fx.rainGlassAmount);
   if (typeof setRange === 'function') setRange('fx-rainglassspeed', fx.rainGlassSpeed == null ? 5.00 : fx.rainGlassSpeed);
   if (typeof setRange === 'function') setRange('fx-rainglasssize', fx.rainGlassSize == null ? 1.00 : fx.rainGlassSize);
+  if (typeof setRange === 'function') setRange('fx-rainresonanceintensity', fx.rainResonanceIntensity == null ? 0.90 : fx.rainResonanceIntensity);
+  if (typeof setRange === 'function') setRange('fx-rainresonancemelody', fx.rainResonanceMelody == null ? 0.80 : fx.rainResonanceMelody);
+  if (typeof setRange === 'function') setRange('fx-rainresonancebeat', fx.rainResonanceBeat == null ? 0.75 : fx.rainResonanceBeat);
   var voxCoverColorToggle = document.getElementById('t-voxCoverColor');
   if (voxCoverColorToggle) voxCoverColorToggle.classList.toggle('on', fx.voxCoverColor !== false);
   var voxMeteorsToggle = document.getElementById('t-voxMeteors');
@@ -646,6 +649,7 @@ function fxPanelTargetForNode(node, current) {
   if (id === 'preset-grid' || id === 'user-archive-grid') return 'presets';
   if (id === 'vox-fx-section') return 'motion';   // 音域回响控件 → 动态 tab
   if (id === 'rain-fx-section') return 'motion';  // 雨境控件 → 动态 tab
+  if (id === 'rain-resonance-fx-section') return 'motion';  // 云瀑共振控件 → 动态 tab
   if (id === 'app-bg-section') return 'appearance';   // 全局背景 → 外观 tab
   if (id === 'fx-lyric-fold') return 'lyrics';
   if (id === 'fx-overlay-fold' || id === 'fx-stage-fold') return 'motion';
@@ -717,10 +721,12 @@ function organizeFxPanel() {
   var motionPage = panel.querySelector('[data-fx-page="motion"]');
   if (motionPage) {
     var rainFxSection = document.getElementById('rain-fx-section');
+    var rainResonanceFxSection = document.getElementById('rain-resonance-fx-section');
     var voxFxSection = document.getElementById('vox-fx-section');
-    // 顺序:雨境 → 音域回响 → 其余(摄像头/粒子等)
+    // 顺序:云瀑共振 → 雨境 → 音域回响 → 其余(摄像头/粒子等)
     if (voxFxSection) motionPage.insertBefore(voxFxSection, motionPage.firstChild);
     if (rainFxSection) motionPage.insertBefore(rainFxSection, motionPage.firstChild);
+    if (rainResonanceFxSection) motionPage.insertBefore(rainResonanceFxSection, motionPage.firstChild);
   }
   // 外观 tab:默认「界面与背景」控件包进 wrap(体素预设时 CSS 隐藏);背景移出 wrap 置顶(体素/非体素通用)。音域回响(#vox-fx-section)已改由路由进「动态」tab
   var appearancePage = panel.querySelector('[data-fx-page="appearance"]');

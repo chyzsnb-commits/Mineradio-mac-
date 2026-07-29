@@ -2,7 +2,7 @@
 
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**
 
-## 当前权威入口（2026-07-28）
+## 当前权威入口（2026-07-29）
 
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
 - ⚠️ `chyzsnb-commits/Mineradio-mac-` 是**独立的开源仓库，不属于本项目，绝对不要碰**。
@@ -14,6 +14,7 @@
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
 - **网络注意**：本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI）正常。**用 gh API 推送代码，不要用 git push**。
+- **本轮新增**：预设 11「云瀑共振」已接入 `codex/mineradio-2.0-unified`。新模块 `public/js/modules/02-visual/20-rainfall-resonance.js` 使用 18 列 × 64 点透明 GPU 雨幕对象池，低/中/高频和拍点分别驱动雨幕、旋律起伏、细雨亮点和爆发；不创建第二个 Canvas 或动画循环，不复制 Rainform 代码/资产。动态面板新增强度 `0–1.6`、旋律 `0–1.8`、拍点 `0–1.8`，独立存储键 `mineradio-rain-resonance-v1`；全局预设上限同步为 11。设计规格：`docs/superpowers/specs/2026-07-29-rainfall-resonance-design.md`；专项测试 3/3，`npm run check` **179/179**。待用户用真实歌曲手测音乐喷泉起伏和三个滑块即时响应。
 
 ## 最终整合（agents/final-integration，2026-07-14）
 
@@ -115,6 +116,7 @@
 
 - [x] **重新接入崩溃记录**：本机 crashReporter 已在最新代码启用，真实测试生成 `.dmp`，上传关闭。
 - [x] **雨境玻璃水珠迁移与写实增强**：独立 RG Metaball 后处理已接入预设 9；动态控件支持开关、数量/流速/尺寸，雨量扩大并驱动尺寸，新增撞击凝结态；背景保持锐利；已消除合成噪声造成的规则像素点阵；`npm run check` 176/176。
+- [x] **云瀑共振音乐雨幕预设**：新增索引 11 与独立 GPU 点云模块；低/中/高频和拍点分层驱动，动态面板支持雨幕强度、旋律起伏、拍点爆发并独立持久化；未复制 Rainform 代码或资产；专项测试 3/3，`npm run check` 179/179。
 - [ ] **渲染进程崩溃根因**：在用户真实资料复现后分析 `.dmp` 和 `crash-diagnostics.json`（上面详述）。
 - [ ] **真机对比三种显卡模式**：分别重启到自动/省电/高性能，播放同一首歌 10 分钟，对比温度、CPU 和流畅度。
 - [x] **继续发烫优化**：主循环空闲时从高频 RAF 唤醒改成真正休眠；idle guide 在禁用无内容和深后台时彻底停止。

@@ -52,9 +52,8 @@ test('keeps custom-background voxel transparency without the deferred water pres
   assert.match(voxel, /uniform float uBgMedia/);
   assert.match(voxel, /material\.transparent !== !!_voxMedia/);
   assert.doesNotMatch(loader, /water-membrane/);
-  assert.match(state, /MAX_VISUAL_PRESET_INDEX = 10/);
+  assert.match(state, /MAX_VISUAL_PRESET_INDEX = 11/);
   assert.doesNotMatch(presets, /水膜共振/);
-  assert.doesNotMatch(presets, /presetDisplayOrder = \[[^\]]*11/);
   assert.equal(fs.existsSync(path.join(root, 'public/js/modules/02-visual/18-water-membrane.js')), false);
   // 雨境复用索引 9，不是水膜；对象池模块存在且已进 loader
   assert.match(loader, /18-rain-mood\.js/);
