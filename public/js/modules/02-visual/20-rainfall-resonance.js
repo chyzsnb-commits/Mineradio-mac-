@@ -25,6 +25,9 @@ var RAINFORM_WATERFALL_FILAMENT_COUNT = 1900;
 var RAINFORM_RAIN_LUT_SIZE = 256;
 var RAINFORM_ZERO_RAIN_SUPPRESSION = 0.012;
 var RAINFORM_WATERLINE = -2.58;
+var RAINFORM_WATER_SURFACE_WIDTH = 12.4;
+var RAINFORM_WATER_SURFACE_DEPTH = 5.8;
+var RAINFORM_TOP_EDGE_SAMPLES = 256;
 var RAINFORM_METAL = Object.freeze({
   pearlBandFrequency: 5.5,
   pearlBandSpeed: -2.55,
@@ -49,6 +52,7 @@ var rainResonance = null;
 var rainResonanceClock = 0;
 var rainformCurve = [];
 var rainformCurveLut = new Float32Array(RAINFORM_RAIN_LUT_SIZE);
+var rainformMelodyPhase = 0;
 
 function rainResonanceClamp(value, min, max, fallback) {
   var n = Number(value);
@@ -140,7 +144,47 @@ function rainformRainfallResponse(normalizedX) {
 
 function rainformDataDrivenCeiling(normalizedX) {
   var rainfall = rainformRainfallResponse(normalizedX);
-  return RAINFORM_WATER_LEVEL + 0.55 + Math.pow(Math.min(1.85, rainfall), 0.72) * (RAINFORM_CEILING - RAINFORM_WATER_LEVEL - 0.65);
+  var wave = rainformMelodyWaveAt(normalizedX, rainResonanceClock);
+  var base = RAINFORM_WATER_LEVEL + 0.55 + Math.pow(Math.min(1.85, rainfall), 0.72) * (RAINFORM_CEILING - RAINFORM_WATER_LEVEL - 0.65);
+  return Math.max(RAINFORM_WATER_LEVEL + 0.42, base + wave * 0.62);
+}
+
+function rainformMelodyWaveAt(normalizedX, time) {
+  var x = Math.max(0, Math.min(1, Number(normalizedX) || 0));
+  var left = rainformRainfallResponse(Math.max(0, x - 0.012));
+  var right = rainformRainfallResponse(Math.min(1, x + 0.012));
+  var rainfall = rainformRainfallResponse(x);
+  var slope = right - left;
+  var melody = rainResonanceMelodyValue();
+  var phase = Number(time);
+  if (!isFinite(phase)) phase = rainformMelodyPhase;
+  var carrier = Math.sin(x * Math.PI * 5.4 - phase * (0.82 + melody * 0.66));
+  return (rainfall * 0.20 + slope * 1.9) * carrier * (0.38 + melody * 0.28);
+}
+
+function createRainformCurveTexture() {
+  var data = new Uint8Array(RAINFORM_RAIN_LUT_SIZE * 4);
+  var texture = new THREE.DataTexture(data, RAINFORM_RAIN_LUT_SIZE, 1, THREE.RGBAFormat);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  texture.flipY = false;
+  texture.needsUpdate = true;
+  return { texture: texture, data: data };
+}
+
+function rainformUploadCurveLut(rainLut) {
+  if (!rainLut || !rainLut.data || !rainLut.texture) return;
+  for (var i = 0; i < RAINFORM_RAIN_LUT_SIZE; i++) {
+    var value = Math.max(0, Math.min(1, rainformCurveLut[i] || 0));
+    var index = i * 4;
+    var encoded = Math.round(value * 255);
+    rainLut.data[index] = encoded;
+    rainLut.data[index + 1] = encoded;
+    rainLut.data[index + 2] = encoded;
+    rainLut.data[index + 3] = 255;
+  }
+  rainLut.texture.needsUpdate = true;
 }
 
 function buildRainformCurveLut() {
@@ -164,6 +208,7 @@ function buildRainformAudioCurve(time) {
   var intensity = rainResonanceIntensityValue();
   var melody = rainResonanceMelodyValue();
   var beatGain = rainResonanceBeatValue();
+  rainformMelodyPhase = time * (0.72 + melody * 0.54);
   rainformCurve.length = RAINFORM_CURVE_POINTS;
 
   for (var point = 0; point < RAINFORM_CURVE_POINTS; point++) {
@@ -628,17 +673,34 @@ function createRainformFilamentSystem() {
   return { mesh: mesh, geometry: geometry, material: material, count: count, normX: normX, depth: depth, phase: phase, width: width, alpha: alpha, heightBias: heightBias };
 }
 
-function createRainformWaterSurface() {
-  var geometry = new THREE.PlaneGeometry(12, 1.35, 48, 6);
+function createRainformWaterSurface(rainLut) {
+  var geometry = new THREE.PlaneGeometry(RAINFORM_WATER_SURFACE_WIDTH, RAINFORM_WATER_SURFACE_DEPTH, 96, 56);
+  geometry.rotateX(-Math.PI * 0.5);
   var material = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uRainfall: { value: 0 } },
+    uniforms: {
+      uTime: { value: 0 },
+      uRainfall: { value: 0 },
+      uRainLut: { value: rainLut ? rainLut.texture : null },
+      uMelodyPhase: { value: 0 }
+    },
     vertexShader: [
       'uniform float uTime;',
+      'uniform float uRainfall;',
+      'uniform float uMelodyPhase;',
+      'uniform sampler2D uRainLut;',
       'varying vec2 vUv;',
+      'varying float vRainfall;',
+      'varying float vRipple;',
       'void main() {',
       '  vUv = uv;',
       '  vec3 p = position;',
-      '  p.y += sin(p.x * 3.2 + uTime * 0.8) * 0.018;',
+      '  float localRain = texture2D(uRainLut, vec2(uv.x, 0.5)).r;',
+      '  float longitudinal = sin(uv.x * 23.0 - uMelodyPhase + uv.y * 5.0);',
+      '  float cross = sin(uv.y * 17.0 + uTime * 1.18 + localRain * 5.0);',
+      '  float ripple = longitudinal * 0.68 + cross * 0.32;',
+      '  p.y += ripple * (0.012 + localRain * 0.105 + uRainfall * 0.018);',
+      '  vRainfall = localRain;',
+      '  vRipple = ripple;',
       '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
       '}'
     ].join('\\n'),
@@ -647,11 +709,17 @@ function createRainformWaterSurface() {
       'uniform float uTime;',
       'uniform float uRainfall;',
       'varying vec2 vUv;',
+      'varying float vRainfall;',
+      'varying float vRipple;',
       'void main() {',
-      '  float edge = smoothstep(0.0, 0.18, vUv.y) * (1.0 - smoothstep(0.58, 1.0, vUv.y));',
-      '  float line = pow(0.5 + 0.5 * sin(vUv.x * 76.0 - uTime * 1.8), 12.0);',
-      '  vec3 color = mix(vec3(0.13, 0.25, 0.36), vec3(0.74, 0.9, 1.0), line);',
-      '  gl_FragColor = vec4(color, edge * (0.025 + uRainfall * 0.11));',
+      '  float side = smoothstep(0.0, 0.07, vUv.x) * (1.0 - smoothstep(0.93, 1.0, vUv.x));',
+      '  float farFade = smoothstep(0.02, 0.34, vUv.y);',
+      '  float rainStreak = pow(0.5 + 0.5 * sin(vUv.x * 190.0 + uTime * 1.3), 11.0);',
+      '  float crest = pow(max(0.0, vRipple), 2.4);',
+      '  float reflection = rainStreak * (0.14 + vRainfall * 0.86);',
+      '  vec3 color = mix(vec3(0.025, 0.07, 0.11), vec3(0.38, 0.57, 0.72), crest * 0.42 + reflection * 0.58);',
+      '  float alpha = side * farFade * (0.17 + uRainfall * 0.26 + vRainfall * 0.18 + crest * 0.20);',
+      '  gl_FragColor = vec4(color, alpha);',
       '}'
     ].join('\\n'),
     transparent: true,
@@ -662,15 +730,20 @@ function createRainformWaterSurface() {
   });
   var mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'rainform-water-surface';
-  mesh.position.set(0, RAINFORM_WATERLINE, -1.05);
-  mesh.renderOrder = 2;
+  mesh.position.set(0, RAINFORM_WATER_LEVEL, 1.15);
+  mesh.renderOrder = 0;
   return { mesh: mesh, geometry: geometry, material: material };
 }
 
-function createRainformMistBand() {
+function createRainformMistBand(rainLut) {
   var geometry = new THREE.PlaneGeometry(12, 1.8, 32, 4);
   var material = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uRainfall: { value: 0 } },
+    uniforms: {
+      uTime: { value: 0 },
+      uRainfall: { value: 0 },
+      uRainLut: { value: rainLut ? rainLut.texture : null },
+      uMelodyPhase: { value: 0 }
+    },
     vertexShader: [
       'varying vec2 vUv;',
       'void main() {',
@@ -682,12 +755,15 @@ function createRainformMistBand() {
       'precision highp float;',
       'uniform float uTime;',
       'uniform float uRainfall;',
+      'uniform float uMelodyPhase;',
+      'uniform sampler2D uRainLut;',
       'varying vec2 vUv;',
       'void main() {',
+      '  float localRain = texture2D(uRainLut, vec2(vUv.x, 0.5)).r;',
       '  float band = smoothstep(0.06, 0.45, vUv.y) * (1.0 - smoothstep(0.56, 0.98, vUv.y));',
-      '  float drift = 0.5 + 0.5 * sin(vUv.x * 9.0 + uTime * 0.16);',
+      '  float drift = 0.5 + 0.5 * sin(vUv.x * 9.0 - uMelodyPhase * 0.52 + uTime * 0.16);',
       '  vec3 color = mix(vec3(0.16, 0.25, 0.33), vec3(0.42, 0.62, 0.74), drift);',
-      '  gl_FragColor = vec4(color, band * (0.008 + uRainfall * 0.035));',
+      '  gl_FragColor = vec4(color, band * localRain * (0.012 + uRainfall * 0.052));',
       '}'
     ].join('\\n'),
     transparent: true,
@@ -701,6 +777,46 @@ function createRainformMistBand() {
   mesh.position.set(0, RAINFORM_WATER_LEVEL + 0.38, -1.22);
   mesh.renderOrder = 0;
   return { mesh: mesh, geometry: geometry, material: material };
+}
+
+function createRainformTopRainSystem() {
+  var count = RAINFORM_TOP_EDGE_SAMPLES;
+  var positions = new Float32Array(count * 6);
+  var colors = new Float32Array(count * 6);
+  var alphas = new Float32Array(count * 2);
+  var phases = new Float32Array(count * 2);
+  var normX = new Float32Array(count);
+  for (var i = 0; i < count; i++) {
+    var x = i / Math.max(1, count - 1);
+    normX[i] = x;
+    colors[i * 6] = 0.42;
+    colors[i * 6 + 1] = 0.56;
+    colors[i * 6 + 2] = 0.70;
+    colors[i * 6 + 3] = 0.62;
+    colors[i * 6 + 4] = 0.76;
+    colors[i * 6 + 5] = 0.88;
+    phases[i * 2] = x * Math.PI * 2;
+    phases[i * 2 + 1] = phases[i * 2];
+  }
+  var geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+  var material = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: RAINFORM_LINE_VERT,
+    fragmentShader: RAINFORM_LINE_FRAG,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    blending: THREE.AdditiveBlending
+  });
+  var lines = new THREE.LineSegments(geometry, material);
+  lines.name = 'rainform-top-rain-envelope';
+  lines.frustumCulled = false;
+  lines.renderOrder = 3;
+  return { lines: lines, geometry: geometry, material: material, positions: positions, alphas: alphas, normX: normX, count: count };
 }
 
 function createRainformSplashSystem() {
@@ -800,17 +916,19 @@ function ensureRainResonance() {
   if (rainResonance || typeof THREE === 'undefined' || typeof scene === 'undefined' || !scene) return rainResonance;
   var group = new THREE.Group();
   group.name = 'rainform-derived-rainfall';
+  var rainLut = createRainformCurveTexture();
   var chains = createRainformChainSystem();
   var waterfall = createRainformWaterfallSystem();
   var filaments = createRainformFilamentSystem();
-  var waterSurface = createRainformWaterSurface();
-  var mistBand = createRainformMistBand();
+  var waterSurface = createRainformWaterSurface(rainLut);
+  var mistBand = createRainformMistBand(rainLut);
+  var topRain = createRainformTopRainSystem();
   var splash = createRainformSplashSystem();
   var ripple = createRainformRippleSystem();
   var backdrop = null;
   var floor = null;
   waterfall.points.visible = false;
-  group.add(waterSurface.mesh, mistBand.mesh, chains.lines, filaments.mesh, chains.points, ripple.lines, splash.points);
+  group.add(waterSurface.mesh, mistBand.mesh, chains.lines, filaments.mesh, topRain.lines, chains.points, ripple.lines, splash.points);
   scene.add(group);
   group.visible = false;
   rainResonance = {
@@ -819,8 +937,10 @@ function ensureRainResonance() {
     waterfall: waterfall,
     filaments: filaments,
     filamentDummy: new THREE.Object3D(),
+    rainLut: rainLut,
     waterSurface: waterSurface,
     mistBand: mistBand,
+    topRain: topRain,
     splash: splash,
     ripple: ripple,
     backdrop: backdrop,
@@ -841,7 +961,7 @@ function disposeRainResonance() {
   if (!rainResonance) return;
   var rr = rainResonance;
   if (rr.group && typeof scene !== 'undefined' && scene) scene.remove(rr.group);
-  var objects = [rr.chains && rr.chains.points, rr.chains && rr.chains.lines, rr.waterfall && rr.waterfall.points, rr.filaments && rr.filaments.mesh, rr.splash && rr.splash.points, rr.ripple && rr.ripple.lines];
+  var objects = [rr.chains && rr.chains.points, rr.chains && rr.chains.lines, rr.waterfall && rr.waterfall.points, rr.filaments && rr.filaments.mesh, rr.topRain && rr.topRain.lines, rr.splash && rr.splash.points, rr.ripple && rr.ripple.lines];
   for (var i = 0; i < objects.length; i++) {
     var object = objects[i];
     if (!object) continue;
@@ -854,6 +974,7 @@ function disposeRainResonance() {
     if (surfaces[s].geometry && surfaces[s].geometry.dispose) surfaces[s].geometry.dispose();
     if (surfaces[s].material && surfaces[s].material.dispose) surfaces[s].material.dispose();
   }
+  if (rr.rainLut && rr.rainLut.texture && rr.rainLut.texture.dispose) rr.rainLut.texture.dispose();
   if (rr.backdrop) { if (rr.backdrop.geometry) rr.backdrop.geometry.dispose(); if (rr.backdrop.material) rr.backdrop.material.dispose(); }
   if (rr.floor) { if (rr.floor.geometry) rr.floor.geometry.dispose(); if (rr.floor.material) rr.floor.material.dispose(); }
   rainResonance = null;
@@ -1045,16 +1166,48 @@ function updateRainformFilaments(rr, dt, time) {
   return rr.filamentRainfall;
 }
 
+function updateRainformTopRain(rr, time) {
+  var topRain = rr.topRain;
+  var intensity = rainResonanceIntensityValue();
+  for (var i = 0; i < topRain.count; i++) {
+    var rainfall = rainformRainfallResponse(topRain.normX[i]);
+    var ceiling = rainformDataDrivenCeiling(topRain.normX[i]);
+    var wave = rainformMelodyWaveAt(topRain.normX[i], time);
+    var x = rainformLerp(RAINFORM_WORLD_LEFT, RAINFORM_WORLD_RIGHT, topRain.normX[i]);
+    var p6 = i * 6;
+    var alpha = intensity <= RAINFORM_ZERO_RAIN_SUPPRESSION ? 0 : Math.min(0.44, rainfall * 0.36 + Math.abs(wave) * 0.2);
+    var length = 0.045 + rainfall * 0.42 + Math.abs(wave) * 0.26;
+    topRain.positions[p6] = x;
+    topRain.positions[p6 + 1] = ceiling + wave * 0.16;
+    topRain.positions[p6 + 2] = -1.18;
+    topRain.positions[p6 + 3] = x;
+    topRain.positions[p6 + 4] = ceiling - length;
+    topRain.positions[p6 + 5] = -1.18;
+    topRain.alphas[i * 2] = alpha * 0.58;
+    topRain.alphas[i * 2 + 1] = alpha;
+  }
+  topRain.geometry.attributes.position.needsUpdate = true;
+  topRain.geometry.attributes.aAlpha.needsUpdate = true;
+  topRain.material.uniforms.uTime.value = time;
+  topRain.lines.visible = intensity > RAINFORM_ZERO_RAIN_SUPPRESSION;
+}
+
 function updateRainformSurface(rr, time) {
-  var rainfall = rainformRainfallResponse(0.5);
+  rainformUploadCurveLut(rr.rainLut);
+  var rainfall = rr.filamentRainfall || rainformRainfallResponse(0.5);
+  var phase = rainformMelodyPhase;
   if (rr.waterSurface && rr.waterSurface.material) {
     rr.waterSurface.material.uniforms.uTime.value = time;
     rr.waterSurface.material.uniforms.uRainfall.value = rainfall;
+    rr.waterSurface.material.uniforms.uRainLut.value = rr.rainLut.texture;
+    rr.waterSurface.material.uniforms.uMelodyPhase.value = phase;
     rr.waterSurface.mesh.visible = rainfall > RAINFORM_ZERO_RAIN_SUPPRESSION;
   }
   if (rr.mistBand && rr.mistBand.material) {
     rr.mistBand.material.uniforms.uTime.value = time;
     rr.mistBand.material.uniforms.uRainfall.value = rainfall;
+    rr.mistBand.material.uniforms.uRainLut.value = rr.rainLut.texture;
+    rr.mistBand.material.uniforms.uMelodyPhase.value = phase;
     rr.mistBand.mesh.visible = rainfall > RAINFORM_ZERO_RAIN_SUPPRESSION;
   }
 }
@@ -1150,6 +1303,7 @@ function updateRainResonance(dt) {
   updateRainformChains(rr, step, rainResonanceClock);
   updateRainformWaterfall(rr, step, rainResonanceClock);
   updateRainformFilaments(rr, step, rainResonanceClock);
+  updateRainformTopRain(rr, rainResonanceClock);
   updateRainformSurface(rr, rainResonanceClock);
   if (rr.splashCredit >= 1 && rr.bassS > 0.08 && rainformRainfallResponse(0.5) > 0.42) {
     rr.splashCredit -= 1;

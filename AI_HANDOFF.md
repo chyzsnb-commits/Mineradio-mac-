@@ -14,7 +14,7 @@
 - **基线**：从 `Mineradio-1.1.3-arm64.dmg`（内部测试版）提取的源码。另有 `v1.1.0` 分支存正式版参考基线。
 - **构建已验证**：`npm install` + `npm run build:mac` 本地跑通，产出 134MB dmg。Electron 42.4.1 + electron-builder ^26。
 - **网络注意**：本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI）正常。**用 gh API 推送代码，不要用 git push**。
-- **本轮优化**：预设 11「云瀑共振」已按 Rainform 官网比例重做。模块现在使用 2000 条基础雨链、800 条环境雨链、1400 条暴雨雨链和 1900 条 `InstancedMesh` 细丝；25 点音乐曲线先烘焙为 256 点 `rainformCurveLut`，驱动雨幕高度、强度、水线和雾带，强度归零时整层硬抑制。珍珠 shader 加入多频 procedural liquid metal、镜面反射、Fresnel 和高光参数；不创建第二个 Canvas 或动画循环，不修改预设 9 的玻璃水珠逻辑。专项测试 7/7，Three r128 runtime smoke 通过，`npm run check` **183/183**。
+- **本轮优化**：预设 11「云瀑共振」已按 Rainform 官网比例重做。模块现在使用 2000 条基础雨链、800 条环境雨链、1400 条暴雨雨链和 1900 条 `InstancedMesh` 细丝；25 点音乐曲线先烘焙为 256 点 `rainformCurveLut`，驱动雨幕高度、强度、水平水面、雾带及顶部雨幕包络，强度归零时整层硬抑制。珍珠 shader 加入多频 procedural liquid metal、镜面反射、Fresnel 和高光参数；不创建第二个 Canvas 或动画循环，不修改预设 9 的玻璃水珠逻辑。专项测试 9/9，Three r128 runtime smoke 通过，`npm run check` **185/185**。
 
 **2026-07-29：云瀑共振改为 Rainform 授权派生的分层音乐雨景。**
 
@@ -30,6 +30,14 @@
 - 视觉：珍珠材质采用多频液态金属 band、镜面/Fresnel 高光；细丝使用共享 `InstancedBufferGeometry` + `InstancedMesh`；新增底部水线和雾带，移除该预设自己的背景板，继续透出 Mineradio 场景背景。
 - 数据：25 点音乐曲线通过 `rainformCurveLut` 烘焙到 256 点采样，`rainformRainfallResponse` 和 `rainformDataDrivenCeiling` 控制横向雨势峰值、可见高度和低雨量收缩；`RAINFORM_ZERO_RAIN_SUPPRESSION` 负责强度归零时关闭所有雨层。
 - 验证：`node --check public/js/modules/02-visual/20-rainfall-resonance.js`；专项测试 7/7；Three r128 runtime smoke 通过；`npm run check` 183/183；Electron 已启动，本地页面 `http://localhost:3000/` 可返回。
+
+**2026-07-29：云瀑共振补齐水平水面、顶部雨峰与旋律联动。**
+
+- 水面：`createRainformWaterSurface()` 的网格旋转为水平面，`uRainLut` 和 `uMelodyPhase` 让横向雨量曲线驱动水面起伏、反射和雾带，不再显示为画面底部的竖直发光面板。
+- 雨峰：新增 256 段 `topRain` 雨幕包络，以 `rainformDataDrivenCeiling()` 与旋律相位实时形成顶部高低峰；歌曲的中频旋律会同时推动顶部雨势、水波及雾带。
+- 资源：曲线 LUT 在每帧更新后上传到共享纹理，切出预设时连同顶部雨幕、水面/雾带的几何与材质一并释放。
+- 验证：新增两项回归契约；专项测试 9/9、Three r128 runtime smoke、`node --check` 与 `npm run check` **185/185** 通过。
+- 待人工验收：启动 Electron，选择预设 11 并播放旋律起伏明显的歌曲，确认水面是水平透视面、顶部峰线横向移动且三项控制滑块即时生效。
 
 ## 最终整合（agents/final-integration，2026-07-14）
 
@@ -131,7 +139,7 @@
 
 - [x] **重新接入崩溃记录**：本机 crashReporter 已在最新代码启用，真实测试生成 `.dmp`，上传关闭。
 - [x] **雨境玻璃水珠迁移与写实增强**：独立 RG Metaball 后处理已接入预设 9；动态控件支持开关、数量/流速/尺寸，雨量扩大并驱动尺寸，新增撞击凝结态；背景保持锐利；已消除合成噪声造成的规则像素点阵；`npm run check` 176/176。
-- [x] **云瀑共振音乐雨幕预设**：新增索引 11 与 Rainform 授权派生的分层雨景；包含雨链、珍珠雨滴、暴雨瀑布、撞击水花、涟漪和 25 点音乐雨量曲线，动态面板支持雨幕强度、旋律起伏、拍点爆发并独立持久化；保留 Required Notice、来源和 PolyForm Noncommercial 许可说明；专项测试 5/5，`npm run check` 181/181。
+- [x] **云瀑共振音乐雨幕预设**：新增索引 11 与 Rainform 授权派生的分层雨景；包含雨链、珍珠雨滴、暴雨瀑布、撞击水花、涟漪、水平水面、顶部雨幕包络和 25 点音乐雨量曲线，动态面板支持雨幕强度、旋律起伏、拍点爆发并独立持久化；保留 Required Notice、来源和 PolyForm Noncommercial 许可说明；专项测试 9/9，`npm run check` 185/185。
 - [ ] **渲染进程崩溃根因**：在用户真实资料复现后分析 `.dmp` 和 `crash-diagnostics.json`（上面详述）。
 - [ ] **真机对比三种显卡模式**：分别重启到自动/省电/高性能，播放同一首歌 10 分钟，对比温度、CPU 和流畅度。
 - [x] **继续发烫优化**：主循环空闲时从高频 RAF 唤醒改成真正休眠；idle guide 在禁用无内容和深后台时彻底停止。

@@ -138,6 +138,29 @@ test('云瀑共振包含官网底部水线、雾带和曲线包络，而不是�
   assert.match(rain, /InstancedBufferGeometry/);
 });
 
+test('云瀑共振把底部做成可见的水平水面，并由旋律曲线驱动水波与雾带', () => {
+  const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
+
+  assert.match(rain, /RAINFORM_WATER_SURFACE_DEPTH/);
+  assert.match(rain, /geometry\.rotateX\(-Math\.PI \* 0\.5\)/);
+  assert.match(rain, /uRainLut/);
+  assert.match(rain, /rainformUploadCurveLut\(/);
+  assert.match(rain, /rainformMelodyWaveAt\(/);
+  assert.match(rain, /uMelodyPhase/);
+  assert.match(rain, /updateRainformSurface\(rr, rainResonanceClock\)/);
+});
+
+test('云瀑共振用顶部雨幕包络显示随旋律移动的雨峰', () => {
+  const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
+
+  assert.match(rain, /RAINFORM_TOP_EDGE_SAMPLES/);
+  assert.match(rain, /createRainformTopRainSystem\(/);
+  assert.match(rain, /updateRainformTopRain\(/);
+  assert.match(rain, /topRain/);
+  assert.match(rain, /rainformDataDrivenCeiling\(topRain\.normX/);
+  assert.match(rain, /updateRainformTopRain\(rr, rainResonanceClock\)/);
+});
+
 test('Rainform 音乐映射通过 25 点雨量曲线驱动，不改变现有主循环入口', () => {
   const rain = read('public/js/modules/02-visual/20-rainfall-resonance.js');
 
