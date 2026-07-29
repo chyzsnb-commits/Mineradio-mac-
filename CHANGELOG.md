@@ -4,7 +4,8 @@
 
 - 雨境预设（索引 9）接入独立雨窗的照片级玻璃水珠后处理：复用主 renderer/scene/camera，不创建第二个 Canvas 或动画循环；支持 Metaball 融合、沿玻璃滑落、折射、菲涅尔边缘、接触阴影与局部高光。
 - 雨境动态面板新增玻璃水珠开关、水珠数量、流速和尺寸设置；尺寸调节不改变数量，参数独立持久化，关闭或切出雨境会释放 GPU render target、材质和几何资源，后处理失败自动回退原始雨丝渲染。
-- 新增 `scripts/test-rain-glass-postprocess.js` 与迁移设计文档；`npm run check` 全量 173 项通过。
+- 新增 `scripts/test-rain-glass-postprocess.js` 与迁移设计文档；`npm run check` 全量 174 项通过。
+- 修复玻璃水珠后处理把整幅雨境背景一起模糊的问题；水滴外改用锐利场景采样，模糊仅保留在水滴内部折射层。
 - 修复唱歌模式开启后去人声链/麦克风接线偶发不生效：开关时强制重建音频图，并在健康检查中识别缺失的去人声链；唱歌按钮 z-index 抬高，避免被左侧音量 hover 桥接层挡住。
 - 修复壁纸/桌面模式误进深睡眠与失焦 15fps 导致的分辨率塌缩和掉帧；暂停后等舞台歌词完全褪去，再等 3 秒才进入空闲 2fps 降帧。
 - 正式版身份统一为 `mineradio` / `com.mineradio.desktop`，关闭 `internalBeta` 与匿名遥测，Intel x64 和 Apple Silicon arm64 使用独立产物名。

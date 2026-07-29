@@ -147,7 +147,8 @@ var RAIN_GLASS_COMPOSITE_FRAG = [
   '  float softShadow = smoothstep(0.045, 0.18, shadowField) * (1.0 - smoothstep(0.035, 0.14, field));',
   '  float waterTrace = smoothstep(0.018, 0.10, fieldAt(vUv + vec2(texel.x * 1.5, texel.y * 8.0))) * (1.0 - smoothstep(0.035, 0.13, field));',
   '  float contactShadow = softShadow + waterTrace * 0.30;',
-  '  vec3 glassBase = frosted * (1.0 - contactShadow * (0.06 + opticalWeight * 0.10));',
+  // 水滴外的玻璃保持锐利；模糊只用于水滴内部的柔化/折射层。
+  '  vec3 glassBase = sharpSample.rgb * (1.0 - contactShadow * (0.06 + opticalWeight * 0.10));',
   '  if (body < 0.004) {',
   '    float grain = fract(sin(dot(vUv * uFieldResolution + uTime, vec2(12.9898, 78.233))) * 43758.5453);',
   '    gl_FragColor = vec4(glassBase * (0.97 + grain * 0.02), sharpSample.a);',

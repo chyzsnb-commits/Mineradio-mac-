@@ -76,3 +76,9 @@ test('水滴模块在关闭或切出雨境时释放 GPU 资源并回退原始雨
   assert.match(mainLoop, /rainGlassActive\(\)[\s\S]*renderRainGlassScene\(renderer, scene, camera\)/);
   assert.match(mainLoop, /if \(!renderedRainGlass\) renderMainSceneWithGpuSample\(scene, camera\)/);
 });
+
+test('水滴场之外保持锐利背景，模糊纹理只参与水滴内部光学效果', () => {
+  const glass = read('public/js/modules/02-visual/19-rain-glass.js');
+  assert.match(glass, /vec3 glassBase = sharpSample\.rgb/);
+  assert.match(glass, /vec3 softened = texture2D\(uBlur/);
+});
