@@ -18,7 +18,6 @@ function isLoginRefreshCurrent(provider, seq) {
 }
 
 function normalizeLoginProviderKey(provider) {
-  if (provider === 'qishui' && !MINERADIO_QISHUI_ENABLED) return 'netease';
   return provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease')));
 }
 function loginProviderSupportsCookieMode(provider) {

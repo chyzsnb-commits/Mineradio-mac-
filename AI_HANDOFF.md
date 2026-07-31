@@ -16,6 +16,7 @@
 - **网络注意**：本环境 `github.com` 连接不稳定（git push 超时），但 `api.github.com`（gh CLI）正常。**用 gh API 推送代码，不要用 git push**。
 - **本轮优化**：预设 11「云瀑共振」已按 Rainform 官网比例重做。模块现在使用 2000 条基础雨链、800 条环境雨链、1400 条暴雨雨链和 1900 条 `InstancedMesh` 细丝；25 点音乐曲线先烘焙为 256 点 `rainformCurveLut`，驱动雨幕高度、强度、水平水面、雾带及顶部雨幕包络，强度归零时整层硬抑制。珍珠 shader 加入多频 procedural liquid metal、镜面反射、Fresnel 和高光参数；不创建第二个 Canvas 或动画循环，不修改预设 9 的玻璃水珠逻辑。专项测试 9/9，Three r128 runtime smoke 通过，`npm run check` **185/185**。
 - **2026-07-31 汽水内部实验恢复**：用户明确要求在 PR #58 分支恢复 macOS 可用链路。已从历史私有线恢复 `qishui-api.js` 与 `qishui-audio-decryptor/`，`/api/qishui/*` 已接回当前本地服务；`#auth` 音频只在服务端解密，96MB 有界缓存，渲染层不接触解密材料。Cookie 与 access-token 均使用 macOS `safeStorage` 加密保存，QS 搜索和手动授权入口重新显示；无登录、非法 Cookie 和不可播 URL 均有明确失败结果，继续使用既有换源回退。专项 `scripts/test-qishui-mac-integration.js` 4/4、`npm run check` 待本轮最终运行；真实汽水账号/受保护音频必须由用户手测。此能力不应回流到 `main`，也不得以自动更新或 Windows API 实现。
+- **2026-07-31 汽水入口误跳网易修复**：根因是渲染层没有读取主进程的 `qishuiEnabled`，并在策略关闭/缺失时把 `qishui` 静默规范化为 `netease` 或全音源。preload 现显式传递该开关；账户、登录和搜索入口不再改选其他音源，汽水不可用时仅提示。专项 5/5、`npm run check` 195/195 通过。用户需完全退出并重新运行 Electron 后，在真实账号下确认 QS 仍保持选中且可搜索播放。
 
 **2026-07-29：云瀑共振改为 Rainform 授权派生的分层音乐雨景。**
 

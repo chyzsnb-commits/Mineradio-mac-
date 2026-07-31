@@ -47,3 +47,17 @@ test('Qishui manual authorization posts only to its local endpoints', () => {
   assert.match(flows, /\/api\/qishui\/login\/token/);
   assert.match(flows, /if \(loginProvider === 'qishui'\) return submitQishuiManualLogin\(\)/);
 });
+
+test('Qishui selection never silently falls through to Netease', () => {
+  const preload = read('desktop/preload.js');
+  const state = read('public/js/modules/00-state/00-core-stores.js');
+  const account = read('public/js/modules/08-account/01-login-modal-utils.js');
+  const flows = read('public/js/modules/08-account/03-login-modal-flows.js');
+  const search = read('public/js/modules/05-playback/07-search.js');
+
+  assert.match(preload, /qishuiEnabled:\s*RELEASE_POLICY\.qishuiEnabled/);
+  assert.match(state, /MINERADIO_QISHUI_ENABLED\s*=\s*MINERADIO_RELEASE_POLICY\.qishuiEnabled\s*===\s*true/);
+  assert.doesNotMatch(account, /provider === 'qishui' && !MINERADIO_QISHUI_ENABLED\) return 'netease'/);
+  assert.doesNotMatch(flows, /provider === 'qishui' && !MINERADIO_QISHUI_ENABLED\) return 'netease'/);
+  assert.doesNotMatch(search, /mode === 'qishui' && !MINERADIO_QISHUI_ENABLED\) mode = 'song'/);
+});
