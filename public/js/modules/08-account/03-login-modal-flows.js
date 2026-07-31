@@ -682,6 +682,17 @@ function openQishuiPublicSearch() {
   }
   showToast('汽水搜索已切换为匹配源');
 }
+function openQishuiLoginEntry() {
+  if (qishuiPublicSearchReady()) return openQishuiPublicSearch();
+  setManualCookieOpenForProvider('qishui', true);
+  updateLoginProviderUi();
+  var input = document.getElementById('qq-cookie-input');
+  if (input) {
+    setTimeout(function () {
+      try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (_) { } }
+    }, 80);
+  }
+}
 function updateLoginProviderUi() {
   var meta = platformMeta(loginProvider);
   var isQQ = loginProvider === 'qq';
@@ -944,6 +955,7 @@ function toggleQQCookiePanel() {
   updateLoginProviderUi();
 }
 function openProviderWebLogin() {
+  if (loginProvider === 'qishui') return openQishuiLoginEntry();
   if (loginProvider === 'qq') return openQQWebLogin();
   if (loginProvider === 'kugou') return openKugouWebLogin();
   if (loginProvider === 'spotify') return openSpotifyWebLogin();

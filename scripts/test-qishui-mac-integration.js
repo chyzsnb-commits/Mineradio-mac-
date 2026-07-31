@@ -61,3 +61,17 @@ test('Qishui selection never silently falls through to Netease', () => {
   assert.doesNotMatch(flows, /provider === 'qishui' && !MINERADIO_QISHUI_ENABLED\) return 'netease'/);
   assert.doesNotMatch(search, /mode === 'qishui' && !MINERADIO_QISHUI_ENABLED\) mode = 'song'/);
 });
+
+test('Qishui account entry and login workflow never invoke Netease', () => {
+  const account = read('public/js/modules/08-account/01-login-modal-utils.js');
+  const flows = read('public/js/modules/08-account/03-login-modal-flows.js');
+  const search = read('public/js/modules/05-playback/07-search.js');
+
+  assert.match(account, /function preferredAccountLoginProvider\(/);
+  assert.match(account, /searchMode === 'qishui'/);
+  assert.match(account, /showLoginModal\(\{ provider: preferredAccountLoginProvider\(\)/);
+  assert.match(flows, /function openQishuiLoginEntry\(/);
+  assert.match(flows, /if \(loginProvider === 'qishui'\) return openQishuiLoginEntry\(\)/);
+  assert.doesNotMatch(flows, /if \(loginProvider === 'qishui'\)[\s\S]{0,120}openNeteaseMusicLogin/);
+  assert.match(search, /provider === 'qishui'\) return '\/api\/qishui\/search\?keywords=' \+ encodeURIComponent\(q\) \+ '&limit=' \+ limit/);
+});

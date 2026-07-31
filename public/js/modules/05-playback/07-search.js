@@ -55,7 +55,7 @@ function rememberSearchQuery(q) {
   writeSearchHistory(items);
 }
 function renderSearchHistory() {
-  if (searchMode !== 'song') return false;
+  if (!isMusicSearchMode(searchMode)) return false;
   var items = readSearchHistory();
   if (!items.length) {
     $results.innerHTML = '';
@@ -709,6 +709,7 @@ function searchProviderLoginNotice(mode) {
 function searchProviderUrl(provider, q, limit) {
   if (provider === 'qq') return '/api/qq/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
   if (provider === 'kugou') return '/api/kugou/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
+  if (provider === 'qishui') return '/api/qishui/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
   if (provider === 'spotify') return '/api/spotify/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
   return '/api/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
 }

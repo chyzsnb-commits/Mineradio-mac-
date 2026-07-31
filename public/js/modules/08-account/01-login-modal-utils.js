@@ -76,7 +76,7 @@ function onUserBtnClick() {
     topAccountPillClickSuppressed = false;
     return;
   }
-  showLoginModal({ provider: hasAnyPlatformLogin() ? firstLoggedProvider() : loginProvider, source: 'top-account' });
+  showLoginModal({ provider: preferredAccountLoginProvider(), source: 'top-account' });
 }
 var ACCOUNT_PROVIDER_KEYS = ['netease', 'qq', 'kugou']
   .concat(MINERADIO_QISHUI_ENABLED ? ['qishui'] : [])
@@ -293,6 +293,10 @@ function firstLoggedProvider() {
     if (hasPlatformLogin(ordered[i])) return ordered[i];
   }
   return 'netease';
+}
+function preferredAccountLoginProvider() {
+  if (MINERADIO_QISHUI_ENABLED && typeof searchMode !== 'undefined' && searchMode === 'qishui') return 'qishui';
+  return hasAnyPlatformLogin() ? firstLoggedProvider() : loginProvider;
 }
 function providerAvatarSrc(provider, status) {
   status = status || platformStatus(provider) || {};
