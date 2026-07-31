@@ -497,6 +497,16 @@ function updateFxInputs() {
   if (typeof setRange === 'function') setRange('fx-voxrotspeed', fx.voxRotateSpeed == null ? 0.5 : fx.voxRotateSpeed);
   if (typeof setRange === 'function') setRange('fx-rainamount', fx.rainAmount == null ? 1 : fx.rainAmount);
   if (typeof setRange === 'function') setRange('fx-rainthunder', fx.rainThunder == null ? 0.55 : fx.rainThunder);
+  if (typeof setRange === 'function') setRange('fx-rainrandomfrequency', fx.rainRandomFrequency == null ? 15 : fx.rainRandomFrequency);
+  var rainThunderMode = typeof rainThunderModeValue === 'function' ? rainThunderModeValue() : ((fx && fx.rainThunderMode) || 'music');
+  var rainThunderModeSeg = document.getElementById('rain-thunder-mode-seg');
+  if (rainThunderModeSeg) rainThunderModeSeg.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b.dataset.rainthundermode === rainThunderMode); });
+  var musicThunderControl = document.getElementById('rain-thunder-music-control');
+  if (musicThunderControl) musicThunderControl.hidden = rainThunderMode !== 'music';
+  var randomThunderControl = document.getElementById('rain-thunder-random-control');
+  if (randomThunderControl) randomThunderControl.hidden = rainThunderMode !== 'random';
+  var randomThunderOutput = document.querySelector('#rain-thunder-random-control output');
+  if (randomThunderOutput) randomThunderOutput.textContent = Math.round(fx.rainRandomFrequency == null ? 15 : fx.rainRandomFrequency) + ' 秒';
   if (typeof setRange === 'function') setRange('fx-rainglassamount', fx.rainGlassAmount == null ? 0.70 : fx.rainGlassAmount);
   if (typeof setRange === 'function') setRange('fx-rainglassspeed', fx.rainGlassSpeed == null ? 5.00 : fx.rainGlassSpeed);
   if (typeof setRange === 'function') setRange('fx-rainglasssize', fx.rainGlassSize == null ? 1.00 : fx.rainGlassSize);
@@ -513,8 +523,6 @@ function updateFxInputs() {
   if (rainGhostCoverToggle) rainGhostCoverToggle.classList.toggle('on', fx.rainGhostCover !== false);
   var rainGlassToggle = document.getElementById('t-rainGlassEnabled');
   if (rainGlassToggle) rainGlassToggle.classList.toggle('on', fx.rainGlassEnabled !== false);
-  var rainRandomThunderToggle = document.getElementById('t-rainRandomThunder');
-  if (rainRandomThunderToggle) rainRandomThunderToggle.classList.toggle('on', fx.rainRandomThunder === true);
   var voxFloatBlocksToggle = document.getElementById('t-voxFloatBlocks');
   if (voxFloatBlocksToggle) voxFloatBlocksToggle.classList.toggle('on', fx.voxFloatBlocks !== false);
   var voxShimmerToggle = document.getElementById('t-voxShimmer');

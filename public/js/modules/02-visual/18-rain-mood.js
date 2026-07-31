@@ -26,8 +26,20 @@ function rainThunderValue() {
   return Math.max(0.15, Math.min(0.95, v));
 }
 
+function rainThunderModeValue() {
+  var mode = typeof fx !== 'undefined' && fx ? String(fx.rainThunderMode || '') : '';
+  if (mode === 'off' || mode === 'music' || mode === 'random') return mode;
+  // 兼容升级前只有随机开关的存档。
+  return typeof fx !== 'undefined' && fx && fx.rainRandomThunder === true ? 'random' : 'music';
+}
+
 function rainRandomThunderEnabledValue() {
-  return !!(typeof fx !== 'undefined' && fx && fx.rainRandomThunder === true);
+  return rainThunderModeValue() === 'random';
+}
+
+function rainRandomFrequencyValue() {
+  var v = (typeof fx !== 'undefined' && fx && isFinite(fx.rainRandomFrequency)) ? Number(fx.rainRandomFrequency) : 15;
+  return Math.max(4, Math.min(40, v));
 }
 
 function rainGlassEnabledValue() {
@@ -57,7 +69,9 @@ function saveRainToggles() {
       ghostCover: fx.rainGhostCover !== false,
       amount: rainAmountValue(),
       thunder: rainThunderValue(),
+      thunderMode: rainThunderModeValue(),
       randomThunder: rainRandomThunderEnabledValue(),
+      randomFrequency: rainRandomFrequencyValue(),
       glassEnabled: rainGlassEnabledValue(),
       glassAmount: rainGlassAmountValue(),
       glassSpeed: rainGlassSpeedValue(),
@@ -73,7 +87,10 @@ function loadRainToggles() {
     if ('ghostCover' in raw) fx.rainGhostCover = !!raw.ghostCover;
     if ('amount' in raw && isFinite(raw.amount)) fx.rainAmount = Math.max(0.05, Math.min(4, Number(raw.amount)));
     if ('thunder' in raw && isFinite(raw.thunder)) fx.rainThunder = Math.max(0.15, Math.min(0.95, Number(raw.thunder)));
-    if ('randomThunder' in raw) fx.rainRandomThunder = raw.randomThunder === true;
+    if ('thunderMode' in raw && /^(off|music|random)$/.test(raw.thunderMode)) fx.rainThunderMode = raw.thunderMode;
+    else if ('randomThunder' in raw) fx.rainThunderMode = raw.randomThunder === true ? 'random' : 'music';
+    fx.rainRandomThunder = rainThunderModeValue() === 'random';
+    if ('randomFrequency' in raw && isFinite(raw.randomFrequency)) fx.rainRandomFrequency = Math.max(4, Math.min(40, Number(raw.randomFrequency)));
     if ('glassEnabled' in raw) fx.rainGlassEnabled = raw.glassEnabled !== false;
     if ('glassAmount' in raw && isFinite(raw.glassAmount)) fx.rainGlassAmount = Math.max(0.15, Math.min(2.5, Number(raw.glassAmount)));
     if ('glassSpeed' in raw && isFinite(raw.glassSpeed)) fx.rainGlassSpeed = Math.max(0.2, Math.min(16, Number(raw.glassSpeed)));
@@ -474,6 +491,17 @@ function rainMoodClearDrops(rm) {
   if (rm.lightning) rm.lightning.visible = false;
 }
 
+function rainMoodClearThunder(rm) {
+  if (!rm) return;
+  rm.flashAmt = 0;
+  rm.lightningAmt = 0;
+  rm.thunderFlashes.length = 0;
+  rm.nextRandomThunderAt = 0;
+  if (rm.flash && rm.flash.material) rm.flash.material.opacity = 0;
+  if (rm.flash) rm.flash.visible = false;
+  if (rm.lightning) rm.lightning.visible = false;
+}
+
 function setRainMoodVisible(on) {
   var rm = ensureRainMood();
   if (!rm) return;
@@ -545,22 +573,26 @@ function updateRainMood(dt) {
   rm.energyS = rainMoodEase(rm.energyS, playingNow ? rawEnergy : rawEnergy * 0.12, 0.16, 0.09, step);
   rm.wind = rainMoodEase(rm.wind, (rm.midS - 0.22) * 3.4 * intensity, 0.12, 0.08, step);
 
-  // 高频 + 强拍：偶发雷闪；阈值由 rainThunder 控制(低=更易闪)
+  // 三选一：关闭、跟随音乐、随机打雷。两种触发途径不再叠加。
+  var thunderMode = rainThunderModeValue();
   var thunderGate = rainThunderValue();
   var flashTarget = 0;
   var trebGate = Math.max(0.35, Math.min(0.85, thunderGate + 0.07));
   var energyGate = Math.max(0.40, Math.min(0.92, thunderGate + 0.17));
   // 阈值越低,随机通过率越高(0.15→≈0.55 通过;0.95→≈0.08 通过)
   var flashChance = Math.max(0.06, Math.min(0.72, 0.78 - thunderGate * 0.74));
-  if (playingNow && rm.trebS > trebGate && (rawBeat > thunderGate || rm.energyS > energyGate) && Math.random() < flashChance) {
+  if (thunderMode === 'music' && playingNow && rm.trebS > trebGate && (rawBeat > thunderGate || rm.energyS > energyGate) && Math.random() < flashChance) {
     flashTarget = Math.min(1, 0.35 + rm.trebS * 0.55 + rawBeat * 0.25);
   }
-  if (rainRandomThunderEnabledValue()) {
-    if (!rm.nextRandomThunderAt) rm.nextRandomThunderAt = rainMoodClock + 4 + Math.random() * 6;
+  if (thunderMode === 'random') {
+    var randomFrequency = rainRandomFrequencyValue();
+    if (!rm.nextRandomThunderAt) rm.nextRandomThunderAt = rainMoodClock + randomFrequency * (0.70 + Math.random() * 0.60);
     if (rainMoodClock >= rm.nextRandomThunderAt) {
       rainMoodQueueRandomThunder(rm);
-      rm.nextRandomThunderAt = rainMoodClock + 6 + Math.random() * 14;
+      rm.nextRandomThunderAt = rainMoodClock + randomFrequency * (0.70 + Math.random() * 0.60);
     }
+  } else if (thunderMode === 'off') {
+    rainMoodClearThunder(rm);
   } else {
     rm.nextRandomThunderAt = 0;
     rm.thunderFlashes.length = 0;

@@ -139,7 +139,9 @@ var fxDefaults = {
   rainGhostCover: true,  // 雨境:湿玻璃幽灵封面
   rainAmount: 1.0,       // 雨境:雨量倍率(0.05 毛毛雨 ~ 4.0 暴雨)
   rainThunder: 0.70,     // 雨境:打雷节奏阈值(低=更易闪,高=更稀)
-  rainRandomThunder: false, // 雨境:不依赖音乐节拍的随机雷闪
+  rainThunderMode: 'music', // 雨境:off=关闭 / music=跟随音乐 / random=随机打雷
+  rainRandomFrequency: 15, // 雨境:随机打雷的平均间隔秒数(4~40)
+  rainRandomThunder: false, // 兼容旧版存档；运行时由 rainThunderMode 决定
   rainGlassEnabled: true, // 雨境:玻璃水珠滑落后处理
   rainGlassAmount: 0.70,  // 雨境:玻璃水珠数量(0.15~2.5)
   rainGlassSpeed: 5.00,   // 雨境:玻璃水珠流速(0.2~16.0)

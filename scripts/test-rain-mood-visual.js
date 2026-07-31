@@ -172,24 +172,20 @@ test('雨境雨量与打雷阈值可调，驱动 spawn / flash，独立持久化
   assert.match(rain, /'thunder' in raw/);
 });
 
-test('雨境可独立开启随机打雷，且不依赖音乐节拍', () => {
+test('雨境旧随机开关存档会迁移为随机模式，且随机雷不依赖音乐节拍', () => {
   const rain = read('public/js/modules/02-visual/18-rain-mood.js');
   const defaults = read('public/js/modules/00-state/04-fx-defaults.js');
-  const html = read('public/index.html');
-  const panel = read('public/js/modules/07-fx/05-fx-panel-performance.js');
-  const bindings = read('public/js/modules/07-fx/07-bindings-shelf-immersive.js');
 
   assert.match(defaults, /rainRandomThunder:\s*false/);
-  assert.match(html, /id="t-rainRandomThunder"/);
-  assert.match(html, /toggleFx\('rainRandomThunder'\)/);
-  assert.match(panel, /t-rainRandomThunder/);
-  assert.match(bindings, /rainRandomThunder.*随机打雷/);
   assert.match(rain, /function rainRandomThunderEnabledValue\(/);
+  assert.match(rain, /rainThunderModeValue\(\) === 'random'/);
   assert.match(rain, /randomThunder:\s*rainRandomThunderEnabledValue\(\)/);
   assert.match(rain, /'randomThunder' in raw/);
+  assert.match(rain, /fx\.rainThunderMode = raw\.randomThunder === true \? 'random' : 'music'/);
   assert.match(rain, /nextRandomThunderAt/);
   assert.match(rain, /rainMoodClock >= rm\.nextRandomThunderAt/);
-  assert.doesNotMatch(rain, /playingNow && rainRandomThunderEnabledValue\(\)/);
+  assert.match(rain, /thunderMode === 'random'/);
+  assert.doesNotMatch(rain, /thunderMode === 'random' && playingNow/);
 });
 
 test('雨境随机打雷有单闪和连续闪，并复用闪电折线营造云层照明', () => {
@@ -204,4 +200,31 @@ test('雨境随机打雷有单闪和连续闪，并复用闪电折线营造云�
   assert.match(rain, /lightningAmt/);
   assert.match(rain, /rm\.thunderFlashes\.length = 0/);
   assert.match(rain, /rm\.lightning\.visible = false/);
+});
+
+test('雨境打雷模式三选一，随机频率与音乐阈值互不干扰', () => {
+  const rain = read('public/js/modules/02-visual/18-rain-mood.js');
+  const defaults = read('public/js/modules/00-state/04-fx-defaults.js');
+  const html = read('public/index.html');
+  const panel = read('public/js/modules/07-fx/05-fx-panel-performance.js');
+  const bindings = read('public/js/modules/07-fx/07-bindings-shelf-immersive.js');
+
+  assert.match(defaults, /rainThunderMode:\s*'music'/);
+  assert.match(defaults, /rainRandomFrequency:\s*15/);
+  assert.match(html, /id="rain-thunder-mode-seg"/);
+  assert.match(html, /setRainThunderMode\('off'\)/);
+  assert.match(html, /setRainThunderMode\('music'\)/);
+  assert.match(html, /setRainThunderMode\('random'\)/);
+  assert.match(html, /id="fx-rainrandomfrequency"/);
+  assert.match(panel, /rain-thunder-mode-seg/);
+  assert.match(bindings, /function setRainThunderMode\(/);
+  assert.match(bindings, /\['fx-rainrandomfrequency',\s*'rainRandomFrequency'\]/);
+  assert.match(rain, /function rainThunderModeValue\(/);
+  assert.match(rain, /function rainRandomFrequencyValue\(/);
+  assert.match(rain, /thunderMode === 'music'/);
+  assert.match(rain, /thunderMode === 'random'/);
+  assert.match(rain, /thunderMode === 'off'/);
+  assert.match(rain, /randomFrequency:\s*rainRandomFrequencyValue\(\)/);
+  assert.match(rain, /'thunderMode' in raw/);
+  assert.match(rain, /'randomFrequency' in raw/);
 });

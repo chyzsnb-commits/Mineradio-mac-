@@ -570,10 +570,16 @@
         <div class="fx-toggle-grid">
           <div class="fx-toggle" id="t-rainGhostCover" onclick="toggleFx('rainGhostCover')" title="雨境:雨幕后的湿玻璃专辑封面"><span>封面图</span><span class="dot"></span></div>
           <div class="fx-toggle" id="t-rainGlassEnabled" onclick="toggleFx('rainGlassEnabled')" title="雨境:透明水珠拍打玻璃后沿玻璃滑落"><span>玻璃水珠</span><span class="dot"></span></div>
-          <div class="fx-toggle" id="t-rainRandomThunder" onclick="toggleFx('rainRandomThunder')" title="雨境:随机雷闪，不依赖音乐节拍"><span>随机打雷</span><span class="dot"></span></div>
         </div>
         <div class="fx-slider"><label>雨量</label><input id="fx-rainamount" type="range" min="0.05" max="4" step="0.05" title="雨丝生成量:小=毛毛雨,大=暴雨"><output></output></div>
-        <div class="fx-slider"><label>打雷阈值</label><input id="fx-rainthunder" type="range" min="0.15" max="0.95" step="0.01" title="打雷节奏门槛:低=更易闪,高=更稀"><output></output></div>
+        <div class="fx-section-label">打雷模式</div>
+        <div class="fx-seg" id="rain-thunder-mode-seg" title="关闭、跟随音乐和随机打雷三选一">
+          <button type="button" data-rainthundermode="off" onclick="setRainThunderMode('off')">关闭打雷</button>
+          <button type="button" data-rainthundermode="music" onclick="setRainThunderMode('music')">跟随音乐</button>
+          <button type="button" data-rainthundermode="random" onclick="setRainThunderMode('random')">随机打雷</button>
+        </div>
+        <div class="fx-slider" id="rain-thunder-music-control"><label>打雷阈值</label><input id="fx-rainthunder" type="range" min="0.15" max="0.95" step="0.01" title="仅跟随音乐模式：低=更易闪，高=更稀"><output></output></div>
+        <div class="fx-slider" id="rain-thunder-random-control" hidden><label>随机频率（秒）</label><input id="fx-rainrandomfrequency" type="range" min="4" max="40" step="1" title="仅随机打雷模式：数值小更频繁，数值大更稀疏"><output></output></div>
         <div class="fx-slider"><label>水珠数量</label><input id="fx-rainglassamount" type="range" min="0.15" max="2.5" step="0.05" title="玻璃水珠数量"><output></output></div>
         <div class="fx-slider"><label>水珠流速</label><input id="fx-rainglassspeed" type="range" min="0.2" max="16" step="0.01" title="玻璃水珠沿玻璃滑落的速度，最大 16 倍"><output></output></div>
         <div class="fx-slider"><label>水珠尺寸</label><input id="fx-rainglasssize" type="range" min="0.6" max="1.8" step="0.01" title="玻璃水珠大小，不改变数量"><output></output></div>
