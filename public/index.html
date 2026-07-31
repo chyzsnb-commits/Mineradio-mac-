@@ -1129,6 +1129,9 @@
                   <input id="crossfade-slider" type="range" min="1" max="12" step="0.5" value="6" aria-label="交叉淡入秒数">
                   <span id="crossfade-value">6s</span>
                 </div>
+                <button id="cuefield-automix-toggle" class="crossfade-toggle" onclick="event.stopPropagation(); toggleCuefieldAutomix()" aria-pressed="false">
+                  <span>智能混音</span><span id="cuefield-automix-state">关</span>
+                </button>
                 <div class="singing-hint">上一首结尾与下一首开头重叠淡入淡出，无缝衔接</div>
               </div>
               <div class="crossfade-block eq-block">
