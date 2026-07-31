@@ -90,6 +90,8 @@ const {
   handleQishuiStatus,
   normalizeQishuiCookieInput,
   qishuiCookieHasLogin,
+  createQishuiPcQrLogin,
+  checkQishuiPcQrLogin,
   saveQishuiAccessToken,
   clearQishuiAccessToken,
   handleQishuiSearch,
@@ -275,12 +277,12 @@ function decryptPublicSecret(stored) {
     return '';
   }
 }
-function readConfiguredCookieFile(file) {
+function readConfiguredCookieFile(file, secure) {
   try {
     if (!file || !fs.existsSync(file)) return '';
     const stored = fs.readFileSync(file, 'utf8').trim();
     if (!stored) return '';
-    if (!RELEASE_POLICY.publicRelease) return stored;
+    if (!RELEASE_POLICY.publicRelease && !secure) return stored;
     if (stored.startsWith(SAFE_STORAGE_PREFIX)) {
       return decryptPublicSecret(stored);
     }
@@ -300,12 +302,12 @@ function readConfiguredCookieFile(file) {
   } catch (_) {}
   return '';
 }
-function writeConfiguredCookieFile(file, value) {
+function writeConfiguredCookieFile(file, value, secure) {
   try {
     if (!file) return { ok: false, error: 'MISSING_FILE' };
     fs.mkdirSync(path.dirname(file), { recursive: true });
     let stored = String(value || '');
-    if (RELEASE_POLICY.publicRelease && stored) {
+    if ((RELEASE_POLICY.publicRelease || secure) && stored) {
       const encrypted = encryptPublicSecret(stored);
       if (!encrypted) {
         console.warn('[Cookie] safeStorage unavailable; cookie not persisted:', file);
@@ -323,13 +325,14 @@ const configuredCookieStores = {
   netease: { file: '', value: '', getFile: getCookieFile },
   qq: { file: '', value: '', getFile: getQQCookieFile },
   kugou: { file: '', value: '', getFile: getKugouCookieFile },
-  qishui: { file: '', value: '', getFile: getQishuiCookieFile },
+  // 汽水 PC 会话始终使用 macOS Keychain 加密，内部实验构建也不例外。
+  qishui: { file: '', value: '', getFile: getQishuiCookieFile, secure: true },
 };
 function refreshConfiguredCookieStore(store, force) {
   const file = store.getFile();
   if (force || store.file !== file) {
     store.file = file;
-    store.value = readConfiguredCookieFile(file);
+    store.value = readConfiguredCookieFile(file, !!store.secure);
   }
   return store.value;
 }
@@ -337,7 +340,7 @@ function saveConfiguredCookieStore(store, value) {
   const file = store.getFile();
   store.file = file;
   store.value = String(value || '');
-  const result = writeConfiguredCookieFile(file, store.value);
+  const result = writeConfiguredCookieFile(file, store.value, !!store.secure);
   if (result && result.ok === false) {
     store.lastPersistError = result.error || 'COOKIE_WRITE_FAILED';
   } else {
@@ -363,6 +366,23 @@ function saveKugouCookie(c) {
 let qishuiCookie = '';
 function saveQishuiCookie(c) {
   qishuiCookie = saveConfiguredCookieStore(configuredCookieStores.qishui, normalizeQishuiCookieInput(c) || normalizeCookieHeader(c) || rawCookieFallback(c));
+}
+
+let qishuiQrSession = null;
+const QISHUI_QR_SESSION_MAX_MS = 5 * 60 * 1000;
+
+function qishuiQrExpiresAt(expireTime) {
+  const value = Number(expireTime) || 0;
+  if (value > 1000000000000) return value;
+  if (value > 1000000000) return value * 1000;
+  return Date.now() + Math.min(QISHUI_QR_SESSION_MAX_MS, Math.max(60 * 1000, value * 1000 || QISHUI_QR_SESSION_MAX_MS));
+}
+
+function qishuiQrImageSrc(value) {
+  const source = String(value || '').trim();
+  if (/^https?:\/\//i.test(source) || /^data:image\/(?:png|jpe?g|gif|webp|svg\+xml);base64,/i.test(source)) return source;
+  if (/^[A-Za-z0-9+/=\r\n]+$/.test(source) && source.length > 64) return 'data:image/png;base64,' + source.replace(/\s+/g, '');
+  return '';
 }
 
 function refreshConfiguredCookieStores(force) {
@@ -6086,6 +6106,78 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[QishuiStatus]', err);
       sendJSON(res, { provider: 'qishui', configured: false, loggedIn: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/qishui/login/qr/create') {
+    if (!RELEASE_POLICY.qishuiEnabled) {
+      sendJSON(res, { provider: 'qishui', error: 'QISHUI_DISABLED' }, 403);
+      return;
+    }
+    try {
+      const result = await createQishuiPcQrLogin();
+      const img = qishuiQrImageSrc(result.qrcode);
+      if (!img) throw new Error('QISHUI_QR_IMAGE_MISSING');
+      qishuiQrSession = {
+        token: result.token,
+        pollCookie: normalizeQishuiCookieInput(result.cookie),
+        passportNext: result.passportNext,
+        passportIsFrontier: result.passportIsFrontier,
+        expiresAt: qishuiQrExpiresAt(result.expireTime),
+      };
+      sendJSON(res, {
+        provider: 'qishui',
+        img,
+        expiresAt: qishuiQrSession.expiresAt,
+        message: result.copywriting || '请使用汽水音乐 App 扫码并确认登录',
+      });
+    } catch (err) {
+      console.error('[QishuiQrCreate]', err);
+      sendJSON(res, { provider: 'qishui', error: err.message || 'QISHUI_QR_CREATE_FAILED' }, 502);
+    }
+    return;
+  }
+
+  if (pn === '/api/qishui/login/qr/check') {
+    if (!RELEASE_POLICY.qishuiEnabled) {
+      sendJSON(res, { provider: 'qishui', error: 'QISHUI_DISABLED' }, 403);
+      return;
+    }
+    if (!qishuiQrSession || qishuiQrSession.expiresAt <= Date.now()) {
+      qishuiQrSession = null;
+      sendJSON(res, { provider: 'qishui', state: 'expired', error: 'QISHUI_QR_SESSION_EXPIRED' }, 410);
+      return;
+    }
+    try {
+      const result = await checkQishuiPcQrLogin(
+        qishuiQrSession.token,
+        qishuiQrSession.pollCookie,
+        qishuiQrSession
+      );
+      qishuiQrSession.pollCookie = normalizeQishuiCookieInput(result.pollCookie || qishuiQrSession.pollCookie);
+      if (result.cookie) {
+        saveQishuiCookie(result.cookie);
+        qishuiQrSession = null;
+        const status = await handleQishuiStatus(qishuiCookie);
+        sendJSON(res, Object.assign({}, status, {
+          provider: 'qishui',
+          state: 'success',
+          message: result.message || '汽水音乐登录成功',
+        }));
+        return;
+      }
+      sendJSON(res, {
+        provider: 'qishui',
+        state: result.status || 'waiting',
+        confirmed: !!result.confirmed,
+        needsVerification: !!result.needsSms,
+        retryAfterMs: Number(result.retryAfterMs) || 0,
+        message: result.message || '等待汽水音乐 App 扫码',
+      });
+    } catch (err) {
+      console.error('[QishuiQrCheck]', err);
+      sendJSON(res, { provider: 'qishui', state: 'error', error: err.message || 'QISHUI_QR_CHECK_FAILED' }, 502);
     }
     return;
   }

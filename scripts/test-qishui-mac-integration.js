@@ -75,3 +75,23 @@ test('Qishui account entry and login workflow never invoke Netease', () => {
   assert.doesNotMatch(flows, /if \(loginProvider === 'qishui'\)[\s\S]{0,120}openNeteaseMusicLogin/);
   assert.match(search, /provider === 'qishui'\) return '\/api\/qishui\/search\?keywords=' \+ encodeURIComponent\(q\) \+ '&limit=' \+ limit/);
 });
+
+test('Qishui PC QR login stays local, persists only server-side, and never exposes cookies', () => {
+  const server = read('server.js');
+  const flows = read('public/js/modules/08-account/03-login-modal-flows.js');
+
+  assert.match(server, /createQishuiPcQrLogin/);
+  assert.match(server, /checkQishuiPcQrLogin/);
+  assert.match(server, /\/api\/qishui\/login\/qr\/create/);
+  assert.match(server, /\/api\/qishui\/login\/qr\/check/);
+  assert.match(server, /saveQishuiCookie\(result\.cookie\)/);
+  assert.match(server, /qishui:\s*\{[^}]*secure:\s*true/);
+  const qrRoutes = server.slice(server.indexOf("if (pn === '/api/qishui/login/qr/create')"), server.indexOf("if (pn === '/api/qishui/login/token')"));
+  assert.doesNotMatch(qrRoutes, /sendJSON\(res,\s*\{[\s\S]{0,500}\bcookie\s*:/);
+
+  assert.doesNotMatch(flows, /var hasQishuiOAuthBridge = false/);
+  assert.match(flows, /function startQishuiQrLogin\(/);
+  assert.match(flows, /\/api\/qishui\/login\/qr\/create/);
+  assert.match(flows, /\/api\/qishui\/login\/qr\/check/);
+  assert.doesNotMatch(flows, /openQishuiPublicSearch\(\);\n\s*}\nfunction openQishuiLoginEntry/);
+});
