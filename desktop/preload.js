@@ -41,6 +41,8 @@ const desktopWindowApi = {
   clearQQMusicLogin: () => ipcRenderer.invoke('qq-music-clear-login'),
   openKugouMusicLogin: () => ipcRenderer.invoke('kugou-music-open-login'),
   clearKugouMusicLogin: () => ipcRenderer.invoke('kugou-music-clear-login'),
+  openQishuiMusicLogin: () => ipcRenderer.invoke('qishui-music-open-login'),
+  clearQishuiMusicLogin: () => ipcRenderer.invoke('qishui-music-clear-login'),
   openSpotifyMusicLogin: () => ipcRenderer.invoke('spotify-music-open-login'),
   clearSpotifyMusicLogin: () => ipcRenderer.invoke('spotify-music-clear-login'),
   // 手部姿态原生桥接(Vision/ANE):start 返回 {ok};frame 送 RGBA;onResult 收 21 点关键点
