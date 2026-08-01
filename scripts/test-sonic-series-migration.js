@@ -214,6 +214,20 @@ test('FX 控制台(设置搜索/撤销历史)与缓存设置(只读版)已迁移
   assert.match(workshop2, /setPreset\(prev, \{ silent: true, skipTransition: true \}\)/);
   assert.doesNotMatch(workshop2, /noSave: true/);
 
+  // listen-stats v2 本地每日聚合(纯本地,不上报服务端)
+  const listenStats = read('public/js/modules/05-playback/02-listen-stats.js');
+  assert.match(listenStats, /var HOME_LISTEN_ROLLUP_V2_KEY/);
+  assert.match(listenStats, /function recordListenRollupV2\(/);
+  assert.match(listenStats, /function loadListenRollupV2\(/);
+  assert.match(listenStats, /recordListenRollupV2\(record\)/);
+  assert.doesNotMatch(listenStats, /api\/listen\/report/, 'Mac 不上报服务端(平台同步为上游 experimental,不迁移)');
+
+  // 首页小窗口布局修复(每日热评与歌曲列表不重叠)
+  const css2 = read('public/css/index.css');
+  assert.match(css2, /home-recent-inner \.home-recent-list\{flex:1 1 auto;min-height:48px\}/);
+  assert.match(css2, /@media \(max-height:760px\)/);
+  assert.match(css2, /home-recent-inner \.home-recent-stats\{display:none\}/);
+
   // 缓存设置:只读版模块 + 主进程 IPC + preload API + 面板 UI
   assert.match(loader, /07-fx\/08-cache-storage-settings\.js/);
   assert.match(cacheSettings, /function refreshMineradioCacheSettings\(\)/);
