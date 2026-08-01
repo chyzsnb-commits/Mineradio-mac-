@@ -12,6 +12,7 @@ test('壁纸库主进程扫描器已迁移且 Mac 安全', () => {
   const library = read('desktop/wallpaper-engine-library.js');
   const bridge = read('desktop/wallpaper-library-bridge.js');
   const mainJs = read('desktop/main.js');
+  const indexHtml = read('public/index.html');
 
   assert.match(library, /class WallpaperEngineLibrary/);
   assert.match(library, /registerWallpaperEngineScheme/);
@@ -39,6 +40,25 @@ test('壁纸库主进程扫描器已迁移且 Mac 安全', () => {
   assert.match(share, /getDisplayMedia/);
   assert.match(bridge, /api\/exported-videos/);
   assert.match(bridge, /Scene 导出/);
+
+  // 雨境/云瀑/音域回响控件已进 FX 控制台动效 tab(修复用户反馈的动效设置消失)
+  const consoleWs = read('public/js/modules/07-fx/09-console-workspace.js');
+  assert.match(consoleWs, /key: 'rain-mood', title: '雨境'/);
+  assert.match(consoleWs, /key: 'rain-resonance', title: '云瀑共振'/);
+  assert.match(consoleWs, /key: 'vox-echo', title: '音域回响'/);
+  assert.match(consoleWs, /fxConsoleItem\('fx-rainamount'/);
+  assert.match(consoleWs, /fxConsoleItem\('fx-rainresonanceintensity'/);
+  assert.match(consoleWs, /fxConsoleItem\('fx-voxsens'/);
+  // 新增动效设置:雨境风向偏移 + 雨幕浓度
+  assert.match(consoleWs, /fxConsoleItem\('fx-rainwindoffset'/);
+  const rainMood = read('public/js/modules/02-visual/18-rain-mood.js');
+  assert.match(rainMood, /function rainWindOffsetValue\(\)/);
+  assert.match(rainMood, /function rainDensityValue\(\)/);
+  assert.match(rainMood, /rainWindOffsetValue\(\) \* 1\.8/);
+  assert.match(rainMood, /\* amount \* densityMul/);
+  const fxDefaults2 = read('public/js/modules/00-state/04-fx-defaults.js');
+  assert.match(fxDefaults2, /rainWindOffset: 0/);
+  assert.match(fxDefaults2, /rainDensity: 1\.0/);
 });
 
 test('壁纸库渲染层面板与入口已接线', () => {

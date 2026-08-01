@@ -186,6 +186,38 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('sonic-workshop-ripple-picker', '波纹亮区', 'WE 波纹'),
         fxConsoleItem('sonic-workshop-peak-picker', '峰值高光', 'WE 高光'),
         fxConsoleItem('sonic-workshop-theme-seg', 'WE 主题', '珊瑚 深海 冰蓝 翠绿 极简')
+      ] },
+      { key: 'rain-mood', title: '雨境', hint: '雨丝、打雷与玻璃水珠（预设 9）', items: [
+        fxConsoleItem('t-rainGhostCover', '湿玻璃封面', '雨幕 封面 玻璃'),
+        fxConsoleItem('t-rainGlassEnabled', '玻璃水珠', '水珠 滑落 玻璃'),
+        fxConsoleItem('fx-rainamount', '雨量', '雨丝 生成量 毛毛雨 暴雨'),
+        fxConsoleItem('rain-thunder-mode-seg', '打雷模式', '关闭打雷 跟随音乐 随机打雷'),
+        fxConsoleItem('fx-rainthunder', '打雷阈值', '音乐雷 触发 低闪高稀'),
+        fxConsoleItem('fx-rainrandomfrequency', '随机频率', '随机打雷 秒'),
+        fxConsoleItem('fx-rainglassamount', '水珠数量', '玻璃水珠 数量'),
+        fxConsoleItem('fx-rainglassspeed', '水珠流速', '玻璃水珠 滑落速度'),
+        fxConsoleItem('fx-rainglasssize', '水珠尺寸', '玻璃水珠 大小'),
+        fxConsoleItem('fx-rainwindoffset', '风向偏移', '雨丝 水平飘移 左飘 右飘'),
+        fxConsoleItem('fx-rainDensity', '雨幕浓度', '雨丝 稀疏 浓密')
+      ] },
+      { key: 'rain-resonance', title: '云瀑共振', hint: '音乐喷泉 · 频谱雨瀑（预设 11）', items: [
+        fxConsoleItem('fx-rainresonanceintensity', '雨幕强度', '云瀑 整体强度 低频'),
+        fxConsoleItem('fx-rainresonancemelody', '旋律起伏', '云瀑 横向起伏 中频'),
+        fxConsoleItem('fx-rainresonancebeat', '拍点爆发', '云瀑 短促爆发 强拍')
+      ] },
+      { key: 'vox-echo', title: '音域回响', hint: '频谱方块 · 反应堆核心（预设 10）', items: [
+        fxConsoleItem('t-voxAutoRotate', '自转', '体素 镜头自转'),
+        fxConsoleItem('t-voxCoverColor', '体素封面取色', '体素 配色 封面'),
+        fxConsoleItem('t-voxMeteors', '流星', '体素 流星 拖尾'),
+        fxConsoleItem('t-voxGhostCover', '封面图', '体素 封面图层'),
+        fxConsoleItem('t-voxFloatBlocks', '悬浮方块', '体素 蓝色方块 线框'),
+        fxConsoleItem('t-voxShimmer', '闪烁点', '体素 微光 闪烁'),
+        fxConsoleItem('vox-res-seg', '柱体数量', '体素 少中多 密度'),
+        fxConsoleItem('fx-voxsens', '律动敏感', '体素 反应强度'),
+        fxConsoleItem('fx-voxrotspeed', '自转速度', '体素 旋转快慢'),
+        fxConsoleItem('vox-color-pick', '体素颜色', '体素 自定义 封面取色'),
+        fxConsoleItem('vox-ripple-pick', '冲击波颜色', '体素 冲击波 默认'),
+        fxConsoleItem('vox-bg-pick', '背景颜色', '体素 纯色背景')
       ] }
     ]
   },

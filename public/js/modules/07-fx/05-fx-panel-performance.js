@@ -588,6 +588,8 @@ function updateFxInputs() {
   if (typeof setRange === 'function') setRange('fx-rainglassamount', fx.rainGlassAmount == null ? 0.70 : fx.rainGlassAmount);
   if (typeof setRange === 'function') setRange('fx-rainglassspeed', fx.rainGlassSpeed == null ? 5.00 : fx.rainGlassSpeed);
   if (typeof setRange === 'function') setRange('fx-rainglasssize', fx.rainGlassSize == null ? 1.00 : fx.rainGlassSize);
+  if (typeof setRange === 'function') setRange('fx-rainwindoffset', fx.rainWindOffset == null ? 0 : fx.rainWindOffset);
+  if (typeof setRange === 'function') setRange('fx-rainDensity', fx.rainDensity == null ? 1 : fx.rainDensity);
   if (typeof setRange === 'function') setRange('fx-rainresonanceintensity', fx.rainResonanceIntensity == null ? 0.90 : fx.rainResonanceIntensity);
   if (typeof setRange === 'function') setRange('fx-rainresonancemelody', fx.rainResonanceMelody == null ? 0.80 : fx.rainResonanceMelody);
   if (typeof setRange === 'function') setRange('fx-rainresonancebeat', fx.rainResonanceBeat == null ? 0.75 : fx.rainResonanceBeat);

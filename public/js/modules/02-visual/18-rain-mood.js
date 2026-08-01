@@ -75,7 +75,9 @@ function saveRainToggles() {
       glassEnabled: rainGlassEnabledValue(),
       glassAmount: rainGlassAmountValue(),
       glassSpeed: rainGlassSpeedValue(),
-      glassSize: rainGlassSizeValue()
+      glassSize: rainGlassSizeValue(),
+      windOffset: rainWindOffsetValue(),
+      density: rainDensityValue()
     }));
   } catch (e) {}
 }
@@ -95,7 +97,18 @@ function loadRainToggles() {
     if ('glassAmount' in raw && isFinite(raw.glassAmount)) fx.rainGlassAmount = Math.max(0.15, Math.min(2.5, Number(raw.glassAmount)));
     if ('glassSpeed' in raw && isFinite(raw.glassSpeed)) fx.rainGlassSpeed = Math.max(0.2, Math.min(16, Number(raw.glassSpeed)));
     if ('glassSize' in raw && isFinite(raw.glassSize)) fx.rainGlassSize = Math.max(0.6, Math.min(1.8, Number(raw.glassSize)));
+    if ('windOffset' in raw && isFinite(raw.windOffset)) fx.rainWindOffset = Math.max(-1, Math.min(1, Number(raw.windOffset)));
+    if ('density' in raw && isFinite(raw.density)) fx.rainDensity = Math.max(0.3, Math.min(1.5, Number(raw.density)));
   } catch (e) {}
+}
+
+function rainWindOffsetValue() {
+  var v = (typeof fx !== 'undefined' && fx && isFinite(fx.rainWindOffset)) ? Number(fx.rainWindOffset) : 0;
+  return Math.max(-1, Math.min(1, v));
+}
+function rainDensityValue() {
+  var v = (typeof fx !== 'undefined' && fx && isFinite(fx.rainDensity)) ? Number(fx.rainDensity) : 1;
+  return Math.max(0.3, Math.min(1.5, v));
 }
 
 function rainMoodSetBodyClass(on) {
@@ -571,7 +584,7 @@ function updateRainMood(dt) {
   rm.midS = rainMoodEase(rm.midS, playingNow ? rawMid : rawMid * 0.12, 0.18, 0.10, step);
   rm.trebS = rainMoodEase(rm.trebS, playingNow ? rawTreb : rawTreb * 0.10, 0.20, 0.12, step);
   rm.energyS = rainMoodEase(rm.energyS, playingNow ? rawEnergy : rawEnergy * 0.12, 0.16, 0.09, step);
-  rm.wind = rainMoodEase(rm.wind, (rm.midS - 0.22) * 3.4 * intensity, 0.12, 0.08, step);
+  rm.wind = rainMoodEase(rm.wind, (rm.midS - 0.22) * 3.4 * intensity + rainWindOffsetValue() * 1.8, 0.12, 0.08, step);
 
   // 三选一：关闭、跟随音乐、随机打雷。两种触发途径不再叠加。
   var thunderMode = rainThunderModeValue();
@@ -625,10 +638,11 @@ function updateRainMood(dt) {
 
   // 生成：基础毛毛雨 + 低频鼓点爆发；再乘雨量倍率
   var amount = rainAmountValue();
+  var densityMul = rainDensityValue();
   var spawnRate = (RAIN_MOOD_SPAWN_BASE
     + rm.bassS * 14 * intensity
     + rawBeat * 8
-    + rm.energyS * 3) * amount;
+    + rm.energyS * 3) * amount * densityMul;
   if (!playingNow) spawnRate = Math.min(spawnRate, 2.2 * Math.max(0.35, amount));
   rm.spawnCarry += spawnRate * step * 60 * 0.35;
   var toSpawn = Math.floor(rm.spawnCarry);

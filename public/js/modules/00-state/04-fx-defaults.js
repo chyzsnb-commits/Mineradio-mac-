@@ -146,6 +146,8 @@ var fxDefaults = {
   rainGlassAmount: 0.70,  // 雨境:玻璃水珠数量(0.15~2.5)
   rainGlassSpeed: 5.00,   // 雨境:玻璃水珠流速(0.2~16.0)
   rainGlassSize: 1.00,    // 雨境:玻璃水珠尺寸(0.6~1.8)
+  rainWindOffset: 0,      // 雨境:风向偏移(-1 左飘 ~ 1 右飘),叠加在中频驱动风向上
+  rainDensity: 1.0,       // 雨境:雨幕浓度(0.3 稀疏 ~ 1.5 浓密),缩放雨丝整体强度
   rainResonanceIntensity: 0.90, // 云瀑共振:整体雨幕强度(0~1.6)
   rainResonanceMelody: 0.80,    // 云瀑共振:中频旋律起伏(0~1.8)
   rainResonanceBeat: 0.75,      // 云瀑共振:拍点爆发(0~1.8)
