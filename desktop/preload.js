@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, clipboard } = require('electron');
+const { contextBridge, ipcRenderer, clipboard, webUtils } = require('electron');
 const RELEASE_POLICY = require('./release-policy');
 
 const desktopWindowApi = {
@@ -58,6 +58,26 @@ const desktopWindowApi = {
     return { ok: true };
   },
   readText: () => ({ ok: true, text: clipboard.readText() || '' }),
+  listLocalMusicLibrary: () => ipcRenderer.invoke('mineradio-local-library-list'),
+  readLocalMusicLyric: (localFileId) => ipcRenderer.invoke('mineradio-local-library-lyric', String(localFileId || '')),
+  importLocalMusicFiles: async (files) => {
+    const entries = [];
+    for (const file of Array.from(files || [])) {
+      let filePath = '';
+      try {
+        filePath = webUtils && typeof webUtils.getPathForFile === 'function' ? webUtils.getPathForFile(file) : '';
+      } catch (_) {}
+      if (!filePath) continue;
+      entries.push({
+        path: filePath,
+        relativePath: String(file && (file.webkitRelativePath || file.name) || ''),
+      });
+    }
+    if (!entries.length) return { ok: false, count: 0, tracks: [], error: 'NO_AUTHORIZED_LOCAL_AUDIO' };
+    const authorization = await ipcRenderer.invoke('mineradio-local-library-authorize', { files: entries });
+    if (!authorization || authorization.ok !== true || !authorization.token) return authorization;
+    return ipcRenderer.invoke('mineradio-local-library-import', { token: authorization.token });
+  },
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
   readCurrentFxAutosaveSync: () => ipcRenderer.sendSync('mineradio-current-fx-autosave-read-sync'),

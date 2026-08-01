@@ -1914,6 +1914,14 @@ body.home-wallpaper-preview #canvas-container {
 .home-next-cover{flex:none;width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,color-mix(in srgb,var(--home-accent) 68%,#14141a),rgba(36,66,255,.48));background-size:cover;background-position:center}
 .home-next-copy{min-width:0;display:grid;gap:2px}.home-next-title{font-size:10.5px;font-weight:700;color:rgba(255,255,255,.91)}.home-next-sub{font-size:9.5px;color:rgba(255,255,255,.44)}
 .home-next-empty{grid-column:2 / -1;font-size:10px;color:rgba(255,255,255,.42)}
+.home-daily-review{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto auto;column-gap:12px;align-items:center;padding:10px 12px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:linear-gradient(145deg,rgba(255,255,255,.065),rgba(255,255,255,.025));box-shadow:0 10px 28px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.06);min-width:0}
+.home-daily-review-head{grid-column:1;display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+.home-daily-review-kicker{font-size:9px;font-weight:760;letter-spacing:.14em;text-transform:uppercase;color:color-mix(in srgb,var(--home-accent) 72%,rgba(255,255,255,.52))}
+.home-daily-review-time{font-size:10px;font-weight:660;color:rgba(255,255,255,.42);font-variant-numeric:tabular-nums}
+.home-daily-quote{grid-column:1;font-size:12.5px;font-weight:680;line-height:1.45;color:rgba(255,255,255,.90);min-width:0;overflow:hidden;text-overflow:ellipsis}
+.home-daily-source{margin-top:3px;grid-column:1;font-size:10px;color:rgba(255,255,255,.46);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-daily-next{grid-column:2;grid-row:1 / span 3;height:28px;padding:0 11px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:rgba(255,255,255,.72);font-family:inherit;font-size:10.5px;font-weight:680;cursor:pointer;transition:background .18s,border-color .18s,color .18s}
+.home-daily-next:hover{border-color:color-mix(in srgb,var(--home-accent) 42%,rgba(255,255,255,.16));background:rgba(255,255,255,.10);color:rgba(255,255,255,.94)}
 .home-recent-list{flex:1;min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:min-content;gap:8px;overflow-y:auto;overscroll-behavior:contain;contain:layout paint;will-change:scroll-position;transform:translateZ(0);padding-right:2px;margin-top:2px}
 .home-recent-card{display:flex;align-items:center;gap:10px;padding:7px;border-radius:14px;border:1px solid rgba(255,255,255,.085);background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.022));box-shadow:0 10px 28px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.05);color:#fff;text-align:left;font-family:inherit;cursor:pointer;min-width:0;transition:transform .18s,border-color .18s,background .18s,box-shadow .18s}
 .home-recent-card > *{pointer-events:none}

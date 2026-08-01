@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, crashReporter, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, crashReporter, powerMonitor, protocol } = require('electron');
 const net = require('net');
 const http = require('http');
 const path = require('path');
@@ -15,7 +15,10 @@ const systemMemory = process.platform === 'win32'
 const { readSystemGpuUsage } = require('./gpu-usage');
 const { createAiStemService } = require('./ai-stem-separator');
 const { createCrashDiagnostics } = require('./crash-diagnostics');
+const { LocalMusicLibrary, registerLocalMusicScheme } = require('./local-music-library');
 const { applyOfficialProviderLogin } = require('./official-login-bridge');
+registerLocalMusicScheme(protocol);
+
 const RELEASE_POLICY = require('./release-policy');
 // macOS Touch Bar 播放控制（2016-2019 Intel MBP）。无 Touch Bar 的机器安全 no-op。
 const touchbar = require('./touchbar');
@@ -30,6 +33,8 @@ const {
 let mainWindow = null;
 let localServer = null;
 let mainServerPort = 0;
+let localMusicLibrary = null;
+const localMusicImportCapabilities = new Map();
 let desktopLyricsWindow = null;
 let desktopLyricsState = {};
 let desktopLyricsUserBounds = null;
@@ -2433,6 +2438,84 @@ ipcMain.handle('qishui-music-clear-login', async () => {
   return clearQishuiMusicLoginSession();
 });
 
+ipcMain.handle('mineradio-local-library-list', async () => {
+  if (!localMusicLibrary) return { ok: false, count: 0, tracks: [], error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  try {
+    return await localMusicLibrary.listTracks();
+  } catch (error) {
+    return { ok: false, count: 0, tracks: [], error: error.message || 'LOCAL_LIBRARY_READ_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-library-lyric', async (_event, localFileId) => {
+  if (!localMusicLibrary) return { ok: false, lyric: '', lyricSource: '', error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  try {
+    return localMusicLibrary.lyricForTrack(localFileId);
+  } catch (error) {
+    return { ok: false, lyric: '', lyricSource: '', error: error.message || 'LOCAL_LYRIC_READ_FAILED' };
+  }
+});
+
+function pruneLocalMusicImportCapabilities() {
+  const now = Date.now();
+  for (const [token, capability] of localMusicImportCapabilities) {
+    if (!capability || capability.expiresAt <= now) localMusicImportCapabilities.delete(token);
+  }
+  while (localMusicImportCapabilities.size > 8) {
+    const oldest = localMusicImportCapabilities.keys().next().value;
+    if (!oldest) break;
+    localMusicImportCapabilities.delete(oldest);
+  }
+}
+
+ipcMain.handle('mineradio-local-library-authorize', async (_event, payload = {}) => {
+  if (!localMusicLibrary) return { ok: false, count: 0, error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  const files = [];
+  const seen = new Set();
+  for (const item of (Array.isArray(payload && payload.files) ? payload.files : []).slice(0, 50000)) {
+    const requestedPath = String(item && item.path || '').trim();
+    if (!requestedPath || /^[\/]{2}/.test(requestedPath) || !path.isAbsolute(requestedPath)) continue;
+    if (!/\.(mp3|flac|wav|ogg|m4a|aac|opus)$/i.test(requestedPath)) continue;
+    let filePath = '';
+    try {
+      filePath = fs.realpathSync.native ? fs.realpathSync.native(requestedPath) : fs.realpathSync(requestedPath);
+      if (/^[\/]{2}/.test(filePath) || !fs.statSync(filePath).isFile()) continue;
+    } catch (_) { continue; }
+    const identity = filePath;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    files.push({
+      path: filePath,
+      relativePath: String(item && item.relativePath || path.basename(filePath)).replace(/\0/g, '').slice(0, 2000),
+    });
+  }
+  if (!files.length) return { ok: false, count: 0, error: 'NO_AUTHORIZED_LOCAL_AUDIO' };
+  pruneLocalMusicImportCapabilities();
+  const token = crypto.randomBytes(24).toString('hex');
+  localMusicImportCapabilities.set(token, {
+    senderId: _event && _event.sender && _event.sender.id,
+    files,
+    expiresAt: Date.now() + 3 * 60 * 1000,
+  });
+  return { ok: true, count: files.length, token };
+});
+
+ipcMain.handle('mineradio-local-library-import', async (event, payload = {}) => {
+  if (!localMusicLibrary) return { ok: false, count: 0, tracks: [], error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  pruneLocalMusicImportCapabilities();
+  const token = String(payload && payload.token || '').trim().toLowerCase();
+  const capability = /^[a-f0-9]{48}$/.test(token) ? localMusicImportCapabilities.get(token) : null;
+  if (!capability || (event && event.sender && capability.senderId !== event.sender.id) || capability.expiresAt <= Date.now()) {
+    return { ok: false, count: 0, tracks: [], error: 'LOCAL_IMPORT_CAPABILITY_INVALID' };
+  }
+  localMusicImportCapabilities.delete(token);
+  try {
+    return await localMusicLibrary.importFiles(capability.files, { replace: false });
+  } catch (error) {
+    return { ok: false, count: 0, tracks: [], error: error.code || error.message || 'LOCAL_LIBRARY_IMPORT_FAILED' };
+  }
+});
+
 ipcMain.handle('spotify-music-open-login', async (event) => {
   return openSpotifyMusicLoginWindow(getSenderWindow(event));
 });
@@ -2686,6 +2769,7 @@ async function createWindow() {
   // 音源状态文件（酷狗 VIP 凭据、Spotify 凭据与 token）必须落 userData：
   // mac 的 app bundle 视为只读且随更新被整体覆盖, provider 模块保持与上游零差异, 路径全走环境变量注入
   const providerStateDir = app.getPath('userData');
+  if (!localMusicLibrary) localMusicLibrary = new LocalMusicLibrary({ userDataPath: providerStateDir });
   if (!process.env.KUGOU_VIP_EVIDENCE_FILE) process.env.KUGOU_VIP_EVIDENCE_FILE = path.join(providerStateDir, 'kugou-vip-evidence.json');
   if (!process.env.QISHUI_TOKEN_FILE) process.env.QISHUI_TOKEN_FILE = path.join(providerStateDir, 'qishui-token.json');
   if (!process.env.QISHUI_COOKIE_FILE) process.env.QISHUI_COOKIE_FILE = path.join(providerStateDir, '.qishui-cookie');
@@ -2996,6 +3080,9 @@ if (!gotSingleInstanceLock) {
     screen.on('display-metrics-changed', handleDisplayLayoutChanged);
     screen.on('display-added', handleDisplayLayoutChanged);
     screen.on('display-removed', handleDisplayLayoutChanged);
+    if (localMusicLibrary) {
+      try { await localMusicLibrary.installProtocol(protocol); } catch (e) { console.warn('[LocalMusic] media protocol unavailable:', e && e.message || e); }
+    }
     await createWindow();
     try { require('./telemetry').startTelemetry(); } catch (e) {}
   });

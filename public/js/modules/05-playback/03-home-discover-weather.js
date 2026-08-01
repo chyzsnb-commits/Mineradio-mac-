@@ -27,6 +27,115 @@ function homeToneForItem(item, index) {
   if (item.kind === 'search') return 'search';
   return ['daily', 'playlist', 'local', 'guide', 'search'][index % 5];
 }
+// ============================================================
+//  Windows v2.1.0 对齐: 每日热评 + 生成封面回退
+// ============================================================
+var homeDashboardReviewOffset = 0;
+var homeDashboardReviewClockTimer = null;
+var HOME_DASHBOARD_REVIEW_DEFAULTS = [
+  { text: '有些歌不是突然好听，而是终于听懂了。', source: '每日热评' },
+  { text: '慢一点没关系，重要的是一直在向喜欢的生活靠近。', source: '每日热评' },
+  { text: '错过落日余晖，还会有满天星辰。', source: '每日热评' },
+  { text: '保持热爱，奔赴下一场山海。', source: '每日热评' },
+  { text: '答案在路上，自由在风里。', source: '每日热评' },
+  { text: '让今天的声音，从你喜欢的地方开始。', source: 'Mineradio' },
+];
+function homeDashboardSvgText(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+function homeDashboardCoverInitials(text) {
+  var raw = String(text || '音乐').replace(/\s+/g, '').trim();
+  var chars = Array.from(raw || '音乐');
+  return chars.slice(0, Math.min(2, chars.length)).join('');
+}
+function homeDashboardGeneratedCover(title, label, tone) {
+  var palettes = {
+    search: ['#9db8cf', '#f8f4ee', '#00f5d4'],
+    playlist: ['#9db8cf', '#00f5d4', '#2442ff'],
+    library: ['#00f5d4', '#f8f4ee', '#2442ff'],
+    mix: ['#f8f4ee', '#00f5d4', '#2442ff'],
+    daily: ['#f8f4ee', '#00f5d4', '#2442ff'],
+    local: ['#00f5d4', '#9db8cf', '#2442ff'],
+    guide: ['#9db8cf', '#2442ff', '#00f5d4'],
+    podcast: ['#9db8cf', '#f8f4ee', '#2442ff'],
+  };
+  var palette = palettes[tone] || palettes.playlist;
+  var letters = homeDashboardSvgText(homeDashboardCoverInitials(title || label));
+  var sub = homeDashboardSvgText(String(label || 'MINERADIO').toUpperCase().slice(0, 14));
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320">' +
+    '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
+    '<stop offset="0" stop-color="' + palette[0] + '"/><stop offset=".52" stop-color="' + palette[1] + '"/>' +
+    '<stop offset="1" stop-color="' + palette[2] + '"/></linearGradient>' +
+    '<radialGradient id="r" cx="34%" cy="24%" r="72%"><stop offset="0" stop-color="#fff" stop-opacity=".55"/>' +
+    '<stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>' +
+    '<rect width="320" height="320" rx="54" fill="#080a10"/>' +
+    '<rect width="320" height="320" rx="54" fill="url(#g)" opacity=".84"/>' +
+    '<circle cx="242" cy="66" r="98" fill="url(#r)"/>' +
+    '<circle cx="112" cy="214" r="84" fill="#05060a" opacity=".34"/>' +
+    '<circle cx="112" cy="214" r="52" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="2"/>' +
+    '<circle cx="112" cy="214" r="22" fill="#fff" opacity=".18"/>' +
+    '<path d="M222 118v98c0 19-16 34-39 34-20 0-35-11-35-27 0-17 16-29 38-29 7 0 14 1 20 4v-90l72-18v30z" fill="#fff" opacity=".32"/>' +
+    '<text x="28" y="72" fill="#fff" opacity=".72" font-size="18" font-family="Arial,Microsoft YaHei,sans-serif" font-weight="800" letter-spacing="2">' + sub + '</text>' +
+    '<text x="28" y="148" fill="#fff" font-size="58" font-family="Arial,Microsoft YaHei,sans-serif" font-weight="900">' + letters + '</text>' +
+    '<rect x="0" y="0" width="320" height="320" rx="54" fill="none" stroke="#fff" stroke-opacity=".20"/>' +
+    '</svg>';
+  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
+}
+function generatedHomeCover(title, label, tone) {
+  return homeDashboardGeneratedCover(title, label, tone);
+}
+function homeDashboardReadReviews() {
+  try {
+    var saved = JSON.parse(localStorage.getItem('mineradio-daily-review-quotes-v1') || '[]');
+    if (Array.isArray(saved) && saved.length) {
+      var normalized = saved.map(function (item) {
+        if (typeof item === 'string') return { text: item.trim(), source: '我的热评' };
+        return {
+          text: String(item && item.text || '').trim(),
+          source: String(item && item.source || '我的热评').trim(),
+        };
+      }).filter(function (item) { return item.text; });
+      if (normalized.length) return normalized;
+    }
+  } catch (_error) { }
+  return HOME_DASHBOARD_REVIEW_DEFAULTS.slice();
+}
+function homeDashboardDayNumber() {
+  var now = new Date();
+  return Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 86400000);
+}
+function homeDashboardSelectedReview() {
+  var reviews = homeDashboardReadReviews();
+  if (!reviews.length) return { text: '让今天的声音，从你喜欢的地方开始。', source: 'Mineradio' };
+  var index = ((homeDashboardDayNumber() + homeDashboardReviewOffset) % reviews.length + reviews.length) % reviews.length;
+  return reviews[index];
+}
+function homeDashboardUpdateReviewClock() {
+  var time = document.getElementById('home-daily-review-time');
+  if (!time) return;
+  var now = new Date();
+  time.textContent = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+}
+function renderHomeDailyReview() {
+  var el = document.getElementById('home-daily-review');
+  if (!el) return;
+  var review = homeDashboardSelectedReview();
+  var quote = document.getElementById('home-daily-quote');
+  var source = document.getElementById('home-daily-source');
+  if (quote) quote.textContent = '“' + review.text + '”';
+  if (source) source.textContent = '— ' + (review.source || '每日热评');
+  homeDashboardUpdateReviewClock();
+  if (!homeDashboardReviewClockTimer) {
+    homeDashboardReviewClockTimer = setInterval(homeDashboardUpdateReviewClock, 30000);
+  }
+}
+function homeDashboardNextReview() {
+  homeDashboardReviewOffset += 1;
+  renderHomeDailyReview();
+}
 function homeProviderRecommendationGroups() {
   var groups = [];
   // 独立音源入口不能再借网易登录态显隐，否则网易已登录时 QQ/汽水/酷狗推荐会被吞掉。
@@ -289,12 +398,12 @@ function renderHomeDiscover() {
     if (privateSub) privateSub.textContent = '登录后同步更多歌曲';
     if (libTitle) libTitle.textContent = '更多歌曲';
     if (libSub) libSub.textContent = '播放后会继续补全推荐';
-    setHomeArt('home-weather-art', '', 280);
-    setHomeArt('home-daily-art', '', 280);
-    setHomeArt('home-private-art', '', 280);
-    setHomeArt('home-continue-art', summary.recent && summary.recent.cover, 280);
-    setHomeArt('home-profile-art', summary.topSong && summary.topSong.cover || summary.recent && summary.recent.cover, 280);
-    setHomeArt('home-library-art', '', 280);
+    setHomeArt('home-weather-art', homeDashboardGeneratedCover('我的歌单', 'Library', 'library'), 280);
+    setHomeArt('home-daily-art', homeDashboardGeneratedCover('每日推荐', 'Daily', 'daily'), 280);
+    setHomeArt('home-private-art', homeDashboardGeneratedCover('推荐歌曲', 'FM', 'playlist'), 280);
+    setHomeArt('home-continue-art', summary.recent && summary.recent.cover || homeDashboardGeneratedCover('继续听', 'Continue', 'mix'), 280);
+    setHomeArt('home-profile-art', summary.topSong && summary.topSong.cover || summary.recent && summary.recent.cover || homeDashboardGeneratedCover('听歌画像', 'Profile', 'local'), 280);
+    setHomeArt('home-library-art', homeDashboardGeneratedCover('更多歌曲', 'Song', 'local'), 280);
   } else {
     if (dailyTitle) dailyTitle.textContent = daily ? daily.name : '每日推荐';
     if (dailySub) dailySub.textContent = daily ? ((daily.artist || songSourceLabel(daily) || '今日歌曲') + ' · 点击播放今日队列') : '同步你的今日歌曲';
@@ -304,17 +413,18 @@ function renderHomeDiscover() {
       : (homeDiscoverState.personalFm.length ? (homeDiscoverState.personalFm.length + ' 首 · 网易云私人 FM') : (homeDiscoverState.songs.length + ' 首 · 根据今日推荐与常听偏好'));
     if (libTitle) libTitle.textContent = cardSongC ? cardSongC.name : (summary.topArtist ? summary.topArtist.name : '更多歌曲');
     if (libSub) libSub.textContent = cardSongC ? (cardSongC.artist || songSourceLabel(cardSongC) || '推荐歌曲') : (summary.topArtist ? ('歌手偏好 · ' + summary.topArtist.plays + ' 次') : '播放几首后生成你的偏好');
-    setHomeArt('home-weather-art', (userPlaylists[0] && userPlaylists[0].cover) || (playlistItem && playlistItem.cover) || daily && daily.cover, 280);
-    setHomeArt('home-daily-art', daily && daily.cover, 280);
-    setHomeArt('home-private-art', privateSong && privateSong.cover || daily && daily.cover || summary.recent && summary.recent.cover || playlistItem && playlistItem.cover, 280);
-    setHomeArt('home-continue-art', summary.recent && summary.recent.cover || playlistItem && playlistItem.cover, 280);
-    setHomeArt('home-profile-art', summary.topSong && summary.topSong.cover || podcastItem && podcastItem.cover, 280);
-    setHomeArt('home-library-art', cardSongC && cardSongC.cover || summary.topSong && summary.topSong.cover || summary.recent && summary.recent.cover || podcastItem && podcastItem.cover, 280);
+    setHomeArt('home-weather-art', (userPlaylists[0] && userPlaylists[0].cover) || (playlistItem && playlistItem.cover) || daily && daily.cover || homeDashboardGeneratedCover('我的歌单', 'Library', 'library'), 280);
+    setHomeArt('home-daily-art', daily && daily.cover || homeDashboardGeneratedCover(daily && daily.name || '每日推荐', 'Daily', 'daily'), 280);
+    setHomeArt('home-private-art', privateSong && privateSong.cover || daily && daily.cover || summary.recent && summary.recent.cover || playlistItem && playlistItem.cover || homeDashboardGeneratedCover(privateSong && privateSong.name || '私人雷达', 'FM', 'playlist'), 280);
+    setHomeArt('home-continue-art', summary.recent && summary.recent.cover || playlistItem && playlistItem.cover || homeDashboardGeneratedCover('继续听', 'Continue', 'mix'), 280);
+    setHomeArt('home-profile-art', summary.topSong && summary.topSong.cover || podcastItem && podcastItem.cover || homeDashboardGeneratedCover('听歌画像', 'Profile', 'local'), 280);
+    setHomeArt('home-library-art', cardSongC && cardSongC.cover || summary.topSong && summary.topSong.cover || summary.recent && summary.recent.cover || podcastItem && podcastItem.cover || homeDashboardGeneratedCover(cardSongC && cardSongC.name || '更多歌曲', 'Song', 'local'), 280);
   }
   renderHomeTiles();
   renderHomeRecentBlock();
   renderHomeDailyBrief();
   renderHomeNextUp();
+  renderHomeDailyReview();
 }
 async function loadHomeDiscover(force) {
   if (homeDiscoverState.loading) return;

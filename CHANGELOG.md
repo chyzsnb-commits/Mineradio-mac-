@@ -2,6 +2,10 @@
 
 ## 2.0.0
 
+- 对齐 Windows v2.1.0 的持久化本地曲库：新增主进程 `desktop/local-music-library.js`（`music-metadata` 解析标题/歌手/专辑/时长/内嵌封面与 LRC 侧车/内嵌歌词，`mineradio-local://` 特权协议按字节范围流式播放，索引加密键值持久化在 userData）；拖拽/文件选择/整文件夹导入自动走持久化索引并立即进队播放，导入失败时回退原对象 URL 路径；启动时自动恢复索引中的本地曲目与断点（含歌词进度），本地歌播放时按需读取内嵌/侧车歌词走既有歌词管线。新增 `scripts/test-v210-migration-lite.js` 并纳入 `npm run check`。
+- 首页继续对齐 Windows v2.1.0：新增“每日热评”卡片（每日一条、可换一条、支持 localStorage 自定义热评列表）与生成封面回退（无封面卡片自动生成品牌渐变 SVG 封面），保留 Mac 最近播放/天气/歌单/视觉入口；不迁移 Windows MP4 视频 Hero（Mac 功耗考虑）。
+- QQ/酷狗登录状态字段对齐 v2.1.0：新增 `qqMembershipNeedsSync` 区分“播放授权未完成”与“权益待同步”，酷狗登录归一化同时接受 `playbackReady` / `playbackKeyReady`。
+- 完整验证：`npm run check` **209/209** 通过；Electron 以独立 userData 启动、首页新元素与模块由本地服务正常下发、无渲染错误。
 - 将不可用的汽水服务端扫码登录替换为 PR #56 的 macOS 官方客户端会话桥：主进程只读 `~/Library/Containers/com.soda.music/.../SodaMusic/Cookies` 中已登录会话，直接交给本地服务校验并通过 macOS `safeStorage` 加密保存；Cookie 不会暴露给渲染层。已删除二维码创建/轮询路由和页面逻辑，汽水入口不再跳转网易云。新增专项回归，`npm run check` 205/205 通过；需先在本机汽水音乐客户端登录后人工验收。
 - 首页保留 Mac 的最近播放、天气电台、歌单、视觉入口和跨音源推荐，同时补入 Windows 首页的“每日内容”和“接下来播放”：前者复用每日推荐，后者优先显示当前播放队列，不新增请求、播放器或 Windows 依赖。新增首页回归，`npm run check` 205/205 通过。
 - 从 Windows Cuefield 同步 macOS 安全版“智能混音 Lite”：播放器交叉淡入区新增默认关闭、可持久化的开关。只有当前曲和下一曲都命中本地节拍缓存，且 BPM 与能量接近时，才把既有交叉淡入缩至用户设定时长的 85%；没有缓存、播客、本地歌曲、随机播放和内存紧张时全部保留原播放路径。没有新增音频链、下载或 Windows 依赖。新增专项测试，`npm run check` 206/206 通过。

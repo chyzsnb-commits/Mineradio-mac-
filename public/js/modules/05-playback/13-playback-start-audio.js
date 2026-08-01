@@ -640,6 +640,24 @@ function playAlbumGaplessNextOnEnded(token) {
   return true;
 }
 
+async function loadLocalLibraryLyricForSong(song, token) {
+  if (!song || !song.localFileId) return false;
+  if (!(window.desktopWindow && typeof window.desktopWindow.readLocalMusicLyric === 'function')) return false;
+  try {
+    var result = await window.desktopWindow.readLocalMusicLyric(song.localFileId);
+    if (token !== trackSwitchToken) return false;
+    if (!result || result.ok !== true || !result.lyric) return false;
+    if (typeof cancelPendingTrackFallbackLyrics === 'function') cancelPendingTrackFallbackLyrics();
+    var state = parseLyricResponseToOriginalState(song, { lyric: result.lyric });
+    setOriginalLyricsState(state.lines, state.hasNativeKaraoke, state.timingSource, state.translationLines, state.translationSource);
+    applyPreferredLyricsForCurrent(true);
+    return state.usableLyric;
+  } catch (e) {
+    console.warn('[PersistentLocalLibrary] 内嵌歌词读取失败', e);
+    return false;
+  }
+}
+
 async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resumeAt) {
   opts = opts || {};
   if (!song || !song.localUrl) {
@@ -718,6 +736,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   if (typeof cancelPendingTrackFallbackLyrics === 'function') cancelPendingTrackFallbackLyrics();
   setOriginalLyricsState(withLyricFallback([]), false, 'fallback');
   applyPreferredLyricsForCurrent(true);
+  loadLocalLibraryLyricForSong(song, token);
   safeRenderQueuePanel('play-local-queue', { scrollCurrent: miniQueueOpen });
   scheduleShelfRebuild('play-local-queue', true);
   scheduleAlbumGaplessPreloadForCurrent(token, 'local-started');
