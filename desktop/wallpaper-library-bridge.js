@@ -94,7 +94,23 @@ async function scanHttpSource(baseUrl) {
       httpPreviewUrl: String(r.previewUrl || r.url || ''),
       source: 'http',
     })).filter(r => r.httpUrl) : [];
-    return { ok: true, records, baseUrl: url };
+    // 合并 Win 端已导出的场景视频(_exported/ 下的 mp4)
+    let exported = [];
+    try {
+      const evRes = await fetch(url + '/api/exported-videos', { signal: controller ? controller.signal : undefined });
+      if (evRes.ok) {
+        const evData = await evRes.json();
+        exported = Array.isArray(evData && evData.records) ? evData.records.map((r, i) => ({
+          id: 'exported-' + i,
+          title: 'Scene 导出 · ' + String(r.name || '视频 ' + (i + 1)),
+          type: 'video',
+          httpUrl: String(r.url || ''),
+          httpPreviewUrl: String(r.url || ''),
+          source: 'http-exported',
+        })).filter(r => r.httpUrl) : [];
+      }
+    } catch (_) {}
+    return { ok: true, records: records.concat(exported), baseUrl: url };
   } catch (e) {
     return { ok: false, error: e && e.name === 'AbortError' ? 'HTTP_TIMEOUT' : (e && e.message || 'HTTP_FAILED') };
   }

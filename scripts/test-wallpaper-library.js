@@ -29,6 +29,16 @@ test('壁纸库主进程扫描器已迁移且 Mac 安全', () => {
   assert.match(mainJs, /mineradio-wallpaper-library-scan-http/);
   assert.match(mainJs, /mineradio-wallpaper-library-list/);
   assert.match(mainJs, /mineradio-wallpaper-library-media/);
+
+  // Win 端录制 mp4 方案:导出页 + 导出视频列表合并
+  const share = read('tools/wallpaper-share-server.js');
+  assert.match(share, /\/export\.html/);
+  assert.match(share, /\/api\/exported-videos/);
+  assert.match(share, /\/api\/exported-file/);
+  assert.match(share, /MediaRecorder/);
+  assert.match(share, /getDisplayMedia/);
+  assert.match(bridge, /api\/exported-videos/);
+  assert.match(bridge, /Scene 导出/);
 });
 
 test('壁纸库渲染层面板与入口已接线', () => {
