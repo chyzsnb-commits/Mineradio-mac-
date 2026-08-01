@@ -205,6 +205,7 @@
 ## 工作规则（给接手 AI）
 
 - **分支命名**：`codex/任务名`（Codex）、`glm/任务名`（GLM/ZCode）。不直接改 main，走 PR。
+- **每次更新单独开新 PR 线**（2026-08-01 用户确认）：每批功能/修复/文档更新都新建分支 + 新 PR，**禁止往已开的 PR 上追加 commit**。PR #58（`codex/mineradio-2.0-unified`）已封线。新线从最近一次远端 head 分叉，更新用 GitHub Git API 以该 head 为 parent 创建 tree/commit 后 PATCH 新 ref（`force:false`），不使用 `git push`；新 PR 的 base 一般为该线当前 head，diff 只含本批文件。
 - **PR 四要素**：变更 / 验证 / 未验证 / 是否需要用户手动操作。
 - **commit 是存档点**：一任务多小 commit，出问题可 revert。
 - **用英文术语带中文解释**（commit/branch/PR/issue/repo/main/merge/rollback/diff/CI）。
