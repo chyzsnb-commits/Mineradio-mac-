@@ -84,6 +84,11 @@ test('fx 默认值/持久化/面板控件/UI/CSS 已接线', () => {
 
   assert.match(persistence, /sonicGroundAmplitude: clampRange\(raw\.sonicGroundAmplitude/);
   assert.match(persistence, /sonicWorkshopPeakColorMode: raw\.sonicWorkshopPeakColorMode === 'custom'/);
+  // 保存端(对称): saveLyricLayout 必须写 sonic 字段,否则用户设置重启后丢失
+  assert.match(persistence, /sonicGroundAmplitude: clampRange\(fx\.sonicGroundAmplitude/);
+  assert.match(persistence, /sonicWorkshopPeakColor: normalizeHexColor\(fx\.sonicWorkshopPeakColor/);
+  assert.match(persistence, /sonicGroundColorAuto: \['sonicGroundColorMode'/);
+  assert.match(persistence, /sonicWorkshopRegionColors: \['sonicWorkshopColorMode'/);
 
   assert.match(panel, /function updateSonicSeriesControlVisibility\(\)/);
   assert.match(panel, /SONIC_ORIGINAL_FX_CONTROL_IDS/);
@@ -102,6 +107,14 @@ test('fx 默认值/持久化/面板控件/UI/CSS 已接线', () => {
   assert.match(css, /\.sonic-audio-monitor-panel\.open/);
   assert.match(css, /\.fx-sonic-hidden/);
   assert.match(css, /body\.sonic-workshop-active #album-bg/);
+  // macOS 修复：工坊激活时隐藏 canvas 容器，否则 WebGL canvas 不透明合成会盖住 iframe 导致白屏
+  assert.match(css, /body\.sonic-workshop-active #canvas-container/);
+  // 加载失败降级：React 未 ready 超时自动回退，避免白屏挂死
+  var workshopSrc = read('public/sonic-workshop-preset.js');
+  assert.match(workshopSrc, /state\.loadTimeout/);
+  assert.match(workshopSrc, /presetBeforeWorkshop/);
+  assert.match(workshopSrc, /渲染失败（WebGL 不可用或资源受限）/);
+  assert.match(workshopSrc, /mineradio-sonic-workshop-ready/);
 });
 
 test('声波工坊 vendor 资源齐备(preview.gif 按用户决定跳过)', () => {
@@ -133,4 +146,55 @@ test('Mac 既有 sonic 死壳(颜色控件)在新 UI 元素下可寻址', () => 
     'sonic-workshop-peak-picker'].forEach(function (id) {
     assert.ok(indexHtml.includes('id="' + id + '"'), 'index.html 应包含 ' + id);
   });
+});
+
+test('FX 控制台(设置搜索/撤销历史)与缓存设置(只读版)已迁移', () => {
+  const consoleWs = read('public/js/modules/07-fx/09-console-workspace.js');
+  const cacheSettings = read('public/js/modules/07-fx/08-cache-storage-settings.js');
+  const loader = read('public/js/index-loader.js');
+  const panel = read('public/js/modules/07-fx/05-fx-panel-performance.js');
+  const bindings = read('public/js/modules/07-fx/07-bindings-shelf-immersive.js');
+  const mainJs = read('desktop/main.js');
+  const preload = read('desktop/preload.js');
+  const indexHtml = read('public/index.html');
+  const css = read('public/css/index.css');
+
+  // FX 控制台:模块就位 + organizeFxPanel 优先分支 + init 接线
+  assert.match(loader, /07-fx\/09-console-workspace\.js/);
+  assert.match(consoleWs, /var FX_CONSOLE_TABS = \[/);
+  assert.match(consoleWs, /function organizeFxConsoleWorkspace\(\)/);
+  assert.match(consoleWs, /function initFxConsoleSearchAndHistory\(\)/);
+  assert.match(consoleWs, /function pushFxConsoleHistory\(/);
+  assert.match(consoleWs, /function undoFxConsoleHistory\(\)/);
+  assert.match(panel, /organizeFxConsoleWorkspace\(\)/);
+  assert.match(bindings, /initFxConsoleSearchAndHistory\(\)/);
+  assert.match(css, /\.fx-console-toolbar/);
+  assert.match(css, /\.fx-console-search/);
+  assert.match(css, /\.fx-search-hit/);
+
+  // 缓存设置:只读版模块 + 主进程 IPC + preload API + 面板 UI
+  assert.match(loader, /07-fx\/08-cache-storage-settings\.js/);
+  assert.match(cacheSettings, /function refreshMineradioCacheSettings\(\)/);
+  assert.match(cacheSettings, /function clearMineradioLyricCache\(\)/);
+  // 硬约束:不迁移 Chromium 目录搬迁(无 chooseCacheDirectory/setCacheSettings)
+  assert.doesNotMatch(cacheSettings, /chooseCacheDirectory/);
+  assert.doesNotMatch(cacheSettings, /setCacheSettings/);
+  assert.doesNotMatch(cacheSettings, /restartApp/);
+  assert.match(mainJs, /mineradio-cache-get-usage/);
+  assert.match(mainJs, /mineradio-cache-clear-lyrics/);
+  assert.match(mainJs, /不迁移 Chromium 缓存目录搬迁/);
+  assert.match(preload, /getCacheUsage:/);
+  assert.match(preload, /clearLyricCache:/);
+  assert.ok(indexHtml.includes('id="cache-storage-panel"'), 'index.html 应包含缓存面板');
+  assert.match(css, /\.cache-storage-panel/);
+
+  // 界面配色:上游 5 个 color row 已迁入,死壳函数激活
+  const accentSrc = read('public/js/modules/07-fx/02-accent-background-controls.js');
+  ['ui-accent-picker', 'visual-tint-picker', 'home-accent-picker', 'home-icon-picker',
+    'visual-icon-picker'].forEach(function (id) {
+    assert.ok(indexHtml.includes('id="' + id + '"'), 'index.html 应包含 ' + id);
+  });
+  assert.match(accentSrc, /function resetUiAccentColor\(\)/);
+  assert.match(accentSrc, /function resetVisualTintColor\(\)/);
+  assert.match(panel, /updateUiAccentControls\(\)/);
 });

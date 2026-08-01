@@ -2617,6 +2617,62 @@ ipcMain.handle('spotify-music-clear-login', async () => {
   return clearSpotifyMusicLoginSession();
 });
 
+// Windows v2.1.0 对齐（缓存设置 · Mac 只读版）: 只读歌词缓存占用 + 手动清理，
+// 不迁移 Chromium 缓存目录搬迁（避免破坏 macOS 登录态/会话，见 AGENTS.md 硬约束）。
+async function mineradioCacheUsageSnapshot() {
+  const dir = lyricCacheDirectoryPath();
+  let lyricsBytes = 0;
+  let lyricsCount = 0;
+  try {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !/^[a-f0-9]{64}\.json$/i.test(entry.name)) continue;
+      try {
+        const st = await fs.promises.stat(path.join(dir, entry.name));
+        lyricsBytes += st.size;
+        lyricsCount += 1;
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return {
+    ok: true,
+    rootPath: dir,
+    lyricsPath: dir,
+    lyricsBytes,
+    lyricsCount,
+    userDataPath: app.getPath('userData'),
+    restartRequired: false,
+  };
+}
+
+ipcMain.handle('mineradio-cache-get-usage', async () => {
+  try {
+    return await mineradioCacheUsageSnapshot();
+  } catch (e) {
+    return { ok: false, error: e.message || 'CACHE_USAGE_READ_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-cache-clear-lyrics', async () => {
+  try {
+    const dir = lyricCacheDirectoryPath();
+    let removed = 0;
+    try {
+      const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile() || !/^[a-f0-9]{64}\.json$/i.test(entry.name)) continue;
+        try {
+          await fs.promises.unlink(path.join(dir, entry.name));
+          removed += 1;
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return Object.assign({ ok: true, removed }, await mineradioCacheUsageSnapshot());
+  } catch (e) {
+    return { ok: false, error: e.message || 'CACHE_CLEAR_FAILED' };
+  }
+});
+
 function loginCookieExportMeta(provider) {
   const key = String(provider || '').toLowerCase();
   const userData = app.getPath('userData');

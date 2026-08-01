@@ -53,6 +53,8 @@
     iframe: null,
     active: false,
     ready: false,
+    loadTimeout: 0,
+    presetBeforeWorkshop: null,
     opacity: 0,
     lastAudioAt: 0,
     lastMediaAt: 0,
@@ -562,10 +564,24 @@
     iframe.style.pointerEvents = 'none';
     iframe.setAttribute('inert', '');
     iframe.onload = function () {
-      state.ready = true;
-      pushProperties(true);
-      pushMedia(true);
-      pushAudio(true);
+      // onload 只代表 HTML 就绪；bridge 内部 React 渲染成功后会 postMessage ready。
+      // 设置超时：若 React 渲染失败（如 WebGL 不可用）不发 ready，自动降级提示并回退。
+      state.loadTimeout = setTimeout(function () {
+        if (state.ready || !state.active) return;
+        // React 未就绪：可能是 WebGL/资源受限，避免白屏挂死
+        if (typeof showToast === 'function') {
+          showToast('音域回响·WE 渲染失败（WebGL 不可用或资源受限），已切回原预设');
+        }
+        var prev = state.presetBeforeWorkshop != null ? state.presetBeforeWorkshop : 0;
+        if (typeof fx !== 'undefined' && fx && typeof setPreset === 'function') {
+          try { setPreset(prev, { silent: true, noSave: true, skipTransition: true }); } catch (e) {}
+        }
+        removeLayer();
+      }, 9000);
+    };
+    iframe.onerror = function () {
+      if (typeof showToast === 'function') showToast('音域回响·WE 资源加载失败');
+      removeLayer();
     };
     state.layer = layer;
     state.iframe = iframe;
@@ -578,6 +594,7 @@
         else clearTimeout(state.themeTransitionRaf);
       } catch (e) {}
     }
+    if (state.loadTimeout) { clearTimeout(state.loadTimeout); state.loadTimeout = 0; }
     if (state.layer && state.layer.parentNode) state.layer.parentNode.removeChild(state.layer);
     state.layer = null;
     state.iframe = null;
@@ -785,6 +802,7 @@
 
   function onPresetChange(prev, next, opts) {
     if (Number(next) === INDEX) {
+      state.presetBeforeWorkshop = Number(prev);
       ensureLayer();
       state.opacity = Math.max(state.opacity, 0.001);
       bodyClass(true);
@@ -801,6 +819,7 @@
     var data = event && event.data || {};
     if (data.type === 'mineradio-sonic-workshop-ready') {
       state.ready = true;
+      if (state.loadTimeout) { clearTimeout(state.loadTimeout); state.loadTimeout = 0; }
       pushProperties(true);
       pushMedia(true);
       pushAudio(true);

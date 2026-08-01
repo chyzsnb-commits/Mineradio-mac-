@@ -749,6 +749,10 @@ function fxPanelTargetForNode(node, current) {
   return current || 'presets';
 }
 function organizeFxPanel() {
+  if (typeof organizeFxConsoleWorkspace === 'function') {
+    organizeFxConsoleWorkspace();
+    return;
+  }
   var panel = document.getElementById('fx-panel');
   if (!panel) return;
   if (panel._fxPanelOrganized) {

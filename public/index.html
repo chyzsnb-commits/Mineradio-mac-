@@ -335,6 +335,34 @@
       <div class="preset-grid" id="preset-grid"></div>
       <div class="fx-section-label">用户存档</div>
       <div class="user-archive-grid" id="user-archive-grid"></div>
+      <div class="fx-section-label">自定义颜色</div>
+      <div class="lyric-color-row">
+        <input id="ui-accent-picker" class="lyric-color-picker" type="color" value="#ffffff" title="界面高亮色">
+        <div class="fx-color-row-label">界面高亮<small id="ui-accent-value">#FFFFFF</small></div>
+        <button class="fx-mini-btn ghost" type="button" onclick="resetUiAccentColor()">默认</button>
+      </div>
+      <div class="lyric-color-row visual-tint-row">
+        <input id="visual-tint-picker" class="lyric-color-picker" type="color" value="#9db8cf" title="视觉主色">
+        <div class="fx-color-row-label">视觉主色<small id="visual-tint-value">封面取色</small></div>
+        <button class="fx-mini-btn ghost" id="visual-tint-auto-btn" type="button"
+          onclick="openCoverColorPicker('visualTint')">封面</button>
+        <button class="fx-mini-btn ghost" type="button" onclick="resetVisualTintColor()">默认</button>
+      </div>
+      <div class="lyric-color-row">
+        <input id="home-accent-picker" class="lyric-color-picker" type="color" value="#00f5d4" title="Home 填充色">
+        <div class="fx-color-row-label">Home 填充<small id="home-accent-value">#00F5D4</small></div>
+        <button class="fx-mini-btn ghost" type="button" onclick="resetHomeAccentColor()">默认</button>
+      </div>
+      <div class="lyric-color-row">
+        <input id="home-icon-picker" class="lyric-color-picker" type="color" value="#f4d28a" title="主页图标">
+        <div class="fx-color-row-label">主页图标<small id="home-icon-value">#F4D28A</small></div>
+        <button class="fx-mini-btn ghost" type="button" onclick="resetHomeIconColor()">默认</button>
+      </div>
+      <div class="lyric-color-row">
+        <input id="visual-icon-picker" class="lyric-color-picker" type="color" value="#7fd8ff" title="视觉图标">
+        <div class="fx-color-row-label">视觉图标<small id="visual-icon-value">#7FD8FF</small></div>
+        <button class="fx-mini-btn ghost" type="button" onclick="resetVisualIconColor()">默认</button>
+      </div>
       <div class="cover-color-pop" id="cover-color-pop">
         <div class="cover-color-head"><span>Cover Picker</span><button class="cover-color-close" type="button"
             onclick="closeCoverColorPicker()">×</button></div>
@@ -980,6 +1008,26 @@
             <button class="fx-mini-btn ghost" type="button" onclick="runAppMemoryTrim('manual')">压缩播放器</button>
             <button class="fx-mini-btn ghost" type="button" onclick="runSystemMemoryPurge(false)">系统释放</button>
             <button class="fx-mini-btn ghost" type="button" onclick="runSystemMemoryPurge(true)">提权释放</button>
+          </div>
+          <div class="fx-section-label">本地缓存</div>
+          <div class="cache-storage-panel" id="cache-storage-panel">
+            <div class="cache-storage-head"><span>歌词磁盘缓存</span><span id="cache-storage-total">读取中...</span></div>
+            <code class="cache-storage-path" id="cache-storage-root">桌面版启动后读取</code>
+            <div class="cache-storage-actions">
+              <button class="fx-mini-btn ghost" type="button" onclick="refreshMineradioCacheSettings()">刷新占用</button>
+              <button class="fx-mini-btn ghost" type="button" id="cache-storage-clear" onclick="clearMineradioLyricCache()" disabled>清理歌词缓存</button>
+            </div>
+            <div class="cache-storage-row"><span>歌词 / 译文缓存</span><b id="cache-storage-lyrics-size">—</b></div>
+            <code class="cache-storage-path small" id="cache-storage-lyrics-path">—</code>
+            <div class="cache-storage-row"><span>封面、网络与音频分片缓存</span><b id="cache-storage-chromium-size">—</b></div>
+            <code class="cache-storage-path small" id="cache-storage-chromium-path">—</code>
+            <div class="cache-storage-row"><span>节奏分析缓存</span><b id="cache-storage-beatmaps-size">—</b></div>
+            <code class="cache-storage-path small" id="cache-storage-beatmaps-path">—</code>
+            <div class="cache-storage-row"><span>Wallpaper Engine 静音场景缓存</span><b id="cache-storage-wallpaper-size">—</b></div>
+            <code class="cache-storage-path small" id="cache-storage-wallpaper-path">—</code>
+            <div class="cache-storage-row muted"><span>设置与登录资料（安全固定）</span><b id="cache-storage-userdata-size">—</b></div>
+            <code class="cache-storage-path small" id="cache-storage-userdata-path">—</code>
+            <div class="fx-sub cache-storage-note" id="cache-storage-note">歌词磁盘缓存（userData/cache/lyrics）· 单条 ≤1MB、总量 ≤96MB 自动淘汰</div>
           </div>
           <div class="fx-slider"><label>粒子尺寸</label><input id="fx-point" type="range" min="0.5" max="2.2"
               step="0.01"><output></output></div>

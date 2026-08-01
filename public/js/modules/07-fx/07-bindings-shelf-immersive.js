@@ -468,6 +468,7 @@ function resetFx() {
   refreshStageLyricDisplayMode();
   applyDesktopLyricsState(true);
   pushDesktopLyricsState(true);
+  if (typeof initFxConsoleSearchAndHistory === 'function') initFxConsoleSearchAndHistory();
   applyWallpaperModeState(true);
   updateRenderPowerClasses();
   applyRendererPowerMode();
