@@ -115,14 +115,14 @@ var FX_CONSOLE_LAYOUT = [
   {
     key: 'motion',
     groups: [
-      { key: 'base', title: '基础画面', hint: '整体律动、景深、封面和电影镜头', open: true, items: [
+      { key: 'base', title: '基础画面', hint: '整体律动、景深和电影镜头（所有预设通用）', open: true, items: [
         fxConsoleItem('fx-intensity', '律动强度', '音乐响应 节奏'),
         fxConsoleItem('fx-depth', '画面景深', '立体感 深度'),
-        fxConsoleItem('fx-coverres', '封面清晰度', '粒子数量 分辨率'),
         fxConsoleItem('fx-cineshake', '电影镜头', '镜头晃动 强度'),
         fxConsoleItem('t-cinema', '电影镜头开关', '动态镜头')
       ] },
-      { key: 'particles', title: '粒子与光影', hint: '粒子尺寸、运动、扭曲和溢光', items: [
+      { key: 'particles', title: '粒子与光影', hint: '粒子尺寸、运动、扭曲和溢光（仅粒子类预设）', items: [
+        fxConsoleItem('fx-coverres', '封面清晰度', '粒子数量 分辨率'),
         fxConsoleItem('t-float', '浮空粒子层', '漂浮粒子'),
         fxConsoleItem('t-bloom', '粒子溢光', '粒子光晕'),
         fxConsoleItem('t-edge', '轮廓高亮', '边缘光'),

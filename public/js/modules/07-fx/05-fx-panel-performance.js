@@ -34,14 +34,17 @@ function updateSonicSeriesControlVisibility() {
   setFxPanelControlsHidden(['fx-lyricbgadapt-row', 'fx-lyricbgadapt'], false);
 }
 
-// 动效 tab 预设专属分组:每个预设只显示自己的动效组 + 通用组(base/particles),不混杂其他预设。
-// 通用组: base(基础画面) particles(粒子与光影)
+// 动效 tab 预设专属分组:每个预设只显示自己的动效组 + 通用组,不混杂其他预设。
+// 通用组: base(基础画面,所有预设) particles(粒子与光影,仅粒子类预设 0-8)
 // 专属组: rain-mood(预设9雨境) rain-resonance(预设11云瀑) vox-echo(预设10音域回响)
 //         sonic-terrain/sonic-audio/sonic-blocks(预设12声波地形) sonic-we(预设13声波工坊)
+// 粒子层在雨境/云瀑/音域回响/声波地形/声波工坊激活时隐藏(hidePoints),粒子参数不生效,故不显示。
 function updateMineradioMotionGroupVisibility() {
   var preset = Number(fx && fx.preset) || 0;
+  var nonParticlePreset = preset === 9 || preset === 10 || preset === 11 || preset === 12 || preset === 13;
   var groups = document.querySelectorAll('#fx-panel [data-fx-page="motion"] .fx-console-group');
   var visibleMap = {
+    'particles': !nonParticlePreset,
     'rain-mood': preset === 9,
     'rain-resonance': preset === 11,
     'vox-echo': preset === 10,
@@ -52,7 +55,7 @@ function updateMineradioMotionGroupVisibility() {
   };
   groups.forEach(function (group) {
     var key = group.getAttribute('data-fx-console-group') || '';
-    var visible = visibleMap[key] !== false;   // 未在映射里的组(base/particles 等)= 通用组,始终显示
+    var visible = visibleMap[key] !== false;   // 未在映射里的组(base 等)= 通用组,始终显示
     group.classList.toggle('fx-sonic-hidden', !visible);
   });
 }

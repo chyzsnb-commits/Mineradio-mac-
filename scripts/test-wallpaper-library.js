@@ -68,8 +68,17 @@ test('壁纸库主进程扫描器已迁移且 Mac 安全', () => {
   assert.match(panelPerf, /'vox-echo': preset === 10/);
   assert.match(panelPerf, /'sonic-we': preset === SONIC_WORKSHOP_PRESET_INDEX/);
   assert.match(panelPerf, /visibleMap\[key\] !== false/);
+  // 粒子组仅粒子类预设(0-8)显示:非粒子预设(9-13)粒子层被 hidePoints 隐藏,粒子参数不生效
+  assert.match(panelPerf, /nonParticlePreset = preset === 9 \|\| preset === 10 \|\| preset === 11 \|\| preset === 12 \|\| preset === 13/);
+  assert.match(panelPerf, /'particles': !nonParticlePreset/);
   const gridUniforms = read('public/js/modules/07-fx/04-preset-grid-uniforms.js');
   assert.match(gridUniforms, /updateMineradioMotionGroupVisibility\(\)/);
+  // fx-coverres 从基础画面移入粒子组(仅封面粒子预设有意义)
+  const consoleWs2 = read('public/js/modules/07-fx/09-console-workspace.js');
+  const baseGroupBlock = consoleWs2.slice(consoleWs2.indexOf("key: 'base'"), consoleWs2.indexOf("key: 'particles'"));
+  assert.doesNotMatch(baseGroupBlock, /fx-coverres/, '封面清晰度不应在基础画面组');
+  const particlesBlock = consoleWs2.slice(consoleWs2.indexOf("key: 'particles'"), consoleWs2.indexOf("key: 'sonic-terrain'"));
+  assert.match(particlesBlock, /fx-coverres/, '封面清晰度应在粒子与光影组');
 });
 
 test('壁纸库渲染层面板与入口已接线', () => {
