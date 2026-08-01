@@ -148,7 +148,7 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('sonic-ground-accent-picker', '涟漪高光', '音域强调色'),
         fxConsoleItem('fx-sonicglow', '音域光强', '地形辉光')
       ] },
-      { key: 'sonic-audio', title: '频谱响应', hint: 'Kick 检测、频段范围和各段权重', items: [
+      { key: 'audio-spectrum', title: '频谱面板', hint: '所有预设通用的实时音频分析与频段触发', items: [
         fxConsoleItem('t-sonicAudioMonitorEnabled', '实时频谱', '音频分析 频谱开关'),
         fxConsoleItem('t-sonicAudioAutoTrack', 'Kick 自动', '鼓点自动追踪'),
         fxConsoleItem('sonic-audio-monitor-toggle', '频谱面板', '音频监视器'),
@@ -156,7 +156,9 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-sonicaudiobandstart', '范围起点', '频谱起点'),
         fxConsoleItem('fx-sonicaudiobandend', '范围终点', '频谱终点'),
         fxConsoleItem('fx-sonicaudiothreshold', '触发阈值', '频谱门限'),
-        fxConsoleItem('fx-sonicaudiopulse', '触发力度', '频谱脉冲'),
+        fxConsoleItem('fx-sonicaudiopulse', '触发力度', '频谱脉冲')
+      ] },
+      { key: 'sonic-audio', title: '音域权重', hint: '声波地形八段频域的空间权重（预设 12）', items: [
         fxConsoleItem('fx-sonicsubbass', '中心低频', 'Sub Bass'),
         fxConsoleItem('fx-sonicbass', '低频重量', 'Bass'),
         fxConsoleItem('fx-soniclowmid', '慢波流动', 'Low Mid'),
@@ -538,6 +540,7 @@ function organizeFxConsoleWorkspace() {
   });
   panel._fxConsoleWorkspaceOrganized = true;
   panel.setAttribute('data-console-layout', 'task-first-v2');
+  if (typeof updateMineradioMotionGroupVisibility === 'function') updateMineradioMotionGroupVisibility();
   setFxPanelTab(fxPanelTab);
 }
 

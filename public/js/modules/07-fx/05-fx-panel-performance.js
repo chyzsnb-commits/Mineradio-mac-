@@ -3,7 +3,6 @@ var homeWaveTrackState = { bars: 0, smooth: [] };
 // ---- 声波系列(预设 12 声波地形 / 13 声波工坊)fx 面板显隐 —— Windows v2.1.0 迁移 ----
 var SONIC_ORIGINAL_FX_CONTROL_IDS = [
   'fx-sonic-ground-section', 'fx-sonicamp', 'fx-sonicspeed', 'fx-sonicdensity', 'fx-sonicrange', 'fx-soniclower', 'fx-sonicdepth', 'fx-sonicautorotate',
-  'fx-sonic-audio-section', 'sonic-audio-toggle-grid', 'sonic-audio-monitor', 'fx-sonicaudiosensitivity', 'fx-sonicaudiobandstart', 'fx-sonicaudiobandend', 'fx-sonicaudiothreshold', 'fx-sonicaudiopulse',
   'fx-sonicsubbass', 'fx-sonicbass', 'fx-soniclowmid', 'fx-sonicmid', 'fx-sonichighmid', 'fx-sonicpresence', 'fx-sonicbrilliance', 'fx-sonicair',
   'fx-sonic-color-section', 'sonic-ground-base-row', 'sonic-ground-cool-row', 'sonic-ground-warm-row', 'sonic-ground-accent-row', 'fx-sonicglow',
   'fx-sonic-floating-section', 'sonic-floating-toggle-grid', 'fx-sonicfloatcount', 'fx-sonicfloatintensity', 'fx-sonicfloatmin', 'fx-sonicfloatmax', 'fx-sonicfloatspeed'
@@ -36,6 +35,7 @@ function updateSonicSeriesControlVisibility() {
 
 // 动效 tab 预设专属分组:每个预设只显示自己的动效组 + 通用组,不混杂其他预设。
 // 通用组: base(基础画面,所有预设) particles(粒子与光影,仅粒子类预设 0-8)
+//         audio-spectrum(频谱面板,所有预设)
 // 专属组: rain-mood(预设9雨境) rain-resonance(预设11云瀑) vox-echo(预设10音域回响)
 //         sonic-terrain/sonic-audio/sonic-blocks(预设12声波地形) sonic-we(预设13声波工坊)
 // 粒子层在雨境/云瀑/音域回响/声波地形/声波工坊激活时隐藏(hidePoints),粒子参数不生效,故不显示。
@@ -45,6 +45,7 @@ function updateMineradioMotionGroupVisibility() {
   var groups = document.querySelectorAll('#fx-panel [data-fx-page="motion"] .fx-console-group');
   var visibleMap = {
     'particles': !nonParticlePreset,
+    'audio-spectrum': true,
     'rain-mood': preset === 9,
     'rain-resonance': preset === 11,
     'vox-echo': preset === 10,

@@ -1390,9 +1390,12 @@ function _voxDockPlaylist(dock) {
     if (!host) {
       host = document.createElement('div');
       host.id = 'vox-playlist-host';
-      var firstPage = fxp.querySelector('[data-fx-page="playlist"]');
-      if (firstPage) firstPage.appendChild(host); else fxp.appendChild(host);
     }
+    // 新控制台没有旧版 playlist 页:歌单必须归入「歌单架」页,不能追加到
+    // #fx-panel 根节点,否则会紧跟当前动效页渲染成“动效里有歌单”。
+    var firstPage = fxp.querySelector('[data-fx-page="shelf"]') || fxp.querySelector('[data-fx-page="playlist"]');
+    if (!firstPage) return;
+    if (host.parentElement !== firstPage) firstPage.appendChild(host);
     if (pl.parentElement !== host) {
       _voxPlaylistHome = { parent: pl.parentElement, next: pl.nextSibling };
       host.appendChild(pl);

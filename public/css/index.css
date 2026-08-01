@@ -11776,6 +11776,85 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   color: #fff
 }
 
+/* 音域回响系列：三个运行时预设共用一个入口，视觉上保持一组互斥选择 */
+.preset-series-card {
+  grid-column: 1 / -1;
+  min-height: 126px;
+  justify-content: flex-start;
+  gap: 3px;
+  padding: 12px
+}
+
+.preset-series-card .pc-icon {
+  color: rgba(126, 200, 216, .76)
+}
+
+.preset-series-card.active .pc-icon {
+  color: var(--fc-accent)
+}
+
+.pc-series-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px
+}
+
+.pc-series-option {
+  min-width: 0;
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, .10);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .16);
+  color: rgba(255, 255, 255, .68);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color .18s, background .18s, color .18s, box-shadow .18s
+}
+
+.pc-series-option:hover {
+  border-color: rgba(126, 200, 216, .48);
+  background: rgba(126, 200, 216, .08);
+  color: rgba(255, 255, 255, .92)
+}
+
+.pc-series-option.active {
+  border-color: color-mix(in srgb, var(--fc-accent) 72%, rgba(255, 255, 255, .28));
+  background: color-mix(in srgb, var(--fc-accent) 14%, rgba(0, 0, 0, .25));
+  color: #fff;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fc-accent) 32%, transparent)
+}
+
+.pc-series-option-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 740
+}
+
+.pc-series-option-desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, .42);
+  font-size: 9px;
+  line-height: 1.25
+}
+
+.pc-series-option.active .pc-series-option-desc {
+  color: color-mix(in srgb, var(--fc-accent) 54%, rgba(255, 255, 255, .58))
+}
+
 .preset-card[data-preset="6"] .pc-name,
 .preset-card[data-preset="6"] .pc-desc {
   font-family: "黑体", "SimHei", "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif;

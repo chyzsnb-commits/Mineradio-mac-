@@ -1,3 +1,33 @@
+var SONIC_SERIES_PRESET_INDICES = [10, 12, 13];
+
+function buildSonicSeriesPresetCard() {
+  var options = SONIC_SERIES_PRESET_INDICES.map(function (i) {
+    var p = presetMeta[i];
+    var name = p.nameHtml || p.name;
+    var desc = p.descHtml || p.desc;
+    return '<button class="pc-series-option" type="button" data-preset="' + i + '" onclick="event.stopPropagation();setPreset(' + i + ')" aria-pressed="false">' +
+      '<span class="pc-series-option-name">' + name + '</span>' +
+      '<span class="pc-series-option-desc">' + desc + '</span>' +
+      '</button>';
+  }).join('');
+  return '<section class="preset-card preset-series-card" data-preset-group="sonic-series" aria-label="音域回响系列" role="group">' +
+    '<div class="pc-icon">' + presetIcons[10] + '</div>' +
+    '<div class="pc-name">音域回响</div>' +
+    '<div class="pc-desc">三个音域场景，选择一个作为当前视觉</div>' +
+    '<div class="pc-series-options" role="group" aria-label="音域回响版本">' + options + '</div>' +
+    '</section>';
+}
+
+function buildPresetCard(i) {
+  var p = presetMeta[i];
+  var desc = p.descHtml || p.desc;
+  return '<div class="preset-card" data-preset="' + i + '" onclick="setPreset(' + i + ')">' +
+    '<div class="pc-icon">' + presetIcons[i] + '</div>' +
+    '<div class="pc-name">' + (p.nameHtml || p.name) + '</div>' +
+    '<div class="pc-desc">' + desc + '</div>' +
+    '</div>';
+}
+
 function buildPresetGrid() {
   var grid = document.getElementById('preset-grid');
   if (!grid) return;
@@ -10,20 +40,31 @@ function buildPresetGrid() {
   presetMeta.forEach(function (_, id) {
     if (!seen[id]) order.push(id);
   });
+  var sonicSeriesRendered = false;
   grid.innerHTML = order.map(function (i) {
-    var p = presetMeta[i];
-    var desc = p.descHtml || p.desc;
-    return '<div class="preset-card" data-preset="' + i + '" onclick="setPreset(' + i + ')">' +
-      '<div class="pc-icon">' + presetIcons[i] + '</div>' +
-      '<div class="pc-name">' + p.name + '</div>' +
-      '<div class="pc-desc">' + desc + '</div>' +
-      '</div>';
+    if (SONIC_SERIES_PRESET_INDICES.indexOf(i) >= 0) {
+      if (sonicSeriesRendered) return '';
+      sonicSeriesRendered = true;
+      return buildSonicSeriesPresetCard();
+    }
+    return buildPresetCard(i);
   }).join('');
   refreshPresetGrid();
 }
 function refreshPresetGrid() {
   document.querySelectorAll('.preset-card').forEach(function (el) {
-    el.classList.toggle('active', Number(el.dataset.preset) === fx.preset);
+    var isSeries = el.dataset.presetGroup === 'sonic-series';
+    var active = isSeries
+      ? !!el.querySelector('.pc-series-option[data-preset="' + fx.preset + '"]')
+      : Number(el.dataset.preset) === fx.preset;
+    el.classList.toggle('active', active);
+    if (isSeries) {
+      el.querySelectorAll('.pc-series-option').forEach(function (option) {
+        var optionActive = Number(option.dataset.preset) === fx.preset;
+        option.classList.toggle('active', optionActive);
+        option.setAttribute('aria-pressed', optionActive ? 'true' : 'false');
+      });
+    }
   });
 }
 function triggerPresetParticleTransition(fromPreset, toPreset) {
@@ -40,7 +81,8 @@ function triggerPresetParticleTransition(fromPreset, toPreset) {
   for (var i = 0; i < 3; i++) {
     triggerRipple((Math.random() - 0.5) * 3.4, (Math.random() - 0.5) * 3.4, 0.58 + Math.random() * 0.32);
   }
-  var card = document.querySelector('.preset-card[data-preset="' + toPreset + '"]');
+  var card = document.querySelector('.preset-card[data-preset="' + toPreset + '"]') ||
+    document.querySelector('.preset-card[data-preset-group="sonic-series"]');
   if (card) {
     card.classList.remove('switching');
     void card.offsetWidth;

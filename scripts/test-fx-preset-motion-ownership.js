@@ -26,7 +26,7 @@ function createGroup(key) {
 test('14 个预设的动效 tab 只保留基础组和所属专属组', () => {
   const source = read('public/js/modules/07-fx/05-fx-panel-performance.js');
   const visibilitySource = source.slice(0, source.indexOf('function ensureHomeWaveTrackBars()'));
-  const keys = ['base', 'particles', 'rain-mood', 'rain-resonance', 'vox-echo', 'sonic-terrain', 'sonic-audio', 'sonic-blocks', 'sonic-we'];
+  const keys = ['base', 'particles', 'rain-mood', 'rain-resonance', 'vox-echo', 'audio-spectrum', 'sonic-terrain', 'sonic-audio', 'sonic-blocks', 'sonic-we'];
   const groups = keys.map(createGroup);
   const sandbox = {
     fx: { preset: 0 },
@@ -37,13 +37,13 @@ test('14 个预设的动效 tab 只保留基础组和所属专属组', () => {
   vm.runInNewContext(visibilitySource, sandbox);
 
   const expected = {
-    0: ['base', 'particles'], 1: ['base', 'particles'], 2: ['base', 'particles'], 3: ['base', 'particles'],
-    4: ['base', 'particles'], 5: ['base', 'particles'], 6: ['base', 'particles'], 7: ['base', 'particles'], 8: ['base', 'particles'],
-    9: ['base', 'rain-mood'],
-    10: ['base', 'vox-echo'],
-    11: ['base', 'rain-resonance'],
-    12: ['base', 'sonic-terrain', 'sonic-audio', 'sonic-blocks'],
-    13: ['base', 'sonic-we']
+    0: ['base', 'particles', 'audio-spectrum'], 1: ['base', 'particles', 'audio-spectrum'], 2: ['base', 'particles', 'audio-spectrum'], 3: ['base', 'particles', 'audio-spectrum'],
+    4: ['base', 'particles', 'audio-spectrum'], 5: ['base', 'particles', 'audio-spectrum'], 6: ['base', 'particles', 'audio-spectrum'], 7: ['base', 'particles', 'audio-spectrum'], 8: ['base', 'particles', 'audio-spectrum'],
+    9: ['base', 'rain-mood', 'audio-spectrum'],
+    10: ['base', 'vox-echo', 'audio-spectrum'],
+    11: ['base', 'rain-resonance', 'audio-spectrum'],
+    12: ['base', 'audio-spectrum', 'sonic-terrain', 'sonic-audio', 'sonic-blocks'],
+    13: ['base', 'sonic-we', 'audio-spectrum']
   };
 
   Object.entries(expected).forEach(([preset, visible]) => {
@@ -67,4 +67,49 @@ test('首次归位、输入刷新和切预设都同步动效组显隐，旧体�
   const setPresetSource = presetGrid.slice(presetGrid.indexOf('function setPreset('), presetGrid.indexOf('function syncFxUniforms('));
   assert.equal((setPresetSource.match(/updateMineradioMotionGroupVisibility\(\)/g) || []).length, 1, '切预设只能触发一次动效组刷新');
   assert.doesNotMatch(css, /body\.vox-on \[data-fx-page="motion"\] > \*:not\(#vox-fx-section\)/, '旧体素 CSS 不能按控制台动效页直接子节点隐藏分组');
+});
+
+test('频谱面板是通用动效组，声波地形八段权重仍保持预设 12 专属', () => {
+  const workspace = read('public/js/modules/07-fx/09-console-workspace.js');
+  const panel = read('public/js/modules/07-fx/05-fx-panel-performance.js');
+
+  assert.match(workspace, /\{ key: 'audio-spectrum', title: '频谱面板'/);
+  ['t-sonicAudioMonitorEnabled', 't-sonicAudioAutoTrack', 'sonic-audio-monitor-toggle',
+    'fx-sonicaudiosensitivity', 'fx-sonicaudiobandstart', 'fx-sonicaudiobandend',
+    'fx-sonicaudiothreshold', 'fx-sonicaudiopulse'].forEach((id) => {
+    assert.match(workspace, new RegExp("fxConsoleItem\\('" + id + "'"));
+  });
+  assert.match(workspace, /\{ key: 'sonic-audio', title: '音域权重'/);
+  ['fx-sonicsubbass', 'fx-sonicbass', 'fx-soniclowmid', 'fx-sonicmid',
+    'fx-sonichighmid', 'fx-sonicpresence', 'fx-sonicbrilliance', 'fx-sonicair'].forEach((id) => {
+    assert.match(workspace, new RegExp("fxConsoleItem\\('" + id + "'"));
+  });
+  assert.match(panel, /'audio-spectrum': true/);
+  assert.match(panel, /'sonic-audio': preset === SONIC_PRESET_INDEX/);
+  assert.doesNotMatch(panel, /SONIC_ORIGINAL_FX_CONTROL_IDS = \[[\s\S]*fx-sonic-audio-section/);
+});
+
+test('三个音域回响在视觉预设入口合并为同一张三选一卡片', () => {
+  const grid = read('public/js/modules/07-fx/04-preset-grid-uniforms.js');
+  const css = read('public/css/index.css');
+
+  assert.match(grid, /SONIC_SERIES_PRESET_INDICES/);
+  assert.match(grid, /SONIC_SERIES_PRESET_INDICES = \[10, 12, 13\]/);
+  assert.match(grid, /preset-series-card/);
+  assert.match(grid, /pc-series-option/);
+  assert.match(grid, /data-preset="' \+ i/);
+  assert.match(grid, /setPreset\(' \+ i/);
+  assert.match(grid, /data-preset-group="sonic-series"/);
+  assert.match(grid, /pc-series-option[\s\S]*classList\.toggle\('active'/);
+  assert.match(css, /\.preset-series-card/);
+  assert.match(css, /\.pc-series-option/);
+});
+
+test('体素歌单宿主只挂到歌单架页，不再落到动效页或控制台根节点', () => {
+  const voxel = read('public/js/modules/02-visual/16-voxel-echo.js');
+
+  assert.match(voxel, /data-fx-page="shelf"/);
+  assert.match(voxel, /fxp\.querySelector\('\[data-fx-page="shelf"\]'\) \|\| fxp\.querySelector\('\[data-fx-page="playlist"\]'/);
+  assert.doesNotMatch(voxel, /if \(firstPage\) firstPage\.appendChild\(host\); else fxp\.appendChild\(host\)/);
+  assert.match(voxel, /if \(!firstPage\) return;/);
 });
