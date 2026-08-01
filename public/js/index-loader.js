@@ -94,6 +94,7 @@
     'js/modules/07-fx/05-fx-panel-performance.js',
     'js/modules/07-fx/08-cache-storage-settings.js',
     'js/modules/07-fx/09-console-workspace.js',
+    'js/modules/07-fx/10-wallpaper-library-panel.js',
     'js/modules/07-fx/06-hotkeys.js',
     'js/modules/07-fx/07-bindings-shelf-immersive.js',
     'js/modules/08-account/00-update-preview.js',

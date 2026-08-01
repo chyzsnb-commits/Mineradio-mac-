@@ -1951,6 +1951,15 @@ body.home-wallpaper-preview #canvas-container {
 .home-recent-inner .home-next-up,
 .home-recent-inner .home-daily-review,
 .home-recent-inner .home-quick-row{flex-shrink:1;min-height:0}
+/* 顶部信息行是内容本体,保持自身行高;只有歌曲列表承担剩余空间 */
+.home-recent-inner .home-kicker,
+.home-recent-inner .home-recent-title,
+.home-recent-inner .home-recent-stats,
+.home-recent-inner .home-daily-brief,
+.home-recent-inner .home-quick-row{flex:0 0 auto}
+/* next/review 内含固定尺寸封面和多行文字,不能被 flex 压到内容外溢;剩余空间交给列表滚动 */
+.home-recent-inner .home-next-up{flex:0 0 auto;min-height:96px}
+.home-recent-inner .home-daily-review{flex:0 0 auto;min-height:84px}
 .home-recent-inner .home-recent-list{flex:1 1 auto;min-height:48px}
 @media (max-height:760px){
   .home-recent-inner{gap:8px}
@@ -2742,6 +2751,7 @@ body.render-deep-sleep.empty-home-active .home-visual {
   }
 
   .home-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px
   }
 
@@ -3016,7 +3026,8 @@ body.render-deep-sleep.empty-home-active .home-visual {
   }
 
   .home-hero {
-    grid-row: auto;
+    grid-column: 1;
+    grid-row: 1;
     min-height: 344px
   }
 
@@ -3026,11 +3037,27 @@ body.render-deep-sleep.empty-home-active .home-visual {
   }
 
   .home-grid {
+    grid-column: 1;
+    grid-row: 2;
     grid-template-columns: repeat(2, minmax(0, 1fr))
+  }
+
+  #empty-home .home-rail.home-insight-rail {
+    grid-column: 1;
+    grid-row: 3
   }
 
   .home-tile-row {
     grid-template-columns: repeat(3, minmax(0, 1fr))
+  }
+
+  .home-recent-inner .home-daily-brief,
+  .home-recent-inner .home-next-up {
+    display: none
+  }
+
+  .home-recent-inner .home-daily-review {
+    min-height: 56px
   }
 }
 
@@ -3608,7 +3635,7 @@ body.empty-home-active.controls-visible #empty-home {
   }
 
   #empty-home .home-insight-card,
-  #empty-home .home-discovery-strip {
+  #empty-home .home-insight-dock .home-discovery-strip {
     contain: layout paint style;
     animation: none !important;
     backdrop-filter: none !important;
@@ -3619,16 +3646,24 @@ body.empty-home-active.controls-visible #empty-home {
 
 @media (max-width:1120px) {
   #empty-home .home-insight-dock {
-    grid-template-columns: 1fr
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto auto
   }
 
-  #empty-home .home-discovery-strip {
-    grid-template-columns: 1fr
+  #empty-home .home-insight-dock .home-listen-card { grid-column: 1; grid-row: 1 }
+  #empty-home .home-insight-dock .home-next-card { grid-column: 2; grid-row: 1 }
+  #empty-home .home-insight-dock .home-discovery-strip {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-template-columns: minmax(145px, .48fr) minmax(0, 1.52fr)
   }
 
   #empty-home .home-discovery-list {
-    grid-template-columns: 1fr
+    grid-template-columns: repeat(3, minmax(0, 1fr))
   }
+
+  #empty-home .home-insight-dock .home-ranking-entry:not(.home-radio-entry) { grid-column: 1; grid-row: 3 }
+  #empty-home .home-insight-dock .home-ranking-entry.home-radio-entry { grid-column: 2; grid-row: 3 }
 
   #empty-home .home-listen-metrics {
     gap: 8px
@@ -3651,7 +3686,17 @@ body.empty-home-active.controls-visible #empty-home {
   }
 
   #empty-home .home-insight-dock {
-    grid-template-columns: 1fr
+    grid-template-columns: 1fr;
+    grid-template-rows: none
+  }
+
+  #empty-home .home-insight-dock .home-listen-card,
+  #empty-home .home-insight-dock .home-next-card,
+  #empty-home .home-insight-dock .home-ranking-entry:not(.home-radio-entry),
+  #empty-home .home-insight-dock .home-ranking-entry.home-radio-entry,
+  #empty-home .home-insight-dock .home-discovery-strip {
+    grid-column: 1;
+    grid-row: auto
   }
 
   #empty-home .home-discovery-strip {
@@ -16311,3 +16356,27 @@ html.mineradio-public-release #qq-cookie-panel {
   line-height: 1.45
 }
 
+/* ---- 壁纸库面板（macOS，从 Win 电脑读取 WE 壁纸库） ---- */
+.wallpaper-library-modal{width:min(880px,calc(100vw - 48px));max-height:min(720px,calc(100vh - 96px));display:flex;flex-direction:column;gap:12px}
+.wallpaper-library-sources{display:grid;gap:8px}
+.wallpaper-source-row{display:flex;gap:8px;align-items:center}
+.wallpaper-source-row input{flex:1;min-width:0;height:32px;padding:0 10px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.05);color:#fff;font-size:12px}
+.wallpaper-source-row input:focus{outline:none;border-color:rgba(var(--fc-accent-rgb),.5)}
+.wallpaper-library-body{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(0,1.1fr);gap:12px;min-height:300px}
+.wallpaper-library-list{overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;align-content:start;max-height:420px;padding-right:4px}
+.wallpaper-record{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.03);color:#fff;text-align:left;font-family:inherit;cursor:pointer;min-width:0}
+.wallpaper-record:hover{border-color:rgba(255,255,255,.2);background:rgba(255,255,255,.06)}
+.wallpaper-record.active{border-color:rgba(var(--fc-accent-rgb),.6);background:rgba(var(--fc-accent-rgb),.12)}
+.wallpaper-thumb{width:100%;height:72px;border-radius:8px;background-size:cover;background-position:center;background-color:rgba(255,255,255,.06)}
+.wallpaper-thumb-empty{background:linear-gradient(135deg,rgba(36,66,255,.3),rgba(255,83,103,.25))}
+.wallpaper-record-copy{min-width:0}
+.wallpaper-record-title{display:block;font-size:11px;font-weight:680;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(255,255,255,.9)}
+.wallpaper-record-meta{display:flex;gap:6px;align-items:center;font-size:9.5px;color:rgba(255,255,255,.45);margin-top:2px}
+.wallpaper-scene-note{color:#ff9c6b}
+.wallpaper-badge{position:absolute;top:4px;right:4px;font-size:8px;padding:2px 5px;border-radius:6px;background:rgba(255,255,255,.14);color:rgba(255,255,255,.8)}
+.wallpaper-library-preview{display:flex;align-items:center;justify-content:center;min-height:300px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(0,0,0,.3);overflow:hidden}
+.wallpaper-library-preview img,.wallpaper-library-preview video{max-width:100%;max-height:420px;border-radius:10px;object-fit:contain}
+.wallpaper-library-preview-empty{color:rgba(255,255,255,.4);font-size:12px;padding:20px;text-align:center}
+.wallpaper-library-preview-meta{font-size:11px;color:rgba(255,255,255,.55);min-height:16px}
+.wallpaper-library-note{font-size:10px;line-height:1.6;color:rgba(255,255,255,.4);border-top:1px solid rgba(255,255,255,.06);padding-top:8px}
+.wallpaper-library-empty{grid-column:1/-1;color:rgba(255,255,255,.4);font-size:12px;padding:24px 8px;text-align:center}

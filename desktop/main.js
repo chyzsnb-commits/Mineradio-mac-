@@ -17,7 +17,9 @@ const { createAiStemService } = require('./ai-stem-separator');
 const { createCrashDiagnostics } = require('./crash-diagnostics');
 const { LocalMusicLibrary, registerLocalMusicScheme } = require('./local-music-library');
 const { applyOfficialProviderLogin } = require('./official-login-bridge');
+const { WallpaperEngineLibrary, registerWallpaperEngineScheme } = require('./wallpaper-engine-library');
 registerLocalMusicScheme(protocol);
+registerWallpaperEngineScheme(protocol);
 
 const RELEASE_POLICY = require('./release-policy');
 // macOS Touch Bar 播放控制（2016-2019 Intel MBP）。无 Touch Bar 的机器安全 no-op。
@@ -2537,6 +2539,29 @@ ipcMain.handle('mineradio-local-library-remove', async (_event, ids) => {
   } catch (error) {
     return { ok: false, count: 0, tracks: [], removed: 0, error: error.message || 'LOCAL_LIBRARY_REMOVE_FAILED' };
   }
+});
+
+// ---- 壁纸库（macOS）：从 Win 电脑 WE 库（SMB 挂载 / HTTP 源）读取图片/视频壁纸 ----
+let wallpaperLibraryBridge = null;
+function getWallpaperLibraryBridge() {
+  if (!wallpaperLibraryBridge) {
+    const bridge = require('./wallpaper-library-bridge');
+    wallpaperLibraryBridge = bridge.init({ userDataPath: app.getPath('userData') });
+  }
+  return wallpaperLibraryBridge;
+}
+
+ipcMain.handle('mineradio-wallpaper-library-scan-dir', async (_event, dirPath) => {
+  return getWallpaperLibraryBridge().scanDirectory(dirPath);
+});
+ipcMain.handle('mineradio-wallpaper-library-scan-http', async (_event, baseUrl) => {
+  return getWallpaperLibraryBridge().scanHttpSource(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-library-list', async () => {
+  return getWallpaperLibraryBridge().list();
+});
+ipcMain.handle('mineradio-wallpaper-library-media', async (_event, recordId, kind) => {
+  return getWallpaperLibraryBridge().getMediaFile(recordId, kind);
 });
 
 function lyricCacheDirectoryPath() {
