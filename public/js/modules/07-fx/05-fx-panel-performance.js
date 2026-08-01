@@ -34,6 +34,29 @@ function updateSonicSeriesControlVisibility() {
   setFxPanelControlsHidden(['fx-lyricbgadapt-row', 'fx-lyricbgadapt'], false);
 }
 
+// 动效 tab 预设专属分组:每个预设只显示自己的动效组 + 通用组(base/particles),不混杂其他预设。
+// 通用组: base(基础画面) particles(粒子与光影)
+// 专属组: rain-mood(预设9雨境) rain-resonance(预设11云瀑) vox-echo(预设10音域回响)
+//         sonic-terrain/sonic-audio/sonic-blocks(预设12声波地形) sonic-we(预设13声波工坊)
+function updateMineradioMotionGroupVisibility() {
+  var preset = Number(fx && fx.preset) || 0;
+  var groups = document.querySelectorAll('#fx-panel [data-fx-page="motion"] .fx-console-group');
+  var visibleMap = {
+    'rain-mood': preset === 9,
+    'rain-resonance': preset === 11,
+    'vox-echo': preset === 10,
+    'sonic-terrain': preset === SONIC_PRESET_INDEX,
+    'sonic-audio': preset === SONIC_PRESET_INDEX,
+    'sonic-blocks': preset === SONIC_PRESET_INDEX,
+    'sonic-we': preset === SONIC_WORKSHOP_PRESET_INDEX,
+  };
+  groups.forEach(function (group) {
+    var key = group.getAttribute('data-fx-console-group') || '';
+    var visible = visibleMap[key] !== false;   // 未在映射里的组(base/particles 等)= 通用组,始终显示
+    group.classList.toggle('fx-sonic-hidden', !visible);
+  });
+}
+
 function ensureHomeWaveTrackBars() {
   var el = document.getElementById('home-wave-track');
   if (!el) return;

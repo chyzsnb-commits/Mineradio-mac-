@@ -59,6 +59,17 @@ test('壁纸库主进程扫描器已迁移且 Mac 安全', () => {
   const fxDefaults2 = read('public/js/modules/00-state/04-fx-defaults.js');
   assert.match(fxDefaults2, /rainWindOffset: 0/);
   assert.match(fxDefaults2, /rainDensity: 1\.0/);
+
+  // 动效 tab 预设专属过滤:每个预设只显示自己的动效组,不混杂
+  const panelPerf = read('public/js/modules/07-fx/05-fx-panel-performance.js');
+  assert.match(panelPerf, /function updateMineradioMotionGroupVisibility\(\)/);
+  assert.match(panelPerf, /'rain-mood': preset === 9/);
+  assert.match(panelPerf, /'rain-resonance': preset === 11/);
+  assert.match(panelPerf, /'vox-echo': preset === 10/);
+  assert.match(panelPerf, /'sonic-we': preset === SONIC_WORKSHOP_PRESET_INDEX/);
+  assert.match(panelPerf, /visibleMap\[key\] !== false/);
+  const gridUniforms = read('public/js/modules/07-fx/04-preset-grid-uniforms.js');
+  assert.match(gridUniforms, /updateMineradioMotionGroupVisibility\(\)/);
 });
 
 test('壁纸库渲染层面板与入口已接线', () => {
