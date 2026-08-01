@@ -2,6 +2,7 @@
 
 ## 2.0.0
 
+- 修复首页洞察 dock 卡片重叠：用户反馈首页排版「很多都显示不了」——洞察 dock（今日聆听/接下来播放/为你挑选/榜单/平台推荐 5 个卡片 + 为你准备 tile 行）是 2 列 grid 但子元素无显式定位，CSS Grid 自动布局在窗口较小时把卡片挤叠。修复：dock 子元素显式分配行列（listen(1,1)/next(2,1)/discovery(1,2)/ranking(2,2)/radio 整行(1/-1,3)）+ `align-items:start`，`home-grid`/`home-rail` 补 `grid-column:2` 显式定位。无头 Chrome 实测 600/700/800px 窗口 dock 5 卡片零重叠。
 - 修复首页小窗口布局重叠：窗口高度不足（未全屏）时，「最近播放」hero 内的每日热评（Daily Review）与歌曲列表重叠——根因是 `.home-recent-inner`（flex column）里固定内容不收缩，列表 `flex:1` 收缩到 0 后热评溢出被 `overflow:hidden` 裁剪。修复：固定区块（kicker/title/stats/热评/接下来播放/快捷行）允许收缩 + 列表保底 `min-height:48px`，并在小窗口（≤760px 高）隐藏次要元素（stats/每日简报/接下来播放/时间），≤640px 进一步精简。无头 Chrome 实测 700px 窗口下 `review_bottom < list_top` 不重叠。
 - 升级 listen-stats 本地每日聚合（Windows v2.1.0 v2 rollup）：新增 `HOME_LISTEN_ROLLUP_V2_KEY` 每日收听聚合（totalListenMs/sessions/daily 按天统计，含完成数），`finalizeListenSession` 写入；**纯本地**，不迁移上游的 `/api/listen/report` 服务端上报（平台收听同步为上游 `experimental-unverified` 能力，Mac 不迁移避免数据外发）。
 - 修复三个 review 发现的 bug：① `setFxPanelTab` 旧分页 fallback 白屏——现按面板实际 `data-console-layout` 选择 key 集合（FX 布局用 home/interface/...，旧分页用 presets/appearance/...），并加 `newToLegacy` 反向映射，旧分页不再映射到不存在的页面；同步修复 `16-voxel-echo.js` 的 `fxPanelTab === 'playlist'` 检查兼容 'shelf'。② 音源切换竞态——`switchCurrentSongSource` 在等待匹配结果期间用户切歌会覆盖新选歌曲索引，现 await 后用歌曲引用比对中止切换，catch 分支同样保护。③ 工坊预设降级循环——超时降级用 `noSave:true` 导致持久化仍停在预设 13、每次启动白等 9 秒再被降级，现改为正常持久化 + `state.degraded` 防重复 + removeLayer 重置允许重试。新增测试断言，`npm run check` **223/223** 通过。

@@ -228,6 +228,13 @@ test('FX 控制台(设置搜索/撤销历史)与缓存设置(只读版)已迁移
   assert.match(css2, /@media \(max-height:760px\)/);
   assert.match(css2, /home-recent-inner \.home-recent-stats\{display:none\}/);
 
+  // 洞察 dock 卡片布局修复(显式 grid 行列,消除自动布局重叠)
+  assert.match(css2, /\.home-insight-dock \.home-listen-card \{ grid-column: 1; grid-row: 1 \}/);
+  assert.match(css2, /\.home-insight-dock \.home-next-card \{ grid-column: 2; grid-row: 1 \}/);
+  assert.match(css2, /\.home-insight-dock \.home-discovery-strip \{ grid-column: 1; grid-row: 2 \}/);
+  assert.match(css2, /\.home-ranking-entry:not\(\.home-radio-entry\)/);
+  assert.match(css2, /\.home-ranking-entry\.home-radio-entry \{ grid-column: 1 \/ -1; grid-row: 3 \}/);
+
   // 缓存设置:只读版模块 + 主进程 IPC + preload API + 面板 UI
   assert.match(loader, /07-fx\/08-cache-storage-settings\.js/);
   assert.match(cacheSettings, /function refreshMineradioCacheSettings\(\)/);

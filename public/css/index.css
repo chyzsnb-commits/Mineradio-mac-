@@ -2339,6 +2339,8 @@ body.empty-home-active .home-card:active{animation:none}
 
 .home-grid {
   display: grid;
+  grid-column: 2;
+  grid-row: 1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px
 }
@@ -2543,6 +2545,8 @@ body.render-deep-sleep.empty-home-active .home-visual {
 .home-rail {
   align-self: stretch;
   min-height: 0;
+  grid-column: 2;
+  grid-row: 2;
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 12px
@@ -3132,9 +3136,18 @@ body.empty-home-active.controls-visible #empty-home {
 #empty-home .home-insight-dock {
   display: grid;
   grid-template-columns: minmax(0, 1.12fr) minmax(280px, .88fr);
+  grid-template-rows: auto auto auto;
   gap: 13px;
-  min-height: 132px
+  min-height: 132px;
+  align-items: start
 }
+
+/* 修复 dock 卡片自动布局重叠:显式分配行列 */
+#empty-home .home-insight-dock .home-listen-card { grid-column: 1; grid-row: 1 }
+#empty-home .home-insight-dock .home-next-card { grid-column: 2; grid-row: 1 }
+#empty-home .home-insight-dock .home-discovery-strip { grid-column: 1; grid-row: 2 }
+#empty-home .home-insight-dock .home-ranking-entry:not(.home-radio-entry) { grid-column: 2; grid-row: 2 }
+#empty-home .home-insight-dock .home-ranking-entry.home-radio-entry { grid-column: 1 / -1; grid-row: 3 }
 
 #empty-home .home-insight-card {
   position: relative;
