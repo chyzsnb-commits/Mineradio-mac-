@@ -78,6 +78,7 @@ const desktopWindowApi = {
     if (!authorization || authorization.ok !== true || !authorization.token) return authorization;
     return ipcRenderer.invoke('mineradio-local-library-import', { token: authorization.token });
   },
+  removeLocalMusicLibraryTracks: (ids) => ipcRenderer.invoke('mineradio-local-library-remove', Array.isArray(ids) ? ids : [ids]),
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
   readCurrentFxAutosaveSync: () => ipcRenderer.sendSync('mineradio-current-fx-autosave-read-sync'),

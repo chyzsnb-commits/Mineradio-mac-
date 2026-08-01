@@ -56,3 +56,23 @@ test('QQ 与酷狗会员状态兼容 v2.1.0 字段', () => {
   assert.match(status, /qqMembershipNeedsSync/);
   assert.match(status, /playbackReady \|\| info\.playbackKeyReady/);
 });
+
+test('本地曲库浏览/管理面板与移除 IPC 接线存在', () => {
+  const html = read('public/index.html');
+  const loader = read('public/js/index-loader.js');
+  const panel = read('public/js/modules/06-lyrics/07-local-library-panel.js');
+  const main = read('desktop/main.js');
+  const preload = read('desktop/preload.js');
+
+  assert.match(html, /local-library-modal/);
+  assert.match(html, /local-library-search/);
+  assert.match(html, /local-library-list/);
+  assert.match(html, /openLocalLibraryPanel\(\)/);
+  assert.match(loader, /07-local-library-panel\.js/);
+  assert.match(panel, /function openLocalLibraryPanel\(/);
+  assert.match(panel, /function renderLocalLibraryRows\(/);
+  assert.match(panel, /function playAllLocalLibraryTracks\(/);
+  assert.match(panel, /function removeLocalLibraryTrack\(/);
+  assert.match(main, /mineradio-local-library-remove/);
+  assert.match(preload, /removeLocalMusicLibraryTracks/);
+});

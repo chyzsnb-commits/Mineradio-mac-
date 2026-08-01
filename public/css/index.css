@@ -9582,6 +9582,222 @@ body.login-guide-active #login-guide-canvas {
   opacity: .64
 }
 
+.local-library-modal {
+  width: min(760px, 92vw);
+  max-width: min(760px, 92vw);
+  height: min(640px, 86vh);
+  padding: 24px 22px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 12px
+}
+
+.local-library-modal h2 {
+  margin-bottom: 0;
+  font-size: 17px;
+  font-weight: 640
+}
+
+.local-library-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap
+}
+
+.local-library-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px
+}
+
+.local-library-count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, .46);
+  font-variant-numeric: tabular-nums
+}
+
+.local-library-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px
+}
+
+.modal-btn.small {
+  padding: 6px 11px;
+  font-size: 11px;
+  border-radius: 7px
+}
+
+.local-library-search input {
+  width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .055);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  transition: border-color .18s, background .18s
+}
+
+.local-library-search input:focus {
+  border-color: rgba(244, 210, 138, .5);
+  background: rgba(255, 255, 255, .08)
+}
+
+.local-library-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px
+}
+
+.local-library-hint {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, .38)
+}
+
+.local-library-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 6px;
+  padding-right: 4px
+}
+
+.local-library-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, .075);
+  background: rgba(255, 255, 255, .035);
+  transition: background .16s, border-color .16s, transform .16s
+}
+
+.local-library-row:hover {
+  background: rgba(255, 255, 255, .07);
+  border-color: rgba(255, 255, 255, .15)
+}
+
+.local-library-thumb {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(36, 66, 255, .5), rgba(0, 245, 212, .42));
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .12)
+}
+
+.local-library-meta {
+  min-width: 0
+}
+
+.local-library-name {
+  font-size: 12.5px;
+  font-weight: 680;
+  color: rgba(255, 255, 255, .93);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+.local-library-sub {
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, .46);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+.local-library-duration {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, .5);
+  font-variant-numeric: tabular-nums
+}
+
+.local-library-lyric-badge {
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 760;
+  color: rgba(0, 245, 212, .95);
+  border: 1px solid rgba(0, 245, 212, .32);
+  background: rgba(0, 245, 212, .08)
+}
+
+.local-library-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px
+}
+
+.local-library-row-actions button {
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  background: rgba(255, 255, 255, .05);
+  color: rgba(255, 255, 255, .72);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .16s, border-color .16s, color .16s
+}
+
+.local-library-play:hover {
+  border-color: rgba(0, 245, 212, .5);
+  background: rgba(0, 245, 212, .12);
+  color: #fff
+}
+
+.local-library-remove:hover {
+  border-color: rgba(255, 120, 130, .55);
+  background: rgba(255, 120, 130, .12);
+  color: #fff
+}
+
+.local-library-row-note {
+  padding: 26px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, .42)
+}
+
+.local-library-empty {
+  padding: 22px 10px;
+  text-align: center
+}
+
+.local-library-empty-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, .78)
+}
+
+.local-library-empty-sub {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, .42)
+}
+
 .custom-lyric-modal {
   width: min(560px, 92vw);
   max-width: min(560px, 92vw);

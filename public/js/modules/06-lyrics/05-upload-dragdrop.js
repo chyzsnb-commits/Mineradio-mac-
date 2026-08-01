@@ -104,6 +104,7 @@ async function importPersistentLocalAudioFiles(files, opts) {
     if (tracks.length) {
       persistentLocalLibraryTracks = tracks;
       loadPersistedLocalLibraryIntoQueue(tracks, { coverFile: opts.coverFile, mode: opts.mode || '' });
+      if (typeof refreshLocalLibraryPanelIfOpen === 'function') refreshLocalLibraryPanelIfOpen();
     }
     if (Array.isArray(result.failures) && result.failures.length && typeof showToast === 'function') {
       setTimeout(function () { showToast(result.failures.length + ' 个文件导入失败（已跳过）'); }, 1400);

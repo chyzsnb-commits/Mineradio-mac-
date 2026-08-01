@@ -140,6 +140,11 @@
               <path d="M8 13h8" />
               <path d="M12 9v8" />
             </svg><span><strong>多曲文件夹</strong><small>批量导入到队列</small></span></button>
+          <button class="upload-choice" type="button" onclick="openLocalLibraryPanel()"><svg viewBox="0 0 24 24"
+              fill="none" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="3" />
+              <path d="M7 9h10M7 13h10M7 17h6" />
+            </svg><span><strong>本地曲库</strong><small>浏览 / 播放 / 管理已导入文件</small></span></button>
         </div>
         <div id="upload-tip" role="status" aria-live="polite">
           <button class="upload-tip-close" onclick="closeUploadTip(true)" aria-label="关闭提示">×</button>
@@ -172,6 +177,7 @@
             <div class="home-quick-row">
               <button class="home-chip home-console-chip" type="button"
                 onclick="openHomePlayerConsole()">展开播放器控制台</button>
+              <button class="home-chip" type="button" onclick="openLocalLibraryPanel()">本地曲库</button>
             </div>
           </div>
         </div>
@@ -1440,6 +1446,36 @@
           <button id="local-beat-cancel-btn" class="modal-btn" onclick="cancelLocalBeatAnalysis()"
             style="display:none">取消</button>
           <button id="local-beat-start-btn" class="modal-btn primary" onclick="startLocalBeatAnalysis()">开始分析</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="local-library-modal" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true">
+      <div class="modal local-library-modal">
+        <div class="local-library-head">
+          <div class="local-library-title">
+            <h2>本地曲库</h2>
+            <span class="local-library-count" id="local-library-count">0 首</span>
+          </div>
+          <div class="local-library-head-actions">
+            <button class="modal-btn small" type="button" onclick="triggerUploadInput('audio')">导入单曲</button>
+            <button class="modal-btn small" type="button" onclick="triggerUploadInput('folder')">导入文件夹</button>
+            <button class="modal-btn small" type="button" onclick="refreshLocalLibraryPanel(true)">刷新</button>
+            <button class="modal-btn small" type="button" onclick="closeLocalLibraryPanel()">关闭</button>
+          </div>
+        </div>
+        <div class="local-library-search">
+          <input id="local-library-search" type="search" placeholder="搜索本地曲库（标题 / 歌手 / 专辑）"
+            autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="local-library-actions">
+          <button class="modal-btn primary" type="button" onclick="playAllLocalLibraryTracks()">全部播放</button>
+          <span class="local-library-hint">移除只删除曲库索引，不会删除源文件</span>
+        </div>
+        <div class="local-library-list" id="local-library-list"></div>
+        <div class="local-library-empty" id="local-library-empty" hidden>
+          <div class="local-library-empty-title">曲库还是空的</div>
+          <div class="local-library-empty-sub">拖入 mp3 / flac / wav / m4a 等音频文件，或点上方“导入”按钮。</div>
         </div>
       </div>
     </div>

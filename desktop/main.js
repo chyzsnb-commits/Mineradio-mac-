@@ -2516,6 +2516,17 @@ ipcMain.handle('mineradio-local-library-import', async (event, payload = {}) => 
   }
 });
 
+ipcMain.handle('mineradio-local-library-remove', async (_event, ids) => {
+  if (!localMusicLibrary) return { ok: false, count: 0, tracks: [], error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  try {
+    const before = localMusicLibrary.listTracksSync().count || 0;
+    const result = await localMusicLibrary.removeTracks(ids);
+    return { ...result, removed: Math.max(0, before - (result.count || 0)) };
+  } catch (error) {
+    return { ok: false, count: 0, tracks: [], removed: 0, error: error.message || 'LOCAL_LIBRARY_REMOVE_FAILED' };
+  }
+});
+
 ipcMain.handle('spotify-music-open-login', async (event) => {
   return openSpotifyMusicLoginWindow(getSenderWindow(event));
 });

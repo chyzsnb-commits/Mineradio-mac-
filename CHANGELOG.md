@@ -2,6 +2,7 @@
 
 ## 2.0.0
 
+- 本地曲库面板（Windows v2.1.0 对齐）：首页快捷区与导入面板新增“本地曲库”入口，弹窗支持浏览、搜索（标题/歌手/专辑）、逐首播放、全部播放与从曲库移除；移除只删除索引与封面缓存，不删除源文件，若正在播放被移除曲目会自动切到下一首。主进程新增 `mineradio-local-library-remove` IPC，preload 暴露 `removeLocalMusicLibraryTracks`。专项 5/5、`npm run check` **210/210** 通过。
 - 对齐 Windows v2.1.0 的持久化本地曲库：新增主进程 `desktop/local-music-library.js`（`music-metadata` 解析标题/歌手/专辑/时长/内嵌封面与 LRC 侧车/内嵌歌词，`mineradio-local://` 特权协议按字节范围流式播放，索引加密键值持久化在 userData）；拖拽/文件选择/整文件夹导入自动走持久化索引并立即进队播放，导入失败时回退原对象 URL 路径；启动时自动恢复索引中的本地曲目与断点（含歌词进度），本地歌播放时按需读取内嵌/侧车歌词走既有歌词管线。新增 `scripts/test-v210-migration-lite.js` 并纳入 `npm run check`。
 - 首页继续对齐 Windows v2.1.0：新增“每日热评”卡片（每日一条、可换一条、支持 localStorage 自定义热评列表）与生成封面回退（无封面卡片自动生成品牌渐变 SVG 封面），保留 Mac 最近播放/天气/歌单/视觉入口；不迁移 Windows MP4 视频 Hero（Mac 功耗考虑）。
 - QQ/酷狗登录状态字段对齐 v2.1.0：新增 `qqMembershipNeedsSync` 区分“播放授权未完成”与“权益待同步”，酷狗登录归一化同时接受 `playbackReady` / `playbackKeyReady`。
