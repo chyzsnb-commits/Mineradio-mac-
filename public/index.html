@@ -700,6 +700,159 @@
           <button class="fx-mini-btn ghost" onclick="resetVoxRippleColor()" style="height:24px;padding:0 9px;font-size:11px" title="恢复自动(封面第二主色)">默认</button>
         </div>
       </div>
+      <div id="sonic-fx-section">
+        <div class="fx-section-label" id="fx-sonic-ground-section">音域地形</div>
+        <div class="fx-slider"><label>地面起伏</label><input id="fx-sonicamp" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>起伏速度</label><input id="fx-sonicspeed" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>地形密度</label><input id="fx-sonicdensity" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>地面范围</label><input id="fx-sonicrange" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>歌词避让</label><input id="fx-soniclower" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>地面远近</label><input id="fx-sonicdepth" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>地形自转</label><input id="fx-sonicautorotate" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-section-label" id="fx-sonic-audio-section">音域频谱</div>
+        <div class="fx-toggle-grid sonic-audio-toggle-grid" id="sonic-audio-toggle-grid">
+          <div class="fx-toggle" id="t-sonicAudioMonitorEnabled" onclick="toggleFx('sonicAudioMonitorEnabled')">
+            <span>实时频谱</span><span class="dot"></span>
+          </div>
+          <div class="fx-toggle" id="t-sonicAudioAutoTrack" onclick="toggleFx('sonicAudioAutoTrack')">
+            <span>Kick 自动</span><span class="dot"></span>
+          </div>
+        </div>
+        <div class="sonic-audio-monitor" id="sonic-audio-monitor">
+          <div class="sonic-audio-monitor-head">
+            <button class="fx-mini-btn ghost" id="sonic-audio-monitor-toggle" type="button">频谱面板</button>
+            <div class="sonic-audio-meter"><span id="sonic-audio-meter-fill"></span></div>
+            <small id="sonic-audio-monitor-label">AUTO 1-4</small>
+          </div>
+          <div class="sonic-audio-monitor-panel" id="sonic-audio-monitor-panel">
+            <canvas id="sonic-audio-monitor-canvas" width="320" height="108"></canvas>
+          </div>
+        </div>
+        <div class="fx-slider"><label>Kick 灵敏</label><input id="fx-sonicaudiosensitivity" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>范围起点</label><input id="fx-sonicaudiobandstart" type="range" min="0" max="510"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>范围终点</label><input id="fx-sonicaudiobandend" type="range" min="2" max="512"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>触发阈值</label><input id="fx-sonicaudiothreshold" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>触发力度</label><input id="fx-sonicaudiopulse" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>中心低频</label><input id="fx-sonicsubbass" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>低频重量</label><input id="fx-sonicbass" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>慢波流动</label><input id="fx-soniclowmid" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>方向流</label><input id="fx-sonicmid" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>尖峰</label><input id="fx-sonichighmid" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>闪光触发</label><input id="fx-sonicpresence" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>边缘微闪</label><input id="fx-sonicbrilliance" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>空气颗粒</label><input id="fx-sonicair" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-section-label" id="fx-sonic-color-section">音域颜色</div>
+        <div class="lyric-color-row" id="sonic-ground-base-row">
+          <input id="sonic-ground-base-picker" class="lyric-color-picker" type="color" value="#05070c" title="地形暗部">
+          <div class="fx-color-row-label">地形暗部<small id="sonic-ground-base-value">#05070C</small></div>
+          <button class="fx-mini-btn ghost" type="button" onclick="resetSonicGroundColor('sonicGroundBaseColor')">默认</button>
+        </div>
+        <div class="lyric-color-row" id="sonic-ground-cool-row">
+          <input id="sonic-ground-cool-picker" class="lyric-color-picker" type="color" value="#0066ff" title="冷色峰值">
+          <div class="fx-color-row-label">冷色峰值<small id="sonic-ground-cool-value">#0066FF</small></div>
+          <button class="fx-mini-btn ghost" type="button" onclick="resetSonicGroundColor('sonicGroundCoolColor')">默认</button>
+        </div>
+        <div class="lyric-color-row" id="sonic-ground-warm-row">
+          <input id="sonic-ground-warm-picker" class="lyric-color-picker" type="color" value="#ff3c19" title="暖色峰值">
+          <div class="fx-color-row-label">暖色峰值<small id="sonic-ground-warm-value">#FF3C19</small></div>
+          <button class="fx-mini-btn ghost" type="button" onclick="resetSonicGroundColor('sonicGroundWarmColor')">默认</button>
+        </div>
+        <div class="lyric-color-row" id="sonic-ground-accent-row">
+          <input id="sonic-ground-accent-picker" class="lyric-color-picker" type="color" value="#33e6ff" title="涟漪高光">
+          <div class="fx-color-row-label">涟漪高光<small id="sonic-ground-accent-value">#33E6FF</small></div>
+          <button class="fx-mini-btn ghost" type="button" onclick="resetSonicGroundColor('sonicGroundAccentColor')">默认</button>
+        </div>
+        <div class="fx-slider"><label>音域光强</label><input id="fx-sonicglow" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-section-label" id="fx-sonic-floating-section">音域方块</div>
+        <div class="fx-toggle-grid" id="sonic-floating-toggle-grid">
+          <div class="fx-toggle" id="t-sonicGroundFloatingEnabled" onclick="toggleFx('sonicGroundFloatingEnabled')">
+            <span>浮空方块</span><span class="dot"></span>
+          </div>
+        </div>
+        <div class="fx-slider"><label>方块数量</label><input id="fx-sonicfloatcount" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>方块强度</label><input id="fx-sonicfloatintensity" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>方块小值</label><input id="fx-sonicfloatmin" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>方块大值</label><input id="fx-sonicfloatmax" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>方块速度</label><input id="fx-sonicfloatspeed" type="range" min="0" max="100"
+            step="1"><output></output></div>
+        <div class="fx-section-label" id="fx-sonic-workshop-section">音域回响·WE</div>
+        <div class="fx-slider"><label>输入压制</label><input id="fx-sonicwegain" type="range" min="40" max="100"
+            step="1"><output></output></div>
+        <div class="fx-slider"><label>音频响应</label><input id="fx-sonicweaudio" type="range" min="0.3" max="2.5"
+            step="0.01"><output></output></div>
+        <div class="fx-slider"><label>响应范围</label><input id="fx-sonicwerange" type="range" min="0.3" max="2"
+            step="0.01"><output></output></div>
+        <div class="fx-slider"><label>中心高光</label><input id="fx-sonicwepeak" type="range" min="0" max="1.4"
+            step="0.01"><output></output></div>
+        <div class="lyric-color-row" id="sonic-workshop-color-row">
+          <input id="sonic-workshop-cover-picker" class="lyric-color-picker" type="color" value="#cb6c89" title="WE theme color">
+          <div class="fx-color-row-label">WE&#x4e3b;&#x9898;&#x57fa;&#x8272;<small id="sonic-workshop-theme-value">&#x5c01;&#x9762;&#x53d6;&#x8272;</small></div>
+          <button class="fx-mini-btn ghost" id="sonic-workshop-cover-btn" type="button"
+            onclick="setSonicWorkshopRegionColorMode('theme','cover')">&#x5c01;&#x9762;</button>
+        </div>
+        <div class="lyric-color-row" id="sonic-workshop-base-row">
+          <input id="sonic-workshop-base-picker" class="lyric-color-picker" type="color" value="#16060f" title="WE terrain base">
+          <div class="fx-color-row-label">&#x5730;&#x5f62;&#x5e95;&#x8272;<small id="sonic-workshop-base-value">&#x5c01;&#x9762;&#x53d6;&#x8272;</small></div>
+          <button class="fx-mini-btn ghost" id="sonic-workshop-base-btn" type="button"
+            onclick="setSonicWorkshopRegionColorMode('base','cover')">&#x5c01;&#x9762;</button>
+        </div>
+        <div class="lyric-color-row" id="sonic-workshop-warm-row">
+          <input id="sonic-workshop-warm-picker" class="lyric-color-picker" type="color" value="#cb6c89" title="WE warm body">
+          <div class="fx-color-row-label">&#x6696;&#x8272;&#x4e3b;&#x4f53;<small id="sonic-workshop-warm-value">&#x5c01;&#x9762;&#x53d6;&#x8272;</small></div>
+          <button class="fx-mini-btn ghost" id="sonic-workshop-warm-btn" type="button"
+            onclick="setSonicWorkshopRegionColorMode('warm','cover')">&#x5c01;&#x9762;</button>
+        </div>
+        <div class="lyric-color-row" id="sonic-workshop-cool-row">
+          <input id="sonic-workshop-cool-picker" class="lyric-color-picker" type="color" value="#99c4ff" title="WE upper highlight">
+          <div class="fx-color-row-label">&#x4e0a;&#x5c42;&#x9ad8;&#x5149;<small id="sonic-workshop-cool-value">&#x5c01;&#x9762;&#x53d6;&#x8272;</small></div>
+          <button class="fx-mini-btn ghost" id="sonic-workshop-cool-btn" type="button"
+            onclick="setSonicWorkshopRegionColorMode('cool','cover')">&#x5c01;&#x9762;</button>
+        </div>
+        <div class="lyric-color-row" id="sonic-workshop-ripple-row">
+          <input id="sonic-workshop-ripple-picker" class="lyric-color-picker" type="color" value="#f8d8ff" title="WE ripple light">
+          <div class="fx-color-row-label">&#x6ce2;&#x7eb9;&#x4eae;&#x533a;<small id="sonic-workshop-ripple-value">&#x5c01;&#x9762;&#x53d6;&#x8272;</small></div>
+          <button class="fx-mini-btn ghost" id="sonic-workshop-ripple-btn" type="button"
+            onclick="setSonicWorkshopRegionColorMode('ripple','cover')">&#x5c01;&#x9762;</button>
+        </div>
+        <div class="lyric-color-row" id="sonic-workshop-peak-row">
+          <input id="sonic-workshop-peak-picker" class="lyric-color-picker" type="color" value="#99c4ff" title="WE peak highlight">
+          <div class="fx-color-row-label">&#x5cf0;&#x503c;&#x9ad8;&#x5149;<small id="sonic-workshop-peak-value">&#x5c01;&#x9762;&#x53d6;&#x8272;</small></div>
+          <button class="fx-mini-btn ghost" id="sonic-workshop-peak-btn" type="button"
+            onclick="setSonicWorkshopRegionColorMode('peak','cover')">&#x5c01;&#x9762;</button>
+        </div>
+        <div class="fx-seg sonic-workshop-theme-seg" id="sonic-workshop-theme-seg">
+          <button data-sonic-workshop-theme="coral-mirage" onclick="setSonicWorkshopTheme('coral-mirage')">珊瑚</button>
+          <button data-sonic-workshop-theme="ocean-deep" onclick="setSonicWorkshopTheme('ocean-deep')">深海</button>
+          <button data-sonic-workshop-theme="arctic-aurora" onclick="setSonicWorkshopTheme('arctic-aurora')">冰蓝</button>
+          <button data-sonic-workshop-theme="cyber-forest" onclick="setSonicWorkshopTheme('cyber-forest')">翠绿</button>
+          <button data-sonic-workshop-theme="minimal-monochrome" onclick="setSonicWorkshopTheme('minimal-monochrome')">极简</button>
+        </div>
+      </div>
       <div id="app-bg-section">
       <div class="fx-section-label">背景(所有预设通用)</div>
       <div style="display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap">

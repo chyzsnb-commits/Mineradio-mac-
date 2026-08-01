@@ -1,4 +1,39 @@
 var homeWaveTrackState = { bars: 0, smooth: [] };
+
+// ---- 声波系列(预设 12 声波地形 / 13 声波工坊)fx 面板显隐 —— Windows v2.1.0 迁移 ----
+var SONIC_ORIGINAL_FX_CONTROL_IDS = [
+  'fx-sonic-ground-section', 'fx-sonicamp', 'fx-sonicspeed', 'fx-sonicdensity', 'fx-sonicrange', 'fx-soniclower', 'fx-sonicdepth', 'fx-sonicautorotate',
+  'fx-sonic-audio-section', 'sonic-audio-toggle-grid', 'sonic-audio-monitor', 'fx-sonicaudiosensitivity', 'fx-sonicaudiobandstart', 'fx-sonicaudiobandend', 'fx-sonicaudiothreshold', 'fx-sonicaudiopulse',
+  'fx-sonicsubbass', 'fx-sonicbass', 'fx-soniclowmid', 'fx-sonicmid', 'fx-sonichighmid', 'fx-sonicpresence', 'fx-sonicbrilliance', 'fx-sonicair',
+  'fx-sonic-color-section', 'sonic-ground-base-row', 'sonic-ground-cool-row', 'sonic-ground-warm-row', 'sonic-ground-accent-row', 'fx-sonicglow',
+  'fx-sonic-floating-section', 'sonic-floating-toggle-grid', 'fx-sonicfloatcount', 'fx-sonicfloatintensity', 'fx-sonicfloatmin', 'fx-sonicfloatmax', 'fx-sonicfloatspeed'
+];
+var SONIC_WORKSHOP_FX_CONTROL_IDS = [
+  'fx-sonic-workshop-section', 'fx-sonicwegain', 'fx-sonicweaudio', 'fx-sonicwerange', 'fx-sonicwepeak',
+  'sonic-workshop-color-row', 'sonic-workshop-base-row', 'sonic-workshop-warm-row', 'sonic-workshop-cool-row',
+  'sonic-workshop-ripple-row', 'sonic-workshop-peak-row', 'sonic-workshop-theme-seg'
+];
+function fxPanelControlBlockById(id) {
+  var el = document.getElementById(id);
+  if (!el) return null;
+  if (el.classList && (el.classList.contains('fx-section-label') || el.classList.contains('fx-slider') || el.classList.contains('fx-toggle-grid') || el.classList.contains('sonic-audio-monitor') || el.classList.contains('lyric-color-row') || el.classList.contains('fx-seg'))) return el;
+  return el.closest ? el.closest('.fx-slider,.fx-toggle-grid,.sonic-audio-monitor,.lyric-color-row,.fx-seg,.fx-section-label') : null;
+}
+function setFxPanelControlsHidden(ids, hidden) {
+  ids.forEach(function (id) {
+    var node = fxPanelControlBlockById(id);
+    if (node) node.classList.toggle('fx-sonic-hidden', !!hidden);
+  });
+}
+function updateSonicSeriesControlVisibility() {
+  var preset = Number(fx && fx.preset) || 0;
+  var original = preset === SONIC_PRESET_INDEX;
+  var workshop = preset === SONIC_WORKSHOP_PRESET_INDEX;
+  setFxPanelControlsHidden(SONIC_ORIGINAL_FX_CONTROL_IDS, !original);
+  setFxPanelControlsHidden(SONIC_WORKSHOP_FX_CONTROL_IDS, !workshop);
+  setFxPanelControlsHidden(['fx-lyricbgadapt-row', 'fx-lyricbgadapt'], false);
+}
+
 function ensureHomeWaveTrackBars() {
   var el = document.getElementById('home-wave-track');
   if (!el) return;
@@ -445,6 +480,49 @@ function updateFxInputs() {
   setRange('fx-bloom', fx.bloomStrength);
   setRange('fx-scatter', fx.scatter);
   setRange('fx-bgfade', fx.bgFade);
+  // 声波地形(预设 12)控件
+  setRange('fx-sonicamp', fx.sonicGroundAmplitude);
+  setRange('fx-sonicspeed', fx.sonicGroundMotionSpeed);
+  setRange('fx-sonicdensity', fx.sonicGroundDensity);
+  setRange('fx-sonicrange', fx.sonicGroundRange);
+  setRange('fx-soniclower', fx.sonicGroundLower);
+  setRange('fx-sonicdepth', fx.sonicGroundDepth);
+  setRange('fx-sonicautorotate', fx.sonicGroundAutoRotate);
+  setRange('fx-sonicglow', fx.sonicGroundGlow);
+  setRange('fx-sonicsubbass', fx.sonicGroundSubBass);
+  setRange('fx-sonicbass', fx.sonicGroundBass);
+  setRange('fx-soniclowmid', fx.sonicGroundLowMid);
+  setRange('fx-sonicmid', fx.sonicGroundMid);
+  setRange('fx-sonichighmid', fx.sonicGroundHighMid);
+  setRange('fx-sonicpresence', fx.sonicGroundPresence);
+  setRange('fx-sonicbrilliance', fx.sonicGroundBrilliance);
+  setRange('fx-sonicair', fx.sonicGroundAir);
+  setRange('fx-sonicfloatcount', fx.sonicGroundFloatingCount);
+  setRange('fx-sonicfloatintensity', fx.sonicGroundFloatingIntensity);
+  setRange('fx-sonicfloatmin', fx.sonicGroundFloatingMinSize);
+  setRange('fx-sonicfloatmax', fx.sonicGroundFloatingMaxSize);
+  setRange('fx-sonicfloatspeed', fx.sonicGroundFloatingSpeed);
+  // 声波频谱(监视器)控件
+  setRange('fx-sonicaudiosensitivity', fx.sonicAudioSensitivity);
+  setRange('fx-sonicaudiobandstart', fx.sonicAudioBandStart);
+  setRange('fx-sonicaudiobandend', fx.sonicAudioBandEnd);
+  setRange('fx-sonicaudiothreshold', fx.sonicAudioThreshold);
+  setRange('fx-sonicaudiopulse', fx.sonicAudioPulseStrength);
+  // 声波工坊(预设 13)控件
+  setRange('fx-sonicwegain', fx.sonicWorkshopInputGain);
+  setRange('fx-sonicweaudio', fx.sonicWorkshopAudioIntensity);
+  setRange('fx-sonicwerange', fx.sonicWorkshopResponseRange);
+  setRange('fx-sonicwepeak', fx.sonicWorkshopPeakIntensity);
+  var sonicMonitorToggle = document.getElementById('t-sonicAudioMonitorEnabled');
+  if (sonicMonitorToggle) sonicMonitorToggle.classList.toggle('on', fx.sonicAudioMonitorEnabled !== false);
+  var sonicAutoToggle = document.getElementById('t-sonicAudioAutoTrack');
+  if (sonicAutoToggle) sonicAutoToggle.classList.toggle('on', fx.sonicAudioAutoTrack !== false);
+  var sonicFloatingToggle = document.getElementById('t-sonicGroundFloatingEnabled');
+  if (sonicFloatingToggle) sonicFloatingToggle.classList.toggle('on', fx.sonicGroundFloatingEnabled !== false);
+  if (typeof updateSonicGroundColorControls === 'function') updateSonicGroundColorControls();
+  if (typeof updateSonicWorkshopColorControls === 'function') updateSonicWorkshopColorControls();
+  if (typeof updateSonicSeriesControlVisibility === 'function') updateSonicSeriesControlVisibility();
+  if (typeof refreshSonicAudioMonitorUi === 'function') refreshSonicAudioMonitorUi();
   updateLyricGlowControls();
   applyPlaylistPanelFxSettings();
   // 同步开关
