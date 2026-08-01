@@ -2,6 +2,7 @@
 
 ## 2.0.0
 
+- 首页继续对齐 Windows v2.1.0（本批，洞察 dock + 平台推荐中心）：右侧「为你准备」上方新增洞察 dock——今日聆听（时长/曲数/常听歌手 + 连续聆听天数）、接下来播放（优先队列下一首，空队列回退每日推荐/本地音乐）、为你挑选（每日推荐/歌单/队列/本地混合去重选 3 首）、音乐发现与平台推荐两个入口；「平台推荐」弹窗提供网易云/汽水/QQ/酷狗/Spotify 五个标签页，只读取平台可验证的推荐数据（网易云每日推荐与推荐歌单、酷狗猜你喜欢、Spotify 常听/喜欢、汽水/QQ 有接口才展示），不用关键词搜索补位。服务端新增 `/api/kugou/recommendations` 与 `/api/spotify/recommendations`，`spotify-api.js` 移植 `handleSpotifyRecommendations`（未登录明确返回 `mode:'unavailable'`）。保留 Mac 首页全部既有入口（最近播放/天气/歌单/「为你准备」tile 行），未迁移 Windows 的 MP4 视频 Hero 与 quick-grid 布局（Mac 功耗与既有双列首页不破坏）。新增 `scripts/test-home-dashboard-dock.js` 并纳入 `npm run check`；专项 5/5、全量 **216/216** 通过；Electron 本地服务冒烟：首页 200、新模块 200、两个推荐接口未登录返回预期。
 - 补全 Windows v2.1.0 的窗口恢复与歌词磁盘缓存：主进程新增缺失的 `desktop-window-restore` handler（preload 早已暴露调用，此前最小化/隐藏窗口无法恢复）；歌词请求结果按曲目写入 `userData/cache/lyrics`（单条 ≤1MB、总量 ≤96MB、自动淘汰最旧条目），再次播放同曲直接读缓存、不再重复请求；渲染层 `fetchLyric` 改为先读缓存后走网络。不迁移 Windows 的 Chromium 缓存目录搬迁（避免影响 macOS 登录态与会话）。专项 6/6、`npm run check` **211/211** 通过。
 - 本地曲库面板（Windows v2.1.0 对齐）：首页快捷区与导入面板新增“本地曲库”入口，弹窗支持浏览、搜索（标题/歌手/专辑）、逐首播放、全部播放与从曲库移除；移除只删除索引与封面缓存，不删除源文件，若正在播放被移除曲目会自动切到下一首。主进程新增 `mineradio-local-library-remove` IPC，preload 暴露 `removeLocalMusicLibraryTracks`。专项 5/5、`npm run check` **210/210** 通过。
 - 对齐 Windows v2.1.0 的持久化本地曲库：新增主进程 `desktop/local-music-library.js`（`music-metadata` 解析标题/歌手/专辑/时长/内嵌封面与 LRC 侧车/内嵌歌词，`mineradio-local://` 特权协议按字节范围流式播放，索引加密键值持久化在 userData）；拖拽/文件选择/整文件夹导入自动走持久化索引并立即进队播放，导入失败时回退原对象 URL 路径；启动时自动恢复索引中的本地曲目与断点（含歌词进度），本地歌播放时按需读取内嵌/侧车歌词走既有歌词管线。新增 `scripts/test-v210-migration-lite.js` 并纳入 `npm run check`。

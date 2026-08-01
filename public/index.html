@@ -221,12 +221,73 @@
           </button>
         </div>
 
-        <div class="home-rail">
-          <div class="home-section-head">
-            <div class="home-section-title" id="home-rail-title">为你准备</div>
-            <div class="home-section-note" id="home-rail-note">正在整理推荐</div>
+        <div class="home-rail home-insight-rail">
+          <div id="home-insight-dock" class="home-insight-dock" aria-label="今日聆听和音乐发现">
+            <section class="home-insight-card home-listen-card" aria-labelledby="home-listen-heading">
+              <div class="home-insight-head">
+                <div id="home-listen-heading" class="home-insight-kicker">LISTENING TODAY · 今日聆听</div>
+                <button class="home-insight-link" type="button" onclick="openHomeInsight()">查看偏好</button>
+              </div>
+              <div class="home-listen-metrics">
+                <div class="home-listen-metric"><strong id="home-today-time" class="home-listen-value">0 分钟</strong><span
+                    class="home-listen-label">聆听时长</span></div>
+                <div class="home-listen-metric"><strong id="home-today-count" class="home-listen-value">0 首</strong><span
+                    class="home-listen-label">今日歌曲</span></div>
+                <div class="home-listen-metric"><strong id="home-today-artist" class="home-listen-value">等待记录</strong><span
+                    id="home-today-streak" class="home-listen-label">开始播放后生成</span></div>
+              </div>
+            </section>
+
+            <button id="home-next-card" class="home-insight-card home-next-card" type="button"
+              onclick="playHomeNextFromDock()" aria-label="播放下一首">
+              <span id="home-next-cover" class="home-next-cover" aria-hidden="true"></span>
+              <span class="home-next-copy">
+                <span class="home-insight-kicker">NEXT UP · 接下来播放</span>
+                <span id="home-next-title" class="home-next-title">队列里还没有歌曲</span>
+                <span id="home-next-sub" class="home-next-sub">点击打开音乐库</span>
+              </span>
+              <span class="home-next-arrow" aria-hidden="true">›</span>
+            </button>
+
+            <section class="home-discovery-strip" aria-label="为你挑选">
+              <div class="home-discovery-copy">
+                <span class="home-insight-kicker">FOR YOU · 为你挑选</span>
+                <span class="home-discovery-title">换一首，也许正合心意</span>
+                <span class="home-discovery-sub">从每日推荐、歌单与本地音乐中挑选</span>
+              </div>
+              <div id="home-discovery-list" class="home-discovery-list" aria-live="polite"></div>
+            </section>
+
+            <button class="home-insight-card home-ranking-entry" type="button" onclick="openHomeDashboardCharts()"
+              aria-label="打开音乐发现">
+              <span class="home-ranking-entry-copy">
+                <span class="home-insight-kicker">DISCOVER · 音乐发现</span>
+                <span class="home-ranking-entry-title">平台热歌与个人偏好</span>
+                <span class="home-ranking-entry-sub">打开平台推荐中心；没有可信推荐接口时会明确留空</span>
+              </span>
+              <span class="home-ranking-entry-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+              <span class="home-next-arrow" aria-hidden="true">›</span>
+            </button>
+
+            <button class="home-insight-card home-ranking-entry home-radio-entry" type="button"
+              onclick="openHomeDashboardRadio()" aria-label="打开平台推荐">
+              <span class="home-ranking-entry-copy">
+                <span class="home-insight-kicker">PLATFORM PICKS · 平台推荐</span>
+                <span class="home-ranking-entry-title">推荐电台 / 歌单</span>
+                <span class="home-ranking-entry-sub">读取每日歌曲、推荐歌单与推荐 Feed，不用关键词搜索</span>
+              </span>
+              <span class="home-radio-entry-art" aria-hidden="true"><i></i><i></i></span>
+              <span class="home-next-arrow" aria-hidden="true">›</span>
+            </button>
           </div>
-          <div id="home-tile-row" class="home-tile-row"></div>
+
+          <div class="home-legacy-rail">
+            <div class="home-section-head">
+              <div class="home-section-title" id="home-rail-title">为你准备</div>
+              <div class="home-section-note" id="home-rail-note">正在整理推荐</div>
+            </div>
+            <div id="home-tile-row" class="home-tile-row"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -1476,6 +1537,35 @@
         <div class="local-library-empty" id="local-library-empty" hidden>
           <div class="local-library-empty-title">曲库还是空的</div>
           <div class="local-library-empty-sub">拖入 mp3 / flac / wav / m4a 等音频文件，或点上方“导入”按钮。</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="home-platform-recommend-mask" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true"
+      aria-labelledby="home-platform-recommend-title">
+      <div class="modal home-platform-recommend-modal">
+        <div class="home-platform-recommend-head">
+          <div>
+            <h2 id="home-platform-recommend-title">平台推荐</h2>
+            <p>只读取平台可验证的推荐数据，不用关键词搜索替代。</p>
+          </div>
+          <button id="home-platform-recommend-close" class="home-platform-recommend-close" type="button"
+            aria-label="关闭平台推荐">×</button>
+        </div>
+        <div id="home-platform-recommend-tabs" class="home-platform-recommend-tabs" role="tablist"
+          aria-label="推荐平台">
+          <button type="button" role="tab" data-home-recommend-source="netease" aria-selected="true">网易云</button>
+          <button type="button" role="tab" data-home-recommend-source="qishui" aria-selected="false">汽水</button>
+          <button type="button" role="tab" data-home-recommend-source="qq" aria-selected="false">QQ</button>
+          <button type="button" role="tab" data-home-recommend-source="kugou" aria-selected="false">酷狗</button>
+          <button type="button" role="tab" data-home-recommend-source="spotify" aria-selected="false">Spotify</button>
+        </div>
+        <div id="home-platform-recommend-status" class="home-platform-recommend-status" role="status"
+          aria-live="polite"></div>
+        <div id="home-platform-recommend-list" class="home-platform-recommend-list"></div>
+        <div class="home-platform-recommend-actions">
+          <button id="home-platform-recommend-refresh" type="button">刷新当前平台</button>
+          <button id="home-platform-recommend-done" type="button">完成</button>
         </div>
       </div>
     </div>

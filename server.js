@@ -108,6 +108,7 @@ const {
   handleSpotifyUserPlaylists,
   handleSpotifyPlaylistTracks,
   handleSpotifyAlbumDetail,
+  handleSpotifyRecommendations,
   handleSpotifySongUrl,
   handleSpotifyLyric,
 } = require('./spotify-api');
@@ -5413,6 +5414,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/spotify/recommendations') {
+    try {
+      const limit = Math.max(1, Math.min(50, parseInt(url.searchParams.get('limit') || '12', 10) || 12));
+      sendJSON(res, await handleSpotifyRecommendations(limit));
+    } catch (err) {
+      console.error('[SpotifyRecommendations]', err);
+      sendJSON(res, { provider: 'spotify', loggedIn: false, songs: [], error: err.message }, 500);
+    }
+    return;
+  }
+
   if (pn === '/api/spotify/song/url') {
     try {
       sendJSON(res, await handleSpotifySongUrl({
@@ -5593,6 +5605,17 @@ const server = http.createServer(async (req, res) => {
       sendJSON(res, await handleKugouGuessLike(kugouCookie, url.searchParams.get('limit')));
     } catch (err) {
       console.error('[KugouGuessLike]', err);
+      sendJSON(res, { provider: 'kugou', loggedIn: false, songs: [], error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/recommendations') {
+    try {
+      const limit = Math.max(1, Math.min(50, parseInt(url.searchParams.get('limit') || '12', 10) || 12));
+      sendJSON(res, await handleKugouGuessLike(kugouCookie, limit));
+    } catch (err) {
+      console.error('[KugouRecommendations]', err);
       sendJSON(res, { provider: 'kugou', loggedIn: false, songs: [], error: err.message }, 500);
     }
     return;

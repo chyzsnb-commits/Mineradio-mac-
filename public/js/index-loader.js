@@ -59,6 +59,7 @@
     'js/modules/05-playback/01-cover-custom-map.js',
     'js/modules/05-playback/02-listen-stats.js',
     'js/modules/05-playback/03-home-discover-weather.js',
+    'js/modules/05-playback/03a-home-dashboard-insight.js',
     'js/modules/05-playback/04-home-empty-wallpaper.js',
     'js/modules/05-playback/05-home-actions.js',
     'js/modules/05-playback/06-track-detail-lyrics-actions.js',
