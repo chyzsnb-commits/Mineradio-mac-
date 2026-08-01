@@ -570,9 +570,16 @@ async function switchCurrentSongSource(provider) {
       if (controlSourceSwitcherState.matches) controlSourceSwitcherState.matches[provider] = lookup || { song: null, issue: issue || 'no_source' };
     }
     if (requestId !== controlSourceSwitcherState.requestId) return;
+    // 竞态保护: await 期间用户可能已切歌(currentIdx 改变),此时中止切换,避免覆盖新歌
+    var stillSameSong = currentControlSong() === song
+      || (playQueue && currentIdx >= 0 && currentIdx < playQueue.length && playQueue[currentIdx] === song);
+    if (!stillSameSong) {
+      controlSourceSwitcherState.loading = false;
+      renderControlSourceSwitcher(controlSourceSwitcherState.matches || {});
+      return;
+    }
     if (!match) {
       showSourceFallbackNotice('未找到可切换音源', controlSourceProviderTitle(provider) + ' 暂时没有匹配到同名同歌手版本。');
-      showSourceFallbackNotice('该平台无正版音源', controlSourceProviderTitle(provider) + ': ' + controlSourceIssueLabel(issue));
       controlSourceSwitcherState.loading = false;
       renderControlSourceSwitcher(controlSourceSwitcherState.matches || {});
       return;
@@ -592,7 +599,9 @@ async function switchCurrentSongSource(provider) {
     });
   } catch (err) {
     console.warn('[SourceSwitch]', provider, err);
-    if (currentIdx >= 0 && currentIdx < playQueue.length) {
+    var stillSameOnError = currentControlSong() === song
+      || (playQueue && currentIdx >= 0 && currentIdx < playQueue.length && playQueue[currentIdx] === song);
+    if (stillSameOnError && currentIdx >= 0 && currentIdx < playQueue.length) {
       playQueue[currentIdx] = hydrateCustomCover(previousSong);
       safeRenderQueuePanel('manual-source-switch-restore', { scrollCurrent: miniQueueOpen });
       updateControlTrackInfo(playQueue[currentIdx]);

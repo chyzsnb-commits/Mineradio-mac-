@@ -200,6 +200,20 @@ test('FX 控制台(设置搜索/撤销历史)与缓存设置(只读版)已迁移
   assert.match(css, /\.control-source-switcher/);
   assert.match(css, /\.control-title-badges/);
 
+  // 三个 review bug 修复断言
+  // 1. setFxPanelTab 兼容旧分页(旧 key 集合 + newToLegacy),避免 fallback 白屏
+  assert.match(panel, /var legacyAllowed = \{ presets: 1/);
+  assert.match(panel, /var newToLegacy = \{ home: 'presets'/);
+  assert.match(panel, /isConsole \? newAllowed : legacyAllowed/);
+  // 2. 音源切换竞态保护(await 后歌曲引用比对,避免覆盖用户新选歌曲)
+  assert.match(searchSrc, /stillSameSong/);
+  assert.match(searchSrc, /currentControlSong\(\) === song/);
+  // 3. 工坊降级持久化(不用 noSave) + 防重复降级标记
+  const workshop2 = read('public/sonic-workshop-preset.js');
+  assert.match(workshop2, /state\.degraded/);
+  assert.match(workshop2, /setPreset\(prev, \{ silent: true, skipTransition: true \}\)/);
+  assert.doesNotMatch(workshop2, /noSave: true/);
+
   // 缓存设置:只读版模块 + 主进程 IPC + preload API + 面板 UI
   assert.match(loader, /07-fx\/08-cache-storage-settings\.js/);
   assert.match(cacheSettings, /function refreshMineradioCacheSettings\(\)/);

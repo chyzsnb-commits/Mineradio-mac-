@@ -715,16 +715,21 @@ function ensureFxSliderResetButton(id, key) {
 var fxPanelTab = 'home';
 var fxPanelTabScroll = {};
 function setFxPanelTab(tab) {
-  // FX 控制台(task-first-v2)用新 key;旧分页代码仍传 presets/appearance/advanced/playlist,
-  // 映射到新 key,避免 fallback 后显示错误页。
+  // 兼容两种布局: FX 控制台(task-first-v2)用新 key;旧分页用旧 key。
+  // 根据面板实际 data-console-layout 决定 key 集合,避免旧分页下映射到不存在的页面。
   var legacyToNew = { presets: 'home', appearance: 'interface', advanced: 'system', playlist: 'shelf' };
-  var allowed = { home: 1, interface: 1, lyrics: 1, motion: 1, shelf: 1, system: 1 };
+  var newToLegacy = { home: 'presets', interface: 'appearance', shelf: 'playlist', system: 'advanced' };
+  var newAllowed = { home: 1, interface: 1, lyrics: 1, motion: 1, shelf: 1, system: 1 };
+  var legacyAllowed = { presets: 1, appearance: 1, lyrics: 1, motion: 1, advanced: 1, playlist: 1 };
   var panel = document.getElementById('fx-panel');
+  var isConsole = !!(panel && panel.getAttribute('data-console-layout') === 'task-first-v2');
+  var allowed = isConsole ? newAllowed : legacyAllowed;
   var raw = String(tab || '');
-  if (legacyToNew[raw]) raw = legacyToNew[raw];
-  var nextTab = allowed[raw] ? raw : 'home';
+  if (isConsole && legacyToNew[raw]) raw = legacyToNew[raw];
+  if (!isConsole && newToLegacy[raw]) raw = newToLegacy[raw];
+  var nextTab = allowed[raw] ? raw : (isConsole ? 'home' : 'presets');
   var previousTab = fxPanelTab;
-  if (panel && previousTab !== nextTab && panel.getAttribute('data-console-layout') === 'task-first-v2') {
+  if (panel && previousTab !== nextTab && isConsole) {
     fxPanelTabScroll[previousTab] = panel.scrollTop;
   }
   fxPanelTab = nextTab;
@@ -741,7 +746,7 @@ function setFxPanelTab(tab) {
     page.classList.toggle('active', active);
     page.setAttribute('aria-hidden', active ? 'false' : 'true');
   });
-  if (panel && previousTab !== fxPanelTab && panel.getAttribute('data-console-layout') === 'task-first-v2') {
+  if (panel && previousTab !== nextTab && isConsole) {
     requestAnimationFrame(function () {
       panel.scrollTop = Object.prototype.hasOwnProperty.call(fxPanelTabScroll, fxPanelTab) ? fxPanelTabScroll[fxPanelTab] : 0;
     });

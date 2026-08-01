@@ -567,14 +567,16 @@
       // onload 只代表 HTML 就绪；bridge 内部 React 渲染成功后会 postMessage ready。
       // 设置超时：若 React 渲染失败（如 WebGL 不可用）不发 ready，自动降级提示并回退。
       state.loadTimeout = setTimeout(function () {
-        if (state.ready || !state.active) return;
+        if (state.ready || !state.active || state.degraded) return;
         // React 未就绪：可能是 WebGL/资源受限，避免白屏挂死
+        state.degraded = true;
         if (typeof showToast === 'function') {
           showToast('音域回响·WE 渲染失败（WebGL 不可用或资源受限），已切回原预设');
         }
         var prev = state.presetBeforeWorkshop != null ? state.presetBeforeWorkshop : 0;
         if (typeof fx !== 'undefined' && fx && typeof setPreset === 'function') {
-          try { setPreset(prev, { silent: true, noSave: true, skipTransition: true }); } catch (e) {}
+          // 正常持久化(不用 noSave): 确保下次启动不再回到工坊预设白等 9 秒
+          try { setPreset(prev, { silent: true, skipTransition: true }); } catch (e) {}
         }
         removeLayer();
       }, 9000);
@@ -595,6 +597,7 @@
       } catch (e) {}
     }
     if (state.loadTimeout) { clearTimeout(state.loadTimeout); state.loadTimeout = 0; }
+    state.degraded = false;   // 允许下次切到工坊时重试
     if (state.layer && state.layer.parentNode) state.layer.parentNode.removeChild(state.layer);
     state.layer = null;
     state.iframe = null;
