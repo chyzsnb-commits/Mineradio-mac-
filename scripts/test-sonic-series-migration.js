@@ -181,6 +181,11 @@ test('FX 控制台(设置搜索/撤销历史)与缓存设置(只读版)已迁移
   // Mac 适配:setFxPanelTab 支持 FX 控制台新 key(home/interface/lyrics/motion/shelf/system)
   assert.match(panel, /var fxPanelTab = 'home'/);
   assert.match(panel, /var legacyToNew = \{ presets: 'home'/);
+  // 搜索框事件绑定必须在启动入口 bindFxPanel 内(否则启动后搜索无响应)
+  assert.match(bindings, /initFxConsoleSearchAndHistory\(\)/);
+  assert.match(bindings, /function bindFxPanel/);
+  const bindFxPanelBlock = bindings.slice(bindings.indexOf('function bindFxPanel'), bindings.indexOf('function setRainThunderMode'));
+  assert.match(bindFxPanelBlock, /initFxConsoleSearchAndHistory\(\)/, 'bindFxPanel 内必须绑定 FX 控制台搜索事件');
 
   // 播放标题音源切换(Windows v2.1.0):control-title-badges + 可点击 chip + 切换面板
   const ripples = read('public/js/modules/02-visual/15-ripples-cover-depth.js');

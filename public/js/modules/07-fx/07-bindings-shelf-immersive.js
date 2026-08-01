@@ -335,6 +335,8 @@ function bindFxPanel() {
   if (typeof syncMaxFpsSeg === 'function') syncMaxFpsSeg();
   if (typeof setPerfHud === 'function') setPerfHud(perfHudOn());
   updateFxInputs();
+  // Windows v2.1.0 对齐: FX 控制台搜索/撤销/历史事件绑定(须在 organize 后,否则搜索框无响应)
+  if (typeof initFxConsoleSearchAndHistory === 'function') initFxConsoleSearchAndHistory();
 }
 
 function setRainThunderMode(mode) {
