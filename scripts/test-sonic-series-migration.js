@@ -171,6 +171,16 @@ test('FX 控制台(设置搜索/撤销历史)与缓存设置(只读版)已迁移
   assert.match(css, /\.fx-console-toolbar/);
   assert.match(css, /\.fx-console-search/);
   assert.match(css, /\.fx-search-hit/);
+  // Mac 适配:FX_CONSOLE_LAYOUT 引用的所有控件 id 必须存在于 index.html(否则 tab 组空白)
+  const layoutRefs = [];
+  const itemRe = /fxConsoleItem\('([^']+)'/g;
+  let itemM;
+  while ((itemM = itemRe.exec(consoleWs))) layoutRefs.push(itemM[1]);
+  const missingIds = layoutRefs.filter(function (id) { return !indexHtml.includes('id="' + id + '"'); });
+  assert.deepStrictEqual(missingIds, [], 'FX 控制台引用的控件 id 在 index.html 缺失: ' + missingIds.join(','));
+  // Mac 适配:setFxPanelTab 支持 FX 控制台新 key(home/interface/lyrics/motion/shelf/system)
+  assert.match(panel, /var fxPanelTab = 'home'/);
+  assert.match(panel, /var legacyToNew = \{ presets: 'home'/);
 
   // 缓存设置:只读版模块 + 主进程 IPC + preload API + 面板 UI
   assert.match(loader, /07-fx\/08-cache-storage-settings\.js/);

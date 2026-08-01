@@ -712,18 +712,40 @@ function ensureFxSliderResetButton(id, key) {
   });
   el.parentElement.appendChild(btn);
 }
-var fxPanelTab = 'presets';
+var fxPanelTab = 'home';
+var fxPanelTabScroll = {};
 function setFxPanelTab(tab) {
-  var allowed = { presets: 1, appearance: 1, lyrics: 1, motion: 1, advanced: 1, playlist: 1 };
-  fxPanelTab = allowed[tab] ? tab : 'presets';
+  // FX 控制台(task-first-v2)用新 key;旧分页代码仍传 presets/appearance/advanced/playlist,
+  // 映射到新 key,避免 fallback 后显示错误页。
+  var legacyToNew = { presets: 'home', appearance: 'interface', advanced: 'system', playlist: 'shelf' };
+  var allowed = { home: 1, interface: 1, lyrics: 1, motion: 1, shelf: 1, system: 1 };
   var panel = document.getElementById('fx-panel');
+  var raw = String(tab || '');
+  if (legacyToNew[raw]) raw = legacyToNew[raw];
+  var nextTab = allowed[raw] ? raw : 'home';
+  var previousTab = fxPanelTab;
+  if (panel && previousTab !== nextTab && panel.getAttribute('data-console-layout') === 'task-first-v2') {
+    fxPanelTabScroll[previousTab] = panel.scrollTop;
+  }
+  fxPanelTab = nextTab;
   if (panel) panel.setAttribute('data-active-tab', fxPanelTab);
   document.querySelectorAll('#fx-panel-tabs [data-fx-tab]').forEach(function (btn) {
-    btn.classList.toggle('active', btn.getAttribute('data-fx-tab') === fxPanelTab);
+    var active = btn.getAttribute('data-fx-tab') === fxPanelTab;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    btn.setAttribute('tabindex', active ? '0' : '-1');
+    if (active && previousTab !== fxPanelTab) btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   });
   document.querySelectorAll('#fx-panel .fx-tab-page').forEach(function (page) {
-    page.classList.toggle('active', page.getAttribute('data-fx-page') === fxPanelTab);
+    var active = page.getAttribute('data-fx-page') === fxPanelTab;
+    page.classList.toggle('active', active);
+    page.setAttribute('aria-hidden', active ? 'false' : 'true');
   });
+  if (panel && previousTab !== fxPanelTab && panel.getAttribute('data-console-layout') === 'task-first-v2') {
+    requestAnimationFrame(function () {
+      panel.scrollTop = Object.prototype.hasOwnProperty.call(fxPanelTabScroll, fxPanelTab) ? fxPanelTabScroll[fxPanelTab] : 0;
+    });
+  }
   repositionFxFloatingPanels();
 }
 function fxPanelInputId(node) {

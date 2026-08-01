@@ -36,11 +36,12 @@ var FX_CONSOLE_LAYOUT = [
   {
     key: 'interface',
     groups: [
-      { key: 'background', title: '背景媒体', hint: '颜色、封面、图片、视频与 Wallpaper Engine', open: true, items: [
-        fxConsoleItem('bg-color-picker', '背景颜色', '纯色 封面取色'),
-        fxConsoleItem('bg-media-preview', '背景媒体', '封面 图片 视频 上传 裁切 清除', false),
-        fxConsoleItem('wallpaper-engine-value', 'Wallpaper Engine', '壁纸库 识别 导入 恢复原背景', false),
-        fxConsoleItem('fx-bgopacity', '背景透明度', '背景强度'),
+      { key: 'background', title: '背景媒体', hint: '颜色、封面、图片、视频背景', open: true, items: [
+        fxConsoleItem('background-image-input', '背景媒体', '封面 图片 视频 上传 裁切 清除', false),
+        fxConsoleItem('bg-album-toggle-btn', '封面背景', '使用当前封面原图'),
+        fxConsoleItem('bg-media-crop-btn', '背景裁切', '裁切 缩放 位置'),
+        fxConsoleItem('fx-bgglassopacity', '毛玻璃透明', '玻璃 背景模糊'),
+        fxConsoleItem('fx-windowbgopacity', '窗口背景透明', '窗口透明度'),
         fxConsoleItem('fx-bgcropx', '裁切左右', '背景水平 位置'),
         fxConsoleItem('fx-bgcropy', '裁切上下', '背景垂直 位置'),
         fxConsoleItem('fx-bgzoom', '裁切缩放', '背景放大 缩小')
@@ -71,9 +72,7 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('lyric-display-mode-seg', '歌词行数', '单行 双行 三行 沉浸 自定义'),
         fxConsoleItem('fx-lyriccustomlines', '显示行数', '自定义歌词行数'),
         fxConsoleItem('lyric-translation-mode-seg', '双语翻译', '译文 当前 双行 多行 关闭'),
-        fxConsoleItem('fx-lyrictranslationgap', '译文间距', '翻译距离'),
-        fxConsoleItem('fx-lyrictranslationscale', '译文字号', '翻译大小'),
-        fxConsoleItem('fx-lyrictranslationopacity', '译文透明', '翻译透明度')
+        fxConsoleItem('fx-lyrictranslationgap', '译文间距', '翻译距离')
       ] },
       { key: 'colors', title: '颜色与光效', hint: '文字、高亮、溢光和亮底可读性', items: [
         fxConsoleItem('lyric-color-grid', '歌词颜色', '文字颜色 封面取色'),
@@ -88,7 +87,6 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('t-lyricGlowParticles', '歌词光粒', '歌词粒子 光点')
       ] },
       { key: 'type', title: '字体与排版', hint: '字体、字重、大小、位置和角度', items: [
-        fxConsoleItem('lyric-texture-quality-seg', '歌词清晰度', '分辨率 纹理 1x 2x 3x 4x 标清 高清 超清 极致 低配 显存 放大 清楚'),
         fxConsoleItem('lyric-font-grid', '歌词字体', '黑体 宋体 楷宋 Serif Gothic 等宽 上传字体'),
         fxConsoleItem('fx-lyricspacing', '字间距', '文字间距'),
         fxConsoleItem('fx-lyriclineheight', '行距', '歌词行间距'),
@@ -107,19 +105,10 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-lyriccontextspread', '上下句间距', '上下文距离'),
         fxConsoleItem('fx-lyricedgefade', '边缘渐隐', '歌词边缘淡出'),
         fxConsoleItem('fx-lyricmotionsoftness', '动画柔顺', '歌词滚动 丝滑 缓动'),
-        fxConsoleItem('t-lyricVerticalFloat', '歌词上下浮动', '漂浮 垂直'),
-        fxConsoleItem('t-lyricCameraLock', '歌词镜头绑定', '跟随镜头 锁定'),
-        fxConsoleItem('t-lyricPauseHold', '暂停保留歌词', '暂停不隐藏')
+        fxConsoleItem('t-lyricCameraLock', '歌词镜头绑定', '跟随镜头 锁定')
       ] },
-      { key: 'desktop', title: '桌面歌词', hint: '桌面层开关、位置、透明度和帧数', items: [
-        fxConsoleItem('t-desktopLyrics', '桌面歌词', '全屏置顶歌词'),
-        fxConsoleItem('t-desktopLyricsClickThrough', '桌面歌词锁定', '鼠标穿透 防误触'),
-        fxConsoleItem('t-desktopLyricsCinema', '桌面歌词电影震动', '桌面歌词 鼓点'),
-        fxConsoleItem('t-desktopLyricsHighlight', '桌面歌词高亮跟随', '桌面逐字高亮'),
-        fxConsoleItem('fx-desktoplyricssize', '桌面歌词大小', '桌面字号'),
-        fxConsoleItem('fx-desktoplyricsopacity', '桌面歌词透明度', '桌面歌词透明'),
-        fxConsoleItem('fx-desktoplyricsy', '桌面歌词高度', '桌面位置'),
-        fxConsoleItem('desktop-lyrics-fps-seg', '桌面歌词帧率', '24 30 60 120 无上限 FPS')
+      { key: 'desktop', title: '桌面歌词', hint: '桌面歌词需在底栏或设置弹窗开启（Mac 布局）', items: [
+        fxConsoleItem('lyrics-toggle-btn', '桌面歌词入口', '底栏歌词按钮', false)
       ] }
     ]
   },
@@ -137,7 +126,6 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('t-float', '浮空粒子层', '漂浮粒子'),
         fxConsoleItem('t-bloom', '粒子溢光', '粒子光晕'),
         fxConsoleItem('t-edge', '轮廓高亮', '边缘光'),
-        fxConsoleItem('t-backgroundStarRiver', '背景星河', '星空 粒子背景'),
         fxConsoleItem('fx-point', '粒子尺寸', '点大小'),
         fxConsoleItem('fx-speed', '运动速度', '粒子流速'),
         fxConsoleItem('fx-twist', '粒子扭曲', '旋转 扭曲'),
@@ -205,7 +193,7 @@ var FX_CONSOLE_LAYOUT = [
     key: 'shelf',
     groups: [
       { key: 'display', title: '显示方式', hint: '模式、镜头、常驻状态和内容来源', open: true, items: [
-        fxConsoleItem('shelf-seg', '3D 歌单架', '关闭 侧栏 舞台'),
+        fxConsoleItem('shelf-toggle-btn', '3D 歌单架', '关闭 侧栏 舞台'),
         fxConsoleItem('shelf-camera-seg', '歌单架镜头', '动态镜头 静态镜头'),
         fxConsoleItem('shelf-presence-seg', '歌单架显示', '自动隐藏 常驻'),
         fxConsoleItem('t-shelfShowPodcasts', '显示播客歌单', '3D 播客'),
@@ -265,8 +253,8 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('audio-output-panel', '播放输出设备', '声卡 耳机 扬声器 路由', false)
       ] },
       { key: 'performance', title: '性能与后台', hint: '画质档位、后台渲染和直播保持', items: [
-        fxConsoleItem('performance-quality-seg', '画质档位', '低配 中 高 超高 渲染质量'),
-        fxConsoleItem('foreground-fps-seg', '前台帧率上限', 'FPS 跟随屏幕 垂直同步 VSync 高刷 节能 45 60 75 90 120'),
+        fxConsoleItem('performance-mode-seg', '画质档位', '低配 中 高 超高 渲染质量'),
+        fxConsoleItem('max-fps-seg', '前台帧率上限', 'FPS 跟随屏幕 垂直同步 VSync 高刷 节能 45 60 75 90 120'),
         fxConsoleItem('performance-background-seg', '后台渲染策略', '自动优化 保持运行 停止释放'),
         fxConsoleItem('t-liveBackgroundKeep', '直播后台保持', '最小化继续渲染')
       ] },
