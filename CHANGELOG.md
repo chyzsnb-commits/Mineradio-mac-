@@ -2,6 +2,7 @@
 
 ## 2.0.0
 
+- 修复首页响应式排版重叠（PR #61 后续修复）：根因一是 `≤1120px` 洞察 dock 改成单列后仍保留旧的显式第 2 列定位，生成隐式列导致「今日聆听/为你挑选/平台推荐」被压到窄列；根因二是 `home-grid` 的 2 列三行高度挤占洞察 rail；根因三是最近播放 hero 的固定内容块被 `flex-shrink` 压扁，封面和多行热评溢出到相邻区块。现在中等宽度使用 3 列快捷卡 + 两列洞察（推荐条跨整行、两个入口并列），极窄宽度显式归回单列并由首页滚动；hero 顶部信息和下一首/热评保持自身最小高度，只让歌曲列表滚动，≤760px 窄宽隐藏简报/下一首。新增 `scripts/test-home-layout-responsive.js`（3 项）纳入 `npm run check`；真实 Electron CSS viewport `1440×900`、`998×1098`、`998×700`、`760×850` 几何检查均为 hero/dock 零交叠，截图人工复核通过；全量 **226/226** 通过。仅改首页布局 CSS、测试和检查脚本，不改播放/登录/视觉预设。
 - 修复首页洞察 dock 卡片重叠：用户反馈首页排版「很多都显示不了」——洞察 dock（今日聆听/接下来播放/为你挑选/榜单/平台推荐 5 个卡片 + 为你准备 tile 行）是 2 列 grid 但子元素无显式定位，CSS Grid 自动布局在窗口较小时把卡片挤叠。修复：dock 子元素显式分配行列（listen(1,1)/next(2,1)/discovery(1,2)/ranking(2,2)/radio 整行(1/-1,3)）+ `align-items:start`，`home-grid`/`home-rail` 补 `grid-column:2` 显式定位。无头 Chrome 实测 600/700/800px 窗口 dock 5 卡片零重叠。
 - 修复首页小窗口布局重叠：窗口高度不足（未全屏）时，「最近播放」hero 内的每日热评（Daily Review）与歌曲列表重叠——根因是 `.home-recent-inner`（flex column）里固定内容不收缩，列表 `flex:1` 收缩到 0 后热评溢出被 `overflow:hidden` 裁剪。修复：固定区块（kicker/title/stats/热评/接下来播放/快捷行）允许收缩 + 列表保底 `min-height:48px`，并在小窗口（≤760px 高）隐藏次要元素（stats/每日简报/接下来播放/时间），≤640px 进一步精简。无头 Chrome 实测 700px 窗口下 `review_bottom < list_top` 不重叠。
 - 升级 listen-stats 本地每日聚合（Windows v2.1.0 v2 rollup）：新增 `HOME_LISTEN_ROLLUP_V2_KEY` 每日收听聚合（totalListenMs/sessions/daily 按天统计，含完成数），`finalizeListenSession` 写入；**纯本地**，不迁移上游的 `/api/listen/report` 服务端上报（平台收听同步为上游 `experimental-unverified` 能力，Mac 不迁移避免数据外发）。

@@ -2,6 +2,8 @@
 
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**
 
+- **2026-08-01 首页响应式排版修复（PR #61 后续）**：用户反馈首页在约 `998×1098` 竖版窗口中「很多内容显示不了/卡片重叠」。实机根因有三处：① `≤1120px` dock 改成单列后仍保留 listen/next/discovery/ranking/radio 的旧显式列定位，CSS Grid 生成隐式第二列，第一列被压到约 86px；② `home-grid` 2 列三行挤占右侧洞察 rail 高度；③ `.home-recent-inner` 固定内容允许 `flex-shrink`，`home-next-up` 被压到 27px（内部封面仍 96px）、每日热评被压到 30px（内部多行内容仍约 84px），相邻区块发生溢出。修复：`≤1120px` 快捷区改 3 列、dock 改为两列三行（listen/next 第一行、discovery 跨整行第二行、ranking/radio 第三行）；`≤760px` hero/grid/rail 显式归回单列，五张洞察卡按 DOM 顺序排列，窄宽隐藏简报/下一首；hero kicker/标题/统计/简报/快捷行与 next/review 固定最小高度，只让最近歌曲列表 flex 滚动。新增 `scripts/test-home-layout-responsive.js` 三项并纳入 `npm run check`。真实 Electron（非 headless，CDP CSS viewport）验收 `1440×900`、`998×1098`、`998×700`、`760×850`：hero 直接子项零交叠、dock 五卡零交叠，截图人工复核通过；全量 **226/226**。本批仅改首页布局 CSS、`package.json` 测试脚本和布局测试，不改播放/登录/视觉预设。Obsidian 进度笔记已直接同步。待用户人工在本机窗口拖动/调整大小确认滚动手感。
+
 ## 当前权威入口（2026-07-29）
 
 - **本仓库**：`chyzsnb-commits/mr`（**私有**，源码 + CI + 所有发布，单仓库架构）。
