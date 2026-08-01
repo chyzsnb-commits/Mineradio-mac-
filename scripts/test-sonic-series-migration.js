@@ -182,6 +182,19 @@ test('FX 控制台(设置搜索/撤销历史)与缓存设置(只读版)已迁移
   assert.match(panel, /var fxPanelTab = 'home'/);
   assert.match(panel, /var legacyToNew = \{ presets: 'home'/);
 
+  // 播放标题音源切换(Windows v2.1.0):control-title-badges + 可点击 chip + 切换面板
+  const ripples = read('public/js/modules/02-visual/15-ripples-cover-depth.js');
+  assert.match(ripples, /control-title-badges/);
+  assert.match(ripples, /songSourceTagHtml\(song, \{ switcher: true \}\)/);
+  assert.match(ripples, /songVipTagHtml/);
+  const searchSrc = read('public/js/modules/05-playback/07-search.js');
+  assert.match(searchSrc, /function switchCurrentSongSource\(/);
+  assert.match(searchSrc, /function toggleControlSourceSwitcher\(/);
+  assert.match(searchSrc, /function songSourceTagHtml\(/);
+  assert.match(searchSrc, /function songVipTagHtml\(/);
+  assert.match(css, /\.control-source-switcher/);
+  assert.match(css, /\.control-title-badges/);
+
   // 缓存设置:只读版模块 + 主进程 IPC + preload API + 面板 UI
   assert.match(loader, /07-fx\/08-cache-storage-settings\.js/);
   assert.match(cacheSettings, /function refreshMineradioCacheSettings\(\)/);
