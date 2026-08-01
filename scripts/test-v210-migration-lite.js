@@ -76,3 +76,18 @@ test('本地曲库浏览/管理面板与移除 IPC 接线存在', () => {
   assert.match(main, /mineradio-local-library-remove/);
   assert.match(preload, /removeLocalMusicLibraryTracks/);
 });
+
+test('窗口恢复与歌词磁盘缓存接线存在', () => {
+  const main = read('desktop/main.js');
+  const preload = read('desktop/preload.js');
+  const lyrics = read('public/js/modules/06-lyrics/00-lyrics-fetch-parse.js');
+
+  assert.match(main, /desktop-window-restore/);
+  assert.match(main, /mineradio-cache-read-lyric/);
+  assert.match(main, /mineradio-cache-write-lyric/);
+  assert.match(main, /LYRIC_CACHE_MAX_BYTES/);
+  assert.match(preload, /readLyricCache/);
+  assert.match(preload, /writeLyricCache/);
+  assert.match(lyrics, /readCachedLyricResponse/);
+  assert.match(lyrics, /writeCachedLyricResponse/);
+});

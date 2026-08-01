@@ -35,6 +35,10 @@ let localServer = null;
 let mainServerPort = 0;
 let localMusicLibrary = null;
 const localMusicImportCapabilities = new Map();
+// Windows v2.1.0 对齐: 歌词磁盘缓存(userData/cache/lyrics, 不搬 Chromium 缓存/登录态)
+const LYRIC_CACHE_VERSION = 1;
+const LYRIC_CACHE_MAX_BYTES = 96 * 1024 * 1024;
+const LYRIC_CACHE_ENTRY_MAX_BYTES = 1024 * 1024;
 let desktopLyricsWindow = null;
 let desktopLyricsState = {};
 let desktopLyricsUserBounds = null;
@@ -2174,6 +2178,14 @@ ipcMain.handle('desktop-window-get-state', (event) => {
   return getWindowState(getSenderWindow(event));
 });
 
+ipcMain.handle('desktop-window-restore', (event) => {
+  const win = getSenderWindow(event);
+  if (!win || win.isDestroyed()) return null;
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) win.show();
+  return getWindowState(win);
+});
+
 ipcMain.handle('mineradio-get-gpu-diagnostics', () => {
   return getGpuDiagnostics();
 });
@@ -2524,6 +2536,76 @@ ipcMain.handle('mineradio-local-library-remove', async (_event, ids) => {
     return { ...result, removed: Math.max(0, before - (result.count || 0)) };
   } catch (error) {
     return { ok: false, count: 0, tracks: [], removed: 0, error: error.message || 'LOCAL_LIBRARY_REMOVE_FAILED' };
+  }
+});
+
+function lyricCacheDirectoryPath() {
+  return path.join(app.getPath('userData'), 'cache', 'lyrics');
+}
+function lyricCacheFilePath(key) {
+  const digest = crypto.createHash('sha256').update(String(key || '')).digest('hex');
+  return path.join(lyricCacheDirectoryPath(), `${digest}.json`);
+}
+async function pruneLyricCache() {
+  let entries = [];
+  try {
+    entries = await fs.promises.readdir(lyricCacheDirectoryPath(), { withFileTypes: true });
+  } catch (_) {
+    return;
+  }
+  const files = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !/^[a-f0-9]{64}\.json$/i.test(entry.name)) continue;
+    const file = path.join(lyricCacheDirectoryPath(), entry.name);
+    try {
+      const stat = await fs.promises.stat(file);
+      files.push({ file, size: Math.max(0, Number(stat.size) || 0), time: Number(stat.mtimeMs) || 0 });
+    } catch (_) { }
+  }
+  let total = files.reduce((sum, item) => sum + item.size, 0);
+  files.sort((a, b) => a.time - b.time);
+  for (const item of files) {
+    if (total <= LYRIC_CACHE_MAX_BYTES) break;
+    try {
+      await fs.promises.unlink(item.file);
+      total -= item.size;
+    } catch (_) { }
+  }
+}
+ipcMain.handle('mineradio-cache-read-lyric', async (_event, key) => {
+  try {
+    const file = lyricCacheFilePath(key);
+    if (!fs.existsSync(file)) return { ok: true, hit: false };
+    const stat = await fs.promises.stat(file);
+    if (stat.size <= 0 || stat.size > LYRIC_CACHE_ENTRY_MAX_BYTES) {
+      await fs.promises.unlink(file).catch(() => {});
+      return { ok: true, hit: false };
+    }
+    const parsed = JSON.parse(await fs.promises.readFile(file, 'utf8'));
+    if (!parsed || parsed.version !== LYRIC_CACHE_VERSION) return { ok: true, hit: false };
+    return { ok: true, hit: true, payload: parsed.payload };
+  } catch (e) {
+    return { ok: false, hit: false, error: e.message || 'LYRIC_CACHE_READ_FAILED' };
+  }
+});
+ipcMain.handle('mineradio-cache-write-lyric', async (_event, key, payload) => {
+  try {
+    const file = lyricCacheFilePath(key);
+    const text = JSON.stringify({
+      version: LYRIC_CACHE_VERSION,
+      savedAt: Date.now(),
+      key: String(key || '').slice(0, 500),
+      payload: payload || {},
+    });
+    if (Buffer.byteLength(text, 'utf8') > LYRIC_CACHE_ENTRY_MAX_BYTES) return { ok: true, skipped: true };
+    await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    const tempFile = `${file}.${process.pid}.${Date.now()}.tmp`;
+    await fs.promises.writeFile(tempFile, text, 'utf8');
+    await fs.promises.rename(tempFile, file);
+    await pruneLyricCache();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'LYRIC_CACHE_WRITE_FAILED' };
   }
 });
 
