@@ -548,6 +548,7 @@ function updateFxInputs() {
   if (typeof updateSonicGroundColorControls === 'function') updateSonicGroundColorControls();
   if (typeof updateSonicWorkshopColorControls === 'function') updateSonicWorkshopColorControls();
   if (typeof updateSonicSeriesControlVisibility === 'function') updateSonicSeriesControlVisibility();
+  if (typeof updateMineradioMotionGroupVisibility === 'function') updateMineradioMotionGroupVisibility();
   if (typeof refreshSonicAudioMonitorUi === 'function') refreshSonicAudioMonitorUi();
   updateLyricGlowControls();
   applyPlaylistPanelFxSettings();

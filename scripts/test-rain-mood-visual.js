@@ -110,7 +110,7 @@ test('雨境封面图开关：动态 tab 可关，独立持久化，默认开', 
   assert.match(panel, /id === 'rain-fx-section'/);
 
   // 只在 rain-on 时显示区块(旧分页);FX 控制台接管后不隐藏,动效 tab 展示全部预设设置
-  assert.match(css, /body:not\(\[data-console-layout="task-first-v2"\]\):not\(\.rain-on\) #rain-fx-section\{display:none\}/);
+  assert.match(css, /body:not\(\.rain-on\) #fx-panel:not\(\[data-console-layout="task-first-v2"\]\) #rain-fx-section\{display:none\}/);
   assert.doesNotMatch(css, /body\.rain-on \[data-fx-page="motion"\] > \*:not\(#rain-fx-section\)/, 'FX 控制台结构下不得隐藏动效 tab 其他分组(会全黑)');
   assert.match(rain, /function rainMoodSetBodyClass\(/);
   assert.match(rain, /classList\.add\('rain-on'\)/);

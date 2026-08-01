@@ -15779,9 +15779,9 @@ body.vox-on .pl-detail-list{max-height:42vh;overflow:auto}
 body:not(.vox-on) #vox-fx-section{display:none}
 /* 雨境专属开关:旧分页下只在雨境预设的「动态」tab 显示。
    FX 控制台(task-first-v2)接管后不隐藏:动效 tab 展示全部预设的设置,用户可随时查看。 */
-body:not([data-console-layout="task-first-v2"]):not(.rain-on) #rain-fx-section{display:none}
-body:not([data-console-layout="task-first-v2"]):not(.rain-resonance-on) #rain-resonance-fx-section{display:none}
-body:not([data-console-layout="task-first-v2"]):not(.vox-on) #vox-fx-section{display:none}
+body:not(.rain-on) #fx-panel:not([data-console-layout="task-first-v2"]) #rain-fx-section{display:none}
+body:not(.rain-resonance-on) #fx-panel:not([data-console-layout="task-first-v2"]) #rain-resonance-fx-section{display:none}
+body:not(.vox-on) #fx-panel:not([data-console-layout="task-first-v2"]) #vox-fx-section{display:none}
 /* 旧分页时代的「预设专属过滤」规则已由 FX 控制台接管：
    organize 后 motion page 的直接子元素是 .fx-console-group 折叠块，
    `> *:not(#rain-fx-section)` 会把所有 group 隐藏导致动效 tab 全黑，故移除。
@@ -15803,7 +15803,7 @@ body.vox-on #t-float,body.vox-on #t-cinema,body.vox-on #t-bloom,body.vox-on #t-e
 body.vox-on .fx-slider:has(#fx-scatter),body.vox-on .fx-slider:has(#fx-cineshake){display:none}
 body.vox-on .fx-slider:has(#fx-point),body.vox-on .fx-slider:has(#fx-speed),body.vox-on .fx-slider:has(#fx-twist),body.vox-on .fx-slider:has(#fx-color),body.vox-on .fx-slider:has(#fx-bloom),body.vox-on .fx-slider:has(#fx-bgfade),body.vox-on .fx-section-label:has(+ .fx-slider:has(#fx-point)){display:none!important}
 /* 体素城市:「动态」tab 只保留音域回响(#vox-fx-section)+ 摄像头交互(#fx-stage-fold 内 #cam-block),其余顶层块隐藏 */
-body.vox-on [data-fx-page="motion"] > *:not(#vox-fx-section):not(#fx-stage-fold){display:none}
+body.vox-on #fx-panel:not([data-console-layout="task-first-v2"]) [data-fx-page="motion"] > *:not(#vox-fx-section):not(#fx-stage-fold){display:none}
 /* 体素城市:歌单迁进视觉控制台后,改成在控制台内"在流"显示(去掉固定定位/位移,常显) */
 #vox-playlist-host{margin:6px 0 10px}
 #vox-playlist-host #playlist-panel{position:static!important;left:auto!important;right:auto!important;top:auto!important;width:100%!important;max-height:60vh!important;opacity:1!important;transform:none!important;pointer-events:auto!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;background:transparent!important;border:none!important;padding:0!important}

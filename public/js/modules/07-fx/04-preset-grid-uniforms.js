@@ -77,7 +77,6 @@ function setPreset(p, opts) {
   refreshPresetGrid();
   if (typeof updateSonicSeriesControlVisibility === 'function') updateSonicSeriesControlVisibility();
   if (typeof updateMineradioMotionGroupVisibility === 'function') updateMineradioMotionGroupVisibility();
-  if (typeof updateMineradioMotionGroupVisibility === 'function') updateMineradioMotionGroupVisibility();
   if (typeof updateSonicWorkshopColorControls === 'function') updateSonicWorkshopColorControls();
   if (changed && !opts.skipTransition) triggerPresetParticleTransition(prev, p);
   // 每个预设对应的相机基线 (改 userOrbit)
