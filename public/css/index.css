@@ -15848,7 +15848,11 @@ html.control-glass-svg-ok #visual-guide-btn:hover {
   }
 }
 
-/* 体素城市也沿用通用左侧队列栏,避免预设切换后边缘唤醒区改变。 */
+/* 体素城市预设:歌单/队列缩到右上角,不挡居中城市(仅此预设;显隐仍走 .show/.peek) */
+body.vox-on #playlist-panel{left:auto!important;right:24px;top:92px;width:300px;max-height:calc(100vh - 200px);transform:translateX(125%) scale(.9);transform-origin:top right;transition:transform .55s cubic-bezier(.16,1,.3,1),opacity .45s cubic-bezier(.16,1,.3,1)}
+body.vox-on #playlist-panel.show,body.vox-on #playlist-panel.peek{left:auto!important;right:24px;transform:translateX(0) scale(.9)}
+/* 体素城市:歌单详情大浮卡(.pl-inline-detail 嵌在面板内)收窄贴右、展开也不盖居中城市 */
+body.vox-on #playlist-panel{width:280px;right:14px;max-height:calc(100vh - 220px)}
 body.vox-on .pl-detail-list{max-height:42vh;overflow:auto}
 /* 体素专属开关:只在体素预设的视觉控制台里显示,其它预设隐藏 */
 body:not(.vox-on) #vox-fx-section{display:none}
@@ -15877,7 +15881,9 @@ body.vox-on #fx-stage-fold .fx-fold-body > :not(#cam-block){display:none}
 body.vox-on #t-float,body.vox-on #t-cinema,body.vox-on #t-bloom,body.vox-on #t-edge,
 body.vox-on .fx-slider:has(#fx-scatter),body.vox-on .fx-slider:has(#fx-cineshake){display:none}
 body.vox-on .fx-slider:has(#fx-point),body.vox-on .fx-slider:has(#fx-speed),body.vox-on .fx-slider:has(#fx-twist),body.vox-on .fx-slider:has(#fx-color),body.vox-on .fx-slider:has(#fx-bloom),body.vox-on .fx-slider:has(#fx-bgfade),body.vox-on .fx-section-label:has(+ .fx-slider:has(#fx-point)){display:none!important}
-/* 旧版宿主只作为迁移期间的兼容样式;正常运行时不会再创建它。 */
+/* 体素城市:「动态」tab 只保留音域回响(#vox-fx-section)+ 摄像头交互(#fx-stage-fold 内 #cam-block),其余顶层块隐藏 */
+body.vox-on #fx-panel:not([data-console-layout="task-first-v2"]) [data-fx-page="motion"] > *:not(#vox-fx-section):not(#fx-stage-fold){display:none}
+/* 体素城市:歌单迁进视觉控制台后,改成在控制台内"在流"显示(去掉固定定位/位移,常显) */
 #vox-playlist-host{margin:6px 0 10px}
 #vox-playlist-host #playlist-panel{position:static!important;left:auto!important;right:auto!important;top:auto!important;width:100%!important;max-height:60vh!important;opacity:1!important;transform:none!important;pointer-events:auto!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;background:transparent!important;border:none!important;padding:0!important}
 /* 总刷新率上限:屏幕达不到的档位灰显禁用 */
@@ -15885,7 +15891,6 @@ body.vox-on .fx-slider:has(#fx-point),body.vox-on .fx-slider:has(#fx-speed),body
 /* 壁纸模式:整窗降桌面层后隐藏全部 UI 外壳(移植自 1.1.2 zip index.html:153-154,之前漏了这条→开壁纸满屏群魔乱舞) */
 body.mw-wallpaper #splash,body.mw-wallpaper #hint,body.mw-wallpaper #search-area,body.mw-wallpaper #empty-home,body.mw-wallpaper #top-right,body.mw-wallpaper #fx-panel,body.mw-wallpaper #playlist-panel,body.mw-wallpaper #bottom-bar,body.mw-wallpaper #bottom-handle,body.mw-wallpaper #fx-fab,body.mw-wallpaper #fx-fab-hide-btn,body.mw-wallpaper #trial-banner,body.mw-wallpaper #toast,body.mw-wallpaper #beat-chip,body.mw-wallpaper #ai-depth-chip,body.mw-wallpaper #perf-hud,body.mw-wallpaper #shelf-toggle-btn,body.mw-wallpaper #visual-guide-btn{display:none!important}
 body.mw-wallpaper{cursor:none}
-
 /* 负载监视器 HUD */
 #perf-hud{position:fixed;top:64px;left:14px;z-index:10;display:none;min-width:190px;padding:12px 14px;border-radius:12px;background:rgba(12,14,18,.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.1);font-size:11.5px;color:rgba(255,255,255,.8);box-shadow:0 8px 30px rgba(0,0,0,.5);pointer-events:none;font-variant-numeric:tabular-nums}
 #perf-hud .ph-h{position:relative;font-size:10px;letter-spacing:.18em;color:rgba(255,255,255,.45);margin-bottom:8px;padding-left:20px}

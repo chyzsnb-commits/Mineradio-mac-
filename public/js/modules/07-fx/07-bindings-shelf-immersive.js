@@ -527,7 +527,13 @@ function setShelfMode(m, opts) {
 }
 // 播放栏「3D 歌单架」开关:三档 seg 已删,此按钮是 3D 歌架唯一开关——关=硬隐藏,开=恢复(side 模式下先切 stage)
 function toggleShelfFromControls() {
-  // 所有预设统一使用右侧 3D 歌单架显隐路径;音域回响不再把按钮劫持到 FX 控制台。
+  // 体素预设下歌单只活在视觉控制台的「歌单」tab(fork 设计):按钮直达该 tab,不召 3D 浮卡盖城市(用户实测)
+  if (typeof voxelCityActive === 'function' && voxelCityActive()) {
+    toggleFxPanel(true);
+    if (typeof setFxPanelTab === 'function') setFxPanelTab('playlist');
+    return;
+  }
+  // 用户澄清(2026-07-03):此按钮 = 右侧 3D 歌单架的消失/出现开关
   if (shelfHardHidden) {
     shelfHardHidden = false;
     setShelfPinnedOpen(true, true);
