@@ -446,7 +446,8 @@ function makeShelfManager() {
         var safeEntryRotY = wallpaperShelfPose ? 0.05 : 0.16;
         card.mesh.rotation.y = (safeShelfPose ? safeRotY : layout.sideRotY) + (1 - reveal) * safeEntryRotY * summon.slide + parX * (safeShelfPose ? 0.014 : 0.038) * parWeight * summon.parallax;
         var safeRotX = wallpaperShelfPose ? 0.020 : layout.sideRotX;
-        card.mesh.rotation.x = -delta * (safeShelfPose ? safeRotX : layout.sideRotX) - parY * (safeShelfPose ? 0.010 : 0.024) * parWeight * summon.parallax;
+        var sideFanRotX = safeShelfPose ? safeRotX : (layout.sideRotX - (layout.lyricTiltX || 0));
+        card.mesh.rotation.x = (safeShelfPose ? 0 : (layout.lyricTiltX || 0)) - delta * sideFanRotX - parY * (safeShelfPose ? 0.010 : 0.024) * parWeight * summon.parallax;
       }
       card.mesh.scale.setScalar(scale);
       var disabledByDetail = detailOpenSide;
@@ -475,8 +476,8 @@ function makeShelfManager() {
       pzStage += (parY * 0.040 - parX * 0.035) * parWeight;
       var scaleS = (absD < 0.5 ? 1.20 : Math.max(0.45, 1.0 - absD * 0.22)) * (1 + pulse * 0.060) * layout.stageScale;
       card.mesh.position.set(pxStage, pyStage, pzStage);
-      card.mesh.rotation.y = -delta * 0.22 + parX * 0.050 * parWeight;
-      card.mesh.rotation.x = 0.10 - absD * 0.04 - parY * 0.028 * parWeight;
+      card.mesh.rotation.y = (layout.lyricTiltY || 0) - delta * 0.22 + parX * 0.050 * parWeight;
+      card.mesh.rotation.x = (layout.lyricTiltX || 0) + 0.10 - absD * 0.04 - parY * 0.028 * parWeight;
       card.mesh.scale.setScalar(scaleS);
       var disabledStage = contentList && contentList.isOpen();
       var opS = absD < 0.5 ? 1.0 : Math.max(0.18, 1.0 - absD * 0.32);

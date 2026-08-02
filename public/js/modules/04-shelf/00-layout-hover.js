@@ -25,6 +25,19 @@ function markShelfPlaybackSwitchGuard(ms) {
 function isPortraitShelfViewport() {
   return innerHeight > innerWidth * 1.08;
 }
+function shelfLyricAngleSettings() {
+  var tiltX = 0;
+  var tiltY = 0;
+  if (typeof fx !== 'undefined' && fx) {
+    tiltX = Number(fx.lyricTiltX) || 0;
+    tiltY = Number(fx.lyricTiltY) || 0;
+  }
+  var radians = Math.PI / 180;
+  return {
+    x: clampRange(tiltX, -84, 84) * radians,
+    y: clampRange(tiltY, -84, 84) * radians
+  };
+}
 function shelfVoxelWorldScale() {
   if (typeof voxelCityActive !== 'function' || !voxelCityActive()) return 1;
   // 音域回响使用约 103 的远景相机,普通歌架坐标(约 3~4)会被压到画面中心。
@@ -43,6 +56,7 @@ function shelfLayoutProfile() {
   var detailScale = portrait ? clampRange(innerWidth / 820, 0.70, 0.86) : (narrow ? 0.92 : 1.04);
   var shelfCtl = shelfSettings();
   var detailCtl = shelfDetailSettings();
+  var lyricAngle = shelfLyricAngleSettings();
   var shelfOffsetScale = voxelShelf ? voxelShelfScale : 1;
   var sideScaleFactor = voxelShelf ? voxelShelfScale : 1;
   return {
@@ -57,8 +71,10 @@ function shelfLayoutProfile() {
     sideEntryX: (skullShelf ? (portrait ? 0.30 : 0.50) : (portrait ? 0.38 : 0.82)) * sideScaleFactor,
     sideDetailShift: (skullShelf ? (portrait ? 0.00 : 0.00) : (portrait ? 0.38 : 0.82)) * sideScaleFactor,
     sideScale: (skullShelf ? (portrait ? 0.84 : (narrow ? 1.04 : 1.22)) : (portrait ? 0.70 : (narrow ? 0.86 : 1))) * shelfCtl.size * sideScaleFactor,
-    sideRotY: (skullShelf ? (portrait ? -0.085 : -0.190) : (portrait ? 0.12 : 0.28)) + shelfCtl.angle,
-    sideRotX: skullShelf ? (portrait ? 0.018 : 0.030) : (portrait ? 0.022 : 0.042),
+    sideRotY: (skullShelf ? (portrait ? -0.085 : -0.190) : (portrait ? 0.12 : 0.28)) + shelfCtl.angle + lyricAngle.y,
+    sideRotX: (skullShelf ? (portrait ? 0.018 : 0.030) : (portrait ? 0.022 : 0.042)) + lyricAngle.x,
+    lyricTiltX: lyricAngle.x,
+    lyricTiltY: lyricAngle.y,
     stageX: shelfCtl.x,
     stageXStep: portrait ? 0.92 : (narrow ? 1.22 : 1.55),
     stageY: (portrait ? -2.46 : -2.20) + shelfCtl.y,
@@ -68,8 +84,8 @@ function shelfLayoutProfile() {
       x: ((skullShelf ? (portrait ? 0.16 : (narrow ? 0.40 : 0.64)) : (portrait ? 0.38 : (narrow ? 0.96 : 1.28))) + shelfCtl.x * 0.62 + detailCtl.x) * shelfOffsetScale,
       y: ((skullShelf ? (portrait ? -0.40 : -0.68) : (portrait ? 0.10 : 0.18)) + shelfCtl.y * 0.55 + detailCtl.y) * shelfOffsetScale,
       z: ((skullShelf ? (portrait ? 1.10 : 1.22) : (portrait ? 1.28 : 1.36)) + shelfCtl.z * 0.45 + detailCtl.z) * shelfOffsetScale,
-      rx: (skullShelf ? (portrait ? 0.006 : 0.014) : (portrait ? -0.004 : -0.008)) + detailCtl.rx,
-      ry: (skullShelf ? (portrait ? -0.070 : -0.165) : (portrait ? 0.00 : 0.020)) + shelfCtl.angle * 0.55 + detailCtl.ry,
+      rx: (skullShelf ? (portrait ? 0.006 : 0.014) : (portrait ? -0.004 : -0.008)) + lyricAngle.x + detailCtl.rx,
+      ry: (skullShelf ? (portrait ? -0.070 : -0.165) : (portrait ? 0.00 : 0.020)) + shelfCtl.angle * 0.55 + lyricAngle.y + detailCtl.ry,
       scale: (skullShelf ? detailScale * (portrait ? 0.88 : 1.02) : detailScale) * shelfCtl.size * detailCtl.scale * sideScaleFactor,
       rowStep: (skullShelf ? (portrait ? 0.37 : 0.43) : (portrait ? 0.36 : 0.42)) * detailCtl.rowGap * sideScaleFactor,
       openDuration: detailCtl.openDuration,

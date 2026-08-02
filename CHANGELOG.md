@@ -2,6 +2,7 @@
 
 ## 2.0.0
 
+- 修复歌词倾角与 3D 歌架不同步：新增共用的 `shelfLyricAngleSettings()`，把 `lyricTiltX/Y` 的度数转换为弧度后接入右侧歌架卡片、详情歌单面板和舞台歌单旋转；保留原有歌架角度、封面跟随、风扇展开、入场动画与视差，不改预设 9 雨境玻璃水珠。新增 `scripts/test-shelf-lyric-angle.js` 并纳入 `npm run check`；专项 2/2、全量 227/227 通过。真实 Electron CDP 注入测试队列后确认 p0 侧栏卡片中心角度跟随 `12°/-18°` 歌词倾角。
 - 修复预设 10「音域回响」右键唤醒不刷新歌架：右键事件现在会标记 `shelf-context` 渲染交互并唤醒主循环；针对约 103 远景相机增加歌架世界坐标/卡片尺度适配，默认卡片投影回到窗口右侧，预设 9「雨境」和其他预设保持原布局。真实 Electron CDP 验收 p10 卡片中心约 `x=782–912`，`pickCardAtScreen()` 可命中。
 - 删除无实际用途的「界面密度」功能：移除视觉控制台入口、FX layout 分组、全局状态/本地持久化、启动绑定和 `ui-density-minimal` CSS；其余歌单栏、歌架、播放器和预设设置不受影响。专项测试 `scripts/test-sonic-sidebar-density.js` 更新为 9 项，`npm run check` **225/225** 通过。
 
