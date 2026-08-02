@@ -2,7 +2,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -29,46 +28,39 @@ test('歌架按钮使用通用右侧唤醒路径，旧 playlist 页名统一归�
   assert.match(workspace, /playlist.*shelf|shelf.*playlist|normalize.*FxPanelTab/i);
 });
 
-test('界面页提供全局标准/极简密度控件', () => {
+test('右键唤醒歌架会主动标记渲染交互并请求主循环', () => {
+  const source = read('public/js/modules/04-shelf/05-card-interactions.js');
+  assert.match(source, /contextmenu[\s\S]*markRenderInteraction\(['"]shelf-context['"]/);
+  assert.match(source, /contextmenu[\s\S]*(requestMainLoopAnimationFrame|wakeMainLoopFromBackground)/);
+});
+
+test('音域回响远景相机会给歌架单独的布局尺度', () => {
+  const layout = read('public/js/modules/04-shelf/00-layout-hover.js');
+  assert.match(layout, /voxelCityActive\(\)/);
+  assert.match(layout, /voxelShelfScale/);
+  assert.match(layout, /sideX:[^\n]*shelfOffsetScale/);
+  assert.match(layout, /sideScale:[^\n]*sideScaleFactor/);
+});
+
+test('界面密度功能已从界面页移除', () => {
   const workspace = read('public/js/modules/07-fx/09-console-workspace.js');
   const html = read('public/index.html');
-  assert.match(workspace, /fx-interface-density-seg/);
-  assert.match(workspace, /uiDensity|ui-density/);
-  assert.match(html, /id=["']fx-interface-density-seg["']/);
-  assert.match(html, /data-ui-density=["']standard["']/);
-  assert.match(html, /data-ui-density=["']minimal["']/);
+  assert.doesNotMatch(workspace, /fx-interface-density-seg|uiDensity|ui-density/);
+  assert.doesNotMatch(html, /fx-interface-density-seg|data-ui-density|界面密度/);
 });
 
-test('界面密度模式只切换全局 class 并持久化，不改变预设', () => {
+test('界面密度状态与启动应用逻辑已移除', () => {
   const source = read('public/js/modules/00-state/02-preferences-ui-modes.js');
-  assert.match(source, /UI_DENSITY_STORE_KEY/);
-  assert.match(source, /function applyUiDensityMode\(/);
-  assert.match(source, /function setUiDensityMode\(/);
-  assert.match(source, /ui-density-minimal/);
-  assert.match(source, /localStorage\.setItem\(UI_DENSITY_STORE_KEY/);
-  assert.doesNotMatch(source, /setPreset\([^)]*uiDensity/);
+  const stores = read('public/js/modules/00-state/00-core-stores.js');
+  const startup = read('public/js/modules/10-shell/05-startup-bindings.js');
+  assert.doesNotMatch(source, /UI_DENSITY_STORE_KEY|normalizeUiDensityMode|readUiDensityPreference|saveUiDensityPreference|applyUiDensityMode|setUiDensityMode|bindUiDensityControls/);
+  assert.doesNotMatch(stores, /UI_DENSITY_STORE_KEY|uiDensityMode/);
+  assert.doesNotMatch(startup, /applyUiDensityMode|uiDensityMode/);
 });
 
-test('界面密度读取非法值时回退标准', () => {
-  const source = read('public/js/modules/00-state/02-preferences-ui-modes.js');
-  const start = source.indexOf('function normalizeUiDensityMode');
-  assert.notEqual(start, -1, '缺少界面密度归一化函数');
-  const end = source.indexOf('\n}', start) + 2;
-  const sandbox = {
-    localStorage: {
-      getItem() { return 'unexpected'; },
-      setItem() {}
-    }
-  };
-  vm.runInNewContext(source.slice(start, end) + '\nresult = normalizeUiDensityMode(localStorage.getItem("x"));', sandbox);
-  assert.equal(sandbox.result, 'standard');
-});
-
-test('极简密度不会通过 display:none 删除核心侧栏入口', () => {
+test('界面密度专用 CSS 已移除', () => {
   const css = read('public/css/index.css');
-  assert.match(css, /ui-density-minimal/);
-  const minimalBlock = css.slice(css.indexOf('ui-density-minimal'));
-  assert.doesNotMatch(minimalBlock, /ui-density-minimal[^\{]*\{[^}]*display\s*:\s*none/);
+  assert.doesNotMatch(css, /ui-density-minimal|ui-density-gap|ui-density-panel-pad/);
 });
 
 test('队列面板重新聚焦时取消失焦关闭竞态并复位冻结的 CSS 过渡', () => {

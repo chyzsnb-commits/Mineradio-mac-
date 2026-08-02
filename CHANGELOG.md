@@ -2,6 +2,9 @@
 
 ## 2.0.0
 
+- 修复预设 10「音域回响」右键唤醒不刷新歌架：右键事件现在会标记 `shelf-context` 渲染交互并唤醒主循环；针对约 103 远景相机增加歌架世界坐标/卡片尺度适配，默认卡片投影回到窗口右侧，预设 9「雨境」和其他预设保持原布局。真实 Electron CDP 验收 p10 卡片中心约 `x=782–912`，`pickCardAtScreen()` 可命中。
+- 删除无实际用途的「界面密度」功能：移除视觉控制台入口、FX layout 分组、全局状态/本地持久化、启动绑定和 `ui-density-minimal` CSS；其余歌单栏、歌架、播放器和预设设置不受影响。专项测试 `scripts/test-sonic-sidebar-density.js` 更新为 9 项，`npm run check` **225/225** 通过。
+
 - 修复预设 10「音域回响」侧栏无法唤醒：左侧队列栏与右侧 3D 歌架继续保留在页面根层，不再被体素预设专属逻辑劫持；窗口失焦/后台恢复时取消旧的队列关闭计时器，并把被冻结在 `opacity:0/translateX` 的活动面板直接恢复到可见目标状态。新增 `scripts/test-sonic-sidebar-density.js` 的聚焦竞态与 CSS 过渡回归断言；真实 Electron（CDP）验证 hidden 页面恢复后面板回到 `left:32px`、`opacity:1`、`transform:0`，快速关闭再打开不会残留关闭计时器。`npm run check` **224/224**。
 - 修复音域回响设置页的歌单错位，并整理三套音域预设入口：体素歌单宿主现在只挂到「歌单架」页，不再追加到 FX 控制台根节点，因此预设 10 的「动效」页不会再显示「歌单 / 队列」；预设 10/12/13 在「常用 → 预设与存档」合并为一张「音域回响」卡片，卡片内用互斥三选一按钮切换原版、Sonic-Topography 与 Wallpaper Engine，内部索引与存档格式保持不变。频谱面板拆为所有预设通用的「频谱面板」组，八段音域权重仍只在预设 12 显示。新增 3 项回归断言，真实 Electron 验收 14 个预设、三选一点击和动效页零歌单；`npm run check` **216/216**。
 - 修复 FX 控制台「动效」tab 的预设专属设置归位生命周期：`updateFxInputs()` 与控制台首次完成分组归位后现在都会刷新 `updateMineradioMotionGroupVisibility()`，避免启动恢复预设或打开面板后残留上一个预设的设置；`setPreset()` 同时去除重复刷新。旧分页雨境/云瀑/音域回响与体素的 CSS 过滤规则改为仅作用于非 `task-first-v2` 控制台，防止体素预设把重组后的分组全部隐藏。新增 `scripts/test-fx-preset-motion-ownership.js`，并更新雨境兼容选择器断言。真实 Electron 逐一切换 14 个预设：p0–8=`base+particles`、p9=`base+rain-mood`、p10=`base+vox-echo`、p11=`base+rain-resonance`、p12=`base+sonic-terrain+sonic-audio+sonic-blocks`、p13=`base+sonic-we`，专属组未出现在其他 tab；`npm run check` **213/213**。

@@ -1366,7 +1366,9 @@ function saveVoxToggles() { try { localStorage.setItem(VOX_TOGGLE_STORE_KEY, JSO
 function loadVoxToggles() { try { var raw = JSON.parse(localStorage.getItem(VOX_TOGGLE_STORE_KEY) || '{}') || {}; if ('autoRotate' in raw) fx.voxAutoRotate = !!raw.autoRotate; if ('coverColor' in raw) fx.voxCoverColor = !!raw.coverColor; if ('meteors' in raw) fx.voxMeteors = !!raw.meteors; if ('ghostCover' in raw) fx.voxGhostCover = !!raw.ghostCover; if ('floatBlocks' in raw) fx.voxFloatBlocks = !!raw.floatBlocks; if ('shimmer' in raw) fx.voxShimmer = !!raw.shimmer; if (raw.res && /^(low|mid|high)$/.test(raw.res)) fx.voxRes = raw.res; } catch (e) {} }
 function loadVoxBg() { try { var raw = JSON.parse(localStorage.getItem(VOX_BG_STORE_KEY) || '{}') || {}; if (raw.image) fx.voxBgImage = raw.image; if (raw.color) fx.voxBgColor = raw.color; if (raw.playlist) fx.voxPlaylistColor = raw.playlist; } catch (e) {} }
 
-// 体素城市:把歌单面板整个 DOM 迁进视觉控制台(#fx-panel),退出体素再移回原位(只体素生效)
+// 体素城市兼容清理:旧版本会把歌单面板迁进视觉控制台。新布局让左右侧栏始终
+// 由各自的边缘唤醒逻辑管理,保留通用左侧栏在页面根层,这里仅负责把已经存在的旧宿主安全恢复。
+// 目标节点仍是 #playlist-panel,这里只不再把它追加到 FX 控制台。
 var _voxPlaylistHome = null;
 // 粒子高级参数滑块在体素下隐藏(JS 兜底:巨型样式表里 :has 规则实测有失效情况)
 function _voxToggleParticleSliders(hide) {
@@ -1380,37 +1382,34 @@ function _voxToggleParticleSliders(hide) {
   var label = firstRow ? firstRow.previousElementSibling : null;
   if (label && label.classList && label.classList.contains('fx-section-label')) label.style.display = hide ? 'none' : '';
 }
+function _voxRestoreLegacyPlaylistHost() {
+  var pl = document.getElementById('playlist-panel');
+  var host = document.getElementById('vox-playlist-host');
+  if (!pl || !host || pl.parentElement !== host) {
+    if (host && host.parentElement) host.parentElement.removeChild(host);
+    _voxPlaylistHome = null;
+    return;
+  }
+  var home = _voxPlaylistHome;
+  if (!home || !home.parent) {
+    var fxp = document.getElementById('fx-panel');
+    home = { parent: document.body, next: fxp ? fxp.nextSibling : null, show: false, peek: false };
+  }
+  host.parentNode.removeChild(host);
+  if (home.next && home.next.parentElement === home.parent) home.parent.insertBefore(pl, home.next);
+  else home.parent.appendChild(pl);
+  pl.classList.toggle('show', !!home.show);
+  pl.classList.toggle('peek', !!home.peek);
+  pl.classList.remove('vox-docked');
+  _voxPlaylistHome = null;
+}
 function _voxDockPlaylist(dock) {
   var pl = document.getElementById('playlist-panel');
-  var fxp = document.getElementById('fx-panel');
-  if (!pl || !fxp) return;
-  if (dock) {
-    if (typeof organizeFxPanel === 'function') organizeFxPanel();
-    var host = document.getElementById('vox-playlist-host');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'vox-playlist-host';
-    }
-    // 新控制台没有旧版 playlist 页:歌单必须归入「歌单架」页,不能追加到
-    // #fx-panel 根节点,否则会紧跟当前动效页渲染成“动效里有歌单”。
-    var firstPage = fxp.querySelector('[data-fx-page="shelf"]') || fxp.querySelector('[data-fx-page="playlist"]');
-    if (!firstPage) return;
-    if (host.parentElement !== firstPage) firstPage.appendChild(host);
-    if (pl.parentElement !== host) {
-      _voxPlaylistHome = { parent: pl.parentElement, next: pl.nextSibling };
-      host.appendChild(pl);
-      _voxApplyPlaylistColor();   // 应用自定义歌单颜色(若设)
-      pl.classList.add('show');   // 触发面板内容渲染 + 配合 docked CSS 常显
-    }
-  } else if (_voxPlaylistHome) {
-    var home = _voxPlaylistHome; _voxPlaylistHome = null;
-    if (typeof fxPanelTab !== 'undefined' && (fxPanelTab === 'playlist' || fxPanelTab === 'shelf') && typeof setFxPanelTab === 'function') setFxPanelTab('presets');
-    if (pl.parentElement && pl.parentElement.id === 'vox-playlist-host') {
-      pl.classList.remove('show');
-      if (home.next && home.next.parentElement === home.parent) home.parent.insertBefore(pl, home.next);
-      else home.parent.appendChild(pl);
-    }
-  }
+  if (!pl) return;
+  // 清理旧版本已留下的宿主,避免页面刷新后队列栏仍然挂在动态页。
+  if (document.getElementById('vox-playlist-host')) _voxRestoreLegacyPlaylistHost();
+  pl.classList.remove('vox-docked');
+  if (dock && typeof _voxApplyPlaylistColor === 'function') _voxApplyPlaylistColor();
 }
 
 function voxResDims() {
