@@ -128,10 +128,11 @@ function makeShelfManager() {
 
     // 卡片底
     makeRoundRect(ctx, pad, pad, W - pad * 2, H - pad * 2, 32);
-    ctx.fillStyle = 'rgba(0,0,0,' + shelfLook.bgOpacity.toFixed(3) + ')'; ctx.fill();
+    ctx.fillStyle = shelfGlassRgba(shelfGlassAlpha(), 0.72); ctx.fill();
     var grad = ctx.createLinearGradient(0, 0, W, H);
-    grad.addColorStop(0, 'rgba(255,255,255,0.10)');
-    grad.addColorStop(1, 'rgba(255,255,255,0.018)');
+    grad.addColorStop(0, shelfGlassRgba(0.18, 1.0));
+    grad.addColorStop(0.48, 'rgba(255,255,255,0.055)');
+    grad.addColorStop(1, shelfGlassRgba(0.10, 0.42));
     ctx.fillStyle = grad; ctx.fill();
 
     if (isNow) {
@@ -446,15 +447,15 @@ function makeShelfManager() {
         var safeEntryRotY = wallpaperShelfPose ? 0.05 : 0.16;
         card.mesh.rotation.y = (safeShelfPose ? safeRotY : layout.sideRotY) + (1 - reveal) * safeEntryRotY * summon.slide + parX * (safeShelfPose ? 0.014 : 0.038) * parWeight * summon.parallax;
         var safeRotX = wallpaperShelfPose ? 0.020 : layout.sideRotX;
-        var sideFanRotX = safeShelfPose ? safeRotX : (layout.sideRotX - (layout.lyricTiltX || 0));
-        card.mesh.rotation.x = (safeShelfPose ? 0 : (layout.lyricTiltX || 0)) - delta * sideFanRotX - parY * (safeShelfPose ? 0.010 : 0.024) * parWeight * summon.parallax;
+        var sideFanRotX = safeShelfPose ? safeRotX : layout.sideRotX;
+        card.mesh.rotation.x = -delta * sideFanRotX - parY * (safeShelfPose ? 0.010 : 0.024) * parWeight * summon.parallax;
       }
       card.mesh.scale.setScalar(scale);
       var disabledByDetail = detailOpenSide;
       var opacity = absD < 0.5 ? 1.0 : Math.max(0.22, 1.0 - absD * 0.30);
       if (disabledByDetail) {
-        opacity *= card.index === openCardIdx ? 0.16 : 0.08;
-        card.mesh.material.color.setScalar(card.index === openCardIdx ? 0.42 : 0.25);
+        opacity *= card.index === openCardIdx ? 0.34 : 0.20;
+        card.mesh.material.color.setScalar(card.index === openCardIdx ? 0.72 : 0.56);
       } else {
         if (passiveAlways) opacity *= 0.92 + lift * 0.08;
         card.mesh.material.color.setScalar(passiveAlways ? (0.96 + lift * 0.04) : 1);
@@ -476,14 +477,14 @@ function makeShelfManager() {
       pzStage += (parY * 0.040 - parX * 0.035) * parWeight;
       var scaleS = (absD < 0.5 ? 1.20 : Math.max(0.45, 1.0 - absD * 0.22)) * (1 + pulse * 0.060) * layout.stageScale;
       card.mesh.position.set(pxStage, pyStage, pzStage);
-      card.mesh.rotation.y = (layout.lyricTiltY || 0) - delta * 0.22 + parX * 0.050 * parWeight;
-      card.mesh.rotation.x = (layout.lyricTiltX || 0) + 0.10 - absD * 0.04 - parY * 0.028 * parWeight;
+      card.mesh.rotation.y = -delta * 0.22 + parX * 0.050 * parWeight;
+      card.mesh.rotation.x = 0.10 - absD * 0.04 - parY * 0.028 * parWeight;
       card.mesh.scale.setScalar(scaleS);
       var disabledStage = contentList && contentList.isOpen();
       var opS = absD < 0.5 ? 1.0 : Math.max(0.18, 1.0 - absD * 0.32);
       if (disabledStage) {
-        opS *= card.index === openCardIdx ? 0.16 : 0.08;
-        card.mesh.material.color.setScalar(card.index === openCardIdx ? 0.42 : 0.25);
+        opS *= card.index === openCardIdx ? 0.34 : 0.20;
+        card.mesh.material.color.setScalar(card.index === openCardIdx ? 0.72 : 0.56);
       } else {
         card.mesh.material.color.setScalar(1);
       }
@@ -761,7 +762,13 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
         group.renderOrder = passiveAlwaysGroup && !liftedCardActive ? 30 : 50;
         group.position.set(0, 0, 0);
         var bindToCover = (shelfAlwaysVisible() || shelfPinnedOpen || shelfVisibility > 0.06) && particles && particles.rotation && !(contentList && contentList.isOpen());
-        if (bindToCover) {
+        var lyricSynced = lyricQuaternionAvailable() && !shouldUseWallpaperSafeShelfCamera();
+        if (lyricSynced) {
+          shelfLyricQuaternion(group.quaternion);
+          group.rotateY(px * 0.018);
+          group.rotateX(-py * 0.010);
+          group.rotateZ(0);
+        } else if (bindToCover) {
           var bindEase = uniforms.uTime.value < coverBindResumeUntil ? 0.18 : 0.075;
           // 跟随封面旋转,但钳到可点击的角度范围内:否则封面大幅旋转时歌架被带得侧过去、
           // 卡片转出屏幕右缘就点不到了(光标放不到屏外的卡片上,不是命中判定的问题)。
