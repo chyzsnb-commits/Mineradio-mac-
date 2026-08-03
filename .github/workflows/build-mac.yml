@@ -1,0 +1,133 @@
+name: Build macOS (arm64 + x64)
+
+# 同时构建 arm64（Apple Silicon）和 x64（Intel）两个架构的 dmg。
+# 触发条件：推送 v* tag（发版）、手动、PR（仅验证不发布）
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: '构建类型（stable=正式版；beta=测试版。dmg 上传到本仓库 Release，无自动更新）'
+        required: true
+        default: 'beta'
+        type: choice
+        options:
+          - beta
+          - stable
+  pull_request:
+    paths:
+      - '.github/workflows/build-mac.yml'
+      - 'desktop/**'
+      - 'public/**'
+      - 'scripts/**'
+      - '*.js'
+      - 'package.json'
+
+concurrency:
+  group: build-mac-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false  # 一个架构失败不影响另一个继续
+      matrix:
+        include:
+          # arm64 用 macOS 15 Apple Silicon runner
+          - arch: arm64
+            runner: macos-15
+            build_cmd: npm run build:mac:arm64
+            build_dir_cmd: ./node_modules/.bin/electron-builder --mac --arm64 --dir
+          # x64 用 macOS 15 Intel runner（macos-13 已下线）
+          - arch: x64
+            runner: macos-15-intel
+            build_cmd: npm run build:mac:x64
+            build_dir_cmd: ./node_modules/.bin/electron-builder --mac --x64 --dir
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Syntax check
+        run: npm run check
+
+      - name: Prepare signing (adhoc fallback when no certificate)
+        # 有证书 → 正式签名+公证；无证书 → adhoc（用户需右键打开）
+        run: |
+          if [ -z "${{ secrets.CSC_LINK }}" ]; then
+            echo "CSC_LINK 未配置，使用 adhoc 签名"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> $GITHUB_ENV
+          else
+            echo "CSC_LINK 已配置，启用正式签名"
+          fi
+
+      - name: Determine release type
+        id: reltype
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "release_type=none" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "is_release=true" >> $GITHUB_OUTPUT
+            echo "release_type=${{ inputs.release_type }}" >> $GITHUB_OUTPUT
+          else
+            if echo "${{ github.ref_name }}" | grep -qiE "beta|internal|beat|测试"; then
+              echo "is_release=true" >> $GITHUB_OUTPUT
+              echo "release_type=beta" >> $GITHUB_OUTPUT
+            else
+              echo "is_release=true" >> $GITHUB_OUTPUT
+              echo "release_type=stable" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Build (PR 验证，只解包不打包 dmg)
+        if: steps.reltype.outputs.is_release != 'true'
+        run: ${{ matrix.build_dir_cmd }}
+
+      - name: Build dmg (发版构建)
+        if: steps.reltype.outputs.is_release == 'true'
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: ${{ matrix.build_cmd }}
+
+      - name: Upload dmg to GitHub Release
+        if: steps.reltype.outputs.is_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TYPE: ${{ steps.reltype.outputs.release_type }}
+        run: |
+          DMG=$(find dist -name "*-${{ matrix.arch }}.dmg" | head -1)
+          [ -z "$DMG" ] && DMG=$(find dist -name "*.dmg" | head -1)
+          TAG="${{ github.ref_name }}"
+          [ -z "$DMG" ] && { echo "无 dmg，跳过"; exit 0; }
+          echo "上传 $DMG 到 release $TAG"
+          # release 已存在就追加资产（两个架构追加到同一个 release），否则创建
+          PRE_FLAG=""
+          [ "$RELEASE_TYPE" = "beta" ] && PRE_FLAG="--prerelease"
+          gh release create "$TAG" "$DMG" --title "Mineradio $TAG" --generate-notes $PRE_FLAG 2>/dev/null \
+            || gh release upload "$TAG" "$DMG" --clobber
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mineradio-mac-${{ matrix.arch }}
+          path: |
+            dist/*.dmg
+            dist/*.blockmap
+          if-no-files-found: ignore

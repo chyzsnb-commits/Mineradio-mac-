@@ -11709,6 +11709,8 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
 .preset-card {
   position: relative;
   min-height: 94px;
+  height: 94px;
+  box-sizing: border-box;
   border-radius: 11px;
   border: 1.5px solid rgba(255, 255, 255, .08);
   background: rgba(255, 255, 255, .025);
@@ -11778,11 +11780,13 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
 
 /* 音域回响系列：三个运行时预设共用一个入口，视觉上保持一组互斥选择 */
 .preset-series-card {
-  grid-column: 1 / -1;
-  min-height: 126px;
-  justify-content: flex-start;
-  gap: 3px;
-  padding: 12px
+  grid-column: auto;
+  min-height: 94px;
+  height: 94px;
+  box-sizing: border-box;
+  justify-content: flex-end;
+  gap: 0;
+  padding: 10px
 }
 
 .preset-series-card .pc-icon {
@@ -11796,19 +11800,21 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
 .pc-series-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
   width: 100%;
-  margin-top: 8px
+  margin-top: 6px
 }
 
 .pc-series-option {
   min-width: 0;
-  min-height: 48px;
+  min-height: 30px;
+  height: 30px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 3px;
-  padding: 7px 8px;
+  gap: 0;
+  padding: 3px 4px;
   border: 1px solid rgba(255, 255, 255, .10);
   border-radius: 8px;
   background: rgba(0, 0, 0, .16);
@@ -11837,7 +11843,8 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 9px;
+  line-height: 1.15;
   font-weight: 740
 }
 
@@ -11847,12 +11854,19 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: rgba(255, 255, 255, .42);
-  font-size: 9px;
-  line-height: 1.25
+  font-size: 8px;
+  line-height: 1.15
 }
 
 .pc-series-option.active .pc-series-option-desc {
   color: color-mix(in srgb, var(--fc-accent) 54%, rgba(255, 255, 255, .58))
+}
+
+/* 音域系列在桌面预设网格中与 emily 并列；只有窄面板才退回整行。 */
+@media (max-width:720px) {
+  .preset-series-card {
+    grid-column: 1 / -1
+  }
 }
 
 .preset-card[data-preset="6"] .pc-name,

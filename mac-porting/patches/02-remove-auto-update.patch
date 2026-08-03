@@ -1,0 +1,135 @@
+diff --git a/.github/workflows/build-mac.yml b/.github/workflows/build-mac.yml
+index 1a26a6b..80f1a95 100644
+--- a/.github/workflows/build-mac.yml
++++ b/.github/workflows/build-mac.yml
+@@ -8,7 +8,7 @@ on:
+   workflow_dispatch:
+     inputs:
+       release_type:
+-        description: '发布类型（stable=正式版；beta=测试版。两者都发到本仓库 mr）'
++        description: '构建类型（stable=正式版；beta=测试版。dmg 上传到本仓库 Release，无自动更新）'
+         required: true
+         default: 'beta'
+         type: choice
+@@ -72,34 +72,37 @@ jobs:
+             fi
+           fi
+ 
+-      - name: Build (no publish for PR)
++      - name: Build (PR 验证，只解包不打包 dmg)
+         if: steps.reltype.outputs.is_release != 'true'
+-        env:
+-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+         run: npm run build:mac:dir
+ 
+-      - name: Build & publish (beta → this repo)
+-        if: steps.reltype.outputs.is_release == 'true' && steps.reltype.outputs.release_type == 'beta'
++      - name: Build dmg (发版构建)
++        if: steps.reltype.outputs.is_release == 'true'
+         env:
+-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+-          # Apple 签名/公证（配置 secrets 后自动生效）
++          # Apple 签名/公证（配置 secrets 后自动生效，否则 adhoc）
+           CSC_LINK: ${{ secrets.CSC_LINK }}
+           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+           APPLE_ID: ${{ secrets.APPLE_ID }}
+           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+-        run: npx electron-builder --mac dmg --arm64 --publish always
++        run: npm run build:mac
+ 
+-      - name: Build & publish (stable → this repo)
+-        if: steps.reltype.outputs.is_release == 'true' && steps.reltype.outputs.release_type == 'stable'
++      - name: Upload dmg to GitHub Release (手动触发发版时)
++        if: steps.reltype.outputs.is_release == 'true'
+         env:
+           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+-          CSC_LINK: ${{ secrets.CSC_LINK }}
+-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+-          APPLE_ID: ${{ secrets.APPLE_ID }}
+-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+-        run: npx electron-builder --mac dmg --arm64 --publish always
++          RELEASE_TYPE: ${{ steps.reltype.outputs.release_type }}
++        run: |
++          # 不走 electron-updater 自动更新，只把 dmg 作为 Release 资产供手动下载
++          DMG=$(find dist -name "*.dmg" | head -1)
++          TAG="${{ github.ref_name }}"
++          [ -z "$DMG" ] && { echo "无 dmg，跳过"; exit 0; }
++          # 测试版标 pre-release
++          PRE_FLAG=""
++          [ "$RELEASE_TYPE" = "beta" ] && PRE_FLAG="--prerelease"
++          # release 已存在就追加资产，否则创建
++          gh release create "$TAG" "$DMG" --title "Mineradio $TAG" --generate-notes $PRE_FLAG 2>/dev/null \
++            || gh release upload "$TAG" "$DMG" --clobber
+ 
+       - name: Upload build artifacts
+         if: always()
+@@ -108,6 +111,5 @@ jobs:
+           name: mineradio-mac-build
+           path: |
+             dist/*.dmg
+-            dist/latest-mac.yml
+             dist/*.blockmap
+           if-no-files-found: ignore
+diff --git a/AGENTS.md b/AGENTS.md
+index 01e728f..6004fc0 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -80,7 +80,7 @@ npm run check
+ 1. **`telemetry.js`**：1.1.3 里每 5 分钟强制上报。正式版必须改为 **opt-in**（首启询问，默认关闭），测试版可保留。
+ 2. **`system-memory.js`**：Windows 专用。Mac 上应 **完全跳过 require**，不要让它的状态机常驻主进程。
+ 3. **`internalBeta` 标记**（package.json `mineradio.internalBeta`）：**只在测试版构建时为 true**。正式版必须 false，且 `appId` 用 `com.mineradio.desktop` 而非 `com.mineradio.beat.internal`。
+-4. **自动更新**：`mineradio.update.provider` 在正式版应为 `github`（指向本仓库 `chyzsnb-commits/mr`），测试版才是 `none`/`disabled`。注意：本仓库私有，用户端自动更新需授权 token，否则只能手动下载 dmg。
++4. **不要自动更新**：本软件从 Windows 迁移而来，**Mac 版不需要自动更新功能**。`package.json` 不含 `build.publish`；`build:mac` 脚本构建后会删除 `latest-mac.yml`（electron-builder 默认会生成它，但这是 electron-updater 用的，不要）。`mineradio.update.disabled` 保持 `true`（server.js 里有历史更新逻辑会读它，保持禁用即可，不要删该字段以免 server.js 报错）。用户升级 = 手动下载新 dmg 覆盖安装。
+ 5. **不要提交** `build/.omc/`（工具缓存）、`node_modules/`、`dist/`。已在 `.gitignore`。
+ 
+ ## Review Guidelines
+@@ -96,13 +96,14 @@ Codex / reviewer 审 PR 时检查：
+ 
+ ## Release Workflow
+ 
+-1. 确认 `package.json` 的 `version`、`mineradio.internalBeta`、`build.appId`、`build.publish` 符合本次发布类型（正式 vs 测试）。
++1. 确认 `package.json` 的 `version`、`mineradio.internalBeta`、`build.appId` 符合本次发布类型（正式 vs 测试）。**不含 `build.publish`**（Mac 版不自动更新）。
+ 2. 更新 `CHANGELOG.md` 顶部。
+ 3. `npm run check`。
+-4. `npm run build:mac` → 产出 `dist/Mineradio-<ver>-arm64.dmg`。
+-5. CI（`.github/workflows/build-mac.yml`）在打 tag `v*` 时自动构建并发布到 Release。
+-   - **测试版** → 本仓库（`chyzsnb-commits/mr`）的 pre-release。
+-   - **正式版** → 本仓库（`chyzsnb-commits/mr`）的 latest release。
++4. `npm run build:mac` → 产出 `dist/Mineradio-<ver>-arm64.dmg`（脚本会自动删除 `latest-mac.yml`）。
++5. CI（`.github/workflows/build-mac.yml`）在打 tag `v*` 时自动构建，把 dmg 上传到本仓库 Release（供手动下载，无自动更新通道）。
++   - **测试版** → pre-release。
++   - **正式版** → latest release。
++6. 用户升级方式：手动从 Release 下载新 dmg 覆盖安装。
+ 
+ ## 单仓库架构（私有）
+ 
+diff --git a/package.json b/package.json
+index 117890b..83cadc9 100644
+--- a/package.json
++++ b/package.json
+@@ -28,7 +28,7 @@
+     "start": "electron .",
+     "check": "node --check server.js && node --check desktop/main.js",
+     "build:mac:dir": "electron-builder --mac --arm64 --dir",
+-    "build:mac": "electron-builder --mac dmg --arm64",
++    "build:mac": "electron-builder --mac dmg --arm64 && rm -f dist/latest-mac.yml",
+     "postinstall": "electron-builder install-app-deps"
+   },
+   "dependencies": {
+@@ -88,13 +88,6 @@
+         { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+       ]
+     },
+-    "afterPack": "build/after-pack.js",
+-    "publish": {
+-      "provider": "github",
+-      "owner": "chyzsnb-commits",
+-      "repo": "mr",
+-      "channel": "latest",
+-      "private": true
+-    }
++    "afterPack": "build/after-pack.js"
+   }
+ }

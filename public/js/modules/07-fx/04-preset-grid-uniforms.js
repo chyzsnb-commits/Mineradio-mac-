@@ -120,6 +120,7 @@ function setPreset(p, opts) {
   if (typeof updateSonicSeriesControlVisibility === 'function') updateSonicSeriesControlVisibility();
   if (typeof updateMineradioMotionGroupVisibility === 'function') updateMineradioMotionGroupVisibility();
   if (typeof updateSonicWorkshopColorControls === 'function') updateSonicWorkshopColorControls();
+  if (typeof refreshVoxelLyricStageAfterPresetChange === 'function') refreshVoxelLyricStageAfterPresetChange(changed ? 'voxel-preset-change' : 'voxel-preset-refresh');
   if (changed && !opts.skipTransition) triggerPresetParticleTransition(prev, p);
   // 每个预设对应的相机基线 (改 userOrbit)
   if (changed && !opts.preserveCamera) {

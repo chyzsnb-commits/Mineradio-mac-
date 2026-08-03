@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none}
+  html,body{width:100%;height:100%;background:transparent;overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Helvetica Neue",Arial,sans-serif;color:#fff}
+  .glass{position:absolute;inset:6px;border-radius:18px;padding:16px 16px 14px;
+    background:rgba(28,28,34,.34);
+    -webkit-backdrop-filter:blur(26px) saturate(1.6);backdrop-filter:blur(26px) saturate(1.6);
+    border:1px solid rgba(255,255,255,.14);box-shadow:0 18px 50px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.16);
+    display:flex;flex-direction:column;gap:13px}
+  .hd{font-size:10px;letter-spacing:.26em;color:rgba(255,255,255,.5);text-transform:uppercase;display:flex;align-items:center;gap:7px}
+  .hd .dot{width:6px;height:6px;border-radius:50%;background:#7fd8ff;box-shadow:0 0 8px rgba(127,216,255,.7)}
+  .transport{display:flex;align-items:center;justify-content:center;gap:14px}
+  .tbtn{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;cursor:pointer;
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);transition:.15s;color:#fff}
+  .tbtn:hover{background:rgba(255,255,255,.18)}
+  .tbtn:active{transform:scale(.92)}
+  .tbtn.play{width:52px;height:52px;background:rgba(255,255,255,.92);color:#111}
+  .tbtn.play:hover{background:#fff}
+  .tbtn svg{width:20px;height:20px;fill:currentColor}
+  .tbtn.play svg{width:24px;height:24px}
+  .row{display:flex;align-items:center;gap:10px}
+  .row .ico{width:18px;text-align:center;font-size:14px;color:rgba(255,255,255,.65);flex:none}
+  input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:5px;border-radius:99px;
+    background:rgba(255,255,255,.18);outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.5);cursor:pointer}
+  .presets{display:flex;align-items:center;gap:8px}
+  .pbtn{flex:1;height:34px;border-radius:11px;display:grid;place-items:center;cursor:pointer;font-size:12.5px;
+    background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);transition:.15s;color:rgba(255,255,255,.88)}
+  .pbtn:hover{background:rgba(255,255,255,.16)}
+  .exit{height:36px;border-radius:12px;display:grid;place-items:center;cursor:pointer;font-size:13px;font-weight:600;
+    color:#ff8a8a;background:rgba(255,90,90,.12);border:1px solid rgba(255,90,90,.28);transition:.15s}
+  .exit:hover{background:rgba(255,90,90,.22);color:#fff}
+</style>
+</head>
+<body>
+  <div class="glass">
+    <div class="hd"><span class="dot"></span>MINERADIO · 壁纸</div>
+    <div class="transport">
+      <div class="tbtn" data-act="prevTrack" title="上一首"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></div>
+      <div class="tbtn play" data-act="togglePlay" title="播放/暂停"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+      <div class="tbtn" data-act="nextTrack" title="下一首"><svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></div>
+    </div>
+    <div class="row"><span class="ico">🔈</span><input id="vol" type="range" min="0" max="1" step="0.01" value="0.7"></div>
+    <div class="presets">
+      <div class="pbtn" data-act="prevPreset">‹ 上一预设</div>
+      <div class="pbtn" data-act="nextPreset">下一预设 ›</div>
+    </div>
+    <div class="exit" data-act="exit">退出壁纸模式</div>
+  </div>
+<script>
+  function send(action, value){ try{ if(window.wpctl) window.wpctl.send(action, value); }catch(e){} }
+  document.querySelectorAll('[data-act]').forEach(function(el){
+    el.addEventListener('click', function(){
+      var act = el.getAttribute('data-act');
+      send(act);
+      if (act === 'togglePlay') {
+        var pp = document.querySelector('.tbtn.play svg path');
+        if (pp) { var playing = pp.getAttribute('d').indexOf('M6 5h4') === 0; pp.setAttribute('d', playing ? 'M8 5v14l11-7z' : 'M6 5h4v14H6zm8 0h4v14h-4z'); }
+      }
+    });
+  });
+  var vol = document.getElementById('vol');
+  vol.addEventListener('input', function(){ send('setVolume', parseFloat(vol.value)); });
+  // 接收当前状态(音量/播放)初始化 UI
+  if (window.wpctl && window.wpctl.onState) window.wpctl.onState(function(st){
+    try {
+      if (st && typeof st.volume === 'number') vol.value = st.volume;
+      var play = document.querySelector('.tbtn.play svg path');
+      if (play && st && st.playing) play.setAttribute('d','M6 5h4v14H6zm8 0h4v14h-4z'); // pause icon
+      else if (play) play.setAttribute('d','M8 5v14l11-7z'); // play icon
+    } catch(e){}
+  });
+</script>
+</body>
+</html>

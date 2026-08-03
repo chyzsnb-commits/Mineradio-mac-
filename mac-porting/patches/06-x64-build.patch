@@ -1,0 +1,131 @@
+diff --git a/.github/workflows/build-mac.yml b/.github/workflows/build-mac.yml
+index 80f1a95..70dfab1 100644
+--- a/.github/workflows/build-mac.yml
++++ b/.github/workflows/build-mac.yml
+@@ -1,5 +1,6 @@
+-name: Build macOS (arm64)
++name: Build macOS (arm64 + x64)
+ 
++# 同时构建 arm64（Apple Silicon）和 x64（Intel）两个架构的 dmg。
+ # 触发条件：推送 v* tag（发版）、手动、PR（仅验证不发布）
+ on:
+   push:
+@@ -24,7 +25,22 @@ on:
+ 
+ jobs:
+   build:
+-    runs-on: macos-14  # Apple Silicon arm64 runner
++    name: Build ${{ matrix.arch }}
++    strategy:
++      fail-fast: false  # 一个架构失败不影响另一个继续
++      matrix:
++        include:
++          # arm64 用 Apple Silicon runner
++          - arch: arm64
++            runner: macos-14
++            build_cmd: npm run build:mac:arm64
++            build_dir_cmd: electron-builder --mac --arm64 --dir
++          # x64 用 Intel runner（原生模块兼容性更好）
++          - arch: x64
++            runner: macos-13
++            build_cmd: npm run build:mac:x64
++            build_dir_cmd: electron-builder --mac --x64 --dir
++    runs-on: ${{ matrix.runner }}
+     steps:
+       - name: Checkout
+         uses: actions/checkout@v4
+@@ -43,10 +59,9 @@ jobs:
+ 
+       - name: Prepare signing (adhoc fallback when no certificate)
+         # 有证书 → 正式签名+公证；无证书 → adhoc（用户需右键打开）
+-        # 证书相关 secrets 配齐后自动启用，无需改 workflow
+         run: |
+           if [ -z "${{ secrets.CSC_LINK }}" ]; then
+-            echo "CSC_LINK 未配置，使用 adhoc 签名（CSC_IDENTITY_AUTO_DISCOVERY=false 时 electron-builder 自动 adhoc）"
++            echo "CSC_LINK 未配置，使用 adhoc 签名"
+             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> $GITHUB_ENV
+           else
+             echo "CSC_LINK 已配置，启用正式签名"
+@@ -62,7 +77,6 @@ jobs:
+             echo "is_release=true" >> $GITHUB_OUTPUT
+             echo "release_type=${{ inputs.release_type }}" >> $GITHUB_OUTPUT
+           else
+-            # tag 触发：tag 含 beta/内部/beat 视为测试版，否则正式版
+             if echo "${{ github.ref_name }}" | grep -qiE "beta|internal|beat|测试"; then
+               echo "is_release=true" >> $GITHUB_OUTPUT
+               echo "release_type=beta" >> $GITHUB_OUTPUT
+@@ -74,33 +88,32 @@ jobs:
+ 
+       - name: Build (PR 验证，只解包不打包 dmg)
+         if: steps.reltype.outputs.is_release != 'true'
+-        run: npm run build:mac:dir
++        run: ${{ matrix.build_dir_cmd }}
+ 
+       - name: Build dmg (发版构建)
+         if: steps.reltype.outputs.is_release == 'true'
+         env:
+-          # Apple 签名/公证（配置 secrets 后自动生效，否则 adhoc）
+           CSC_LINK: ${{ secrets.CSC_LINK }}
+           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+           APPLE_ID: ${{ secrets.APPLE_ID }}
+           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+-        run: npm run build:mac
++        run: ${{ matrix.build_cmd }}
+ 
+-      - name: Upload dmg to GitHub Release (手动触发发版时)
++      - name: Upload dmg to GitHub Release
+         if: steps.reltype.outputs.is_release == 'true'
+         env:
+           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+           RELEASE_TYPE: ${{ steps.reltype.outputs.release_type }}
+         run: |
+-          # 不走 electron-updater 自动更新，只把 dmg 作为 Release 资产供手动下载
+-          DMG=$(find dist -name "*.dmg" | head -1)
++          DMG=$(find dist -name "*-${{ matrix.arch }}.dmg" | head -1)
++          [ -z "$DMG" ] && DMG=$(find dist -name "*.dmg" | head -1)
+           TAG="${{ github.ref_name }}"
+           [ -z "$DMG" ] && { echo "无 dmg，跳过"; exit 0; }
+-          # 测试版标 pre-release
++          echo "上传 $DMG 到 release $TAG"
++          # release 已存在就追加资产（两个架构追加到同一个 release），否则创建
+           PRE_FLAG=""
+           [ "$RELEASE_TYPE" = "beta" ] && PRE_FLAG="--prerelease"
+-          # release 已存在就追加资产，否则创建
+           gh release create "$TAG" "$DMG" --title "Mineradio $TAG" --generate-notes $PRE_FLAG 2>/dev/null \
+             || gh release upload "$TAG" "$DMG" --clobber
+ 
+@@ -108,7 +121,7 @@ jobs:
+         if: always()
+         uses: actions/upload-artifact@v4
+         with:
+-          name: mineradio-mac-build
++          name: mineradio-mac-${{ matrix.arch }}
+           path: |
+             dist/*.dmg
+             dist/*.blockmap
+diff --git a/package.json b/package.json
+index 83cadc9..ae3a562 100644
+--- a/package.json
++++ b/package.json
+@@ -28,7 +28,10 @@
+     "start": "electron .",
+     "check": "node --check server.js && node --check desktop/main.js",
+     "build:mac:dir": "electron-builder --mac --arm64 --dir",
+-    "build:mac": "electron-builder --mac dmg --arm64 && rm -f dist/latest-mac.yml",
++    "build:mac:arm64": "electron-builder --mac dmg --arm64 && rm -f dist/latest-mac.yml",
++    "build:mac:x64": "electron-builder --mac dmg --x64 && rm -f dist/latest-mac.yml",
++    "build:mac": "npm run build:mac:arm64",
++    "build:mac:all": "electron-builder --mac dmg --arm64 --x64 && rm -f dist/latest-mac.yml",
+     "postinstall": "electron-builder install-app-deps"
+   },
+   "dependencies": {
+@@ -66,7 +69,7 @@
+       "target": [
+         {
+           "target": "dmg",
+-          "arch": ["arm64"]
++          "arch": ["arm64", "x64"]
+         }
+       ],
+       "hardenedRuntime": true,
