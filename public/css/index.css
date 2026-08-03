@@ -11786,7 +11786,7 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   box-sizing: border-box;
   justify-content: flex-end;
   gap: 0;
-  padding: 10px
+  padding: 9px 10px 10px
 }
 
 .preset-series-card .pc-icon {
@@ -11802,19 +11802,19 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   width: 100%;
-  margin-top: 6px
+  margin-top: 7px
 }
 
 .pc-series-option {
   min-width: 0;
-  min-height: 30px;
-  height: 30px;
+  min-height: 36px;
+  height: 36px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 0;
-  padding: 3px 4px;
+  padding: 4px 5px;
   border: 1px solid rgba(255, 255, 255, .10);
   border-radius: 8px;
   background: rgba(0, 0, 0, .16);

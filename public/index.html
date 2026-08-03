@@ -884,6 +884,25 @@
           <button data-sonic-workshop-theme="minimal-monochrome" onclick="setSonicWorkshopTheme('minimal-monochrome')">极简</button>
         </div>
       </div>
+      <div id="desktop-lyrics-controls">
+        <div class="fx-toggle-grid">
+          <div class="fx-toggle" id="t-desktopLyrics" onclick="toggleFx('desktopLyrics')" title="全屏幕置顶歌词"><span>桌面歌词</span><span class="dot"></span></div>
+          <div class="fx-toggle" id="t-desktopLyricsClickThrough" onclick="toggleFx('desktopLyricsClickThrough')" title="锁定后防误触；鼠标移到桌面歌词上按中键可锁定或解锁"><span>桌面歌词锁定</span><span class="dot"></span></div>
+          <div class="fx-toggle" id="t-desktopLyricsCinema" onclick="toggleFx('desktopLyricsCinema')" title="桌面歌词绑定鼓点电影震动，基础漂浮始终保留"><span>桌面歌词电影震动</span><span class="dot"></span></div>
+          <div class="fx-toggle" id="t-desktopLyricsHighlight" onclick="toggleFx('desktopLyricsHighlight')" title="桌面歌词按播放进度高亮"><span>桌面歌词高亮跟随</span><span class="dot"></span></div>
+        </div>
+        <div class="fx-slider"><label>桌面歌词大小</label><input id="fx-desktoplyricssize" type="range" min="0.72" max="1.55" step="0.01"><output></output></div>
+        <div class="fx-slider"><label>桌面歌词透明</label><input id="fx-desktoplyricsopacity" type="range" min="0.28" max="1" step="0.01"><output></output></div>
+        <div class="fx-slider"><label>桌面歌词高度</label><input id="fx-desktoplyricsy" type="range" min="0.08" max="0.92" step="0.01"><output></output></div>
+        <div class="fx-seg" id="desktop-lyrics-fps-seg" title="桌面歌词刷新帧率">
+          <button data-desktop-lyrics-fps="24">24</button>
+          <button data-desktop-lyrics-fps="30">30</button>
+          <button data-desktop-lyrics-fps="60">60</button>
+          <button data-desktop-lyrics-fps="120">120</button>
+          <button data-desktop-lyrics-fps="0">无上限</button>
+        </div>
+      </div>
+
       <div id="app-bg-section">
       <div class="fx-section-label">背景(所有预设通用)</div>
       <div style="display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap">

@@ -107,8 +107,15 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-lyricmotionsoftness', '动画柔顺', '歌词滚动 丝滑 缓动'),
         fxConsoleItem('t-lyricCameraLock', '歌词镜头绑定', '跟随镜头 锁定')
       ] },
-      { key: 'desktop', title: '桌面歌词', hint: '桌面歌词需在底栏或设置弹窗开启（Mac 布局）', items: [
-        fxConsoleItem('lyrics-toggle-btn', '桌面歌词入口', '底栏歌词按钮', false)
+      { key: 'desktop', title: '桌面歌词', hint: '独立桌面层的开关、锁定与排版', items: [
+        fxConsoleItem('t-desktopLyrics', '桌面歌词', '全屏置顶歌词'),
+        fxConsoleItem('t-desktopLyricsClickThrough', '桌面歌词锁定', '鼠标穿透 防误触'),
+        fxConsoleItem('t-desktopLyricsCinema', '桌面歌词电影震动', '桌面歌词 鼓点'),
+        fxConsoleItem('t-desktopLyricsHighlight', '桌面歌词高亮跟随', '桌面逐字高亮'),
+        fxConsoleItem('fx-desktoplyricssize', '桌面歌词大小', '桌面字号'),
+        fxConsoleItem('fx-desktoplyricsopacity', '桌面歌词透明度', '桌面歌词透明'),
+        fxConsoleItem('fx-desktoplyricsy', '桌面歌词高度', '桌面位置'),
+        fxConsoleItem('desktop-lyrics-fps-seg', '桌面歌词帧率', '24 30 60 120 无上限 FPS')
       ] }
     ]
   },
@@ -227,7 +234,6 @@ var FX_CONSOLE_LAYOUT = [
     key: 'shelf',
     groups: [
       { key: 'display', title: '显示方式', hint: '模式、镜头、常驻状态和内容来源', open: true, items: [
-        fxConsoleItem('shelf-toggle-btn', '3D 歌单架', '关闭 侧栏 舞台'),
         fxConsoleItem('shelf-camera-seg', '歌单架镜头', '动态镜头 静态镜头'),
         fxConsoleItem('shelf-presence-seg', '歌单架显示', '自动隐藏 常驻'),
         fxConsoleItem('t-shelfShowPodcasts', '显示播客歌单', '3D 播客'),

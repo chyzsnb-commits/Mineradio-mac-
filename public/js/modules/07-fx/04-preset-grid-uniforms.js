@@ -13,7 +13,6 @@ function buildSonicSeriesPresetCard() {
   return '<section class="preset-card preset-series-card" data-preset-group="sonic-series" aria-label="音域回响系列" role="group">' +
     '<div class="pc-icon">' + presetIcons[10] + '</div>' +
     '<div class="pc-name">音域回响</div>' +
-    '<div class="pc-desc">三个音域场景，选择一个作为当前视觉</div>' +
     '<div class="pc-series-options" role="group" aria-label="音域回响版本">' + options + '</div>' +
     '</section>';
 }

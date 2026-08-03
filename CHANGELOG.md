@@ -2,6 +2,7 @@
 
 ## 2.0.0
 
+- 修复视觉控制台错误搬走底栏入口：`shelf-toggle-btn` 与“词”按钮不再被控制台整理器 `appendChild()` 到设置页，底栏恢复原来的 3D 歌单架开关与歌词校准入口；桌面歌词恢复为“歌词”页内独立的开关、锁定、动效、高亮、大小、透明度、高度与帧率设置，不复用底栏按钮。音域回响系列卡移除重复说明，三个版本按钮增至等高 `36px`，标题/副标题保持单行省略，避免遮挡。新增回归测试，`npm run check` **198/198** 通过。[来源: `public/index.html`、`public/js/modules/07-fx/09-console-workspace.js`、`public/js/modules/07-fx/04-preset-grid-uniforms.js`、`public/css/index.css`、`scripts/test-bottom-controls-and-sonic-card.js`]
 - 修复预设 10「音域回响」的歌词异步竞态：切入 p10 时如果歌词请求尚未完成，原逻辑会因 `lyricsLines` 为空提前结束，歌词随后到达也不会再唤醒舞台，导致一直看不到歌词。现在原歌词和自定义歌词应用完成后都会通知 p10 重新恢复歌词组、当前行与预热；仅对 p10 生效，不强开用户关闭的歌词，也不改变歌词角度、位置、字体、动画或其他预设。新增异步回归测试，专项 5/5、`npm run check` **221/221**；真实 Electron/CDP 注入延迟歌词后确认舞台可见且显示新歌词。[来源: `public/js/modules/02-visual/14-stage-lyrics-rendering.js`、`public/js/modules/05-playback/06-track-detail-lyrics-actions.js`、`scripts/test-sonic-series-layout.js`]
 - 统一视觉预设入口卡片尺寸：普通预设卡与音域回响系列外卡固定为 `94px` 高并使用 `border-box`，避免内容差异导致网格行高跳动；音域回响的原版、Sonic-Topography、Wallpaper Engine 三个按钮压缩为同高 `30px` 的横向三选一，长标题在按钮内部省略，不改变预设索引或切换逻辑。删除仅在 `≤520px` 生效的重复横向规则，保留 `≤720px` 系列卡整行回退。新增尺寸回归断言，专项 4/4、`npm run check` **220/220** 通过；待真实 Electron 窗口验收不同尺寸下的视觉密度与三项点击切换。
 - 修复预设 10「音域回响」切换后歌词舞台偶发不唤醒，并按用户截图重排视觉预设入口：emily 与音域回响系列在桌面网格中并列，雨境/云瀑等预设从下一行继续双列；窄面板自动让系列卡跨整行，三个版本继续互斥三选一。切入 p10 时只在用户未关闭歌词的情况下恢复歌词组、当前播放行和预热，不覆盖歌词位置、字体、动画、倾角或其他预设。新增 `scripts/test-sonic-series-layout.js`，真实 Electron 验收 p9→p10 歌词恢复与桌面/窄面板几何布局；`npm run check` **219/219**。

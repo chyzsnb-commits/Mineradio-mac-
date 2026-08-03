@@ -2,6 +2,8 @@
 
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**
 
+- **2026-08-03 底栏入口归位与音域回响卡片收紧**：视觉控制台布局表错误引用 `shelf-toggle-btn` 与 `lyrics-toggle-btn`，整理器会将真实底栏 DOM 移入设置页，故删除两个引用而不是复制按钮。底栏继续使用 `toggleShelfFromControls()` 与 `toggleLyricsPanel()`；桌面歌词恢复为设置内独立的 `t-desktopLyrics`、锁定、电影震动、高亮、大小、透明度、高度和帧率控件。音域回响系列入口删除重复说明文字，三按钮固定 `36px` 等高，文字单行省略。新增 `scripts/test-bottom-controls-and-sonic-card.js`，专项 3/3、`npm run check` **198/198**。真实 Electron 启动在本会话被旧实例的单实例锁和后台进程回收，未能取得可操作窗口；代码与静态 DOM 回归均已验证。设计规格：`docs/superpowers/specs/2026-08-03-bottom-controls-and-sonic-card-design.md`。
+- **Git 树风险**：远端 PR #74 (`76fb657`) 与 #75 (`2f6fe62`) 的 tree 仅含少数文件，直接以其为 parent 会删除完整项目树；不要以它们派生。本修复从最后完整树 PR #72 head `6fc853084d75005227abbbb5dafacda5fdcdc524` 创建新分支、`force:false`，且只带本次入口/布局文件，不纳入 p13 歌词支线。
 - **2026-08-03 音域回响歌词异步就绪竞态修复（本地 PR65 同步副本）**：用户反馈预设 10「音域回响」没有歌词。根因不是歌词接口失败，而是切换 p10 时请求尚未返回，`lyricsLines` 为空使原有唤醒函数提前结束；原歌词/自定义歌词随后应用时没有再次通知 p10，舞台会永久停在空状态。`14-stage-lyrics-rendering.js` 新增 `refreshVoxelLyricStageAfterLyricsReady()`，两个歌词应用入口在 `renderLyrics()` 后调用它，复用现有 p10 唤醒路径。逻辑只在 `fx.preset === VOXEL_PRESET_INDEX` 且 `fx.particleLyrics !== false` 时生效，不改歌词角度、位置、字体、动画或歌架，也不影响其他预设。新增异步回归断言；专项 `node --test scripts/test-sonic-series-layout.js` 5/5，全量 `npm run check` **221/221**。真实 Electron/CDP 延迟注入歌词后确认 `stageLyrics.group.visible === true`、当前文本更新且唤醒原因为 `lyrics-ready`。
 - **下一步**：从远端 PR #71 head `5fbe897eaad98ed9e109246acd1b4bc2817b9668` 派生新的分支，使用 GitHub Git API 创建 tree/commit/ref（`force:false`）并开新 PR；不要追加 PR #71、不要 `git push`、不要提交 `node_modules`。用户侧只需在新 PR 版本启动 Mineradio，先退出启动页并播放一首有歌词的歌曲，再切换 p10 验证歌词出现；若仍异常，记录歌曲 ID、`fx.particleLyrics`、`lyricsLines.length` 与 `stageLyrics.currentText`。
 

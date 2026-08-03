@@ -26,8 +26,8 @@ test('所有视觉预设卡固定同一尺寸，音域系列按钮压缩到卡�
   assert.match(cardRule, /box-sizing:\s*border-box/, '预设卡高度需要包含边框和内边距');
   assert.match(seriesRule, /(?:^|\n)\s*height:\s*94px\b/, '音域系列外卡必须与普通预设卡同高');
   assert.match(optionsRule, /grid-template-columns:\s*repeat\(3\s*,\s*minmax\(0,\s*1fr\)\)/, '三个音域版本需要横向压缩排列');
-  assert.match(optionRule, /min-height:\s*30px\b/, '音域版本按钮需要使用紧凑高度');
-  assert.match(optionRule, /height:\s*30px\b/, '三个音域版本按钮需要固定同高');
+  assert.match(optionRule, /min-height:\s*36px\b/, '音域版本按钮需要使用更易读的固定高度');
+  assert.match(optionRule, /height:\s*36px\b/, '三个音域版本按钮需要固定同高');
 });
 
 test('音域回响系列卡在桌面预设网格中与 emily 并列', () => {
