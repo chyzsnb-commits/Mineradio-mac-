@@ -919,6 +919,7 @@
         <span onclick="voxSetBg('#f5f1e6')" title="米白" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#f5f1e6;border:1px solid rgba(255,255,255,.2)"></span>
       </div>
       <div class="fx-section-label" style="display:flex;align-items:center;gap:8px"><span>视频 / 图片背景</span><span style="margin-left:auto;display:flex;gap:6px"><button class="fx-mini-btn ghost" id="bg-album-toggle-btn" type="button" title="使用当前封面原图" onclick="toggleCustomBackgroundAlbumCover()">封面</button><button class="fx-mini-btn ghost" id="bg-media-crop-btn" type="button" onclick="openCustomBackgroundCropModal()">裁切</button><button class="fx-mini-btn ghost" type="button" onclick="clearCustomBackgroundImage()">清除</button></span></div>
+      <div class="fx-toggle-grid"><div class="fx-toggle" id="t-albumBackgroundMouseBind" onclick="toggleFx('albumBackgroundMouseBind')" title="让当前歌曲封面背景跟随画布鼠标产生轻微视差"><span>封面鼠标视角</span><span class="dot"></span></div></div>
       <div id="video-bg-grid" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px"></div>
       <input id="video-bg-file" type="file" accept="image/*,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.jpg,.jpeg,.png,.webp,.gif" style="display:none" onchange="videoBgOnFile(this)">
       <div class="fx-slider"><label>&#35009;&#20999;&#24038;&#21491;</label><input id="fx-bgcropx" type="range" min="0" max="100"

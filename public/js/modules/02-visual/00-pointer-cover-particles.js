@@ -50,6 +50,7 @@ function queueParticlePointerFrame(clientX, clientY) {
   var mx = (clientX / innerWidth) * 2 - 1;
   var my = -(clientY / innerHeight) * 2 + 1;
   pointerTarget.x = mx; pointerTarget.y = my;
+  if (typeof updateAlbumBackgroundMouseView === 'function') updateAlbumBackgroundMouseView(mx, my);
   particlePointerFrame.ndcX = mx;
   particlePointerFrame.ndcY = my;
   particlePointerFrame.dirty = true;

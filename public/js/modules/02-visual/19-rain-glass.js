@@ -268,6 +268,12 @@ function rainGlassSlipMaxSpeed(drop) {
   );
 }
 
+function rainGlassSlipDrag(drop) {
+  // 阻力只由水珠尺寸决定，不能随滑落进度增加，否则同一个流速设置会在后半程失效。
+  var sizeFactor = rainGlassSizeMotionFactor(drop);
+  return rainGlassClamp(4.8 / Math.max(0.82, sizeFactor), 3.6, 5.8);
+}
+
 function rainGlassSlipDistance(drop) {
   var speedFactor = rainGlassMotionSpeedFactor();
   var sizeFactor = rainGlassClamp(drop.r / RAIN_GLASS_MOTION_REFERENCE_RADIUS, 0.78, 1.42);
@@ -508,7 +514,7 @@ function rainGlassUpdateBreaking(drop) {
 
 function rainGlassUpdateSlipping(drop, dt) {
   var progress = rainGlassClamp(1 - drop.slipRemaining / drop.slipDistance, 0, 1);
-  var drag = 4.2 + progress * progress * 12.5;
+  var drag = rainGlassSlipDrag(drop);
   drop.vy += (rainGlassSlipAcceleration(drop) - drop.vy * drag) * dt;
   drop.vy = rainGlassClamp(drop.vy, 0, rainGlassSlipMaxSpeed(drop));
   var travel = Math.min(drop.slipRemaining, drop.vy * dt);

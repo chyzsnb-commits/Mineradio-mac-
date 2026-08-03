@@ -39,6 +39,7 @@ var FX_CONSOLE_LAYOUT = [
       { key: 'background', title: '背景媒体', hint: '颜色、封面、图片、视频背景', open: true, items: [
         fxConsoleItem('background-image-input', '背景媒体', '封面 图片 视频 上传 裁切 清除', false),
         fxConsoleItem('bg-album-toggle-btn', '封面背景', '使用当前封面原图'),
+        fxConsoleItem('t-albumBackgroundMouseBind', '封面鼠标视角', '封面 背景 鼠标 视差'),
         fxConsoleItem('bg-media-crop-btn', '背景裁切', '裁切 缩放 位置'),
         fxConsoleItem('fx-bgglassopacity', '毛玻璃透明', '玻璃 背景模糊'),
         fxConsoleItem('fx-windowbgopacity', '窗口背景透明', '窗口透明度'),

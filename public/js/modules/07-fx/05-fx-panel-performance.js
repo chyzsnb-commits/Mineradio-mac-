@@ -551,6 +551,8 @@ function updateFxInputs() {
   if (typeof updateSonicSeriesControlVisibility === 'function') updateSonicSeriesControlVisibility();
   if (typeof updateMineradioMotionGroupVisibility === 'function') updateMineradioMotionGroupVisibility();
   if (typeof refreshSonicAudioMonitorUi === 'function') refreshSonicAudioMonitorUi();
+  var albumBackgroundMouseBindToggle = document.getElementById('t-albumBackgroundMouseBind');
+  if (albumBackgroundMouseBindToggle) albumBackgroundMouseBindToggle.classList.toggle('on', fx.albumBackgroundMouseBind === true);
   updateLyricGlowControls();
   applyPlaylistPanelFxSettings();
   // 同步开关

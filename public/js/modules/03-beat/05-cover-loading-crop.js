@@ -77,11 +77,30 @@ function cssBackgroundUrl(src) {
   return 'url("' + String(src || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '")';
 }
 
+var albumBackgroundMouseView = { x: 0, y: 0 };
+
+function updateAlbumBackgroundMouseView(ndcX, ndcY) {
+  if (Number.isFinite(Number(ndcX))) albumBackgroundMouseView.x = Number(ndcX);
+  if (Number.isFinite(Number(ndcY))) albumBackgroundMouseView.y = Number(ndcY);
+  var enabled = !!(typeof fx !== 'undefined' && fx && fx.albumBackgroundMouseBind === true);
+  var x = enabled ? Math.max(-1, Math.min(1, albumBackgroundMouseView.x)) : 0;
+  var y = enabled ? Math.max(-1, Math.min(1, albumBackgroundMouseView.y)) : 0;
+  var offsetX = (x * -2.1).toFixed(2) + '%';
+  var offsetY = (y * 1.7).toFixed(2) + '%';
+  ['album-bg', 'album-bg-next'].forEach(function (id) {
+    var layer = document.getElementById(id);
+    if (!layer) return;
+    layer.style.setProperty('--album-bg-mouse-x', offsetX);
+    layer.style.setProperty('--album-bg-mouse-y', offsetY);
+  });
+}
+
 function setAlbumBackground(src, opts) {
   opts = opts || {};
   var bg = document.getElementById('album-bg');
   var next = document.getElementById('album-bg-next');
   if (!bg) return;
+  updateAlbumBackgroundMouseView();
   if (!src) {
     if (opts.preserve) return;
     bg.classList.remove('visible');

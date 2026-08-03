@@ -587,11 +587,12 @@ body.custom-background-video #custom-bg::before {
   background-size: cover;
   background-position: var(--custom-bg-position-x, 50%) var(--custom-bg-position-y, 50%);
   filter: blur(120px) brightness(0.18) saturate(1.5);
-  transform: scale(calc(1.4 * var(--custom-bg-zoom, 1)));
+  transform: translate3d(var(--album-bg-mouse-x, 0%), var(--album-bg-mouse-y, 0%), 0) scale(calc(1.4 * var(--custom-bg-zoom, 1)));
   transform-origin: var(--custom-bg-position-x, 50%) var(--custom-bg-position-y, 50%);
   transition: opacity 760ms cubic-bezier(.16, 1, .3, 1), background-position .22s ease, transform .22s ease;
   opacity: 0;
-  pointer-events: none
+  pointer-events: none;
+  will-change: transform
 }
 
 #album-bg.visible,

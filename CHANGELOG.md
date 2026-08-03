@@ -2,6 +2,8 @@
 
 ## 2.0.0
 
+- 修复雨境玻璃水珠后半程自行减速：原滑落状态把阻力从 `4.2` 持续增至 `16.7`，即使“水珠流速”滑条不变，水珠也会在后半段被逐渐刹慢。现在阻力只与水珠尺寸相关，滑落全过程持续使用同一流速系数驱动加速度与终端速度，保留原有弯道、融合、停靠和重挂壁状态。新增“封面鼠标视角”开关（默认关闭），开启后当前歌曲的 `#album-bg` 双层封面背景复用既有画布鼠标坐标做轻微视差；不影响上传图片、视频背景、歌词或任何预设。专项 8/8、`npm run check` **200/200** 通过；当前自动化环境无法取得 Electron 可见窗口，仍待人工确认实际观感。[来源: `public/js/modules/02-visual/19-rain-glass.js`、`public/js/modules/03-beat/05-cover-loading-crop.js`、`public/js/modules/02-visual/00-pointer-cover-particles.js`、`public/css/index.css`、`scripts/test-rain-glass-speed-and-album-mouse-bind.js`]
+
 - 修复视觉控制台错误搬走底栏入口：`shelf-toggle-btn` 与“词”按钮不再被控制台整理器 `appendChild()` 到设置页，底栏恢复原来的 3D 歌单架开关与歌词校准入口；桌面歌词恢复为“歌词”页内独立的开关、锁定、动效、高亮、大小、透明度、高度与帧率设置，不复用底栏按钮。音域回响系列卡移除重复说明，三个版本按钮增至等高 `36px`，标题/副标题保持单行省略，避免遮挡。新增回归测试，`npm run check` **198/198** 通过。[来源: `public/index.html`、`public/js/modules/07-fx/09-console-workspace.js`、`public/js/modules/07-fx/04-preset-grid-uniforms.js`、`public/css/index.css`、`scripts/test-bottom-controls-and-sonic-card.js`]
 - 修复预设 10「音域回响」的歌词异步竞态：切入 p10 时如果歌词请求尚未完成，原逻辑会因 `lyricsLines` 为空提前结束，歌词随后到达也不会再唤醒舞台，导致一直看不到歌词。现在原歌词和自定义歌词应用完成后都会通知 p10 重新恢复歌词组、当前行与预热；仅对 p10 生效，不强开用户关闭的歌词，也不改变歌词角度、位置、字体、动画或其他预设。新增异步回归测试，专项 5/5、`npm run check` **221/221**；真实 Electron/CDP 注入延迟歌词后确认舞台可见且显示新歌词。[来源: `public/js/modules/02-visual/14-stage-lyrics-rendering.js`、`public/js/modules/05-playback/06-track-detail-lyrics-actions.js`、`scripts/test-sonic-series-layout.js`]
 - 统一视觉预设入口卡片尺寸：普通预设卡与音域回响系列外卡固定为 `94px` 高并使用 `border-box`，避免内容差异导致网格行高跳动；音域回响的原版、Sonic-Topography、Wallpaper Engine 三个按钮压缩为同高 `30px` 的横向三选一，长标题在按钮内部省略，不改变预设索引或切换逻辑。删除仅在 `≤520px` 生效的重复横向规则，保留 `≤720px` 系列卡整行回退。新增尺寸回归断言，专项 4/4、`npm run check` **220/220** 通过；待真实 Electron 窗口验收不同尺寸下的视觉密度与三项点击切换。

@@ -377,12 +377,13 @@ function toggleFx(key) {
   }
   if (key === 'lyricGlow' || key === 'lyricGlowBeat') updateLyricGlowControls();
   syncFxUniforms();
-  if (key === 'lyricCameraLock' || key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles' || key === 'bloom' || key === 'edge' || key === 'cinema' || key === 'aiDepth' || key === 'desktopLyrics' || key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight' || key === 'wallpaperMode' || key === 'shelfShowPodcasts' || key === 'shelfMergeCollections' || key === 'liveBackgroundKeep' || key === 'memoryAutoTrimApp' || key === 'memoryAutoTrimOnBackground' || key === 'memoryAutoSystemTrim' || key === 'memorySystemAutoElevate') saveLyricLayout({ user: true, reason: key });
+  if (key === 'lyricCameraLock' || key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles' || key === 'bloom' || key === 'edge' || key === 'cinema' || key === 'aiDepth' || key === 'desktopLyrics' || key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight' || key === 'wallpaperMode' || key === 'shelfShowPodcasts' || key === 'shelfMergeCollections' || key === 'liveBackgroundKeep' || key === 'memoryAutoTrimApp' || key === 'memoryAutoTrimOnBackground' || key === 'memoryAutoSystemTrim' || key === 'memorySystemAutoElevate' || key === 'albumBackgroundMouseBind') saveLyricLayout({ user: true, reason: key });
   if (key === 'floatLayer') { if (fx.floatLayer) createFloatLayer(); else destroyFloatLayer(); saveLyricLayout({ user: true, reason: key }); }
   if (key === 'desktopLyrics') applyDesktopLyricsState(true);
   if (key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight') pushDesktopLyricsState(true);
   if (key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles') pushDesktopLyricsState(true);
   if (key === 'wallpaperMode') applyWallpaperModeState(true);
+  if (key === 'albumBackgroundMouseBind' && typeof updateAlbumBackgroundMouseView === 'function') updateAlbumBackgroundMouseView();
   if (key === 'shelfShowPodcasts' || key === 'shelfMergeCollections') {
     if (shelfManager && shelfManager.rebuild) shelfManager.rebuild(true);
     if (shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
@@ -419,6 +420,7 @@ function toggleFx(key) {
   if (key === 'memoryAutoSystemTrim') showToast(fx.memoryAutoSystemTrim ? '系统级 Mem Reduct 已开启' : '系统级 Mem Reduct 已关闭');
   if (key === 'memorySystemAutoElevate') showToast(fx.memorySystemAutoElevate ? '系统释放允许请求管理员权限' : '系统释放不再自动提权');
   if (key === 'lyricCameraLock') showToast(fx.lyricCameraLock ? '歌词已绑定镜头' : '歌词已恢复自由漂浮');
+  if (key === 'albumBackgroundMouseBind') showToast(fx.albumBackgroundMouseBind ? '封面背景已绑定鼠标视角' : '封面背景已恢复固定视角');
   if (key === 'bloom') showToast(fx.bloom ? '溢光已开启' : '溢光已关闭');
   if (key === 'edge') showToast(fx.edge ? '已开启轮廓高亮' : '已关闭轮廓高亮');
   if (key === 'cinema') showToast(fx.cinema ? '已开启电影镜头' : '已关闭电影镜头');
