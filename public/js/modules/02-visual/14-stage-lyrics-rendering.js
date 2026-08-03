@@ -1019,6 +1019,12 @@ function refreshVoxelLyricStageAfterPresetChange(reason) {
   return true;
 }
 
+// 歌词请求可能晚于预设切换完成；数据到达后再走一次同一唤醒路径，避免 p10 永久停在空舞台。
+function refreshVoxelLyricStageAfterLyricsReady(reason) {
+  if (!lyricsLines || !lyricsLines.length) return false;
+  return refreshVoxelLyricStageAfterPresetChange(reason || 'lyrics-ready');
+}
+
 function updateStageLyrics3D(dt) {
   if (!stageLyrics.group) return;
   if (!fx.particleLyrics && !stageLyrics.current && (!stageLyrics.outgoing || !stageLyrics.outgoing.length)) return;

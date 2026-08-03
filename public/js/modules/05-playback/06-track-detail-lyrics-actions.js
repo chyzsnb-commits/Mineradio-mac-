@@ -703,6 +703,7 @@ function applyLyricsState(lines, hasNativeKaraoke, timingSource, translationLine
   lyricsTranslationSource = prepared.translationSource;
   lyricsLines = cloneLyricLines(prepared.lines);
   renderLyrics(renderOptions || {});
+  if (typeof refreshVoxelLyricStageAfterLyricsReady === 'function') refreshVoxelLyricStageAfterLyricsReady('lyrics-ready');
   updateCustomLyricControls();
 }
 function applyOriginalLyricsState(renderOptions) {
@@ -754,6 +755,7 @@ function applyCustomLyricState(song, silent, renderOptions) {
   lyricsTranslationSource = prepared.translationSource;
   lyricsLines = cloneLyricLines(prepared.lines);
   renderLyrics(renderOptions || {});
+  if (typeof refreshVoxelLyricStageAfterLyricsReady === 'function') refreshVoxelLyricStageAfterLyricsReady('lyrics-ready-custom');
   updateCustomLyricControls();
   return true;
 }
