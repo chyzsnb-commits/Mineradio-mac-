@@ -2,6 +2,8 @@
 
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**
 
+- **2026-08-04 背景媒体可用性与排版修复**：基于 PR #79 head `2dff883672a8b89df6f5276aa891959c1ea10f47` 独立交付。将背景媒体归为「上传 / 封面 / 裁切 / 清除」四个等宽按钮，新增状态提示与说明型“封面鼠标视角”开关；上传媒体强制固定视角。无封面歌曲不会再假启用封面背景，异步封面消失时也不会写入失效绑定。真实 Electron 已验证上传图片、封面视差和清除回退；专项 5/5、`npm run check` **203/203**。本批只包含 `CHANGELOG.md`、`AI_HANDOFF.md`、`public/css/index.css`、`public/index.html`、两个背景媒体 JS 和对应测试，不改 main、播放、登录、雨境参数或其他预设。
+
 - **2026-08-03 雨境流速持续响应与封面鼠标视角**：修复预设 9 水珠滑落进度越大阻力越高、后半程自行减速的问题。`rainGlassSlipDrag(drop)` 让阻力仅与尺寸相关，流速系数持续驱动加速度与终端速度；不改雨量、尺寸、歌词或其他预设。新增默认关闭的 `fx.albumBackgroundMouseBind` 与「界面 → 背景媒体 → 封面鼠标视角」开关，复用 `queueParticlePointerFrame()`，只影响 `#album-bg/#album-bg-next`，不触碰上传图片/视频、歌词或相机。专项 8/8、`npm run check` **200/200** 通过。Electron 已从 `/Users/bobby/ZCodeProject/mr-pr65` 启动，但本会话没有桌面自动化接口，仍待可见窗口人工验收。
 - **交付**：从完整树 PR #77 head `42fec96c4ee07af128d015610ca087abee4cb737` 建新分支 `codex/rain-glass-speed-album-mouse`，不从损坏的 #74/#75 派生，不带入本地其他脏改动；GitHub Git API、`force:false`、不 `git push`、不改 main。
 - **2026-08-03 底栏入口归位与音域回响卡片收紧**：视觉控制台布局表错误引用 `shelf-toggle-btn` 与 `lyrics-toggle-btn`，整理器会将真实底栏 DOM 移入设置页，故删除两个引用而不是复制按钮。底栏继续使用 `toggleShelfFromControls()` 与 `toggleLyricsPanel()`；桌面歌词恢复为设置内独立的 `t-desktopLyrics`、锁定、电影震动、高亮、大小、透明度、高度和帧率控件。音域回响系列入口删除重复说明文字，三按钮固定 `36px` 等高，文字单行省略。新增 `scripts/test-bottom-controls-and-sonic-card.js`，专项 3/3、`npm run check` **198/198**。真实 Electron 启动在本会话被旧实例的单实例锁和后台进程回收，未能取得可操作窗口；代码与静态 DOM 回归均已验证。设计规格：`docs/superpowers/specs/2026-08-03-bottom-controls-and-sonic-card-design.md`。

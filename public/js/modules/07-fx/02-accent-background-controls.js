@@ -90,11 +90,21 @@ function customBackgroundAlbumCoverSource() {
   }
   if (!src) {
     try {
+      // 切歌/恢复存档时 currentCoverSource 可能尚未写入，但模糊封面层已经可见。
+      // 从它读取当前 URL，保证“封面”按钮和鼠标视角不依赖某个异步完成顺序。
+      var albumLayer = document.getElementById('album-bg');
+      var albumImage = albumLayer && window.getComputedStyle ? window.getComputedStyle(albumLayer).backgroundImage : '';
+      var albumMatch = albumImage && albumImage.match(/url\((['"]?)(.*?)\1\)/i);
+      if (albumMatch && albumMatch[2] && albumMatch[2] !== 'none') src = albumMatch[2];
+    } catch (e4) { }
+  }
+  if (!src) {
+    try {
       var song = typeof sonicWorkshopCurrentSong === 'function' ? sonicWorkshopCurrentSong() : null;
       if (!song) song = Array.isArray(playQueue) && currentIdx >= 0 && currentIdx < playQueue.length ? playQueue[currentIdx] : null;
       if (!song) song = Array.isArray(playlist) && currentIdx >= 0 && currentIdx < playlist.length ? playlist[currentIdx] : null;
       if (song) src = typeof songCoverSrc === 'function' ? songCoverSrc(song, 640) : (song.customCover || song.cover || '');
-    } catch (e4) { }
+    } catch (e5) { }
   }
   if (src && /^https?:\/\//i.test(src) && typeof coverProxySrc === 'function') return coverProxySrc(src, false) || src;
   return src || '';
@@ -126,6 +136,7 @@ function applyCustomBackground() {
   var rgb = hexToRgb(color);
   var albumMode = typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover();
   var media = customBackgroundActiveMedia();
+  if (!albumMode && media && fx.albumBackgroundMouseBind === true) fx.albumBackgroundMouseBind = false;
   var image = media && media.type === 'image' ? media.src : '';
   var hasVideo = !!(media && media.type === 'video');
   var opacity = clampRange(fx.backgroundOpacity == null ? 1 : Number(fx.backgroundOpacity), 0, 1);
@@ -245,15 +256,49 @@ function updateCustomBackgroundMediaPreview(media) {
     preview.dataset.kind = 'VID';
   }
 }
+function updateAlbumBackgroundMouseBindControl(activeMedia, albumMode) {
+  var toggle = document.getElementById('t-albumBackgroundMouseBind');
+  if (!toggle) return;
+  activeMedia = activeMedia || customBackgroundActiveMedia();
+  albumMode = albumMode === true || (typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover());
+  var hasCover = !!customBackgroundAlbumCoverSource();
+  var blocked = !!activeMedia && !albumMode;
+  var available = albumMode || (!activeMedia && hasCover);
+  var bound = fx.albumBackgroundMouseBind === true && available;
+  var copy = toggle.querySelector('.fx-toggle-copy small');
+  toggle.classList.toggle('on', bound);
+  toggle.classList.toggle('is-unavailable', !available);
+  toggle.setAttribute('aria-checked', bound ? 'true' : 'false');
+  toggle.setAttribute('aria-disabled', blocked ? 'true' : 'false');
+  toggle.dataset.state = bound ? 'on' : 'off';
+  if (copy) {
+    copy.textContent = blocked
+      ? '当前为上传媒体，保持固定视角'
+      : albumMode
+        ? '封面原图随鼠标轻微移动'
+        : hasCover
+          ? '点击后自动切换到封面原图'
+          : '播放有封面的歌曲后可用';
+  }
+  toggle.title = blocked
+    ? '上传图片和视频不支持鼠标视角'
+    : hasCover || albumMode
+      ? '让当前歌曲封面背景跟随鼠标产生轻微视差'
+      : '当前歌曲没有可用封面';
+}
 function updateCustomBackgroundControls() {
   applyCustomBackground();
+  if (typeof updateAlbumBackgroundMouseView === 'function') updateAlbumBackgroundMouseView();
   var activeMedia = customBackgroundActiveMedia();
+  var albumMode = typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover();
   var color = normalizeHexColor(fx.backgroundColor || '#000000', '#000000');
   var picker = document.getElementById('bg-color-picker');
   var value = document.getElementById('bg-color-value');
   var imageValue = document.getElementById('bg-image-value');
   var albumBtn = document.getElementById('bg-album-toggle-btn');
   var cropBtn = document.getElementById('bg-media-crop-btn');
+  var clearBtn = document.getElementById('bg-media-clear-btn');
+  var state = document.getElementById('bg-media-state');
   var customColor = fx.backgroundColorMode === 'custom' || !!fx.backgroundColorCustom;
   if (picker) picker.value = color;
   if (value) value.textContent = customColor ? color.toUpperCase() : '\u5c01\u9762\u6e10\u53d8';
@@ -276,7 +321,19 @@ function updateCustomBackgroundControls() {
     cropBtn.disabled = !activeMedia;
     cropBtn.title = activeMedia ? '\u91cd\u65b0\u88c1\u5207\u5df2\u8bbe\u7f6e\u7684\u80cc\u666f\u5a92\u4f53' : '\u5148\u9009\u62e9\u5c01\u9762\u3001\u56fe\u7247\u6216\u89c6\u9891';
   }
+  if (clearBtn) {
+    clearBtn.disabled = !activeMedia;
+    clearBtn.title = activeMedia ? '\u6e05\u9664\u5f53\u524d\u80cc\u666f\u5a92\u4f53' : '\u5f53\u524d\u6ca1\u6709\u53ef\u6e05\u9664\u7684\u80cc\u666f\u5a92\u4f53';
+  }
+  if (state) {
+    state.textContent = albumMode
+      ? '\u5f53\u524d\uff1a\u5c01\u9762\u539f\u56fe'
+      : activeMedia
+        ? '\u5f53\u524d\uff1a' + (activeMedia.type === 'video' ? '\u80cc\u666f\u89c6\u9891' : '\u80cc\u666f\u56fe\u7247') + '\uff08\u56fa\u5b9a\u89c6\u89d2\uff09'
+        : '\u5f53\u524d\uff1a\u9ed8\u8ba4\u80cc\u666f\uff0c\u70b9\u51fb\u201c\u5c01\u9762\u201d\u53ef\u5207\u6362';
+  }
   updateCustomBackgroundMediaPreview(activeMedia);
+  updateAlbumBackgroundMouseBindControl(activeMedia, albumMode);
   applyBackgroundMediaHint();
 }
 function setCustomBackgroundColor(color, silent, customFlag) {
@@ -319,14 +376,26 @@ function setBackgroundGlassOpacity(value, silent) {
   if (!silent) showToast('\u6bdb\u73bb\u7483\u900f\u660e: ' + Math.round(fx.backgroundGlassOpacity * 100) + '%');
 }
 function setCustomBackgroundAlbumCover(enabled, silent) {
-  fx.backgroundAlbumCover = enabled === true;
+  var nextEnabled = enabled === true;
+  // 没有当前封面时不能只切换状态:否则 UI 会显示“封面原图”,但实际没有可渲染的媒体。
+  if (nextEnabled && !customBackgroundAlbumCoverSource()) {
+    fx.backgroundAlbumCover = false;
+    fx.albumBackgroundMouseBind = false;
+    updateCustomBackgroundControls();
+    if (!silent) showToast('当前歌曲暂无可用封面');
+    return false;
+  }
+  fx.backgroundAlbumCover = nextEnabled;
   if (fx.backgroundAlbumCover) {
     fx.backgroundMedia = null;
     fx.backgroundImage = '';
+  } else {
+    fx.albumBackgroundMouseBind = false;
   }
   updateCustomBackgroundControls();
   saveLyricLayout({ user: true, reason: 'backgroundAlbumCover' });
   if (!silent) showToast(fx.backgroundAlbumCover ? '\u80cc\u666f\u5a92\u4f53: \u5c01\u9762\u539f\u56fe' : '\u80cc\u666f\u5a92\u4f53: \u5df2\u5173\u95ed\u5c01\u9762');
+  return true;
 }
 function toggleCustomBackgroundAlbumCover() {
   setCustomBackgroundAlbumCover(!(typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover()));
@@ -551,6 +620,7 @@ function setCustomBackgroundImage(src, silent) {
   fx.backgroundImage = image;
   fx.backgroundMedia = image ? { type: 'image', src: image } : null;
   fx.backgroundAlbumCover = false;
+  fx.albumBackgroundMouseBind = false;
   updateCustomBackgroundControls();
   saveLyricLayout({ user: true, reason: 'backgroundImage' });
   if (!silent) showToast(fx.backgroundImage ? '背景图片已应用' : '背景图片已清除');
@@ -567,6 +637,7 @@ function setCustomBackgroundMedia(media, silent) {
   fx.backgroundMedia = media;
   fx.backgroundImage = media && media.type === 'image' ? media.src : '';
   fx.backgroundAlbumCover = false;
+  fx.albumBackgroundMouseBind = false;
   // 设/清背景媒体后必须让 _voxApplyBg 重新裁决 scene.background:
   // 有媒体→scene.background=null(canvas 透明,露出 DOM 视频);无媒体→回到纯色/默认。
   // 否则从纯色切到 mp4 时,不透明的 THREE.Color canvas 一直压在视频上→视频看不见(用户实测纯色↔mp4 切不动)

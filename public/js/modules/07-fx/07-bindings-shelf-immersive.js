@@ -363,12 +363,34 @@ function toggleFx(key) {
     showToast('开发中，暂不可用');
     return;
   }
+  if (key === 'albumBackgroundMouseBind' && fx.albumBackgroundMouseBind !== true) {
+    var albumBackgroundIsCover = typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover();
+    if (!albumBackgroundIsCover) {
+      var activeBackgroundMedia = typeof customBackgroundActiveMedia === 'function' ? customBackgroundActiveMedia() : null;
+      if (activeBackgroundMedia && activeBackgroundMedia.type !== 'album') {
+        updateFxInputs();
+        showToast('上传图片/视频保持固定视角，请先切换到封面');
+        return;
+      }
+      var currentAlbumSource = typeof customBackgroundAlbumCoverSource === 'function' ? customBackgroundAlbumCoverSource() : '';
+      if (!currentAlbumSource) {
+        updateFxInputs();
+        showToast('当前歌曲暂无可用封面，暂时无法绑定鼠标视角');
+        return;
+      }
+      if (typeof setCustomBackgroundAlbumCover === 'function' && setCustomBackgroundAlbumCover(true, true) === false) {
+        updateFxInputs();
+        return;
+      }
+    }
+  }
   fx[key] = !fx[key];
   if (/^vox/.test(key) && typeof saveVoxToggles === 'function') saveVoxToggles();   // 体素开关独立持久化
   if (/^rain/.test(key) && typeof saveRainToggles === 'function') saveRainToggles(); // 雨境开关独立持久化
   var toggleId = 't-' + (key === 'floatLayer' ? 'float' : key === 'aiDepth' ? 'aidepth' : key);
   var toggle = document.getElementById(toggleId);
   if (toggle) toggle.classList.toggle('on', fx[key]);
+  if (key === 'albumBackgroundMouseBind') updateFxInputs();
   if (key === 'rainGhostCover' && typeof showToast === 'function') {
     showToast(fx.rainGhostCover !== false ? '雨境封面图已开启' : '雨境封面图已关闭');
   }

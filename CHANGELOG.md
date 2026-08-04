@@ -1,5 +1,7 @@
 # Changelog
 
+- 修复背景媒体区的可用性和排版：将上传、封面、裁切、清除归为一排等宽操作，新增状态提示与封面鼠标视角说明；上传图片/视频会保持固定视角。没有可用封面时，“封面”不会再进入空状态或遗留鼠标绑定。真实 Electron 已验证上传图片、封面视差和清除回退；全量 `npm run check` **203/203** 通过。[来源: `public/index.html`、`public/css/index.css`、`public/js/modules/07-fx/02-accent-background-controls.js`、`public/js/modules/07-fx/07-bindings-shelf-immersive.js`、`scripts/test-rain-glass-speed-and-album-mouse-bind.js`]
+
 ## 2.0.0
 
 - 修复雨境玻璃水珠后半程自行减速：原滑落状态把阻力从 `4.2` 持续增至 `16.7`，即使“水珠流速”滑条不变，水珠也会在后半段被逐渐刹慢。现在阻力只与水珠尺寸相关，滑落全过程持续使用同一流速系数驱动加速度与终端速度，保留原有弯道、融合、停靠和重挂壁状态。新增“封面鼠标视角”开关（默认关闭），开启后当前歌曲的 `#album-bg` 双层封面背景复用既有画布鼠标坐标做轻微视差；不影响上传图片、视频背景、歌词或任何预设。专项 8/8、`npm run check` **200/200** 通过；当前自动化环境无法取得 Electron 可见窗口，仍待人工确认实际观感。[来源: `public/js/modules/02-visual/19-rain-glass.js`、`public/js/modules/03-beat/05-cover-loading-crop.js`、`public/js/modules/02-visual/00-pointer-cover-particles.js`、`public/css/index.css`、`scripts/test-rain-glass-speed-and-album-mouse-bind.js`]
