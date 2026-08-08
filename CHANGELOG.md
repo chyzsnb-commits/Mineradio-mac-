@@ -1,5 +1,8 @@
 # Changelog
 
+- Spotify 账户互动同步：Spotify 歌曲现在可读取喜欢状态、收藏/取消收藏，并加入已有的自建 Spotify 歌单。OAuth 默认新增 Spotify 库和歌单写权限，同时保留既有自定义 scope；旧 token 需在账户面板重新连接 Spotify 才会获得新权限。写请求与 token 均留在本机服务端，虚拟“喜欢的歌曲”和订阅歌单不会作为加歌目标。专项 12/12、`npm run check` 217/217 通过；未做真实账号人工验收，未构建 DMG。[来源: `spotify-api.js`、`server.js`、`public/js/modules/05-playback/06-track-detail-lyrics-actions.js`、`scripts/test-spotify-account-write-sync.js`]
+- 修复 p12「音域地形」与 p13「音域回响·WE」歌词在屏幕上偏小：舞台歌词按实际相机距离相对普通预设的参考距离动态补偿世界空间缩放，用户设置的歌词字号、位置、字体和颜色保持不变；p13 异步歌词到达后会重新唤醒共用歌词舞台。专项 12/12、`npm run check` 217/217 通过，仍待真实窗口观感验收。[来源: `public/js/modules/02-visual/02-lyrics-state-layout.js`、`public/js/modules/02-visual/14-stage-lyrics-rendering.js`、`scripts/test-sonic-series-layout.js`]
+
 - 修复背景媒体区的可用性和排版：将上传、封面、裁切、清除归为一排等宽操作，新增状态提示与封面鼠标视角说明；上传图片/视频会保持固定视角。没有可用封面时，“封面”不会再进入空状态或遗留鼠标绑定。真实 Electron 已验证上传图片、封面视差和清除回退；全量 `npm run check` **203/203** 通过。[来源: `public/index.html`、`public/css/index.css`、`public/js/modules/07-fx/02-accent-background-controls.js`、`public/js/modules/07-fx/07-bindings-shelf-immersive.js`、`scripts/test-rain-glass-speed-and-album-mouse-bind.js`]
 
 ## 2.0.0

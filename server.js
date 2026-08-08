@@ -109,6 +109,9 @@ const {
   handleSpotifyPlaylistTracks,
   handleSpotifyAlbumDetail,
   handleSpotifyRecommendations,
+  handleSpotifyLikeCheck,
+  handleSpotifyLikeToggle,
+  handleSpotifyPlaylistAddSong,
   handleSpotifySongUrl,
   handleSpotifyLyric,
 } = require('./spotify-api');
@@ -5373,6 +5376,58 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[SpotifyUserPlaylists]', err);
       sendJSON(res, { provider: 'spotify', loggedIn: false, error: err.message, playlists: [] }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/song/like/check') {
+    try {
+      if (req.method !== 'POST') {
+        sendJSON(res, { provider: 'spotify', ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+        return;
+      }
+      const body = await readRequestBody(req);
+      const songs = Array.isArray(body.songs)
+        ? body.songs
+        : String(body.ids || '').split(',').map(id => id.trim()).filter(Boolean);
+      sendJSON(res, await handleSpotifyLikeCheck(songs));
+    } catch (err) {
+      console.error('[SpotifyLikeCheck]', err);
+      sendJSON(res, { provider: 'spotify', ok: false, error: err.code || err.message, message: err.message }, err.statusCode || 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/song/like') {
+    try {
+      if (req.method !== 'POST') {
+        sendJSON(res, { provider: 'spotify', ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+        return;
+      }
+      const body = await readRequestBody(req);
+      if (!Object.prototype.hasOwnProperty.call(body, 'like')) {
+        sendJSON(res, { provider: 'spotify', ok: false, error: 'SPOTIFY_LIKE_VALUE_REQUIRED' }, 400);
+        return;
+      }
+      sendJSON(res, await handleSpotifyLikeToggle(body.song || body.id || body.trackId || '', body.like === true || body.like === 'true'));
+    } catch (err) {
+      console.error('[SpotifyLikeToggle]', err);
+      sendJSON(res, { provider: 'spotify', ok: false, error: err.code || err.message, message: err.message }, err.statusCode || 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/playlist/add-song') {
+    try {
+      if (req.method !== 'POST') {
+        sendJSON(res, { provider: 'spotify', ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+        return;
+      }
+      const body = await readRequestBody(req);
+      sendJSON(res, await handleSpotifyPlaylistAddSong(body.playlistId || body.pid || '', body.song || body.track || body.id || ''));
+    } catch (err) {
+      console.error('[SpotifyPlaylistAddSong]', err);
+      sendJSON(res, { provider: 'spotify', ok: false, error: err.code || err.message, message: err.message }, err.statusCode || 500);
     }
     return;
   }

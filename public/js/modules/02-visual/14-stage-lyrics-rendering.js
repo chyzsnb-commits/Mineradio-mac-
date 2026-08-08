@@ -1025,6 +1025,29 @@ function refreshVoxelLyricStageAfterLyricsReady(reason) {
   return refreshVoxelLyricStageAfterPresetChange(reason || 'lyrics-ready');
 }
 
+function refreshSonicWorkshopLyricStageAfterPresetChange(reason) {
+  if (!fx || typeof SONIC_WORKSHOP_PRESET_INDEX === 'undefined' || fx.preset !== SONIC_WORKSHOP_PRESET_INDEX || fx.particleLyrics === false) return false;
+  if (typeof createLyricsParticles === 'function') createLyricsParticles();
+  if (!stageLyrics || !stageLyrics.group) return false;
+  stageLyrics.group.visible = true;
+  if (typeof markRenderInteraction === 'function') markRenderInteraction('sonic-workshop-lyrics', 900);
+  if ((!lyricsLines || !lyricsLines.length) && typeof applyPreferredLyricsForCurrent === 'function') {
+    try { applyPreferredLyricsForCurrent(true); } catch (e) { }
+  }
+  if (!lyricsLines || !lyricsLines.length) return false;
+  reason = reason || 'sonic-workshop-preset-change';
+  if (typeof markStageLyricsPlaybackResume === 'function') markStageLyricsPlaybackResume(reason);
+  if (typeof requestStageLyricWarmup === 'function') requestStageLyricWarmup(reason, 0);
+  if (typeof scheduleStageLyricPrewarm === 'function') scheduleStageLyricPrewarm(reason, 0);
+  if (typeof scheduleStageLyricFullTrackWarmup === 'function') scheduleStageLyricFullTrackWarmup('track-ready', 24);
+  return true;
+}
+
+function refreshSonicWorkshopLyricStageAfterLyricsReady(reason) {
+  if (!lyricsLines || !lyricsLines.length) return false;
+  return refreshSonicWorkshopLyricStageAfterPresetChange(reason || 'lyrics-ready');
+}
+
 function updateStageLyrics3D(dt) {
   if (!stageLyrics.group) return;
   if (!fx.particleLyrics && !stageLyrics.current && (!stageLyrics.outgoing || !stageLyrics.outgoing.length)) return;
@@ -1067,6 +1090,10 @@ function updateStageLyrics3D(dt) {
   stageLyrics.glowFollowY *= 0.92;
   stageLyrics.glowFollowRoll *= 0.90;
   var layoutScale = clampRange(Number(fx.lyricScale) || 1, 0.35, 1.65);
+  var stageLyricCameraDistance = camera && stageLyrics.group
+    ? camera.position.distanceTo(stageLyrics.group.position)
+    : (orbit && Number(orbit.radius) || STAGE_LYRIC_REFERENCE_DISTANCE);
+  layoutScale *= stageLyricPresetScale(fx.preset, stageLyricCameraDistance, STAGE_LYRIC_REFERENCE_DISTANCE);
   var layoutX = clampRange(Number(fx.lyricOffsetX) || 0, -4.0, 4.0);
   var layoutY = clampRange(Number(fx.lyricOffsetY) || 0, -2.4, 2.7);
   var layoutZ = clampRange(Number(fx.lyricOffsetZ) || 0, -3.2, 3.2);

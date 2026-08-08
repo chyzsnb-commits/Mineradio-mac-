@@ -7,8 +7,16 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const css = fs.readFileSync(path.join(root, 'public/css/index.css'), 'utf8');
 const presetGrid = fs.readFileSync(path.join(root, 'public/js/modules/07-fx/04-preset-grid-uniforms.js'), 'utf8');
+const lyricLayout = fs.readFileSync(path.join(root, 'public/js/modules/02-visual/02-lyrics-state-layout.js'), 'utf8');
 const lyricStage = fs.readFileSync(path.join(root, 'public/js/modules/02-visual/14-stage-lyrics-rendering.js'), 'utf8');
 const lyricActions = fs.readFileSync(path.join(root, 'public/js/modules/05-playback/06-track-detail-lyrics-actions.js'), 'utf8');
+const sonicWorkshop = fs.readFileSync(path.join(root, 'public/sonic-workshop-preset.js'), 'utf8');
+
+function extractFunction(source, name) {
+  const match = source.match(new RegExp('function\\s+' + name + '\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}'));
+  assert.ok(match, name + ' 需要可测试的独立函数');
+  return match[0];
+}
 
 function cssBlock(selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -67,4 +75,25 @@ test('歌词异步到达时会重新唤醒已切入的音域回响', () => {
   const applyBlock = lyricActions.match(/function\s+applyLyricsState\([\s\S]*?\n\}\nfunction\s+applyOriginalLyricsState/);
   assert.ok(applyBlock, '需要定位歌词状态应用入口');
   assert.match(applyBlock[0], /refreshVoxelLyricStageAfterLyricsReady\(['"]lyrics-ready['"]\)/, '歌词状态应用后必须通知 p10 唤醒');
+  assert.match(applyBlock[0], /refreshSonicWorkshopLyricStageAfterLyricsReady\(['"]lyrics-ready['"]\)/, '歌词状态应用后必须通知 p13 唤醒');
+});
+
+test('第三个音域回响复用原舞台歌词，且不再创建独立文字层', () => {
+  const workshopCanvasRule = css.match(/body\.sonic-workshop-active #canvas-container\s*\{[\s\S]*?\n\}/);
+  assert.ok(workshopCanvasRule, '工坊预设需要独立处理主画布叠层');
+  assert.match(workshopCanvasRule[0], /visibility:\s*visible/, '工坊预设不能再隐藏承载舞台歌词的主画布');
+  assert.match(workshopCanvasRule[0], /mix-blend-mode:\s*screen/, '工坊画布需要以 screen 混合透出 iframe');
+  assert.doesNotMatch(sonicWorkshop, /sonic-workshop-lyrics/, '工坊预设不能创建另一套 DOM 歌词');
+  assert.match(lyricStage, /function\s+refreshSonicWorkshopLyricStageAfterPresetChange\s*\(/, '工坊预设需要唤醒原舞台歌词');
+  assert.match(presetGrid, /refreshSonicWorkshopLyricStageAfterPresetChange\s*\(/, '切入工坊预设必须唤醒原舞台歌词');
+});
+
+test('两个音域回响预设按相机距离补偿到与普通预设一致的屏幕字号', () => {
+  const helper = extractFunction(lyricLayout, 'stageLyricPresetScale');
+  const sandbox = {};
+  vm.runInNewContext(helper, sandbox);
+  assert.equal(sandbox.stageLyricPresetScale(0, 10, 6.6), 1, '普通预设不应改变歌词比例');
+  assert.ok(Math.abs(sandbox.stageLyricPresetScale(12, 10, 6.6) - (10 / 6.6)) < 0.001, '音域地形需要按相机距离补偿歌词');
+  assert.ok(Math.abs(sandbox.stageLyricPresetScale(13, 10, 6.6) - (10 / 6.6)) < 0.001, '音域回响·WE需要按相机距离补偿歌词');
+  assert.match(lyricStage, /stageLyricPresetScale\(fx\.preset,\s*stageLyricCameraDistance,\s*STAGE_LYRIC_REFERENCE_DISTANCE\)/, '歌词最终缩放必须使用当前相机距离而不是固定倍率');
 });

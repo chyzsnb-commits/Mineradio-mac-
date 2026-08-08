@@ -17,6 +17,9 @@ const DEFAULT_SPOTIFY_SCOPES = [
   'playlist-read-private',
   'playlist-read-collaborative',
   'user-library-read',
+  'user-library-modify',
+  'playlist-modify-private',
+  'playlist-modify-public',
 ];
 const SPOTIFY_LIKED_PLAYLIST_ID = 'spotify-liked';
 const SPOTIFY_UA = `Mineradio/${require('./package.json').version || '2.0.0'} (Spotify Web API bridge)`;
@@ -248,7 +251,8 @@ function getSpotifyOAuthConfig() {
   const clientId = envClientId || fileConfig.clientId;
   const clientSecret = envClientSecret || fileConfig.clientSecret;
   const redirectUri = envRedirectUri || fileConfig.redirectUri || DEFAULT_SPOTIFY_REDIRECT_URI;
-  const scopes = envScopes.length ? envScopes : (fileConfig.scopes.length ? fileConfig.scopes : DEFAULT_SPOTIFY_SCOPES);
+  const configuredScopes = envScopes.length ? envScopes : fileConfig.scopes;
+  const scopes = uniqueList(DEFAULT_SPOTIFY_SCOPES.concat(configuredScopes));
   const market = (firstEnv(['SPOTIFY_MARKET', 'MINERADIO_SPOTIFY_MARKET']) || fileConfig.market || DEFAULT_SPOTIFY_MARKET || 'US').toUpperCase();
   const missing = [];
   if (!clientId) missing.push('SPOTIFY_CLIENT_ID');
@@ -512,6 +516,95 @@ async function spotifyUserGet(pathname, params, opts) {
   opts = opts || {};
   const token = opts.accessToken || await getSpotifyUserAccessToken();
   return spotifyGet(pathname, params, Object.assign({}, opts, { accessToken: token, preferUser: true }));
+}
+
+async function spotifyUserRequest(method, pathname, params, body, opts) {
+  opts = opts || {};
+  method = normalizeText(method).toUpperCase();
+  if (!['POST', 'PUT', 'DELETE'].includes(method)) throw new Error('SPOTIFY_METHOD_NOT_ALLOWED');
+  const token = opts.accessToken || await getSpotifyUserAccessToken();
+  const payload = body == null ? null : JSON.stringify(body);
+  return requestJson(spotifyUrl(pathname, params || {}), {
+    method,
+    timeoutMs: opts.timeoutMs || 9000,
+    headers: Object.assign({
+      Authorization: 'Bearer ' + token,
+      Accept: 'application/json',
+    }, payload == null ? {} : { 'Content-Type': 'application/json' }),
+  }, payload);
+}
+
+function spotifyOperationError(err) {
+  const detail = spotifyErrorDetails(err);
+  const wrapped = new Error(detail.message);
+  wrapped.code = detail.error;
+  wrapped.statusCode = detail.statusCode || 500;
+  wrapped.details = detail;
+  return wrapped;
+}
+
+function requireSpotifyUserSession(status) {
+  if (status && status.loggedIn) return status;
+  const err = new Error('Spotify 登录已过期，请重新连接 Spotify。');
+  err.code = 'SPOTIFY_AUTH_REQUIRED';
+  err.statusCode = 401;
+  throw err;
+}
+
+function normalizeSpotifyResourceId(value, label) {
+  const id = normalizeText(value);
+  if (/^[A-Za-z0-9]{22}$/.test(id)) return id;
+  const err = new Error('无效的 Spotify ' + label + ' ID。');
+  err.code = 'SPOTIFY_INVALID_' + String(label || 'RESOURCE').toUpperCase() + '_ID';
+  err.statusCode = 400;
+  throw err;
+}
+
+function spotifyTrackIdFromInput(value) {
+  const song = value && typeof value === 'object' ? value : {};
+  return normalizeSpotifyResourceId(song.spotifyId || song.providerSongId || song.id || value, 'track');
+}
+
+async function handleSpotifyLikeCheck(tracks) {
+  const status = requireSpotifyUserSession(await handleSpotifyStatus());
+  const ids = [...new Set((Array.isArray(tracks) ? tracks : [tracks])
+    .filter(Boolean)
+    .slice(0, 50)
+    .map(spotifyTrackIdFromInput))];
+  if (!ids.length) return { provider: 'spotify', loggedIn: true, liked: {} };
+  try {
+    const states = await spotifyUserGet('/me/tracks/contains', { ids: ids.join(',') }, { timeoutMs: 9000 });
+    const liked = {};
+    ids.forEach((id, index) => { liked[id] = !!(Array.isArray(states) && states[index]); });
+    return { provider: 'spotify', loggedIn: !!status.loggedIn, liked };
+  } catch (err) {
+    throw spotifyOperationError(err);
+  }
+}
+
+async function handleSpotifyLikeToggle(track, liked) {
+  const status = requireSpotifyUserSession(await handleSpotifyStatus());
+  const id = spotifyTrackIdFromInput(track);
+  try {
+    await spotifyUserRequest(liked ? 'PUT' : 'DELETE', '/me/tracks', { ids: id }, null, { timeoutMs: 9000 });
+    return { provider: 'spotify', loggedIn: !!status.loggedIn, success: true, liked: !!liked, id };
+  } catch (err) {
+    throw spotifyOperationError(err);
+  }
+}
+
+async function handleSpotifyPlaylistAddSong(playlistId, song) {
+  const status = requireSpotifyUserSession(await handleSpotifyStatus());
+  const id = normalizeSpotifyResourceId(playlistId, 'playlist');
+  const trackId = spotifyTrackIdFromInput(song);
+  try {
+    await spotifyUserRequest('POST', '/playlists/' + encodeURIComponent(id) + '/tracks', {}, {
+      uris: ['spotify:track:' + trackId],
+    }, { timeoutMs: 9000 });
+    return { provider: 'spotify', loggedIn: !!status.loggedIn, success: true, playlistId: id, trackId };
+  } catch (err) {
+    throw spotifyOperationError(err);
+  }
 }
 
 function cacheWrap(map, key, ttlMs, loader) {
@@ -1105,6 +1198,9 @@ module.exports = {
   handleSpotifyPlaylistTracks,
   handleSpotifyAlbumDetail,
   handleSpotifyRecommendations,
+  handleSpotifyLikeCheck,
+  handleSpotifyLikeToggle,
+  handleSpotifyPlaylistAddSong,
   handleSpotifySongUrl,
   handleSpotifyLyric,
   SPOTIFY_SEARCH_LIMIT_MAX,

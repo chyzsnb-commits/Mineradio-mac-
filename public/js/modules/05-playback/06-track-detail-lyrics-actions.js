@@ -704,6 +704,7 @@ function applyLyricsState(lines, hasNativeKaraoke, timingSource, translationLine
   lyricsLines = cloneLyricLines(prepared.lines);
   renderLyrics(renderOptions || {});
   if (typeof refreshVoxelLyricStageAfterLyricsReady === 'function') refreshVoxelLyricStageAfterLyricsReady('lyrics-ready');
+  if (typeof refreshSonicWorkshopLyricStageAfterLyricsReady === 'function') refreshSonicWorkshopLyricStageAfterLyricsReady('lyrics-ready');
   updateCustomLyricControls();
 }
 function applyOriginalLyricsState(renderOptions) {
@@ -1037,10 +1038,13 @@ function isCloudSong(song) {
 function isKugouWritableSong(song) {
   return !!(song && song.id && songProviderKey(song) === 'kugou' && kugouLoginStatus.loggedIn);
 }
+function isSpotifyWritableSong(song) {
+  return !!(song && song.id && songProviderKey(song) === 'spotify' && spotifyLoginStatus && spotifyLoginStatus.loggedIn);
+}
 // QQ 红心写入(加入我喜欢)实测受 QQ musicu 签名风控拦截:AddSonglist 恒返回 code 80105(仅取消 DelSonglist 放行),
 // 本仓库无 QQ 安全签名实现,加红心不可靠,故 QQ 不进入红心/收藏写路径;后端 /api/qq/song/like(/check) 仍在,待日后补签名可复用。
 function isLikeableSong(song) {
-  return isCloudSong(song) || isKugouWritableSong(song);
+  return isCloudSong(song) || isKugouWritableSong(song) || isSpotifyWritableSong(song);
 }
 function songLikeKey(song) {
   return (songProviderKey(song) || 'netease') + ':' + String(song && song.id || '');
@@ -1051,6 +1055,12 @@ function isSongLiked(song) {
 function ensureLoggedInForAction() {
   if (loginStatus.loggedIn) return true;
   showToast('登录后可同步到网易云');
+  showLoginModal();
+  return false;
+}
+function ensureSpotifyLoggedInForAction() {
+  if (spotifyLoginStatus && spotifyLoginStatus.loggedIn) return true;
+  showToast('登录 Spotify 后可同步收藏');
   showLoginModal();
   return false;
 }
@@ -1104,6 +1114,18 @@ function syncLikeStatusForSongs(songs) {
       likedSongMap[songLikeKey(song)] = !!(r.liked[hash] || r.liked[hash.toLowerCase()]);
     });
   }));
+  var spotifySongs = songs.filter(isSpotifyWritableSong);
+  if (spotifySongs.length) tasks.push(apiJson('/api/spotify/song/like/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ songs: spotifySongs })
+  }).then(function (r) {
+    if (token < likeStatusToken - 3 || !r || !r.liked) return;
+    spotifySongs.forEach(function (song) {
+      var id = String(song.spotifyId || song.providerSongId || song.id || '');
+      likedSongMap[songLikeKey(song)] = !!r.liked[id];
+    });
+  }));
   if (!tasks.length) return;
   Promise.all(tasks).then(function () {
     safeRenderQueuePanel('like-status-sync', { scrollCurrent: miniQueueOpen });
@@ -1141,6 +1163,8 @@ function refreshSearchResultActionStates() {
   });
 }
 async function toggleLikeSong(song) {
+  var spotifyTarget = songProviderKey(song) === 'spotify';
+  if (spotifyTarget && !ensureSpotifyLoggedInForAction()) return;
   if (!isLikeableSong(song)) {
     showToast(songProviderKey(song) === 'qq' ? 'QQ 红心写入受签名风控限制，暂不可用' : '本地文件暂不支持红心同步');
     return;
@@ -1150,20 +1174,24 @@ async function toggleLikeSong(song) {
   if (likeBusyMap[key]) return;
   var next = !likedSongMap[key];
   likeBusyMap[key] = true;
-  likedSongMap[key] = next;
+  if (!spotifyTarget) likedSongMap[key] = next;
   updateLikeButtons(song);
-  safeRenderQueuePanel('like-toggle-optimistic', { scrollCurrent: miniQueueOpen });
-  refreshSearchResultActionStates();
+  if (!spotifyTarget) {
+    safeRenderQueuePanel('like-toggle-optimistic', { scrollCurrent: miniQueueOpen });
+    refreshSearchResultActionStates();
+  }
   try {
-    var r = isKugouWritableSong(song)
-      ? await apiJson('/api/kugou/song/like', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ song: song, like: next }) })
-      : await apiJson('/api/song/like?id=' + encodeURIComponent(String(song.id)) + '&like=' + encodeURIComponent(String(next)));
+    var r = spotifyTarget
+      ? await apiJson('/api/spotify/song/like', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ song: song, like: next }) })
+      : (isKugouWritableSong(song)
+        ? await apiJson('/api/kugou/song/like', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ song: song, like: next }) })
+        : await apiJson('/api/song/like?id=' + encodeURIComponent(String(song.id)) + '&like=' + encodeURIComponent(String(next))));
     if (r && r.error) throw new Error(r.error);
     likedSongMap[key] = next;
-    showToast(next ? '已加入红心喜欢' : '已取消红心');
+    showToast(spotifyTarget ? (next ? '已加入 Spotify 喜欢的歌曲' : '已取消 Spotify 喜欢') : (next ? '已加入红心喜欢' : '已取消红心'));
   } catch (err) {
-    likedSongMap[key] = !next;
-    showToast('红心操作失败');
+    if (!spotifyTarget) likedSongMap[key] = !next;
+    showToast(spotifyTarget ? (err && err.message ? err.message : 'Spotify 收藏操作失败') : '红心操作失败');
   } finally {
     delete likeBusyMap[key];
     updateLikeButtons(song);
@@ -1176,6 +1204,8 @@ function toggleLikeSearchResult(i) { if (playlist[i]) toggleLikeSong(playlist[i]
 function toggleLikeQueueIndex(i) { if (playQueue[i]) toggleLikeSong(playQueue[i]); }
 function toggleLikeDetailSong(song) { toggleLikeSong(song); }
 function openCollectModal(song) {
+  var spotifyTarget = songProviderKey(song) === 'spotify';
+  if (spotifyTarget && !ensureSpotifyLoggedInForAction()) return;
   if (!isLikeableSong(song)) {
     showToast(songProviderKey(song) === 'qq' ? 'QQ 收藏写入受签名风控限制，暂不可用' : '本地文件暂不支持收藏到网易云歌单');
     return;
@@ -1206,7 +1236,9 @@ function renderCollectModal() {
   current.innerHTML = (cover ? '<img src="' + cover + '" alt="">' : '<div class="cover-placeholder"></div>') +
     '<div style="min-width:0"><div class="collect-title">' + escHtml(song.name || '当前歌曲') + '</div><div class="collect-sub">' + escHtml(song.artist || '') + '</div></div>';
   var targetProvider = songProviderKey(song) || 'netease';
-  if ((targetProvider === 'netease' && !loginStatus.loggedIn) || (targetProvider === 'kugou' && !kugouLoginStatus.loggedIn)) {
+  var create = document.querySelector('#collect-modal .collect-create');
+  if (create) create.hidden = targetProvider === 'spotify';
+  if ((targetProvider === 'netease' && !loginStatus.loggedIn) || (targetProvider === 'kugou' && !kugouLoginStatus.loggedIn) || (targetProvider === 'spotify' && !spotifyLoginStatus.loggedIn)) {
     list.innerHTML = '<div class="collect-empty">登录后显示你的歌单</div>';
     return;
   }
@@ -1214,7 +1246,7 @@ function renderCollectModal() {
     list.innerHTML = miniQueueSkeleton();
     return;
   }
-  var mine = userPlaylists.filter(function (pl) { return !pl.subscribed && (pl.provider || 'netease') === targetProvider; });
+  var mine = userPlaylists.filter(function (pl) { return !pl.virtual && !pl.subscribed && (pl.provider || 'netease') === targetProvider; });
   if (!mine.length) {
     list.innerHTML = '<div class="collect-empty">还没有可写入的歌单，可以先新建一个</div>';
     return;
@@ -1236,6 +1268,10 @@ function setCollectBusyPid(pid, busy) {
   });
 }
 async function createPlaylistFromCollect() {
+  if (songProviderKey(collectTargetSong) === 'spotify') {
+    showToast('Spotify 当前只支持加入已有歌单');
+    return;
+  }
   if (!ensureLoggedInForAction()) return;
   var input = document.getElementById('collect-new-name');
   var name = input ? input.value.trim() : '';
@@ -1289,16 +1325,17 @@ async function addCollectTargetToPlaylist(pid) {
   try {
     var songId = String(collectTargetSong.id || '');
     var kugouTarget = songProviderKey(collectTargetSong) === 'kugou';
-    var r = await apiJson(kugouTarget ? '/api/kugou/playlist/add-song' : '/api/playlist/add-song', {
+    var spotifyTarget = songProviderKey(collectTargetSong) === 'spotify';
+    var r = await apiJson(spotifyTarget ? '/api/spotify/playlist/add-song' : (kugouTarget ? '/api/kugou/playlist/add-song' : '/api/playlist/add-song'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(kugouTarget ? { pid: pid, song: collectTargetSong } : { pid: pid, id: songId })
+      body: JSON.stringify(spotifyTarget ? { playlistId: pid, song: collectTargetSong } : (kugouTarget ? { pid: pid, song: collectTargetSong } : { pid: pid, id: songId }))
     });
     if (!(r && r.success)) throw new Error(collectResultMessage(r));
-    showToast('已收藏到歌单');
+    showToast(spotifyTarget ? '已加入 Spotify 歌单' : '已收藏到歌单');
     closeCollectModal();
     refreshUserPlaylists(true);
-    if (!kugouTarget) setTimeout(function () {
+    if (!kugouTarget && !spotifyTarget) setTimeout(function () {
       verifySongInPlaylist(pid, songId).then(function (ok) {
         if (!ok) console.warn('collect submitted but verify did not find song yet:', pid, songId);
       });

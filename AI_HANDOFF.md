@@ -2,6 +2,9 @@
 
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**
 
+- **2026-08-08 Spotify 官方收藏与加歌同步：** Mac 现在支持从 Spotify 官方 Web API 读取喜欢状态、收藏/取消收藏，以及把 Spotify 歌曲加入已有的自建 Spotify 歌单。OAuth 默认加入 `user-library-modify`、`playlist-modify-private`、`playlist-modify-public`，并与已有环境变量/旧配置中自定义 scope 合并；token 与写请求均留在本地服务端，前端只请求本机 `/api`。仅 Spotify 歌曲可写入 Spotify 自建歌单，虚拟“喜欢的歌曲”和订阅歌单不可选。旧 OAuth token 不会自动增加新 scope，已有用户须在账户面板重新连接 Spotify。专项 12/12、`npm run check` 217/217 通过；未做真实 Spotify 账号人工验收，也未构建 DMG。[来源: `spotify-api.js`、`server.js`、`public/js/modules/05-playback/06-track-detail-lyrics-actions.js`、`scripts/test-spotify-account-write-sync.js`]
+- **2026-08-08 修复 p12/p13 音域回响歌词字号偏小：** p12「音域地形」和 p13「音域回响·WE」的舞台歌词根据实际相机到歌词组的距离，相对普通预设参考距离 `6.6` 补偿世界空间缩放，因此屏幕显示字号与普通预设对齐；不覆盖用户的字号、位置、字体或颜色设置。p13 的异步歌词抵达后也会重新唤醒共用舞台歌词。专项 12/12、`npm run check` 217/217 通过，仍需可见窗口人工确认观感。[来源: `public/js/modules/02-visual/02-lyrics-state-layout.js`、`public/js/modules/02-visual/14-stage-lyrics-rendering.js`、`scripts/test-sonic-series-layout.js`]
+
 - **2026-08-04 背景媒体可用性与排版修复**：基于 PR #79 head `2dff883672a8b89df6f5276aa891959c1ea10f47` 独立交付。将背景媒体归为「上传 / 封面 / 裁切 / 清除」四个等宽按钮，新增状态提示与说明型“封面鼠标视角”开关；上传媒体强制固定视角。无封面歌曲不会再假启用封面背景，异步封面消失时也不会写入失效绑定。真实 Electron 已验证上传图片、封面视差和清除回退；专项 5/5、`npm run check` **203/203**。本批只包含 `CHANGELOG.md`、`AI_HANDOFF.md`、`public/css/index.css`、`public/index.html`、两个背景媒体 JS 和对应测试，不改 main、播放、登录、雨境参数或其他预设。
 
 - **2026-08-03 雨境流速持续响应与封面鼠标视角**：修复预设 9 水珠滑落进度越大阻力越高、后半程自行减速的问题。`rainGlassSlipDrag(drop)` 让阻力仅与尺寸相关，流速系数持续驱动加速度与终端速度；不改雨量、尺寸、歌词或其他预设。新增默认关闭的 `fx.albumBackgroundMouseBind` 与「界面 → 背景媒体 → 封面鼠标视角」开关，复用 `queueParticlePointerFrame()`，只影响 `#album-bg/#album-bg-next`，不触碰上传图片/视频、歌词或相机。专项 8/8、`npm run check` **200/200** 通过。Electron 已从 `/Users/bobby/ZCodeProject/mr-pr65` 启动，但本会话没有桌面自动化接口，仍待可见窗口人工验收。
