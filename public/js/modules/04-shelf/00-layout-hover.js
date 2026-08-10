@@ -25,6 +25,65 @@ function markShelfPlaybackSwitchGuard(ms) {
 function isPortraitShelfViewport() {
   return innerHeight > innerWidth * 1.08;
 }
+function p10ShelfSideLayout(layout, forceActive) {
+  var p10Active = forceActive === true || (forceActive !== false && typeof voxelCityActive === 'function' && voxelCityActive());
+  if (!p10Active || !layout) return layout;
+  // 图二构图：中心卡位于右侧中部，卡组沿完整纵向间距展开。
+  // 保留用户的歌架微调，只抵消普通预设中不适合 P10 远景的默认偏移。
+  var next = Object.assign({}, layout);
+  next.sideX = (Number(layout.sideX) || 0) - 0.63;
+  next.sideY = (Number(layout.sideY) || 0) + 0.08;
+  next.sideZ = (Number(layout.sideZ) || 0) - 0.10;
+  next.sideXStep = (Number(layout.sideXStep) || 0) * 1.15;
+  next.sideYStep = Number(layout.sideYStep) || 0;
+  next.sideZStep = Number(layout.sideZStep) || 0;
+  next.sideEntryX = (Number(layout.sideEntryX) || 0) * 0.90;
+  next.sideDetailShift = (Number(layout.sideDetailShift) || 0) * 0.90;
+  next.sideScale = (Number(layout.sideScale) || 1) * 0.82;
+  // P10 只改变远景坐标与尺寸，不削弱普通歌架已经验证过的斜切角度。
+  next.sideRotY = Number(layout.sideRotY) || 0;
+  next.sideRotX = Number(layout.sideRotX) || 0;
+  return next;
+}
+function p10ShelfRootPose(frameYaw, pointerX, pointerY) {
+  return {
+    x: 0.035 - (Number(pointerY) || 0) * 0.006,
+    y: (Number(frameYaw) || 0) - 0.055 + (Number(pointerX) || 0) * 0.012,
+    z: 0.035
+  };
+}
+function p10ShelfCameraAnchor(cameraRef) {
+  if (!cameraRef || !cameraRef.position || !cameraRef.quaternion || typeof cameraRef.getWorldDirection !== 'function' || typeof THREE === 'undefined') return null;
+  var forward = new THREE.Vector3();
+  var right = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraRef.quaternion);
+  cameraRef.getWorldDirection(forward);
+  // P10 保留原生远景镜头；一级歌架因此不能继续留在体素地形原点。
+  // 放到镜头前方偏右的净空区域，既不会缩成黑色远景，也不会放大塞进音柱。
+  return {
+    x: cameraRef.position.x + forward.x * 18 + right.x * -1.2,
+    y: cameraRef.position.y + forward.y * 18,
+    z: cameraRef.position.z + forward.z * 18 + right.z * -1.2
+  };
+}
+function p10ShelfCardSurface(shelfLook) {
+  if (typeof voxelCityActive !== 'function' || !voxelCityActive()) return null;
+  var palette = typeof stageLyrics !== 'undefined' && stageLyrics && stageLyrics.palette ? stageLyrics.palette : null;
+  var source = palette && (palette.secondary || palette.primary || palette.highlight);
+  var rgb = typeof hexToRgb === 'function' ? hexToRgb(source) : null;
+  if (!rgb) rgb = { r: 92, g: 126, b: 148 };
+  var raw = shelfLook ? Number(shelfLook.bgOpacity) : 0.90;
+  // 一级卡处在体素远景和黑色场景上，普通的暗玻璃比例会被两次透明度合成吃掉。
+  // 提高冷色底和 alpha，但仍限制在玻璃范围，避免变成不透明色块。
+  var alpha = clampRange(raw * 0.62, 0.34, 0.62);
+  var r = Math.round(12 + rgb.r * 0.24);
+  var g = Math.round(24 + rgb.g * 0.28);
+  var b = Math.round(36 + rgb.b * 0.34);
+  return {
+    base: 'rgba(' + r + ',' + g + ',' + b + ',' + alpha.toFixed(3) + ')',
+    highlight: 'rgba(' + Math.min(245, r + 132) + ',' + Math.min(248, g + 138) + ',' + Math.min(255, b + 148) + ',0.105)',
+    key: [r, g, b, alpha.toFixed(3)].join(':')
+  };
+}
 function shelfLayoutProfile() {
   var portrait = isPortraitShelfViewport();
   var narrow = !portrait && innerWidth < 980;

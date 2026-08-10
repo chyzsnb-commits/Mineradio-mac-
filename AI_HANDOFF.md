@@ -2,6 +2,8 @@
 
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**
 
+- **2026-08-10 p10 右键一级歌架空闲唤醒回归修复（未构建 DMG）：** 用户反馈 p10「音域回响」右键没有显示一级歌架。根因不是 p10 构图、数据为空或一级/二级层级，而是提交 `25e1d3c` 为恢复“右键只进一级”删除了右键的 `markRenderInteraction('shelf-context', 1200)`；当窗口处于空闲降帧时，状态虽切到 `shelfPinnedOpen=true`，但 `shelfManager.update()` 未及时运行，因此不会计算可见度或世界坐标。现恢复该唤醒，且保留 `shelfHardHidden` 解除与 `clearSelected()`；右键仍绝不调用 `openContent()`，一级卡点击后才进二级。先写回归断言并观察其失败，再修复；专项 `16/16`、完整 `npm run check` `266/266`、语法和 `git diff --check` 通过。Electron 已从 `/Users/bobby/ZCodeProject/mr-system-output-close-cleanup` 启动，主页 `127.0.0.1:3000` 返回 `200`。**下一步：** 用户在 p10、队列非空且播放/暂停两种状态下右键，确认一级架子均立即显示；点击居中卡才出现二级歌曲列表。[来源: `public/js/modules/04-shelf/05-card-interactions.js`、`public/js/modules/11-main-loop.js`、`scripts/test-p10-voxel-interactions.js`]
+
 - **2026-08-10 Mac 设置清理与音频输出对抗性修复（未构建 DMG）：** 用户质疑播放输出是否实际可用。事实：原“路由”按钮没有对应弹窗宿主，且普通主输出切换在 `setSinkId` 拒绝后仍保留新设备 ID，只有桥接路径有部分回退；未授予设备标签权限时空 `deviceId` 又会把“系统默认”渲染两次。现补回 `audio-output-workflow-modal`，主输出、桥接和镜像的成功状态都以实际路由结果为准；主输出失败会恢复前一主输出、桥接状态和镜像列表，再重新应用原输出；无播放器只记录“播放时连接”；设备枚举排除空 ID 和 `default`。Mac 设置移除关闭窗口/后台托盘选择，关闭窗口固定退出，自动更新继续禁用，用户升级使用签名 DMG 覆盖安装。专项对抗性 `8/8`、完整 `npm run check` `264/264`、语法和 `git diff --check` 通过；隔离 Electron 启动、打开“系统 → 播放输出 → 路由”确认弹窗存在且只显示一个系统默认节点。浏览器有一条无效封面 URL 的既有 `403`，与输出路径无关。**下一步：** 在有至少两个真实输出设备或虚拟声卡的 Mac 上播放歌曲，切换一个非默认设备并在系统声音输出/目标应用中确认；拒绝权限或拔出设备时确认提示“已恢复原输出”。[来源: `public/js/modules/05-playback/00-api-quality-output.js`、`public/index.html`、`public/js/modules/00-state/02-preferences-ui-modes.js`、`scripts/test-system-output-close-cleanup.js`]
 
 - **2026-08-10 p10 完整柱体构图与左缘 300ms（未构建 DMG）：** 用户反馈 p10 右键后镜头被放大到音柱内部。根因是 `voxelShelfCameraFocusPose()` 把通用歌架 focus 的 `orbit.radius` 和 `phi` 换算进 p10 体素世界，而通用侧栏为近景 `4.2` 半径、负仰角，导致 p10 的原生约 `127` 半径被缩小。现在 p10 歌架 focus 只复用右侧方位与 lookAt 偏移，镜头半径和高度直接保留 `_voxCam` 当前值，因此滚轮/拖动后的用户机位也不会在右键时被重置。左侧边缘歌单停留从 `600ms` 调为 `300ms`，左键拖动抑制、垂直安全带、双屏保护不变。专项 `16/16`、完整 `npm run check` `256/256`、相关脚本语法检查和 `git diff --check` 通过。待用户在命令行启动 Electron 后确认 p10 右键仍显示右侧歌架但不钻入音柱，并确认 `300ms` 不会误触。[来源: `public/js/modules/02-visual/16-voxel-echo.js`、`public/js/modules/10-shell/02-peek-panels-upload.js`、`scripts/test-p10-voxel-interactions.js`]
@@ -585,3 +587,19 @@
 - 湖面材质改用低频 `lakeSheen`，去除高密度雨幕反射条纹，底部不再呈现白色粒子带。
 - 新增 `RAINFORM_DEFAULT_STAGE_SCALE = 1.42`。云瀑默认采用局部构图，不再完整展示整个瀑布；每帧读取 `fx.lyricScale`，云瀑组平滑跟随“歌词大小”缩放，歌词自身位置、字体和动画保持原逻辑。
 - 验证：专项 `scripts/test-rainfall-resonance.js` 14/14、`node --check public/js/modules/02-visual/20-rainfall-resonance.js`、`npm run check` 190/190 通过；`npm start` 已启动本地 Electron 服务，无启动错误。未验证：需要用户在真实歌曲中确认湖面亮度与默认局部裁切是否符合观感。[来源: `public/js/modules/02-visual/20-rainfall-resonance.js`、`scripts/test-rainfall-resonance.js`，2026-07-29]
+
+**2026-08-10：P10 一级歌架构图与玻璃卡面修复。**
+- 根因：PR65 恢复时一并撤掉了旧的玻璃卡面与 P10 世界布局适配；后续仅补了根节点缩放和默认 yaw，普通预设的低位大斜切被直接放入体素远景，导致一级卡压歌词、透视失真且 `bgOpacity` 接近 `1` 时成为纯黑大板。
+- 最终修复：以用户图二为构图基准，中心卡回到右侧中部（不再上提到右上角），恢复完整纵向卡距和轻微斜切；P10 根组固定跟随焦点相机，隔离通用封面粒子的旋转及换封面瞬时扭曲。普通预设布局不变；P10 卡面使用歌词色板驱动的冷色玻璃，背景透明度保留但最终 alpha 钳在 `0.26..0.54`，切入/切出 P10 强制重绘。
+- 回归：右键仍只打开一级、保留原生 P10 半径/高度、不进入音柱，`markRenderInteraction('shelf-context', 1200)` 仍保留。专项 `18/18`，完整 `npm run check` **268/268**，语法与 `git diff --check` 通过。人工验收：P10 右键确认一级卡处于右侧安全区、主歌词不被遮挡、封面与文字可读。
+
+**2026-08-10：P10 一级歌架斜切与纯黑回归修复。**
+- 用户复测指出上一版一级歌架仍然角度不对、卡面发黑。根因分别是 P10 适配层把普通侧栏 `sideRotY` 从 `0.28` 降为 `0.18`，以及 P10 独立底色在深色体素背景和透明材质叠加后对比不足。
+- 修复：P10 只继续使用远景世界坐标/相机半径保护和焦点根姿态，恢复一级卡 `0.28` 斜切；冷色玻璃底色提高到 `alpha 0.34..0.62` 和可读冷色范围，仍跟随歌词色板且不变成不透明色块。普通预设、二级详情降亮逻辑不变。
+- 新增回归断言覆盖图二斜切范围与一级卡面 rgba 可读范围；P10 专项当前 `19/19`。待命令行 Electron 真实验收视觉位置、卡面文字/封面可读性，以及点击一级卡后二级背景仍按预期降亮。
+
+**2026-08-10：P10 一级歌架最终黑屏根因修复。**
+- 用户实机截图确认：卡架位置落在红框中部，但整张一级卡只有近黑轮廓。运行时对照显示 Canvas 画布、封面数据和卡片材质均有亮像素；问题不是继续提高玻璃 alpha。
+- 根因：P10 歌架世界比例复用了普通 `orbit.baselineRadius`。P10 初始化前后该值会在 `6.6` 与 `50` 间变化，使歌架从约 `19.4x` 突变到约 `2.4x`；配合体素远景机位，卡架会在音柱远处变黑，或放大钻入音柱。
+- 修复：新增稳定的 `VOX_SHELF_REFERENCE_RADIUS = 50`，P10 歌架比例不再读取普通 orbit；右键一级歌架使用相机前方安全锚点，并将横向偏移校准回用户红框的中部区域。普通预设、P10 自由镜头、右键一级/二级状态机和歌词让位逻辑未改。
+- 对抗性验证：命令行 Electron 实测 `fx.preset=10`、`shelfPinnedOpen=true`、歌架可见度为 `1`；真实截图中卡片封面、文字和冷色玻璃均可读，不再是纯黑；P10 专项 `21/21`，完整 `npm run check` `271/271`，语法与 `git diff --check` 通过。

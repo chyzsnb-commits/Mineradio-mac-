@@ -146,6 +146,9 @@ renderer.domElement.addEventListener('contextmenu', function (e) {
   if (isPointerOverUi(e)) return;
   e.preventDefault();
   e.stopPropagation();
+  // 右键是显式的视觉交互；空闲降帧时先唤醒主循环，确保 P10 当帧计算并绘制一级歌架。
+  if (typeof markRenderInteraction === 'function') markRenderInteraction('shelf-context', 1200);
+  else if (typeof wakeMainLoopFromBackground === 'function') wakeMainLoopFromBackground();
   if (typeof suppressBottomControlsForShelf === 'function') suppressBottomControlsForShelf(980);
   if (!shelfManager) return;
   var mode = shelfManager.getMode && shelfManager.getMode();

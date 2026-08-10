@@ -106,6 +106,7 @@ test('p10 显示相机按普通预设同源的帧率归一缓动跟随拖拽目�
 test('p10 右键必须复用 Win 的统一歌架状态机', () => {
   assert.doesNotMatch(shelfInteractions, /function toggleSideShelfFromContextMenu\(/);
   assert.match(shelfInteractions, /if \(isPointerOverUi\(e\)\) return;/);
+  assert.match(shelfInteractions, /markRenderInteraction\('shelf-context', 1200\)/, '右键必须唤醒空闲渲染，才能在 P10 立即绘制一级歌架');
   assert.match(shelfInteractions, /var shouldOpen = shelfHardHidden \|\| !shelfPinnedOpen/);
   assert.match(shelfInteractions, /if \(shouldOpen\)\s*\{\s*shelfHardHidden = false/);
   assert.doesNotMatch(shelfInteractions, /shelfManager\.rebuild\(false\)/);
@@ -166,10 +167,121 @@ test('p10 歌架 focus 保留原生完整柱体构图，不继承通用近景半
   assert.equal(context.voxelShelfCameraFocusPose(), null, '没有 focus 时必须回到 p10 自由镜头');
 });
 
-test('p10 歌架根节点必须与默认相机方位同向旋转', () => {
-  assert.match(shelfManager, /var shelfFrameYaw[\s\S]*voxelShelfWorldFrameYaw\(\)/);
+test('p10 歌架根节点必须与焦点相机方位同向旋转', () => {
+  assert.match(shelfManager, /var shelfFrameYaw[\s\S]*voxelShelfFocusFrameYaw\(\)/);
   assert.match(shelfManager, /shelfFrameYaw \+ clampRange\(particles\.rotation\.y/);
   assert.match(shelfManager, /shelfFrameYaw \+ px \* 0\.018/);
+});
+
+test('p10 一级歌架使用图二的右侧纵向构图，不被推到右上角', () => {
+  assert.match(voxel, /function voxelShelfFocusFrameYaw\(/);
+  assert.match(shelfManager, /voxelShelfFocusFrameYaw\(\)/);
+  assert.match(shelfLayoutHover, /function p10ShelfSideLayout\(/);
+  assert.match(shelfLayoutHover, /function p10ShelfRootPose\(/);
+  assert.match(shelfManager, /p10ShelfSideLayout\(frameLayout\)/);
+  assert.match(shelfManager, /var p10RootPose = p10ShelfRootPose\(shelfFrameYaw, px, py\)/);
+  assert.match(shelfManager, /if \(p10ShelfActive\)[\s\S]*else if \(bindToCover\)/);
+
+  const adapt = readFunction(shelfLayoutHover, 'p10ShelfSideLayout');
+  const rootPose = readFunction(shelfLayoutHover, 'p10ShelfRootPose');
+  const base = {
+    sideX: 3.18, sideY: 0, sideZ: 0.86,
+    sideXStep: 0.04, sideYStep: 0.68, sideZStep: 0.17,
+    sideEntryX: 0.82, sideDetailShift: 0.82,
+    sideScale: 1, sideRotY: 0.28, sideRotX: 0.042
+  };
+  const context = {};
+  vm.runInNewContext(`${adapt}; ${rootPose}; this.p10ShelfSideLayout = p10ShelfSideLayout; this.p10ShelfRootPose = p10ShelfRootPose;`, context);
+  assert.equal(context.p10ShelfSideLayout(base, false), base, '普通预设必须保持原布局对象');
+  const p10 = context.p10ShelfSideLayout(base, true);
+  assert.ok(p10.sideX > 2.4 && p10.sideX < 2.7, '中心卡必须位于图二右侧中部，不能贴右边缘');
+  assert.ok(Math.abs(p10.sideY) < 0.2, '中心卡必须保持垂直居中，不能被推到右上角');
+  assert.ok(p10.sideYStep >= 0.66, '必须保留图二完整的纵向卡片间距');
+  assert.ok(p10.sideScale > 0.78 && p10.sideScale < 0.86, '中心卡尺寸应接近图二，不能过大或过小');
+  assert.ok(p10.sideRotY > 0.25 && p10.sideRotY < 0.31, '一级卡片必须保留图二的明显斜切，不能被压成近乎正视');
+
+  const pose = context.p10ShelfRootPose(-Math.PI / 4, 0, 0);
+  assert.ok(Math.abs(pose.x) < 0.08, 'P10 根组俯仰只能是轻微固定值');
+  assert.ok(Math.abs(pose.y + Math.PI / 4) < 0.12, 'P10 根组必须稳定朝向焦点相机');
+  assert.ok(Math.abs(pose.z) < 0.08, 'P10 根组不能继承封面的大幅滚转');
+  assert.match(shelfManager, /onCoverChange:[\s\S]*!p10ShelfActiveOnCover/, 'P10 换封面时不得瞬间套用普通封面旋转');
+});
+
+test('p10 一级卡使用带上限的冷色玻璃表面，不直接拿用户背景透明度绘制纯黑', () => {
+  assert.match(shelfLayoutHover, /function p10ShelfCardSurface\(/);
+  assert.match(shelfManager, /var cardSurface = p10ShelfCardSurface\(shelfLook\)/);
+  assert.match(shelfManager, /ctx\.fillStyle = cardSurface \? cardSurface\.base/);
+  assert.match(shelfManager, /if \(cardSurface\) \{ ctx\.fillStyle = cardSurface\.highlight/);
+  assert.match(shelfManager, /p10Surface \? p10Surface\.key : ''/, '切入或切出 P10 时必须重绘卡面');
+  assert.doesNotMatch(
+    shelfManager,
+    /ctx\.fillStyle = 'rgba\(0,0,0,' \+ shelfLook\.bgOpacity\.toFixed\(3\) \+ '\)'\s*;\s*ctx\.fill\(\)/,
+    '一级卡不得直接以高不透明纯黑作为最终卡面'
+  );
+});
+
+test('p10 一级卡面在正常歌架状态必须保持可读的玻璃底色', () => {
+  const surface = readFunction(shelfLayoutHover, 'p10ShelfCardSurface');
+  const context = {
+    voxelCityActive: () => true,
+    stageLyrics: { palette: { secondary: '#4f9fc4' } },
+    hexToRgb: (value) => {
+      const match = String(value).match(/^#([0-9a-f]{6})$/i);
+      return match ? {
+        r: parseInt(match[1].slice(0, 2), 16),
+        g: parseInt(match[1].slice(2, 4), 16),
+        b: parseInt(match[1].slice(4, 6), 16)
+      } : null;
+    },
+    clampRange: (value, min, max) => Math.max(min, Math.min(max, value))
+  };
+  vm.runInNewContext(`${surface}; this.p10ShelfCardSurface = p10ShelfCardSurface;`, context);
+  const result = context.p10ShelfCardSurface({ bgOpacity: 0.90 });
+  assert.ok(result && result.base, 'P10 一级卡必须返回玻璃底色');
+  const rgba = result.base.match(/^rgba\((\d+),(\d+),(\d+),([0-9.]+)\)$/);
+  assert.ok(rgba, 'P10 卡面底色必须是可检查的 rgba');
+  const [, r, g, b, alpha] = rgba.map(Number);
+  assert.ok(r >= 24 && g >= 40 && b >= 60, '一级卡面不能接近纯黑，必须保留可见冷色玻璃层');
+  assert.ok(alpha >= 0.42 && alpha <= 0.58, '一级卡面透明度必须在可读范围内');
+});
+
+test('p10 一级歌架锚在相机前方偏右的安全空间，不留在体素地形原点', () => {
+  assert.match(shelfLayoutHover, /function p10ShelfCameraAnchor\(/);
+  assert.match(shelfManager, /var p10Anchor = p10ShelfCameraAnchor\(camera\)/);
+  assert.match(shelfManager, /group\.position\.set\(p10Anchor\.x, p10Anchor\.y, p10Anchor\.z\)/);
+
+  const anchor = readFunction(shelfLayoutHover, 'p10ShelfCameraAnchor');
+  class Vector3 {
+    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+    set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+    applyQuaternion() { return this; }
+  }
+  const context = { THREE: { Vector3 } };
+  vm.runInNewContext(`${anchor}; this.p10ShelfCameraAnchor = p10ShelfCameraAnchor;`, context);
+  const camera = {
+    position: { x: 10, y: 20, z: 30 },
+    quaternion: {},
+    getWorldDirection(vector) { return vector.set(0, 0, -1); }
+  };
+  const result = context.p10ShelfCameraAnchor(camera);
+  assert.ok(result, 'p10 可用相机必须给一级歌架提供锚点');
+  assert.ok(result.x > camera.position.x - 2, '歌架必须处在相机前方的有效横向范围，而不是世界原点');
+  assert.ok(result.x < camera.position.x + 1, '歌架不能被横向锚点推到屏幕最右侧');
+  assert.ok(result.z < camera.position.z - 12, '歌架必须在相机前方的可读距离内');
+  assert.ok(Math.abs(result.y - camera.position.y) < 3, '歌架高度只能轻微调整，不能塞进体素地形');
+  assert.equal(context.p10ShelfCameraAnchor(null), null, '没有相机时不得生成错误世界坐标');
+});
+
+test('p10 歌架世界比例不读取会在预设初始化中变化的普通 orbit 基准', () => {
+  const worldScale = readFunction(voxel, 'voxelShelfWorldScale');
+  const context = { VOX_CAM_DEF_RADIUS: 128, VOX_SHELF_REFERENCE_RADIUS: 50 };
+  vm.runInNewContext(`${worldScale}; this.voxelShelfWorldScale = voxelShelfWorldScale;`, context);
+  context.orbit = { baselineRadius: 6.6 };
+  const beforePresetInit = context.voxelShelfWorldScale();
+  context.orbit = { baselineRadius: 50 };
+  const afterPresetInit = context.voxelShelfWorldScale();
+  assert.ok(Math.abs(beforePresetInit - afterPresetInit) < 0.0001, 'P10 预设初始化前后一级歌架比例必须稳定');
+  assert.ok(afterPresetInit > 2 && afterPresetInit < 3, 'P10 歌架应保持适合相机前方锚点的中等比例，不能放大钻进音柱');
 });
 
 test('p10 右键构图使用同一过渡进度，固定态不再套用截图猜值', () => {

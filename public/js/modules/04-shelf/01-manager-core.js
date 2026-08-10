@@ -106,11 +106,12 @@ function makeShelfManager() {
     var rec = item.cover ? playlistCoverCache[item.cover] : null;
     var coverState = item.cover ? (rec && rec.loaded ? 'ready' : (rec && rec.failed ? 'fail' : 'wait')) : 'none';
     var pulseBucket = card && card.isCenter ? Math.round((bass + beatPulse * 0.85) * 6) : 0;
+    var p10Surface = p10ShelfCardSurface(shelfSettings());
     return [
       item.type || '', item.title || '', item.sub || '', item.tag || '',
       item.playlistId || '', item.podcastKey || '', item.queueIndex == null ? '' : item.queueIndex,
       item.cover || '', coverState, card && card.isCenter ? 1 : 0, card && card.selected ? 1 : 0,
-      card && card.dofBucket == null ? -1 : card.dofBucket, pulseBucket, shelfAccentHex(), shelfSettings().bgOpacity
+      card && card.dofBucket == null ? -1 : card.dofBucket, pulseBucket, shelfAccentHex(), shelfSettings().bgOpacity, p10Surface ? p10Surface.key : ''
     ].join('|');
   }
 
@@ -124,11 +125,13 @@ function makeShelfManager() {
     ctx.clearRect(0, 0, W, H);
     var pad = 18;
     var isNow = item.type === 'queue' && item.tag === '正在播放';
-    var shelfLook = shelfSettings();
+      var shelfLook = shelfSettings();
+      var cardSurface = p10ShelfCardSurface(shelfLook);
 
     // 卡片底
     makeRoundRect(ctx, pad, pad, W - pad * 2, H - pad * 2, 32);
-    ctx.fillStyle = 'rgba(0,0,0,' + shelfLook.bgOpacity.toFixed(3) + ')'; ctx.fill();
+    ctx.fillStyle = cardSurface ? cardSurface.base : 'rgba(0,0,0,' + shelfLook.bgOpacity.toFixed(3) + ')'; ctx.fill();
+    if (cardSurface) { ctx.fillStyle = cardSurface.highlight; ctx.fill(); }
     var grad = ctx.createLinearGradient(0, 0, W, H);
     grad.addColorStop(0, 'rgba(255,255,255,0.10)');
     grad.addColorStop(1, 'rgba(255,255,255,0.018)');
@@ -756,18 +759,27 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       if (connectorParticles) connectorParticles.visible = group.visible && mode === 'stage';
       if (floorMirror) floorMirror.visible = group.visible && mode === 'stage';
           if (mode === 'side') {
-        var passiveAlwaysGroup = shelfAlwaysVisible() && !shelfPinnedOpen && !(contentList && contentList.isOpen());
-        var liftedCardActive = passiveAlwaysGroup && cards.some(function (c) { return c.selected || (c.floatMix || 0) > 0.025; });
+            var passiveAlwaysGroup = shelfAlwaysVisible() && !shelfPinnedOpen && !(contentList && contentList.isOpen());
+            var liftedCardActive = passiveAlwaysGroup && cards.some(function (c) { return c.selected || (c.floatMix || 0) > 0.025; });
             group.renderOrder = passiveAlwaysGroup && !liftedCardActive ? 30 : 50;
-            group.position.set(0, 0, 0);
             var p10CompositionMix = typeof voxelShelfCompositionMixValue === 'function' ? voxelShelfCompositionMixValue() : 0;
             var p10ShelfScale = typeof voxelShelfWorldScale === 'function' && typeof voxelCityActive === 'function' && voxelCityActive()
               ? voxelShelfWorldScale() * (typeof voxelShelfCompositionScale === 'function' ? voxelShelfCompositionScale() : 1)
               : 1;
             group.scale.setScalar(p10ShelfScale);
-            var shelfFrameYaw = (typeof voxelCityActive === 'function' && voxelCityActive() && typeof voxelShelfWorldFrameYaw === 'function') ? voxelShelfWorldFrameYaw() : 0;
+            var p10ShelfActive = typeof voxelCityActive === 'function' && voxelCityActive();
+            var p10Anchor = p10ShelfCameraAnchor(camera);
+            var p10AnchorActive = p10ShelfActive && p10Anchor && (shelfPinnedOpen || (contentList && contentList.isOpen()));
+            if (p10AnchorActive) group.position.set(p10Anchor.x, p10Anchor.y, p10Anchor.z);
+            else group.position.set(0, 0, 0);
+            var shelfFrameYaw = (p10ShelfActive && typeof voxelShelfFocusFrameYaw === 'function') ? voxelShelfFocusFrameYaw() : 0;
             var bindToCover = (shelfAlwaysVisible() || shelfPinnedOpen || shelfVisibility > 0.06) && particles && particles.rotation && !(contentList && contentList.isOpen());
-            if (bindToCover) {
+            if (p10ShelfActive) {
+              var p10RootPose = p10ShelfRootPose(shelfFrameYaw, px, py);
+              group.rotation.x += (p10RootPose.x - group.rotation.x) * 0.12;
+              group.rotation.y += (p10RootPose.y - group.rotation.y) * 0.12;
+              group.rotation.z += (p10RootPose.z - group.rotation.z) * 0.12;
+            } else if (bindToCover) {
           var bindEase = uniforms.uTime.value < coverBindResumeUntil ? 0.18 : 0.075;
           // 跟随封面旋转,但钳到可点击的角度范围内:否则封面大幅旋转时歌架被带得侧过去、
           // 卡片转出屏幕右缘就点不到了(光标放不到屏外的卡片上,不是命中判定的问题)。
@@ -791,6 +803,7 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       }
       // 每帧只算一次:三个 profile 对帧内每张卡都相同,原先在 placeCard 里逐卡重建 ~50 个临时对象/帧
       var frameLayout = shelfLayoutProfile();
+      if (mode === 'side' && typeof voxelCityActive === 'function' && voxelCityActive()) frameLayout = p10ShelfSideLayout(frameLayout);
       var frameShelfLook = shelfSettings();
       var frameSummon = shelfSummonSettings();
       for (var i = 0; i < cards.length; i++) {
@@ -820,7 +833,8 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
     },
     onCoverChange: function () {
       coverBindResumeUntil = uniforms && uniforms.uTime ? uniforms.uTime.value + 1.2 : coverBindResumeUntil;
-      if (group && mode === 'side' && (shelfAlwaysVisible() || shelfPinnedOpen || shelfVisibility > 0.06) && particles && particles.rotation && !(contentList && contentList.isOpen())) {
+      var p10ShelfActiveOnCover = typeof voxelCityActive === 'function' && voxelCityActive();
+      if (group && mode === 'side' && !p10ShelfActiveOnCover && (shelfAlwaysVisible() || shelfPinnedOpen || shelfVisibility > 0.06) && particles && particles.rotation && !(contentList && contentList.isOpen())) {
         group.rotation.x += (particles.rotation.x - group.rotation.x) * 0.28;
         group.rotation.y += (particles.rotation.y - group.rotation.y) * 0.28;
         group.rotation.z += (particles.rotation.z - group.rotation.z) * 0.28;
