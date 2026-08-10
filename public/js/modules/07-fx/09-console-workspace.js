@@ -110,6 +110,7 @@ var FX_CONSOLE_LAYOUT = [
       ] },
       { key: 'motion', title: '歌词动画', hint: '滚动手感、上下文层次与故障效果', items: [
         fxConsoleItem('lyric-motion-style-seg', '歌词动画', '漂浮 柔滑 玻璃 线光 故障'),
+        fxConsoleItem('fx-lyricscalepulse', '缩放脉动', '歌词 缩放 节拍 脉动'),
         fxConsoleItem('lyric-glitch-controls', '故障细节', '故障强度 切片 色散 触发速度 抖动 鼓点'),
         fxConsoleItem('fx-lyriccontextopacity', '上下句清晰', '上下文透明度'),
         fxConsoleItem('fx-lyriccontextspread', '上下句间距', '上下文距离'),
@@ -307,6 +308,7 @@ var FX_CONSOLE_LAYOUT = [
       ] },
       { key: 'performance', title: '性能与后台', hint: '画质档位、后台渲染和直播保持', items: [
         fxConsoleItem('performance-mode-seg', '画质档位', '低配 中 高 超高 渲染质量'),
+        fxConsoleItem('fx-renderscale', '渲染分辨率', '渲染清晰度 GPU 省电 发热'),
         fxConsoleItem('max-fps-seg', '前台帧率上限', 'FPS 跟随屏幕 垂直同步 VSync 高刷 节能 45 60 75 90 120'),
         fxConsoleItem('performance-background-seg', '后台渲染策略', '自动优化 保持运行 停止释放'),
         fxConsoleItem('t-liveBackgroundKeep', '直播后台保持', '最小化继续渲染')
@@ -492,6 +494,8 @@ function fxConsoleFindUnclassifiedControls(roots) {
     root.querySelectorAll('input:not([type="hidden"]),select,textarea,button').forEach(function (control) {
       if (control.closest('.fx-console-toolbar') || control.closest('[data-fx-console-entry]')) return;
       if (control.closest('.fx-fold-head,.fx-advanced-head')) return;
+      // 取色弹窗属于对应颜色控件的临时交互，不应被当成独立设置移入“其他设置”。
+      if (control.closest('.cover-color-pop,.color-lab-pop,.cover-color-loupe')) return;
       var block = control.matches && control.matches(blockSelector) ? control : (control.closest ? control.closest(blockSelector) : null);
       if (!block) block = control;
       if (blocks.indexOf(block) < 0) blocks.push(block);

@@ -116,3 +116,11 @@ test('体素预设保留普通左侧歌单和统一 3D 歌架入口', () => {
   assert.match(shelfInteractions, /if \(shouldOpen\)\s*\{\s*shelfHardHidden = false/);
   assert.match(shelfInteractions, /setShelfPinnedOpen\(shouldOpen, true\)/);
 });
+
+test('遗留的歌词动画和渲染性能控件归入职责分组，颜色弹窗不生成其他设置', () => {
+  const workspace = read('public/js/modules/07-fx/09-console-workspace.js');
+
+  assert.match(workspace, /\{ key: 'motion', title: '歌词动画'[\s\S]*?fxConsoleItem\('fx-lyricscalepulse', '缩放脉动'/);
+  assert.match(workspace, /\{ key: 'performance', title: '性能与后台'[\s\S]*?fxConsoleItem\('fx-renderscale', '渲染分辨率'/);
+  assert.match(workspace, /control\.closest\('\.cover-color-pop,\.color-lab-pop,\.cover-color-loupe'\)/);
+});

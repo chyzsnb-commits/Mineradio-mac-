@@ -232,13 +232,13 @@ test('p10 交互边界仍尊重启动页、播放切换保护和空歌单', () =
   assert.match(shelfInteractions, /shelfPlaybackSwitchGuardActive\(\)/);
 });
 
-test('左边缘歌单必须停留 1 秒后才触发，不能进入边缘即呼出', () => {
-  assert.match(peekPanels, /var PLAYLIST_EDGE_DWELL_MS\s*=\s*1000/);
+test('左边缘歌单必须停留 600ms 后才触发，不能进入边缘即呼出', () => {
+  assert.match(peekPanels, /var PLAYLIST_EDGE_DWELL_MS\s*=\s*600/);
   const edge = readFunction(peekPanels, 'isPlaylistEdgeTrigger');
   let now = 0;
   const context = {
     performance: { now: () => now },
-    PLAYLIST_EDGE_DWELL_MS: 1000,
+    PLAYLIST_EDGE_DWELL_MS: 600,
     secondaryPlaylistEdgeGuard: { enteredAt: 0, timer: null, x: 0, y: 0, H: 0 },
     isVisualPointerDragActive: () => false,
     isSecondaryLeftDisplaySeamGuardActive: () => false,
@@ -247,10 +247,10 @@ test('左边缘歌单必须停留 1 秒后才触发，不能进入边缘即呼�
   vm.runInNewContext(`${edge}; this.isPlaylistEdgeTrigger = isPlaylistEdgeTrigger;`, context);
   now = 1;
   assert.equal(context.isPlaylistEdgeTrigger(0, 300, 800), false, '首次进入边缘不能立即呼出');
-  now = 999;
-  assert.equal(context.isPlaylistEdgeTrigger(0, 300, 800), false, '停留不足 1 秒不能呼出');
-  now = 1001;
-  assert.equal(context.isPlaylistEdgeTrigger(0, 300, 800), true, '连续停留 1 秒后才允许呼出');
+  now = 599;
+  assert.equal(context.isPlaylistEdgeTrigger(0, 300, 800), false, '停留不足 600ms 不能呼出');
+  now = 601;
+  assert.equal(context.isPlaylistEdgeTrigger(0, 300, 800), true, '连续停留 600ms 后才允许呼出');
 });
 
 test('左键拖动期间必须同时抑制左侧歌单和右侧 3D 歌架唤醒', () => {
@@ -281,7 +281,7 @@ test('p10 拖动中的帧不会叠加释放惯性，边缘触发只在有效垂�
   const edge = readFunction(peekPanels, 'isPlaylistEdgeTrigger');
   const edgeContext = {
     performance: { now: () => 1 },
-    PLAYLIST_EDGE_DWELL_MS: 1000,
+    PLAYLIST_EDGE_DWELL_MS: 600,
     secondaryPlaylistEdgeGuard: { enteredAt: 0, timer: null, x: 0, y: 0, H: 0 },
     resetSecondaryPlaylistEdgeGuard() {},
     isSecondaryLeftDisplaySeamGuardActive() { return false; },
@@ -289,7 +289,7 @@ test('p10 拖动中的帧不会叠加释放惯性，边缘触发只在有效垂�
   };
   vm.runInNewContext(`${edge}; this.isPlaylistEdgeTrigger = isPlaylistEdgeTrigger;`, edgeContext);
   assert.equal(edgeContext.isPlaylistEdgeTrigger(0, 300, 800), false, '有效左边缘首次进入应等待');
-  edgeContext.performance.now = () => 1001;
+  edgeContext.performance.now = () => 601;
   assert.equal(edgeContext.isPlaylistEdgeTrigger(0, 300, 800), true, '有效左边缘持续停留后必须触发');
   assert.equal(edgeContext.isPlaylistEdgeTrigger(0, 80, 800), false, '顶部控制区不能误触发歌单');
 });
