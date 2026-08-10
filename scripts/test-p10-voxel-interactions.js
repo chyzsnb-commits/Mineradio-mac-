@@ -194,7 +194,7 @@ test('p10 一级歌架使用图一的右侧纵向构图，不被推到画面边�
   vm.runInNewContext(`${adapt}; ${rootPose}; this.p10ShelfSideLayout = p10ShelfSideLayout; this.p10ShelfRootPose = p10ShelfRootPose;`, context);
   assert.equal(context.p10ShelfSideLayout(base, false), base, '普通预设必须保持原布局对象');
   const p10 = context.p10ShelfSideLayout(base, true);
-  assert.ok(p10.sideX > 2.4 && p10.sideX < 2.7, 'P10 经过世界比例和锚点投影后，中心卡必须回到图一的画面中部');
+  assert.ok(p10.sideX > 1.0 && p10.sideX < 1.2, 'P10 缩短相机距离后必须同步收窄局部横向量，中心卡才能回到图一中部');
   assert.ok(Math.abs(p10.sideY) < 0.2, '中心卡必须保持垂直居中，不能被推到右上角');
   assert.ok(p10.sideYStep >= 0.66, '必须保留图一完整的纵向卡片间距');
   assert.ok(p10.sideScale > 0.78 && p10.sideScale < 0.86, 'P10 必须使用图一的局部缩放，不能直接套普通预设比例后投到远景');
@@ -245,7 +245,7 @@ test('p10 一级卡面在正常歌架状态必须保持可读的玻璃底色', (
   assert.ok(alpha >= 0.42 && alpha <= 0.58, '一级卡面透明度必须在可读范围内');
 });
 
-test('p10 一级歌架锚在相机前方偏右的安全空间，不留在体素地形原点', () => {
+test('p10 一级歌架锚在图一所需的近景安全空间，不留在体素地形原点', () => {
   assert.match(shelfLayoutHover, /function p10ShelfCameraAnchor\(/);
   assert.match(shelfManager, /var p10Anchor = p10ShelfCameraAnchor\(camera\)/);
   assert.match(shelfManager, /group\.position\.set\(p10Anchor\.x, p10Anchor\.y, p10Anchor\.z\)/);
@@ -267,8 +267,8 @@ test('p10 一级歌架锚在相机前方偏右的安全空间，不留在体素�
   assert.ok(result, 'p10 可用相机必须给一级歌架提供锚点');
   assert.ok(result.x > camera.position.x - 2, '歌架必须处在相机前方的有效横向范围，而不是世界原点');
   assert.ok(result.x < camera.position.x + 1, '歌架不能被横向锚点推到屏幕最右侧');
-  assert.ok(result.z < camera.position.z - 12, '歌架必须在相机前方的可读距离内');
-  assert.ok(Math.abs(result.y - camera.position.y) < 3, '歌架高度只能轻微调整，不能塞进体素地形');
+  assert.ok(Math.abs(result.z - (camera.position.z - 10)) < 0.01, '图一所需的卡片面积要求歌架进入相机前方约 10 个世界单位');
+  assert.ok(Math.abs(result.y - (camera.position.y + 0.4)) < 0.01, '歌架必须沿相机上方向上抬，避免落到图二右下角');
   assert.equal(context.p10ShelfCameraAnchor(null), null, '没有相机时不得生成错误世界坐标');
 });
 

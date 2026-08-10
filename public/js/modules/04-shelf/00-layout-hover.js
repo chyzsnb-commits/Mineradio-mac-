@@ -31,7 +31,7 @@ function p10ShelfSideLayout(layout, forceActive) {
   // P10 仍复用普通预设的竖向卡组关系，但必须补偿体素世界比例和相机前方锚点。
   // 不补偿会把同一局部布局投到图二的右侧远景，而不是图一的画面中部。
   var next = Object.assign({}, layout);
-  next.sideX = (Number(layout.sideX) || 0) - 0.63;
+  next.sideX = (Number(layout.sideX) || 0) - 2.10;
   next.sideY = (Number(layout.sideY) || 0) + 0.08;
   next.sideZ = (Number(layout.sideZ) || 0) - 0.10;
   next.sideXStep = (Number(layout.sideXStep) || 0) * 1.15;
@@ -55,13 +55,13 @@ function p10ShelfCameraAnchor(cameraRef) {
   if (!cameraRef || !cameraRef.position || !cameraRef.quaternion || typeof cameraRef.getWorldDirection !== 'function' || typeof THREE === 'undefined') return null;
   var forward = new THREE.Vector3();
   var right = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraRef.quaternion);
+  var up = new THREE.Vector3(0, 1, 0).applyQuaternion(cameraRef.quaternion);
   cameraRef.getWorldDirection(forward);
-  // P10 保留原生远景镜头；一级歌架因此不能继续留在体素地形原点。
-  // 放到镜头前方偏右的净空区域，既不会缩成黑色远景，也不会放大塞进音柱。
+  // P10 仍保留原生远景镜头；固定歌架进入前方近景，才会拥有图一的可读面积。
   return {
-    x: cameraRef.position.x + forward.x * 18 + right.x * -1.2,
-    y: cameraRef.position.y + forward.y * 18,
-    z: cameraRef.position.z + forward.z * 18 + right.z * -1.2
+    x: cameraRef.position.x + forward.x * 10 + right.x * -1.2 + up.x * 0.4,
+    y: cameraRef.position.y + forward.y * 10 + up.y * 0.4,
+    z: cameraRef.position.z + forward.z * 10 + right.z * -1.2 + up.z * 0.4
   };
 }
 function p10ShelfCardSurface(shelfLook) {
