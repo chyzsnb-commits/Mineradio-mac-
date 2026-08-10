@@ -114,8 +114,7 @@ test('体素预设保留普通左侧歌单和统一 3D 歌架入口', () => {
   assert.doesNotMatch(shelfManager, /shelfSuppressedByPreset\s*=\s*\(typeof voxelCityActive/);
   assert.match(shelfInteractions, /var shouldOpen = shelfHardHidden \|\| !shelfPinnedOpen/);
   assert.match(shelfInteractions, /if \(shouldOpen\)\s*\{\s*shelfHardHidden = false/);
-  assert.match(shelfInteractions, /setShelfPinnedOpen\(true, true\);[\s\S]*?requestCenteredShelfContentForContextMenu\(\)/);
-  assert.match(shelfInteractions, /setShelfPinnedOpen\(false, true\)/);
+  assert.match(shelfInteractions, /setShelfPinnedOpen\(shouldOpen, true\)/);
 });
 
 test('遗留的歌词动画和渲染性能控件归入职责分组，颜色弹窗不生成其他设置', () => {

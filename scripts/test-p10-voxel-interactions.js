@@ -105,67 +105,20 @@ test('p10 显示相机按普通预设同源的帧率归一缓动跟随拖拽目�
 
 test('p10 右键必须复用 Win 的统一歌架状态机', () => {
   assert.doesNotMatch(shelfInteractions, /function toggleSideShelfFromContextMenu\(/);
-  assert.match(shelfInteractions, /function openCenteredShelfContentForContextMenu\(/);
   assert.match(shelfInteractions, /if \(isPointerOverUi\(e\)\) return;/);
   assert.match(shelfInteractions, /var shouldOpen = shelfHardHidden \|\| !shelfPinnedOpen/);
   assert.match(shelfInteractions, /if \(shouldOpen\)\s*\{\s*shelfHardHidden = false/);
   assert.doesNotMatch(shelfInteractions, /shelfManager\.rebuild\(false\)/);
-  assert.match(shelfInteractions, /setShelfPinnedOpen\(true, true\);[\s\S]*?requestCenteredShelfContentForContextMenu\(\)/);
-  assert.match(shelfInteractions, /setShelfPinnedOpen\(false, true\)/);
+  assert.match(shelfInteractions, /setShelfPinnedOpen\(shouldOpen, true\)/);
+  assert.doesNotMatch(shelfInteractions, /openCenteredShelfContentForContextMenu/);
+  assert.doesNotMatch(shelfInteractions, /requestCenteredShelfContentForContextMenu/);
   assert.match(shelfLayoutHover, /setFocusZone\(shelfPinnedOpen \? 'shelf-side' : null, immediate\)/);
-});
-
-test('右键首次唤起必须打开中心歌单详情，队列中心不能误播放', () => {
-  const helper = readFunction(shelfInteractions, 'openCenteredShelfContentForContextMenu');
-  const calls = [];
-  const context = {
-    shelfManager: {
-      getCenterIdx: () => 4,
-      getCardAt: () => ({ item: { type: 'playlist' } }),
-      openContent: (idx) => calls.push(idx)
-    },
-    Number
-  };
-  vm.runInNewContext(`${helper}; this.openCenteredShelfContentForContextMenu = openCenteredShelfContentForContextMenu;`, context);
-  assert.equal(context.openCenteredShelfContentForContextMenu(), true);
-  assert.deepEqual(calls, [4], '右键必须把中心歌单推进详情态，触发 shelf-detail 与歌词让位');
-
-  context.shelfManager.getCardAt = () => ({ item: { type: 'queue' } });
-  assert.equal(context.openCenteredShelfContentForContextMenu(), false);
-  assert.deepEqual(calls, [4], '队列中心不能被右键误当作打开详情而直接播放');
-});
-
-test('右键在隐藏歌架尚未建卡时，必须等待中心卡出现后再打开详情', () => {
-  const openHelper = readFunction(shelfInteractions, 'openCenteredShelfContentForContextMenu');
-  const requestHelper = readFunction(shelfInteractions, 'requestCenteredShelfContentForContextMenu');
-  const calls = [];
-  const frames = [];
-  let cardReady = false;
-  const context = {
-    shelfPinnedOpen: true,
-    shelfContextContentOpenTicket: 0,
-    shelfManager: {
-      hasOpenContent: () => false,
-      getCenterIdx: () => 2,
-      getCardAt: () => cardReady ? { item: { type: 'playlist' } } : null,
-      openContent: (idx) => calls.push(idx)
-    },
-    Number,
-    requestAnimationFrame: (callback) => { frames.push(callback); return frames.length; }
-  };
-  vm.runInNewContext(`${openHelper}; ${requestHelper}; this.requestCenteredShelfContentForContextMenu = requestCenteredShelfContentForContextMenu;`, context);
-  context.requestCenteredShelfContentForContextMenu();
-  assert.deepEqual(calls, [], '首帧没有中心卡时不得悄悄退化成仅打开侧栏');
-  assert.equal(frames.length, 1, '必须排队等待歌架异步建卡');
-  cardReady = true;
-  frames.shift()();
-  assert.deepEqual(calls, [2], '中心卡建好后必须自动进入详情焦点');
 });
 
 test('右键唤起歌架前必须清除悬停选中，避免 p10 以抬升卡片进入错误位置', () => {
   assert.match(
     shelfInteractions,
-    /if \(shouldOpen\)\s*\{[\s\S]*?shelfManager\.clearSelected\(\)[\s\S]*?setShelfPinnedOpen\(true, true\)[\s\S]*?requestCenteredShelfContentForContextMenu\(\)/
+    /if \(shouldOpen\)\s*\{[\s\S]*?shelfManager\.clearSelected\(\)[\s\S]*?setShelfPinnedOpen\(shouldOpen, true\)/
   );
 });
 
@@ -277,8 +230,7 @@ test('p10 右键可以切换右侧 3D 歌架，且不被预设级隐藏', () => 
   assert.doesNotMatch(shelfBindings, /if \(typeof voxelCityActive[\s\S]*?setFxPanelTab\('playlist'\)/);
   assert.match(shelfInteractions, /renderer\.domElement\.addEventListener\('contextmenu'/);
   assert.match(shelfInteractions, /if \(shouldOpen\)\s*\{\s*shelfHardHidden = false/);
-  assert.match(shelfInteractions, /setShelfPinnedOpen\(true, true\);[\s\S]*?requestCenteredShelfContentForContextMenu\(\)/);
-  assert.match(shelfInteractions, /setShelfPinnedOpen\(false, true\)/);
+  assert.match(shelfInteractions, /setShelfPinnedOpen\(shouldOpen, true\)/);
 });
 
 test('p10 交互边界仍尊重启动页、播放切换保护和空歌单', () => {

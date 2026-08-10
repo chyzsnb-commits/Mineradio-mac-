@@ -67,32 +67,6 @@ function isShelfPlaylistPlayHit(hit) {
   if (!hit || !hit.card || !hit.uv || !hit.card.item || hit.card.item.type !== 'playlist') return false;
   return hit.uv.x >= 0.49 && hit.uv.x <= 0.72 && hit.uv.y >= 0.13 && hit.uv.y <= 0.42;
 }
-function openCenteredShelfContentForContextMenu() {
-  if (!shelfManager || !shelfManager.getCenterIdx || !shelfManager.getCardAt || !shelfManager.openContent) return false;
-  var centerIdx = Number(shelfManager.getCenterIdx());
-  if (!isFinite(centerIdx)) return false;
-  var centerCard = shelfManager.getCardAt(centerIdx);
-  // 右键的语义是打开歌单详情，不是把当前队列歌曲当作点击播放。
-  if (!centerCard || !centerCard.item || (centerCard.item.type !== 'playlist' && centerCard.item.type !== 'podcastCollection')) return false;
-  shelfManager.openContent(centerIdx);
-  return true;
-}
-var shelfContextContentOpenTicket = 0;
-function requestCenteredShelfContentForContextMenu() {
-  var ticket = ++shelfContextContentOpenTicket;
-  var attempts = 0;
-  function openWhenCenterCardIsReady() {
-    if (ticket !== shelfContextContentOpenTicket || !shelfPinnedOpen || !shelfManager) return;
-    if (shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return;
-    if (openCenteredShelfContentForContextMenu()) return;
-    attempts += 1;
-    // 隐藏歌架会按空闲帧分批建卡；等待最多约 300ms，避免右键退化成只露出侧栏。
-    if (attempts >= 18) return;
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(openWhenCenterCardIsReady);
-    else setTimeout(openWhenCenterCardIsReady, 16);
-  }
-  openWhenCenterCardIsReady();
-}
 renderer.domElement.addEventListener('click', function (e) {
   if (!shelfManager || shelfManager.getMode() === 'off') return;
   if (typeof shelfPlaybackSwitchGuardActive === 'function' && shelfPlaybackSwitchGuardActive()) return;
@@ -200,14 +174,7 @@ renderer.domElement.addEventListener('contextmenu', function (e) {
     if (shelfManager.clearSelected) shelfManager.clearSelected();
     if (typeof syncShelfToggleBtn === 'function') syncShelfToggleBtn();
   }
-  if (shouldOpen) {
-    setShelfPinnedOpen(true, true);
-    // Win 的右键入口不仅露出歌架，还会把中心歌单推进详情焦点。
-    // openContent 会进入 shelf-detail，从而驱动歌词让位和预设相机构图。
-    requestCenteredShelfContentForContextMenu();
-  } else {
-    setShelfPinnedOpen(false, true);
-  }
+  setShelfPinnedOpen(shouldOpen, true);
 });
 
 // 滚轮: 在真实卡片或右侧窄热区内滚卡片; 否则保留给封面粒子/视角
