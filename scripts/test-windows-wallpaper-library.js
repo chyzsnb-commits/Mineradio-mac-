@@ -6,6 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const {
+  init,
   WindowsWallpaperClient,
   normalizeWindowsWallpaperRecord,
 } = require('../desktop/wallpaper-library-bridge');
@@ -21,6 +22,12 @@ function jsonResponse(status, body) {
     async text() { return JSON.stringify(body); },
   };
 }
+
+test('壁纸桥初始化后必须暴露可用的 Windows 发现与连接入口', () => {
+  const bridge = init({ userDataPath: path.join(root, '.tmp-wallpaper-library-test') });
+  assert.equal(typeof bridge.discoverWindowsSources, 'function');
+  assert.equal(typeof bridge.connectWindowsSource, 'function');
+});
 
 test('Windows 服务必须先通过 ping，之后才读取壁纸列表', async () => {
   const calls = [];
@@ -67,6 +74,7 @@ test('UDP 广播只发现通过 ping 验证的 Windows 服务', async () => {
   }
   const client = new WindowsWallpaperClient({
     dgramImpl: { createSocket: () => new FakeSocket() },
+    networkInterfaces: () => ({}),
     fetchImpl: async (url) => url.endsWith('/api/ping')
       ? jsonResponse(200, { ok: true })
       : jsonResponse(200, { ok: true, records: [] }),
@@ -75,6 +83,26 @@ test('UDP 广播只发现通过 ping 验证的 Windows 服务', async () => {
   assert.equal(result.ok, true);
   assert.equal(result.services.length, 1);
   assert.equal(result.services[0].baseUrl, 'http://192.168.1.20:8123');
+});
+
+test('UDP 被过滤时扫描当前私有子网并找到通过 ping 的 Windows 服务', async () => {
+  class SilentSocket {
+    on() {}
+    bind(_port, callback) { callback(); }
+    close() {}
+  }
+  const client = new WindowsWallpaperClient({
+    dgramImpl: { createSocket: () => new SilentSocket() },
+    networkInterfaces: () => ({ en0: [{ family: 'IPv4', internal: false, address: '192.168.1.120', netmask: '255.255.255.0' }] }),
+    fetchImpl: async (url) => {
+      if (url.startsWith('http://192.168.1.121:8123/api/ping')) return jsonResponse(200, { ok: true, name: 'mineradio-wallpaper' });
+      if (url.startsWith('http://192.168.1.121:8123/api/wallpapers')) return jsonResponse(200, { ok: true, records: [] });
+      return jsonResponse(404, { ok: false });
+    },
+  });
+  const result = await client.discover(500);
+  assert.equal(result.services.length, 1);
+  assert.equal(result.services[0].baseUrl, 'http://192.168.1.121:8123');
 });
 
 test('壁纸记录兼容 image、video 和 scene 字段，并保留无缩略图状态', () => {
