@@ -28,6 +28,12 @@ function wallpaperLibraryRenderStatus(text, kind) {
   el.textContent = text || '';
   el.dataset.kind = kind || '';
 }
+function wallpaperLibraryRenderDiscoveredIp(baseUrl, host) {
+  var el = wallpaperLibraryPanelEl('wallpaper-library-discovered-ip');
+  if (!el) return;
+  if (!baseUrl) { el.textContent = '未读取到在线 Windows 内网地址'; return; }
+  el.textContent = '自动读取 Windows IP：' + baseUrl.replace(/^https?:\/\//, '') + (host ? ' · ' + host : '');
+}
 function wallpaperLibrarySelectedRecord() {
   return (wallpaperLibraryState.records || []).find(function (record) { return record.id === wallpaperLibraryState.selectedId; }) || null;
 }
@@ -132,6 +138,7 @@ function wallpaperLibraryUseConnection(result, sourceLabel) {
   try { localStorage.setItem('mineradio.windows-wallpaper.base-url', result.baseUrl); } catch (_) {}
   var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
   if (input) input.value = result.baseUrl;
+  wallpaperLibraryRenderDiscoveredIp(result.baseUrl, wallpaperLibraryState.host);
   wallpaperLibraryRenderRecords();
   wallpaperLibraryRenderDetail();
   wallpaperLibraryRenderStatus(sourceLabel + '：' + wallpaperLibraryState.host + ' · ' + wallpaperLibraryState.records.length + ' 个壁纸', 'ok');
@@ -154,6 +161,7 @@ async function discoverWindowsWallpaperSources() {
   var result = await discover().catch(function () { return null; });
   var service = result && result.ok && Array.isArray(result.services) ? result.services[0] : null;
   if (service && wallpaperLibraryUseConnection(service, '自动发现')) return;
+  wallpaperLibraryRenderDiscoveredIp('', '');
   if (!wallpaperLibraryState.baseUrl) wallpaperLibraryRenderStatus('未发现在线 Windows 服务。可输入 http://Windows-IP:8123 手动连接。', 'warning');
 }
 function selectWallpaperLibraryRecord(id) {

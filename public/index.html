@@ -1836,8 +1836,9 @@
           <div class="wallpaper-source-row">
             <input id="wallpaper-library-http-input" type="url" placeholder="Windows 地址，例如 http://192.168.1.20:8123">
             <button class="modal-btn small" type="button" onclick="connectWindowsWallpaperSource()">连接</button>
-            <button class="modal-btn small secondary" type="button" onclick="discoverWindowsWallpaperSources()">重新扫描</button>
+            <button id="wallpaper-library-read-ip" class="modal-btn small secondary" type="button" onclick="discoverWindowsWallpaperSources()">读取 Windows IP</button>
           </div>
+          <div id="wallpaper-library-discovered-ip" class="wallpaper-library-discovered-ip" aria-live="polite">等待读取 Windows 内网地址</div>
         </div>
         <div class="wallpaper-library-filters">
           <input id="wallpaper-library-search" type="search" placeholder="搜索壁纸">

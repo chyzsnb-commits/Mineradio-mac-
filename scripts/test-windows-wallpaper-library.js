@@ -134,6 +134,10 @@ test('Windows 壁纸库入口接通发现、实时预览、导出与用户选定
   assert.doesNotMatch(panel, /getDisplayMedia/);
   assert.ok(html.includes('Windows 壁纸库'));
   assert.ok(html.includes('onclick="openWallpaperLibraryPanel()">Windows 壁纸库</button>'));
+  assert.ok(html.includes('id="wallpaper-library-read-ip"'), '应提供明确的自动读取 Windows IP 操作');
+  assert.ok(html.includes('id="wallpaper-library-discovered-ip"'), '应显示已读取的 Windows 内网地址');
+  assert.match(panel, /function wallpaperLibraryRenderDiscoveredIp\(/);
+  assert.match(panel, /自动读取 Windows IP/);
   assert.ok(html.includes('id="wallpaper-library-search"'));
   assert.ok(html.includes('id="wallpaper-library-export"'));
   assert.match(css, /\.wallpaper-live-preview/);
