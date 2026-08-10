@@ -173,7 +173,7 @@ test('p10 歌架根节点必须与焦点相机方位同向旋转', () => {
   assert.match(shelfManager, /shelfFrameYaw \+ px \* 0\.018/);
 });
 
-test('p10 一级歌架完整复用普通预设的竖向布局与朝向', () => {
+test('p10 一级歌架使用图一的右侧纵向构图，不被推到画面边缘', () => {
   assert.match(voxel, /function voxelShelfFocusFrameYaw\(/);
   assert.match(shelfManager, /voxelShelfFocusFrameYaw\(\)/);
   assert.match(shelfLayoutHover, /function p10ShelfSideLayout\(/);
@@ -194,12 +194,16 @@ test('p10 一级歌架完整复用普通预设的竖向布局与朝向', () => {
   vm.runInNewContext(`${adapt}; ${rootPose}; this.p10ShelfSideLayout = p10ShelfSideLayout; this.p10ShelfRootPose = p10ShelfRootPose;`, context);
   assert.equal(context.p10ShelfSideLayout(base, false), base, '普通预设必须保持原布局对象');
   const p10 = context.p10ShelfSideLayout(base, true);
-  assert.equal(p10, base, 'P10 不得单独缩小、位移或改变歌架卡片角度，必须完整复用普通预设布局');
+  assert.ok(p10.sideX > 2.4 && p10.sideX < 2.7, 'P10 经过世界比例和锚点投影后，中心卡必须回到图一的画面中部');
+  assert.ok(Math.abs(p10.sideY) < 0.2, '中心卡必须保持垂直居中，不能被推到右上角');
+  assert.ok(p10.sideYStep >= 0.66, '必须保留图一完整的纵向卡片间距');
+  assert.ok(p10.sideScale > 0.78 && p10.sideScale < 0.86, 'P10 必须使用图一的局部缩放，不能直接套普通预设比例后投到远景');
+  assert.ok(p10.sideRotY > 0.25 && p10.sideRotY < 0.31, '一级卡片必须保留图一的卡面斜切');
 
-  const pose = context.p10ShelfRootPose(-Math.PI / 4, 0.5, -0.5);
-  assert.equal(pose.x, 0.005, 'P10 根组俯仰必须与普通预设的指针规则一致');
-  assert.equal(pose.y, -Math.PI / 4 + 0.009, 'P10 根组偏航必须与普通预设的指针规则一致');
-  assert.equal(pose.z, 0, 'P10 根组不得额外滚转，避免歌架朝向偏斜');
+  const pose = context.p10ShelfRootPose(-Math.PI / 4, 0, 0);
+  assert.ok(Math.abs(pose.x) < 0.08, 'P10 根组俯仰只能是图一所需的轻微固定值');
+  assert.ok(Math.abs(pose.y + Math.PI / 4) < 0.12, 'P10 根组必须稳定朝向焦点相机');
+  assert.ok(Math.abs(pose.z) < 0.08, 'P10 根组不能继承封面的大幅滚转');
   assert.match(shelfManager, /onCoverChange:[\s\S]*!p10ShelfActiveOnCover/, 'P10 换封面时不得瞬间套用普通封面旋转');
 });
 

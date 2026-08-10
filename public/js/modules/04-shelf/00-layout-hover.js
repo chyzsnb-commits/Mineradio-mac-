@@ -28,14 +28,27 @@ function isPortraitShelfViewport() {
 function p10ShelfSideLayout(layout, forceActive) {
   var p10Active = forceActive === true || (forceActive !== false && typeof voxelCityActive === 'function' && voxelCityActive());
   if (!p10Active || !layout) return layout;
-  // P10 只负责将歌架安全锚定到自身世界坐标；卡片的尺寸、角度和竖向层叠完全复用普通预设。
-  return layout;
+  // P10 仍复用普通预设的竖向卡组关系，但必须补偿体素世界比例和相机前方锚点。
+  // 不补偿会把同一局部布局投到图二的右侧远景，而不是图一的画面中部。
+  var next = Object.assign({}, layout);
+  next.sideX = (Number(layout.sideX) || 0) - 0.63;
+  next.sideY = (Number(layout.sideY) || 0) + 0.08;
+  next.sideZ = (Number(layout.sideZ) || 0) - 0.10;
+  next.sideXStep = (Number(layout.sideXStep) || 0) * 1.15;
+  next.sideYStep = Number(layout.sideYStep) || 0;
+  next.sideZStep = Number(layout.sideZStep) || 0;
+  next.sideEntryX = (Number(layout.sideEntryX) || 0) * 0.90;
+  next.sideDetailShift = (Number(layout.sideDetailShift) || 0) * 0.90;
+  next.sideScale = (Number(layout.sideScale) || 1) * 0.82;
+  next.sideRotY = Number(layout.sideRotY) || 0;
+  next.sideRotX = Number(layout.sideRotX) || 0;
+  return next;
 }
 function p10ShelfRootPose(frameYaw, pointerX, pointerY) {
   return {
-    x: -(Number(pointerY) || 0) * 0.010,
-    y: (Number(frameYaw) || 0) + (Number(pointerX) || 0) * 0.018,
-    z: 0
+    x: 0.035 - (Number(pointerY) || 0) * 0.006,
+    y: (Number(frameYaw) || 0) - 0.055 + (Number(pointerX) || 0) * 0.012,
+    z: 0.035
   };
 }
 function p10ShelfCameraAnchor(cameraRef) {
