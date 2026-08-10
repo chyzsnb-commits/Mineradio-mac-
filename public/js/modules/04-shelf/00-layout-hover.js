@@ -28,28 +28,14 @@ function isPortraitShelfViewport() {
 function p10ShelfSideLayout(layout, forceActive) {
   var p10Active = forceActive === true || (forceActive !== false && typeof voxelCityActive === 'function' && voxelCityActive());
   if (!p10Active || !layout) return layout;
-  // 图二构图：中心卡位于右侧中部，卡组沿完整纵向间距展开。
-  // 保留用户的歌架微调，只抵消普通预设中不适合 P10 远景的默认偏移。
-  var next = Object.assign({}, layout);
-  next.sideX = (Number(layout.sideX) || 0) - 0.63;
-  next.sideY = (Number(layout.sideY) || 0) + 0.08;
-  next.sideZ = (Number(layout.sideZ) || 0) - 0.10;
-  next.sideXStep = (Number(layout.sideXStep) || 0) * 1.15;
-  next.sideYStep = Number(layout.sideYStep) || 0;
-  next.sideZStep = Number(layout.sideZStep) || 0;
-  next.sideEntryX = (Number(layout.sideEntryX) || 0) * 0.90;
-  next.sideDetailShift = (Number(layout.sideDetailShift) || 0) * 0.90;
-  next.sideScale = (Number(layout.sideScale) || 1) * 0.82;
-  // P10 只改变远景坐标与尺寸，不削弱普通歌架已经验证过的斜切角度。
-  next.sideRotY = Number(layout.sideRotY) || 0;
-  next.sideRotX = Number(layout.sideRotX) || 0;
-  return next;
+  // P10 只负责将歌架安全锚定到自身世界坐标；卡片的尺寸、角度和竖向层叠完全复用普通预设。
+  return layout;
 }
 function p10ShelfRootPose(frameYaw, pointerX, pointerY) {
   return {
-    x: 0.035 - (Number(pointerY) || 0) * 0.006,
-    y: (Number(frameYaw) || 0) - 0.055 + (Number(pointerX) || 0) * 0.012,
-    z: 0.035
+    x: -(Number(pointerY) || 0) * 0.010,
+    y: (Number(frameYaw) || 0) + (Number(pointerX) || 0) * 0.018,
+    z: 0
   };
 }
 function p10ShelfCameraAnchor(cameraRef) {
