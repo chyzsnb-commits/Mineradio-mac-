@@ -1,5 +1,6 @@
 # Changelog
 
+- 明确项目级 AI 工作流：任何问题先检查前提、缺失信息和逻辑链，从至少两个角度分析根因并给出依据、反证条件和最小验证方式，完成分析后才能提出或实施方案；功能验收以命令行为主。同步收紧左侧歌单边缘唤醒：左键按住或拖动期间左右歌单栏均不唤醒，左边缘需连续停留 `1000ms`；p10 右键唤起歌架前清除 hover 选中态，避免卡片带着抬升偏移进入固定构图。p12/p13 歌词改为仅以初始机位补偿，滚轮缩放不再被实时距离抵消，p13 音柱同步主相机比例。专项 `20/20`、歌词/音域布局 `16/16`、完整 `npm run check` `255/255`、相关脚本语法检查和 `git diff --check` 均通过；未构建 DMG。[来源: `AGENTS.md`、`public/js/modules/10-shell/02-peek-panels-upload.js`、`public/js/modules/04-shelf/05-card-interactions.js`、`public/js/modules/07-fx/04-preset-grid-uniforms.js`、`scripts/test-p10-voxel-interactions.js`、`scripts/test-sonic-series-layout.js`]
 - Spotify 账户互动同步：Spotify 歌曲现在可读取喜欢状态、收藏/取消收藏，并加入已有的自建 Spotify 歌单。OAuth 默认新增 Spotify 库和歌单写权限，同时保留既有自定义 scope；旧 token 需在账户面板重新连接 Spotify 才会获得新权限。写请求与 token 均留在本机服务端，虚拟“喜欢的歌曲”和订阅歌单不会作为加歌目标。专项 12/12、`npm run check` 217/217 通过；未做真实账号人工验收，未构建 DMG。[来源: `spotify-api.js`、`server.js`、`public/js/modules/05-playback/06-track-detail-lyrics-actions.js`、`scripts/test-spotify-account-write-sync.js`]
 - 修复 p12「音域地形」与 p13「音域回响·WE」歌词在屏幕上偏小：舞台歌词按实际相机距离相对普通预设的参考距离动态补偿世界空间缩放，用户设置的歌词字号、位置、字体和颜色保持不变；p13 异步歌词到达后会重新唤醒共用歌词舞台。专项 12/12、`npm run check` 217/217 通过，仍待真实窗口观感验收。[来源: `public/js/modules/02-visual/02-lyrics-state-layout.js`、`public/js/modules/02-visual/14-stage-lyrics-rendering.js`、`scripts/test-sonic-series-layout.js`]
 

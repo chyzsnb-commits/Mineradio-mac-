@@ -95,6 +95,9 @@ var USER_FX_SHARE_KEYS = [
   'lyricDisplayMode',
   'lyricTranslationMode',
   'lyricMotionStyle',
+  'lyricRasterQuality',
+  'lyricVerticalFloat',
+  'lyricPauseHold',
   'lyricCustomLineCount',
   'lyricGlitchCameraBind',
   'lyricGlitchIntensity',
@@ -142,6 +145,9 @@ var USER_FX_SHARE_KEYS = [
   'lyricGlow',
   'lyricGlowBeat',
   'lyricGlowParticles',
+  'lyricVerticalFloat',
+  'backgroundStarRiver',
+  'lyricPauseHold',
   'desktopLyrics',
   'desktopLyricsSize',
   'desktopLyricsOpacity',
@@ -199,7 +205,8 @@ var USER_FX_SHARE_KEYS = [
   'shelfSummonParallax',
   'shelfCameraEnterSpeed',
   'shelfCameraExitSpeed',
-  'cam'
+  'cam',
+  'pointerDragFollowMode'
 ];
 function defaultUserFxArchiveName(index) {
   return '存档 ' + (index + 1);
@@ -223,6 +230,8 @@ function normalizeFxArchiveSnapshot(raw) {
   var savedPreset = clampRange(Number(raw.preset) || 0, 0, presetMeta.length - 1);
   // 9 现为雨境(节奏雨丝);旧声波走廊存档会自然落到雨境,可接受
   if (savedPreset === 3 && raw.visualPresetSchema !== VISUAL_PRESET_SCHEMA) savedPreset = 5;
+  // 云瀑共振(11)仍在内测，不进公开构建：旧存档/导入档落到雨境
+  if (isPresetHidden(savedPreset)) savedPreset = HIDDEN_PRESET_FALLBACK;
   var archiveShelfMode = archiveMode(raw, 'shelf', /^(side|stage|both)$/, fxDefaults.shelf);
   var archiveShelfPresence = archiveShelfMode === 'off' ? 'auto' : archiveMode(raw, 'shelfPresence', /^(auto|always)$/, fxDefaults.shelfPresence);
   var archiveShelfPinnedOpen = archiveShelfMode === 'side' && archiveShelfPresence === 'always' && raw.shelfPinnedOpen === true;
@@ -258,6 +267,9 @@ function normalizeFxArchiveSnapshot(raw) {
     lyricDisplayMode: normalizeLyricDisplayMode(raw.lyricDisplayMode || fxDefaults.lyricDisplayMode),
     lyricTranslationMode: normalizeLyricTranslationMode(raw.lyricTranslationMode || fxDefaults.lyricTranslationMode),
     lyricMotionStyle: normalizeLyricMotionStyle(raw.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+    lyricRasterQuality: normalizeLyricRasterQuality(raw.lyricRasterQuality),
+    lyricVerticalFloat: raw.lyricVerticalFloat !== false,
+    lyricPauseHold: raw.lyricPauseHold !== false,
     lyricCustomLineCount: archiveNumber(raw, 'lyricCustomLineCount', fxDefaults.lyricCustomLineCount, 1, 10),
     lyricGlitchCameraBind: !!raw.lyricGlitchCameraBind,
     lyricGlitchIntensity: archiveNumber(raw, 'lyricGlitchIntensity', fxDefaults.lyricGlitchIntensity, 0, 1.5),
@@ -363,6 +375,7 @@ function normalizeFxArchiveSnapshot(raw) {
     shelfCameraEnterSpeed: archiveNumber(raw, 'shelfCameraEnterSpeed', fxDefaults.shelfCameraEnterSpeed, 0.2, 1.5),
     shelfCameraExitSpeed: archiveNumber(raw, 'shelfCameraExitSpeed', fxDefaults.shelfCameraExitSpeed, 0.2, 1.5),
     cam: archiveMode(raw, 'cam', /^(off|gesture)$/, fxDefaults.cam),
+    pointerDragFollowMode: archiveMode(raw, 'pointerDragFollowMode', /^(light|medium|medium-strong|strong)$/, fxDefaults.pointerDragFollowMode),
     voxRes: archiveMode(raw, 'voxRes', /^(low|mid|high)$/, fxDefaults.voxRes)
   };
 }

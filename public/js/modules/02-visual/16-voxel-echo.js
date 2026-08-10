@@ -1015,8 +1015,112 @@ var VOX_CAM_DEF_HEIGHT = VOX_CAM_DEF_Y;
 // 默认视角封面完整居中于地形后方(用户指定);radius/height 仍是原版低掠视,海浪条纹不会回来
 var VOX_CAM_DEF_AZIMUTH = -Math.PI / 4;
 var _voxCam = { radius: VOX_CAM_DEF_RADIUS, height: VOX_CAM_DEF_HEIGHT, azimuth: VOX_CAM_DEF_AZIMUTH, autoRotate: false, rotateSpeed: 0.5 };
+// _voxCam 是输入/惯性持续写入的目标；显示相机单独跟随它，和普通预设的
+// target rotation -> particles.rotation 缓动一致，避免 p10 拖动时完全贴手。
+var _voxCamDisplay = { radius: VOX_CAM_DEF_RADIUS, height: VOX_CAM_DEF_HEIGHT, azimuth: VOX_CAM_DEF_AZIMUTH };
+var voxelShelfCompositionMix = 0;
+var voxelShelfCompositionTarget = 0;
+// p10 旧场景使用约 103 单位的相机半径，而通用歌架焦点使用约 4-6 单位。
+// 这里只做坐标尺度适配；右键仍只改变 shelfPinnedOpen，焦点镜头和阻尼全部复用通用 orbit。
+function voxelShelfCompositionShouldFocus() {
+  if (typeof voxelCityActive === 'function' && !voxelCityActive()) return false;
+  if (typeof freeCamera !== 'undefined' && freeCamera && (freeCamera.active || freeCamera.locked)) return false;
+  if (typeof shelfManager !== 'undefined' && shelfManager && typeof shelfManager.getMode === 'function' && shelfManager.getMode() !== 'side') return false;
+  if (typeof orbit === 'undefined' || !orbit || !orbit.focus) return false;
+  var type = String(orbit.focus.type || '');
+  return (type === 'shelf-side' || type === 'shelf-detail') && (orbit.focus.active || /^shelf-/.test(type));
+}
+function tickVoxelShelfComposition(dt) {
+  voxelShelfCompositionTarget = voxelShelfCompositionShouldFocus() ? 1 : 0;
+  var settings = typeof shelfSummonSettings === 'function' ? shelfSummonSettings() : null;
+  var seconds = voxelShelfCompositionTarget
+    ? (settings && settings.openDuration) || 0.48
+    : (settings && settings.closeDuration) || 0.32;
+  var ease = typeof durationEaseFactor === 'function'
+    ? durationEaseFactor(seconds, dt)
+    : 1 - Math.exp(-Math.max(1 / 240, Number(dt) || 1 / 60) / seconds);
+  voxelShelfCompositionMix += (voxelShelfCompositionTarget - voxelShelfCompositionMix) * ease;
+  if (Math.abs(voxelShelfCompositionTarget - voxelShelfCompositionMix) < 0.0005) voxelShelfCompositionMix = voxelShelfCompositionTarget;
+  return voxelShelfCompositionMix;
+}
+function voxelShelfCompositionMixValue() {
+  return clampRange(Number(voxelShelfCompositionMix) || 0, 0, 1);
+}
+function voxelShelfCompositionScale() {
+  // 右键 focus 时恢复 Win 的近景卡片比例；动画期间不跳变。
+  return 0.93 + voxelShelfCompositionMixValue() * 0.07;
+}
+function voxelShelfPinnedScale() {
+  return 1;
+}
+function voxelShelfPinnedLookAtOffset() {
+  return { x: 0, y: 0, z: 0 };
+}
+function voxelShelfWorldScale() {
+  var baseline = typeof orbit !== 'undefined' && orbit ? Number(orbit.baselineRadius) : 6.6;
+  if (!isFinite(baseline) || baseline <= 0) baseline = 6.6;
+  return VOX_CAM_DEF_RADIUS / baseline;
+}
+function voxelShelfWorldFrameYaw() {
+  return (typeof VOX_CAM_DEF_AZIMUTH === 'number' && isFinite(VOX_CAM_DEF_AZIMUTH)) ? VOX_CAM_DEF_AZIMUTH : 0;
+}
+function voxelShelfCameraFocusPose() {
+  if (typeof orbit === 'undefined' || !orbit || !orbit.focus) return null;
+  var focusType = String(orbit.focus.type || '');
+  if (!orbit.focus.active && !/^shelf-/.test(focusType)) return null;
+  var baselineRadius = Number(orbit.baselineRadius);
+  if (!isFinite(baselineRadius) || baselineRadius <= 0) baselineRadius = 6.6;
+  var orbitRadius = Number(orbit.radius);
+  if (!isFinite(orbitRadius) || orbitRadius <= 0) orbitRadius = baselineRadius;
+  var baselineTheta = Number(orbit.baselineTheta) || 0;
+  var baselinePhi = Number(orbit.baselinePhi) || 0;
+  var theta = Number(orbit.theta);
+  var phi = Number(orbit.phi);
+  if (!isFinite(theta)) theta = baselineTheta;
+  if (!isFinite(phi)) phi = baselinePhi;
+  var radius = VOX_CAM_DEF_RADIUS * (orbitRadius / baselineRadius);
+  // 通用相机的 phi 是相对水平面的仰角；p10 的旧实现把它叠到默认俯角，
+  // 造成右键后仍沿旧俯视构图。按 Win 的 focus 姿态直接换算高度。
+  var mappedPhi = phi;
+  mappedPhi = clampRange(mappedPhi, -1.48, 1.48);
+  var lookAt = orbit.lookAt || { x: 0, y: 0, z: 0 };
+  var scale = VOX_CAM_DEF_RADIUS / baselineRadius;
+  var frameYaw = voxelShelfWorldFrameYaw();
+  var cosYaw = Math.cos(frameYaw), sinYaw = Math.sin(frameYaw);
+  var lookX = Number(lookAt.x) || 0;
+  var lookZ = Number(lookAt.z) || 0;
+  return {
+    radius: radius,
+    height: radius * Math.sin(mappedPhi),
+    azimuth: VOX_CAM_DEF_AZIMUTH + (theta - baselineTheta),
+    lookAt: {
+      x: (cosYaw * lookX + sinYaw * lookZ) * scale,
+      y: (Number(lookAt.y) || 0) * scale,
+      z: (-sinYaw * lookX + cosYaw * lookZ) * scale
+    }
+  };
+}
+function shortestVoxelAzimuthDelta(from, to) {
+  var delta = (to || 0) - (from || 0);
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  return delta;
+}
+function voxSnapCameraDisplayState() {
+  _voxCamDisplay.radius = _voxCam.radius;
+  _voxCamDisplay.height = _voxCam.height;
+  _voxCamDisplay.azimuth = _voxCam.azimuth;
+}
+function tickVoxelCameraDisplayState(display, target, dt) {
+  if (!display || !target) return;
+  var follow = typeof pointerDragFollowBlend === 'function' ? pointerDragFollowBlend(dt) : 0.055;
+  display.radius += (target.radius - display.radius) * follow;
+  display.height += (target.height - display.height) * follow;
+  display.azimuth += shortestVoxelAzimuthDelta(display.azimuth, target.azimuth) * follow;
+}
 function voxRecenterCamera() {   // 回正/K:_voxCam 归位到原作默认机位
   _voxCam.radius = VOX_CAM_DEF_RADIUS; _voxCam.height = VOX_CAM_DEF_HEIGHT; _voxCam.azimuth = VOX_CAM_DEF_AZIMUTH;
+  voxSnapCameraDisplayState();
 }
 var _voxWhite = null, _voxTmpColorA = null;
 var _voxDummyMat = null, _voxDummyPos = null, _voxDummyQuat = null, _voxDummyScale = null;
@@ -1113,6 +1217,7 @@ function voxSyncCamFromCurrentCamera() {
   _voxCam.radius = clampRange(r, 5, 120);   // 对齐原作 OrbitControls minDistance5/maxDistance120(MapScene.tsx:639-640)
   _voxCam.height = clampRange(y, 0.10 * _voxCam.radius, 0.995 * _voxCam.radius);
   _voxCam.azimuth = Math.atan2(x, z);
+  voxSnapCameraDisplayState();
   return true;
 }
 function _voxUpdateCamera(dt) {                            // 原作机位:对准原点·fov45(相机永远手动,无自动公转——原作转的是转盘不是相机)
@@ -1122,10 +1227,24 @@ function _voxUpdateCamera(dt) {                            // 原作机位:对�
   }
   if (typeof requestStageLyricCameraSnap === 'function') requestStageLyricCameraSnap(2);  // 歌词吸附相机(防抖)
   var _vsc = (voxelCity && voxelCity.scale) ? voxelCity.scale : 1.0;
-  var horiz = Math.sqrt(Math.max(0, _voxCam.radius * _voxCam.radius - _voxCam.height * _voxCam.height));
+  var focusPose = voxelShelfCameraFocusPose();
+  tickVoxelCameraDisplayState(_voxCamDisplay, _voxCam, dt);
+  var focusMix = focusPose ? voxelShelfCompositionMixValue() : 0;
+  var displayRadius = _voxCamDisplay.radius + ((focusPose ? focusPose.radius : _voxCamDisplay.radius) - _voxCamDisplay.radius) * focusMix;
+  var displayHeight = _voxCamDisplay.height + ((focusPose ? focusPose.height : _voxCamDisplay.height) - _voxCamDisplay.height) * focusMix;
+  var displayAzimuth = _voxCamDisplay.azimuth + (focusPose ? shortestVoxelAzimuthDelta(_voxCamDisplay.azimuth, focusPose.azimuth) * focusMix : 0);
+  var horiz = Math.sqrt(Math.max(0, displayRadius * displayRadius - displayHeight * displayHeight));
   camera.up.set(0, 1, 0);
-  camera.position.set(horiz * Math.sin(_voxCam.azimuth) * _vsc, _voxCam.height * _vsc, horiz * Math.cos(_voxCam.azimuth) * _vsc);
-  camera.lookAt(0, VOX_CAM_DEF_LOOKY * _vsc, 0);   // 看向中心上方(用户机位构图:地形居下、封面居中)
+  var focusLookAt = focusPose && focusPose.lookAt;
+  var focusLookX = focusLookAt ? focusLookAt.x * _vsc * focusMix : 0;
+  var focusLookY = focusLookAt ? (VOX_CAM_DEF_LOOKY + (focusLookAt.y - VOX_CAM_DEF_LOOKY) * focusMix) * _vsc : VOX_CAM_DEF_LOOKY * _vsc;
+  var focusLookZ = focusLookAt ? focusLookAt.z * _vsc * focusMix : 0;
+  camera.position.set(
+    focusLookX + horiz * Math.sin(displayAzimuth) * _vsc,
+    focusLookY + displayHeight * _vsc,
+    focusLookZ + horiz * Math.cos(displayAzimuth) * _vsc
+  );
+  camera.lookAt(focusLookX, focusLookY, focusLookZ);
   camera.fov = clampRange(45 + pinchFovDelta, 20, 75);
   camera.updateProjectionMatrix();
 }
@@ -1366,8 +1485,8 @@ function saveVoxToggles() { try { localStorage.setItem(VOX_TOGGLE_STORE_KEY, JSO
 function loadVoxToggles() { try { var raw = JSON.parse(localStorage.getItem(VOX_TOGGLE_STORE_KEY) || '{}') || {}; if ('autoRotate' in raw) fx.voxAutoRotate = !!raw.autoRotate; if ('coverColor' in raw) fx.voxCoverColor = !!raw.coverColor; if ('meteors' in raw) fx.voxMeteors = !!raw.meteors; if ('ghostCover' in raw) fx.voxGhostCover = !!raw.ghostCover; if ('floatBlocks' in raw) fx.voxFloatBlocks = !!raw.floatBlocks; if ('shimmer' in raw) fx.voxShimmer = !!raw.shimmer; if (raw.res && /^(low|mid|high)$/.test(raw.res)) fx.voxRes = raw.res; } catch (e) {} }
 function loadVoxBg() { try { var raw = JSON.parse(localStorage.getItem(VOX_BG_STORE_KEY) || '{}') || {}; if (raw.image) fx.voxBgImage = raw.image; if (raw.color) fx.voxBgColor = raw.color; if (raw.playlist) fx.voxPlaylistColor = raw.playlist; } catch (e) {} }
 
-// 体素城市:把歌单面板整个 DOM 迁进视觉控制台(#fx-panel),退出体素再移回原位(只体素生效)
-var _voxPlaylistHome = null;
+// p10 保留与其它预设一致的左边缘歌单面板；3D 歌架仍由统一 shelf 事件处理。
+// 旧版把 #playlist-panel 迁进控制台，导致左边缘触发失效且无法同时使用右键 3D 歌架。
 // 粒子高级参数滑块在体素下隐藏(JS 兜底:巨型样式表里 :has 规则实测有失效情况)
 function _voxToggleParticleSliders(hide) {
   ['fx-point','fx-speed','fx-twist','fx-color','fx-bloom','fx-bgfade','fx-scatter','fx-cineshake'].forEach(function (id) {
@@ -1380,39 +1499,6 @@ function _voxToggleParticleSliders(hide) {
   var label = firstRow ? firstRow.previousElementSibling : null;
   if (label && label.classList && label.classList.contains('fx-section-label')) label.style.display = hide ? 'none' : '';
 }
-function _voxDockPlaylist(dock) {
-  var pl = document.getElementById('playlist-panel');
-  var fxp = document.getElementById('fx-panel');
-  if (!pl || !fxp) return;
-  if (dock) {
-    if (typeof organizeFxPanel === 'function') organizeFxPanel();
-    var host = document.getElementById('vox-playlist-host');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'vox-playlist-host';
-    }
-    // 新控制台没有旧版 playlist 页:歌单必须归入「歌单架」页,不能追加到
-    // #fx-panel 根节点,否则会紧跟当前动效页渲染成“动效里有歌单”。
-    var firstPage = fxp.querySelector('[data-fx-page="shelf"]') || fxp.querySelector('[data-fx-page="playlist"]');
-    if (!firstPage) return;
-    if (host.parentElement !== firstPage) firstPage.appendChild(host);
-    if (pl.parentElement !== host) {
-      _voxPlaylistHome = { parent: pl.parentElement, next: pl.nextSibling };
-      host.appendChild(pl);
-      _voxApplyPlaylistColor();   // 应用自定义歌单颜色(若设)
-      pl.classList.add('show');   // 触发面板内容渲染 + 配合 docked CSS 常显
-    }
-  } else if (_voxPlaylistHome) {
-    var home = _voxPlaylistHome; _voxPlaylistHome = null;
-    if (typeof fxPanelTab !== 'undefined' && (fxPanelTab === 'playlist' || fxPanelTab === 'shelf') && typeof setFxPanelTab === 'function') setFxPanelTab('presets');
-    if (pl.parentElement && pl.parentElement.id === 'vox-playlist-host') {
-      pl.classList.remove('show');
-      if (home.next && home.next.parentElement === home.parent) home.parent.insertBefore(pl, home.next);
-      else home.parent.appendChild(pl);
-    }
-  }
-}
-
 function voxResDims() {
   var r = (fx && fx.voxRes) || 'mid';
   var g = (r === 'low') ? 120 : (r === 'high') ? 220 : 160;   // 少:小城近看 / 多:大城远看 / 中:原作
@@ -1611,7 +1697,7 @@ function updateVoxelCity(dt) {
     if (_voxSeamFloor) _voxSeamFloor.visible = false; // 缝隙封底盘同理
     if (voxelCity && voxelCity.coverPlane) voxelCity.coverPlane.visible = false;
     if (_voxFogSet) { scene.fog = _voxPrevFog; _voxFogSet = false; _voxApplyBg(); if (_voxPrevFar && camera) { camera.far = _voxPrevFar; camera.updateProjectionMatrix(); _voxPrevFar = 0; } }   // 还原雾+far;背景按自定义重设
-    if (document.body && document.body.classList.contains('vox-on')) { document.body.classList.remove('vox-on'); _voxDockPlaylist(false); _voxToggleParticleSliders(false); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); }   // 退出体素:歌单移回原位 + 恢复 DPR/帧率
+    if (document.body && document.body.classList.contains('vox-on')) { document.body.classList.remove('vox-on'); _voxToggleParticleSliders(false); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); }   // 退出体素:恢复通用歌单入口、DPR和帧率
     return;
   }
   // voxRes 可经预设快照直写(applyFxArchiveSnapshot 直改 fx.voxRes,不走 setVoxRes/rebuild)变更:与已建网格不一致时重建
@@ -1619,7 +1705,7 @@ function updateVoxelCity(dt) {
   var vc = ensureVoxelCity(); if (!vc) return;
   vc.mesh.visible = true;
   if (_voxFbMesh) _voxFbMesh.visible = !(fx && fx.voxFloatBlocks === false);   // 「悬浮方块」开关(蓝色方块+白色线框方块)
-  if (document.body && !document.body.classList.contains('vox-on')) { document.body.classList.add('vox-on'); _voxDockPlaylist(true); _voxToggleParticleSliders(true); _voxApplyBg(); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); }   // 体素预设:歌单迁进视觉控制台 + 应用自定义背景 + 触发 DPR/限帧重算
+  if (document.body && !document.body.classList.contains('vox-on')) { document.body.classList.add('vox-on'); _voxToggleParticleSliders(true); _voxApplyBg(); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); }   // 体素预设:应用专属控件、背景和性能策略
   var fdt = dt || 0.016;
   _voxClock += fdt;     // 原作:时钟始终推进(暂停时 idle 海面继续起伏,不冻结)
   // 转盘自转(原作 MapScene.tsx:366-369 + sceneDefaults.ts:19-21 rotationSpeed 0.15):旋转整组(地形+悬浮块+流星+粒子),涟漪/流星局部坐标不受影响。
@@ -1837,5 +1923,9 @@ function updateVoxelCity(dt) {
   }
   _voxUpdateMeteors(fdt, u.uWarmCore.value);
   _voxUpdateParticles(fdt);
+  tickVoxelShelfComposition(fdt);
+  if (typeof _voxDrag !== 'undefined' && typeof tickVoxelPointerDragState === 'function') {
+    tickVoxelPointerDragState(_voxCam, fdt, _voxCam.radius, _voxDrag);
+  }
   _voxUpdateCamera(fdt);
 }

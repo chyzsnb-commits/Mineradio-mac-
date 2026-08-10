@@ -1093,7 +1093,7 @@ function updateStageLyrics3D(dt) {
   var stageLyricCameraDistance = camera && stageLyrics.group
     ? camera.position.distanceTo(stageLyrics.group.position)
     : (orbit && Number(orbit.radius) || STAGE_LYRIC_REFERENCE_DISTANCE);
-  layoutScale *= stageLyricPresetScale(fx.preset, stageLyricCameraDistance, STAGE_LYRIC_REFERENCE_DISTANCE);
+  layoutScale *= stageLyricPresetScale(fx.preset, stageLyricCameraDistance, STAGE_LYRIC_REFERENCE_DISTANCE, orbit && orbit.baselineRadius);
   var layoutX = clampRange(Number(fx.lyricOffsetX) || 0, -4.0, 4.0);
   var layoutY = clampRange(Number(fx.lyricOffsetY) || 0, -2.4, 2.7);
   var layoutZ = clampRange(Number(fx.lyricOffsetZ) || 0, -3.2, 3.2);
@@ -1122,6 +1122,8 @@ function updateStageLyrics3D(dt) {
     easeDown: 0.16
   };
   var shelfLyricAvoid = shouldAvoidStageLyricsForShelf();
+  var voxelLyricLock = !!((typeof voxelCityActive === 'function' && voxelCityActive()) && camera);
+  var voxelShelfMix = typeof voxelShelfCompositionMixValue === 'function' ? voxelShelfCompositionMixValue() : 0;
   var wallpaperLyricLock = shouldUseWallpaperLyricCameraLock();
   var wallpaperShelfLyrics = wallpaperLyricLock && shouldDimWallpaperForShelf();
   if (wallpaperLyricLock) {
@@ -1129,6 +1131,17 @@ function updateStageLyrics3D(dt) {
     layoutX = clampRange(layoutX + (wallpaperShelfLyrics ? -1.34 : 0), -4.0, 4.0);
     layoutY = clampRange(layoutY + (wallpaperShelfLyrics ? -0.04 : 0.08), -2.4, 2.7);
     layoutZ = clampRange(layoutZ + (wallpaperShelfLyrics ? 1.02 : 1.15), -3.2, 3.2);
+  } else if (!skullMouthLyrics && shelfDetailOpen && normalShelfDetailOpen && voxelLyricLock && voxelShelfMix > 0) {
+    // Win 的歌架详情优先级高于普通 camera-lock:歌词缩小并让到左侧。
+    layoutScale *= 1 - voxelShelfMix * (1 - 0.56);
+    layoutX = clampRange(layoutX - voxelShelfMix * 1.78, -4.0, 4.0);
+    layoutY = clampRange(layoutY + voxelShelfMix * 0.18, -2.4, 2.7);
+    layoutZ = clampRange(layoutZ + voxelShelfMix * 0.84, -3.2, 3.2);
+  } else if (!skullMouthLyrics && shelfLyricAvoid && voxelLyricLock && voxelShelfMix > 0) {
+    layoutScale *= 1 - voxelShelfMix * 0.28;
+    layoutX = clampRange(layoutX - voxelShelfMix * 1.36, -4.0, 4.0);
+    layoutY = clampRange(layoutY + voxelShelfMix * 0.06, -2.4, 2.7);
+    layoutZ = clampRange(layoutZ + voxelShelfMix * 0.72, -3.2, 3.2);
   } else if (!skullMouthLyrics && shelfLyricAvoid && fx.lyricCameraLock) {
     layoutScale *= 0.72;
     layoutX = clampRange(layoutX - 1.36, -4.0, 4.0);
@@ -1154,8 +1167,6 @@ function updateStageLyrics3D(dt) {
   }
   var lockBaseDistance = wallpaperShelfLyrics ? 5.58 : 4.85;
   var lockDistance = lockBaseDistance + layoutZ;
-  // 体素城市预设会接管相机绕城市飞,歌词若留在世界空间会被城市吞掉;强制相机锁定让歌词浮在镜头前
-  var voxelLyricLock = !!((typeof voxelCityActive === 'function' && voxelCityActive()) && camera);
   var cameraLockedLyrics = (fx.lyricCameraLock || wallpaperLyricLock || voxelLyricLock) && camera;
   var skullLyricEdgeGuard = !!(fx && fx.preset === SKULL_PRESET_INDEX && (orbit.centerLocked || orbit.recentering));
   var lockFit = (cameraLockedLyrics || skullLyricEdgeGuard || skullMouthLyrics) ? lyricCameraLockFit(layoutScale, layoutX, layoutY, skullMouthLyrics ? Math.max(2.2, 4.4 + layoutZ) : lockDistance) : 1;
@@ -2051,7 +2062,20 @@ function tickLyricsParticles() {
     return;
   }
   var previewingSeek = stageLyricProgressPreviewActive();
-  if ((!playing && !previewingSeek) || !audio || !lyricsLines.length) {
+  var holdLyricsOnPause = !fx || fx.lyricPauseHold !== false;
+  var pausedWithTrack = !!(holdLyricsOnPause && audio && audio.src && audio.paused && !audio.ended && lyricsLines && lyricsLines.length);
+  if (!audio || !lyricsLines.length || audio.ended) {
+    retireCurrentStageLyricForIdle();
+    return;
+  }
+  if (!playing && !previewingSeek) {
+    if (pausedWithTrack) {
+      if (stageLyrics.current && stageLyrics.current.userData) {
+        stageLyrics.current.userData.state = 'in';
+        stageLyrics.current.userData.age = Math.max(Number(stageLyrics.current.userData.age) || 0, 0.18);
+      }
+      return;
+    }
     if (stageLyrics.current) {
       // 停车位:照旧淡出,但网格不销毁——恢复播放同一句时直接复活,避免同步重建的 ~500ms 卡顿
       if (stageLyrics.parked && stageLyrics.parked.mesh) { stageLyrics.parked.mesh.userData.parked = false; disposeLyricMesh(stageLyrics.parked.mesh); }

@@ -182,6 +182,9 @@ function readSavedLyricLayoutCriticalFallback(raw, err) {
     lyricDisplayMode: normalizeSavedLyricDisplayMode(raw.lyricDisplayMode || fxDefaults.lyricDisplayMode),
     lyricTranslationMode: normalizeSavedLyricTranslationMode(raw.lyricTranslationMode || fxDefaults.lyricTranslationMode),
     lyricMotionStyle: normalizeSavedLyricMotionStyle(raw.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+    lyricRasterQuality: normalizeLyricRasterQuality(raw.lyricRasterQuality),
+    lyricVerticalFloat: raw.lyricVerticalFloat !== false,
+    lyricPauseHold: raw.lyricPauseHold !== false,
     lyricCustomLineCount: layoutInteger(raw.lyricCustomLineCount, fxDefaults.lyricCustomLineCount, 1, 10),
     lyricScalePulse: layoutNumber(raw.lyricScalePulse, fxDefaults.lyricScalePulse, 0, 0.06),
     controlGlassChromaticOffset: layoutNumber(raw.controlGlassChromaticOffset, fxDefaults.controlGlassChromaticOffset, 0, 140)   // 下限 0=关闭色散(mac 性能)
@@ -246,6 +249,9 @@ function readSavedLyricLayout() {
       lyricDisplayMode: normalizeSavedLyricDisplayMode(raw.lyricDisplayMode || fxDefaults.lyricDisplayMode),
       lyricTranslationMode: normalizeSavedLyricTranslationMode(raw.lyricTranslationMode || fxDefaults.lyricTranslationMode),
       lyricMotionStyle: normalizeSavedLyricMotionStyle(raw.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+      lyricRasterQuality: normalizeLyricRasterQuality(raw.lyricRasterQuality),
+      lyricVerticalFloat: raw.lyricVerticalFloat !== false,
+      lyricPauseHold: raw.lyricPauseHold !== false,
       lyricCustomLineCount: layoutInteger(raw.lyricCustomLineCount, fxDefaults.lyricCustomLineCount, 1, 10),
       lyricScalePulse: layoutNumber(raw.lyricScalePulse, fxDefaults.lyricScalePulse, 0, 0.06),
       lyricGlitchCameraBind: !!raw.lyricGlitchCameraBind,
@@ -274,6 +280,7 @@ function readSavedLyricLayout() {
       edge: raw.edge === true,
       aiDepth: raw.aiDepth === true,
       particleLyrics: raw.particleLyrics !== false,
+      backgroundStarRiver: raw.backgroundStarRiver !== false,
       backCover: raw.backCover === true,
       visualTintMode: raw.visualTintMode === 'custom' ? 'custom' : 'auto',
       visualTintColor: normalizeHexColor(raw.visualTintColor || '#9db8cf'),
@@ -401,7 +408,8 @@ function readSavedLyricLayout() {
       shelfSummonParallax: clampRange(raw.shelfSummonParallax == null ? fxDefaults.shelfSummonParallax : Number(raw.shelfSummonParallax), 0, 2.5),
       shelfCameraEnterSpeed: clampRange(raw.shelfCameraEnterSpeed == null ? fxDefaults.shelfCameraEnterSpeed : Number(raw.shelfCameraEnterSpeed), 0.2, 1.5),
       shelfCameraExitSpeed: clampRange(raw.shelfCameraExitSpeed == null ? fxDefaults.shelfCameraExitSpeed : Number(raw.shelfCameraExitSpeed), 0.2, 1.5),
-      cam: /^(off|gesture)$/.test(String(raw.cam || '')) ? raw.cam : fxDefaults.cam
+      cam: /^(off|gesture)$/.test(String(raw.cam || '')) ? raw.cam : fxDefaults.cam,
+      pointerDragFollowMode: normalizePointerDragFollowMode(raw.pointerDragFollowMode || fxDefaults.pointerDragFollowMode)
     };
   } catch (e) {
     return readSavedLyricLayoutCriticalFallback(raw, e);
@@ -486,6 +494,9 @@ function currentFxAutosaveTouchedKeys(reason, payload) {
     lyricDisplayMode: ['lyricDisplayMode'],
     lyricTranslationMode: ['lyricTranslationMode'],
     lyricMotionStyle: ['lyricMotionStyle'],
+    lyricRasterQuality: ['lyricRasterQuality'],
+    lyricVerticalFloat: ['lyricVerticalFloat'],
+    lyricPauseHold: ['lyricPauseHold'],
     lyricGlitchCameraBind: ['lyricGlitchCameraBind'],
     backgroundColor: ['backgroundColorMode', 'backgroundColor', 'backgroundColorCustom'],
     backgroundColorCover: ['backgroundColorMode', 'backgroundColor', 'backgroundColorCustom'],
@@ -623,6 +634,9 @@ function currentFxAutosaveCriticalPatch() {
     lyricDisplayMode: normalizeSavedLyricDisplayMode(fx.lyricDisplayMode || fxDefaults.lyricDisplayMode),
     lyricTranslationMode: normalizeSavedLyricTranslationMode(fx.lyricTranslationMode || fxDefaults.lyricTranslationMode),
     lyricMotionStyle: normalizeSavedLyricMotionStyle(fx.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+    lyricRasterQuality: normalizeLyricRasterQuality(fx.lyricRasterQuality),
+    lyricVerticalFloat: fx.lyricVerticalFloat !== false,
+    lyricPauseHold: fx.lyricPauseHold !== false,
     lyricCustomLineCount: layoutInteger(fx.lyricCustomLineCount, fxDefaults.lyricCustomLineCount, 1, 10),
     lyricScalePulse: layoutNumber(fx.lyricScalePulse, fxDefaults.lyricScalePulse, 0, 0.06),
     lyricGlitchCameraBind: !!fx.lyricGlitchCameraBind,
@@ -711,6 +725,9 @@ function saveLyricLayout(opts) {
       lyricDisplayMode: normalizeSavedLyricDisplayMode(fx.lyricDisplayMode || fxDefaults.lyricDisplayMode),
       lyricTranslationMode: normalizeSavedLyricTranslationMode(fx.lyricTranslationMode || fxDefaults.lyricTranslationMode),
       lyricMotionStyle: normalizeSavedLyricMotionStyle(fx.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+      lyricRasterQuality: normalizeLyricRasterQuality(fx.lyricRasterQuality),
+      lyricVerticalFloat: fx.lyricVerticalFloat !== false,
+      lyricPauseHold: fx.lyricPauseHold !== false,
       lyricCustomLineCount: layoutInteger(fx.lyricCustomLineCount, fxDefaults.lyricCustomLineCount, 1, 10),
       lyricScalePulse: layoutNumber(fx.lyricScalePulse, fxDefaults.lyricScalePulse, 0, 0.06),
       lyricGlitchCameraBind: !!fx.lyricGlitchCameraBind,
@@ -739,6 +756,7 @@ function saveLyricLayout(opts) {
       edge: !!fx.edge,
       aiDepth: !!fx.aiDepth,
       particleLyrics: fx.particleLyrics !== false,
+      backgroundStarRiver: fx.backgroundStarRiver !== false,
       backCover: !!fx.backCover,
       visualTintMode: fx.visualTintMode === 'custom' ? 'custom' : 'auto',
       visualTintColor: normalizeHexColor(fx.visualTintColor || '#9db8cf'),
@@ -866,7 +884,8 @@ function saveLyricLayout(opts) {
       shelfSummonParallax: clampRange(fx.shelfSummonParallax == null ? fxDefaults.shelfSummonParallax : Number(fx.shelfSummonParallax), 0, 2.5),
       shelfCameraEnterSpeed: clampRange(fx.shelfCameraEnterSpeed == null ? fxDefaults.shelfCameraEnterSpeed : Number(fx.shelfCameraEnterSpeed), 0.2, 1.5),
       shelfCameraExitSpeed: clampRange(fx.shelfCameraExitSpeed == null ? fxDefaults.shelfCameraExitSpeed : Number(fx.shelfCameraExitSpeed), 0.2, 1.5),
-      cam: /^(off|gesture)$/.test(String(fx.cam || '')) ? fx.cam : fxDefaults.cam
+      cam: /^(off|gesture)$/.test(String(fx.cam || '')) ? fx.cam : fxDefaults.cam,
+      pointerDragFollowMode: normalizePointerDragFollowMode(fx.pointerDragFollowMode || fxDefaults.pointerDragFollowMode)
     };
     autosavePayload = scopeCurrentFxAutosavePayload(autosavePayload, opts);
     if (shouldSkipCurrentFxAutosaveWrite(autosavePayload, opts)) return;

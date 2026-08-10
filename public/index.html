@@ -469,6 +469,13 @@
           </div>
           <div class="fx-slider"><label>显示行数</label><input id="fx-lyriccustomlines" type="range" min="1" max="10"
               step="1"><output></output></div>
+          <div class="fx-section-label">歌词清晰度</div>
+          <div class="fx-seg lyric-raster-quality-seg" id="lyric-raster-quality-seg" aria-label="歌词清晰度">
+            <button type="button" data-lyric-raster-quality="1" onclick="setLyricRasterQuality(1)">1x</button>
+            <button type="button" data-lyric-raster-quality="2" onclick="setLyricRasterQuality(2)">2x</button>
+            <button type="button" data-lyric-raster-quality="3" onclick="setLyricRasterQuality(3)">3x</button>
+            <button type="button" data-lyric-raster-quality="4" onclick="setLyricRasterQuality(4)">4x</button>
+          </div>
           <div class="fx-section-label">双语翻译</div>
           <div class="fx-seg lyric-translation-mode-seg" id="lyric-translation-mode-seg">
             <button type="button" data-translation="off" onclick="setLyricTranslationMode('off')">关闭</button>
@@ -476,6 +483,10 @@
             <button type="button" data-translation="dual" onclick="setLyricTranslationMode('dual')">双行</button>
             <button type="button" data-translation="multi" onclick="setLyricTranslationMode('multi')">多行</button>
           </div>
+          <div class="fx-slider"><label>译文字号</label><input id="fx-lyrictranslationscale" type="range" min="0.46" max="1.12"
+              step="0.01"><output></output></div>
+          <div class="fx-slider"><label>译文透明度</label><input id="fx-lyrictranslationopacity" type="range" min="0.20" max="1"
+              step="0.01"><output></output></div>
           <div class="fx-section-label">歌词动画</div>
           <div class="fx-seg lyric-motion-style-seg" id="lyric-motion-style-seg">
             <button type="button" data-motion="float" onclick="setLyricMotionStyle('float')">漂浮</button>
@@ -565,6 +576,12 @@
                 class="dot"></span></div>
             <div class="fx-toggle" id="t-lyricGlowParticles" onclick="toggleFx('lyricGlowParticles')">
               <span>歌词光粒</span><span class="dot"></span></div>
+            <div class="fx-toggle" id="t-backgroundStarRiver" onclick="toggleFx('backgroundStarRiver')">
+              <span>背景星河</span><span class="dot"></span></div>
+            <div class="fx-toggle" id="t-lyricVerticalFloat" onclick="toggleFx('lyricVerticalFloat')">
+              <span>歌词上下浮动</span><span class="dot"></span></div>
+            <div class="fx-toggle" id="t-lyricPauseHold" onclick="toggleFx('lyricPauseHold')">
+              <span>暂停保留歌词</span><span class="dot"></span></div>
             <div class="fx-toggle" id="t-lyricCameraLock" onclick="toggleFx('lyricCameraLock')"><span>歌词镜头绑定</span><span
                 class="dot"></span></div>
             <div class="fx-toggle" id="t-bloom" onclick="toggleFx('bloom')"><span>粒子溢光</span><span class="dot"></span>
@@ -587,6 +604,15 @@
               <button data-cam="off" class="active">关闭</button>
               <button data-cam="gesture">手势触碰</button>
             </div>
+          </div>
+
+          <div class="fx-section-label">拖动缓冲（镜头 / 歌架 / 音柱）</div>
+          <div class="fx-seg-note">弱更跟手；强更有缓冲。仅影响拖动，松手后的惯性不变。</div>
+          <div class="fx-seg fx-seg-4" id="pointer-drag-follow-seg" title="控制拖动时镜头、歌架和音柱的跟手程度；松手后的惯性阻尼保持不变">
+            <button type="button" data-pointer-drag-follow="light">弱</button>
+            <button type="button" data-pointer-drag-follow="medium">中</button>
+            <button type="button" data-pointer-drag-follow="medium-strong">中强</button>
+            <button type="button" data-pointer-drag-follow="strong">强</button>
           </div>
 
           <div class="fx-section-label">歌单架镜头</div>
@@ -905,6 +931,13 @@
 
       <div id="app-bg-section">
       <div class="fx-section-label">背景(所有预设通用)</div>
+      <div class="lyric-color-row" id="bg-color-row">
+        <input id="bg-color-picker" class="lyric-color-picker" type="color" value="#000000" title="背景纯色">
+        <div class="fx-color-row-label">背景纯色<small id="bg-color-value">封面渐变</small></div>
+        <button class="fx-mini-btn ghost" id="bg-color-cover-btn" type="button" onclick="setCustomBackgroundCoverMode()">封面</button>
+      </div>
+      <div class="fx-slider"><label>背景透明度</label><input id="fx-bgopacity" type="range" min="0" max="1"
+          step="0.01"><output></output></div>
       <div style="display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap">
         <input id="vox-bg-pick" class="lyric-color-picker" type="color" value="#05080d" oninput="voxSetBg(this.value)" title="纯色背景">
         <span style="font-size:11px;color:rgba(255,255,255,.62)">纯色</span>
@@ -1616,6 +1649,22 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div id="login-easter-unlock-cinematic" class="login-easter-unlock-cinematic" role="button" tabindex="-1"
+      aria-hidden="true" aria-label="世界和平，点击继续" onclick="dismissLoginEasterEggCinematic()">
+      <div id="login-easter-unlock-phrase" class="login-easter-unlock-phrase" aria-hidden="true">
+        <span style="--float-duration:3.8s;--float-delay:-.7s;--float-distance:9px">世</span>
+        <span style="--float-duration:4.4s;--float-delay:-2.1s;--float-distance:13px">界</span>
+        <span style="--float-duration:3.5s;--float-delay:-1.4s;--float-distance:8px">和</span>
+        <span style="--float-duration:4.1s;--float-delay:-2.8s;--float-distance:12px">平</span>
+      </div>
+    </div>
+
+    <div id="login-easter-achievement" class="login-easter-achievement" role="status" aria-live="polite"
+      aria-label="已达成成就：世界和平！">
+      <span class="login-easter-achievement-icon" aria-hidden="true">MR</span>
+      <span class="login-easter-achievement-copy"><small>已达成成就</small><b>世界和平！</b></span>
     </div>
 
     <!-- 用户模态 -->

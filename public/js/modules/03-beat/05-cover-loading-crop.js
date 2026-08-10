@@ -83,15 +83,19 @@ function updateAlbumBackgroundMouseView(ndcX, ndcY) {
   if (Number.isFinite(Number(ndcX))) albumBackgroundMouseView.x = Number(ndcX);
   if (Number.isFinite(Number(ndcY))) albumBackgroundMouseView.y = Number(ndcY);
   var enabled = !!(typeof fx !== 'undefined' && fx && fx.albumBackgroundMouseBind === true);
+  var coverMode = typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover();
   var x = enabled ? Math.max(-1, Math.min(1, albumBackgroundMouseView.x)) : 0;
   var y = enabled ? Math.max(-1, Math.min(1, albumBackgroundMouseView.y)) : 0;
   var offsetX = (x * -2.1).toFixed(2) + '%';
   var offsetY = (y * 1.7).toFixed(2) + '%';
-  ['album-bg', 'album-bg-next'].forEach(function (id) {
+  ['album-bg', 'album-bg-next', 'custom-bg'].forEach(function (id) {
     var layer = document.getElementById(id);
     if (!layer) return;
-    layer.style.setProperty('--album-bg-mouse-x', offsetX);
-    layer.style.setProperty('--album-bg-mouse-y', offsetY);
+    var isCustomCoverLayer = id === 'custom-bg';
+    var layerOffsetX = isCustomCoverLayer && !coverMode ? '0%' : offsetX;
+    var layerOffsetY = isCustomCoverLayer && !coverMode ? '0%' : offsetY;
+    layer.style.setProperty('--album-bg-mouse-x', layerOffsetX);
+    layer.style.setProperty('--album-bg-mouse-y', layerOffsetY);
   });
 }
 

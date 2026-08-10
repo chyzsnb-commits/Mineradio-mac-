@@ -436,12 +436,13 @@ function makeShelfManager() {
       var scale = (absD < 0.5 ? 1.12 : Math.max(0.55, 1.04 - absD * 0.14)) * revealScale * (1 + pulse * 0.056 + breathPulse * 0.026 + lift * (skullShelfPose ? 0.045 : 0.075)) * layout.sideScale;
       if (wallpaperShelfPose) scale *= 1.22;
       else if (skullShelfPose) scale *= 1.04;
-      card.mesh.position.set(px, py, pz);
       if (skullShelfPose && camera) {
+        card.mesh.position.set(px, py, pz);
         card.mesh.quaternion.copy(camera.quaternion);
         card.mesh.rotateX(layout.sideRotX - delta * 0.008 - parY * 0.004 * parWeight * summon.parallax);
         card.mesh.rotateY(layout.sideRotY + (1 - reveal) * 0.012 * summon.slide + parX * 0.006 * parWeight * summon.parallax);
       } else {
+        card.mesh.position.set(px, py, pz);
         var safeRotY = wallpaperShelfPose ? 0.12 : layout.sideRotY;
         var safeEntryRotY = wallpaperShelfPose ? 0.05 : 0.16;
         card.mesh.rotation.y = (safeShelfPose ? safeRotY : layout.sideRotY) + (1 - reveal) * safeEntryRotY * summon.slide + parX * (safeShelfPose ? 0.014 : 0.038) * parWeight * summon.parallax;
@@ -748,29 +749,35 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       var visRate = targetVis > shelfVisibility ? 0.14 : 0.11;
       shelfVisibility += (targetVis - shelfVisibility) * Math.min(1, visRate * Math.max(1, dt * 60));
       if (shelfVisibility < 0.01 && targetVis === 0) shelfVisibility = 0;
-      // 右侧 3D 歌单架保留(用户澄清),播放栏书架按钮控制显隐;仅体素预设下不渲染(歌单走控制台「歌单」tab)
-      // 壁纸模式也隐藏 3D 歌单架(它是 3D 场景物体,mw-wallpaper 的 CSS 只隐藏 DOM,管不到它)
-      var shelfSuppressedByPreset = (typeof voxelCityActive === 'function' && voxelCityActive()) || !!(typeof fx !== 'undefined' && fx && fx.wallpaperMode);
+      // 右侧 3D 歌单架由统一入口控制；p10 也必须可通过右键召回。
+      // 壁纸模式仍隐藏 3D 歌单架(它是 3D 场景物体,CSS 管不到它)。
+      var shelfSuppressedByPreset = !!(typeof fx !== 'undefined' && fx && fx.wallpaperMode);
       group.visible = !shelfSuppressedByPreset && appRevealed && (mode !== 'side' || shelfVisibility > 0) && (allItems.length > 0 || (contentList && contentList.isOpen()));
       if (connectorParticles) connectorParticles.visible = group.visible && mode === 'stage';
       if (floorMirror) floorMirror.visible = group.visible && mode === 'stage';
-      if (mode === 'side') {
+          if (mode === 'side') {
         var passiveAlwaysGroup = shelfAlwaysVisible() && !shelfPinnedOpen && !(contentList && contentList.isOpen());
         var liftedCardActive = passiveAlwaysGroup && cards.some(function (c) { return c.selected || (c.floatMix || 0) > 0.025; });
-        group.renderOrder = passiveAlwaysGroup && !liftedCardActive ? 30 : 50;
-        group.position.set(0, 0, 0);
-        var bindToCover = (shelfAlwaysVisible() || shelfPinnedOpen || shelfVisibility > 0.06) && particles && particles.rotation && !(contentList && contentList.isOpen());
-        if (bindToCover) {
+            group.renderOrder = passiveAlwaysGroup && !liftedCardActive ? 30 : 50;
+            group.position.set(0, 0, 0);
+            var p10CompositionMix = typeof voxelShelfCompositionMixValue === 'function' ? voxelShelfCompositionMixValue() : 0;
+            var p10ShelfScale = typeof voxelShelfWorldScale === 'function' && typeof voxelCityActive === 'function' && voxelCityActive()
+              ? voxelShelfWorldScale() * (typeof voxelShelfCompositionScale === 'function' ? voxelShelfCompositionScale() : 1)
+              : 1;
+            group.scale.setScalar(p10ShelfScale);
+            var shelfFrameYaw = (typeof voxelCityActive === 'function' && voxelCityActive() && typeof voxelShelfWorldFrameYaw === 'function') ? voxelShelfWorldFrameYaw() : 0;
+            var bindToCover = (shelfAlwaysVisible() || shelfPinnedOpen || shelfVisibility > 0.06) && particles && particles.rotation && !(contentList && contentList.isOpen());
+            if (bindToCover) {
           var bindEase = uniforms.uTime.value < coverBindResumeUntil ? 0.18 : 0.075;
           // 跟随封面旋转,但钳到可点击的角度范围内:否则封面大幅旋转时歌架被带得侧过去、
           // 卡片转出屏幕右缘就点不到了(光标放不到屏外的卡片上,不是命中判定的问题)。
           var tgtRX = clampRange(particles.rotation.x * 0.5 - py * 0.010, -0.22, 0.22);
-          var tgtRY = clampRange(particles.rotation.y * 0.5 + px * 0.018, -0.32, 0.32);
+              var tgtRY = shelfFrameYaw + clampRange(particles.rotation.y * 0.5 + px * 0.018, -0.32, 0.32);
           group.rotation.x += (tgtRX - group.rotation.x) * bindEase;
           group.rotation.y += (tgtRY - group.rotation.y) * bindEase;
           group.rotation.z += (particles.rotation.z * 0.3 - group.rotation.z) * bindEase;
-        } else {
-          group.rotation.y += ((px * 0.018) - group.rotation.y) * 0.045;
+            } else {
+              group.rotation.y += ((shelfFrameYaw + px * 0.018) - group.rotation.y) * 0.045;
           group.rotation.x += ((-py * 0.010) - group.rotation.x) * 0.045;
           group.rotation.z += (0 - group.rotation.z) * 0.045;
         }

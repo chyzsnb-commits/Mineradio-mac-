@@ -10,10 +10,12 @@ const presetGrid = fs.readFileSync(path.join(root, 'public/js/modules/07-fx/04-p
 const lyricLayout = fs.readFileSync(path.join(root, 'public/js/modules/02-visual/02-lyrics-state-layout.js'), 'utf8');
 const lyricStage = fs.readFileSync(path.join(root, 'public/js/modules/02-visual/14-stage-lyrics-rendering.js'), 'utf8');
 const lyricActions = fs.readFileSync(path.join(root, 'public/js/modules/05-playback/06-track-detail-lyrics-actions.js'), 'utf8');
+const pointerControls = fs.readFileSync(path.join(root, 'public/js/modules/02-visual/00-pointer-cover-particles.js'), 'utf8');
+const gestureControls = fs.readFileSync(path.join(root, 'public/js/modules/10-shell/00-gesture-control.js'), 'utf8');
 const sonicWorkshop = fs.readFileSync(path.join(root, 'public/sonic-workshop-preset.js'), 'utf8');
 
 function extractFunction(source, name) {
-  const match = source.match(new RegExp('function\\s+' + name + '\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}'));
+  const match = source.match(new RegExp('function\\s+' + name + '\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\s*\\}'));
   assert.ok(match, name + ' 需要可测试的独立函数');
   return match[0];
 }
@@ -88,12 +90,44 @@ test('第三个音域回响复用原舞台歌词，且不再创建独立文字�
   assert.match(presetGrid, /refreshSonicWorkshopLyricStageAfterPresetChange\s*\(/, '切入工坊预设必须唤醒原舞台歌词');
 });
 
-test('两个音域回响预设按相机距离补偿到与普通预设一致的屏幕字号', () => {
+test('两个音域回响预设以初始机位补偿歌词，滚轮变焦后歌词仍随画面缩放', () => {
   const helper = extractFunction(lyricLayout, 'stageLyricPresetScale');
   const sandbox = {};
   vm.runInNewContext(helper, sandbox);
   assert.equal(sandbox.stageLyricPresetScale(0, 10, 6.6), 1, '普通预设不应改变歌词比例');
-  assert.ok(Math.abs(sandbox.stageLyricPresetScale(12, 10, 6.6) - (10 / 6.6)) < 0.001, '音域地形需要按相机距离补偿歌词');
-  assert.ok(Math.abs(sandbox.stageLyricPresetScale(13, 10, 6.6) - (10 / 6.6)) < 0.001, '音域回响·WE需要按相机距离补偿歌词');
-  assert.match(lyricStage, /stageLyricPresetScale\(fx\.preset,\s*stageLyricCameraDistance,\s*STAGE_LYRIC_REFERENCE_DISTANCE\)/, '歌词最终缩放必须使用当前相机距离而不是固定倍率');
+  var initialScale = sandbox.stageLyricPresetScale(12, 10, 6.6, 10);
+  assert.ok(Math.abs(initialScale - (10 / 6.6)) < 0.001, '音域地形初始字号需要按远景机位补偿');
+  assert.equal(sandbox.stageLyricPresetScale(12, 15, 6.6, 10), initialScale, '拉远镜头时不能用实时距离抵消歌词缩小');
+  assert.equal(sandbox.stageLyricPresetScale(13, 6.6, 6.6, 10), initialScale, '拉近镜头时不能用实时距离抵消歌词放大');
+  assert.match(lyricStage, /stageLyricPresetScale\(fx\.preset,\s*stageLyricCameraDistance,\s*STAGE_LYRIC_REFERENCE_DISTANCE,\s*orbit\s*&&\s*orbit\.baselineRadius\)/, '歌词补偿必须读取预设初始机位');
+});
+
+test('音域回响·WE 将主相机的滚轮比例同步给 iframe 音柱', () => {
+  const helper = extractFunction(sonicWorkshop, 'sonicWorkshopCameraDistanceForOrbit');
+  const sandbox = {
+    clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+  };
+  vm.runInNewContext(helper, sandbox);
+  assert.equal(sandbox.sonicWorkshopCameraDistanceForOrbit(10, 10, 80), 80, '初始机位应保持 WE 原始构图');
+  assert.equal(sandbox.sonicWorkshopCameraDistanceForOrbit(10, 15, 80), 120, '主相机拉远时 WE 音柱应缩小');
+  assert.equal(sandbox.sonicWorkshopCameraDistanceForOrbit(10, 5, 80), 40, '主相机拉近时 WE 音柱应放大');
+  assert.match(sonicWorkshop, /pushProperties\(false,\s*ctx\)/, 'WE 每帧属性同步必须带入当前相机状态');
+});
+
+test('音域系列初始半径与滚轮下限一致，滚轮可以立即生效', () => {
+  assert.match(presetGrid, /p === 12\)\{ orbit\.userRadius = 10\.0;[\s\S]*?orbit\.baselineRadius = 10\.0;/, '音域地形初始半径不能小于滚轮下限');
+  assert.match(presetGrid, /p === 13\)\{ orbit\.userRadius = 10\.0;[\s\S]*?orbit\.baselineRadius = 10\.0;/, '音域回响·WE初始半径不能小于滚轮下限');
+  assert.match(pointerControls, /orbit\.userRadius = Math\.max\(orbit\.minRadius, Math\.min\(orbit\.maxRadius, orbit\.userRadius \+ e\.deltaY \* 0\.005\)\)/, '两个音域预设必须继续使用全局滚轮相机缩放');
+});
+
+test('p12/p13 的滚轮范围必须允许在初始机位内外双向缩放', () => {
+  assert.match(presetGrid, /if \(p === 10 \|\| p === 12 \|\| p === 13\) \{ orbit\.minRadius = 4\.0; orbit\.maxRadius = 180\.0; \}/, '音域预设不能把最小半径锁在初始半径 10，滚轮向上必须能放大');
+});
+
+test('p10 与普通预设共享同一个鼠标惯性阻尼常量', () => {
+  assert.match(pointerControls, /var POINTER_ROTATION_DAMPING\s*=\s*0\.90/);
+  assert.match(pointerControls, /var VOX_POINTER_DAMPING\s*=\s*POINTER_ROTATION_DAMPING/);
+  assert.match(gestureControls, /var particleSpin\s*=\s*\{[^}]*damping:\s*POINTER_ROTATION_DAMPING/);
 });

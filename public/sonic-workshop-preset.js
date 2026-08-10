@@ -613,10 +613,18 @@
     if (document && document.body) document.body.classList.toggle('sonic-workshop-active', !!active);
   }
 
-  function deriveProperties(fx) {
+  function sonicWorkshopCameraDistanceForOrbit(baselineOrbitRadius, orbitRadius, baseCameraDistance) {
+    var baseline = clamp(Number(baselineOrbitRadius) || 10, 1, 180);
+    var current = clamp(Number(orbitRadius) || baseline, 1, 180);
+    var base = clamp(Number(baseCameraDistance) || WORKSHOP_DEFAULT_PROPERTIES.cameraDistance, 36, 180);
+    return clamp(base * current / baseline, 36, 180);
+  }
+
+  function deriveProperties(fx, ctx) {
     fx = fx || {};
     var coverHexes = workshopPaletteHexesFromCover();
     var props = Object.assign({}, WORKSHOP_DEFAULT_PROPERTIES);
+    props.cameraDistance = sonicWorkshopCameraDistanceForOrbit(ctx && ctx.orbitBaselineRadius, ctx && ctx.orbitRadius, props.cameraDistance);
     props.audioIntensity = clamp(fx.sonicWorkshopAudioIntensity == null ? props.audioIntensity : Number(fx.sonicWorkshopAudioIntensity), 0.3, 2.5);
     props.responseRange = clamp(fx.sonicWorkshopResponseRange == null ? props.responseRange : Number(fx.sonicWorkshopResponseRange), 0.3, 2);
     props.peakColorIntensity = clamp(fx.sonicWorkshopPeakIntensity == null ? props.peakColorIntensity : Number(fx.sonicWorkshopPeakIntensity), 0, 1.4);
@@ -648,11 +656,12 @@
     return props;
   }
 
-  function pushProperties(force) {
+  function pushProperties(force, ctx) {
     if (!state.iframe) return;
-    var props = applyWorkshopThemeTransition(deriveProperties(global.fx || {}));
+    var props = applyWorkshopThemeTransition(deriveProperties(global.fx || {}, ctx));
     var key = JSON.stringify(props);
     var now = nowMs();
+    if (!force && now - state.lastPropertiesAt < 33) return;
     if (!force && key === state.lastPropertiesKey && now - state.lastPropertiesAt < PROPERTIES_PUSH_INTERVAL_MS) return;
     state.lastPropertiesKey = key;
     state.lastPropertiesAt = now;
@@ -787,7 +796,7 @@
     state.opacity += (targetOpacity - state.opacity) * clamp(1 - Math.exp(-rate * Math.max(0.001, dt || 1 / 60)), 0, 1);
     if (state.layer) state.layer.style.opacity = state.opacity.toFixed(3);
     if (targetActive) {
-      pushProperties(false);
+      pushProperties(false, ctx);
       pushMedia(false);
       pushAudio(false, ctx.audio);
     } else if (state.layer && state.opacity <= 0.01) {

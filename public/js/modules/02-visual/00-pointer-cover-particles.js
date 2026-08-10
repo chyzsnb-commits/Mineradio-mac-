@@ -97,6 +97,10 @@ window.addEventListener('mousedown', function (e) {
   beginParticlePointerDrag(e);
 }, true);
 window.addEventListener('mousemove', function (e) {
+  // 专辑背景视角是全局指针效果，不能被控制台、歌词或歌单 UI 的早退分支截断。
+  if (typeof updateAlbumBackgroundMouseView === 'function') {
+    updateAlbumBackgroundMouseView((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  }
   updateControlsAutoHideFromPointer(e.clientX, e.clientY);
   idleGuidePointerMove(e);
   if (freeCamera && freeCamera.active) {
@@ -179,29 +183,64 @@ renderer.domElement.addEventListener('wheel', function (e) {
   if (orbit.recentering) orbit.recentering = false;
 }, { passive: false });
 
-// 体素城市:鼠标左键拖拽转视角(横拖绕原点转·纵拖俯仰),替代反人类的两指滑动
-var _voxDrag = { active: false, x: 0, y: 0 };
+// 体素城市:鼠标左键拖拽转视角(横拖绕原点转·纵拖俯仰),替代反人类的两指滑动。
+// 惯性参数与普通预设 applyParticleSpinDrag/tickGestureRotation 同源，避免 p10 松手即停。
+var VOX_POINTER_INERTIA_GAIN = 0.46;
+var POINTER_ROTATION_DAMPING = 0.90;
+var VOX_POINTER_DAMPING = POINTER_ROTATION_DAMPING;
+var VOX_POINTER_AZIMUTH_MAX = 6.2;
+var VOX_POINTER_HEIGHT_MAX = 62.0;
+var _voxDrag = { active: false, x: 0, y: 0, lastT: 0, azimuthVelocity: 0, heightVelocity: 0 };
+
+function applyVoxelPointerDragState(state, dx, dy, dt, radius, velocityState) {
+  velocityState = velocityState || state;
+  var azimuthDelta = -dx * 0.006;
+  var heightDelta = dy * 0.22;
+  state.azimuth += azimuthDelta;
+  state.height = clampRange(state.height + heightDelta, 0.10 * radius, 0.995 * radius);
+  if (dt > 0) {
+    velocityState.azimuthVelocity = clampRange(azimuthDelta / dt * VOX_POINTER_INERTIA_GAIN, -VOX_POINTER_AZIMUTH_MAX, VOX_POINTER_AZIMUTH_MAX);
+    velocityState.heightVelocity = clampRange(heightDelta / dt * VOX_POINTER_INERTIA_GAIN, -VOX_POINTER_HEIGHT_MAX, VOX_POINTER_HEIGHT_MAX);
+  }
+}
+
+function tickVoxelPointerDragState(state, dt, radius, velocityState) {
+  velocityState = velocityState || state;
+  if (!velocityState.active) {
+    state.azimuth += velocityState.azimuthVelocity * dt;
+    state.height = clampRange(state.height + velocityState.heightVelocity * dt, 0.10 * radius, 0.995 * radius);
+    var damping = Math.pow(VOX_POINTER_DAMPING, dt * 60);
+    velocityState.azimuthVelocity *= damping;
+    velocityState.heightVelocity *= damping;
+    if (Math.abs(velocityState.azimuthVelocity) < 0.01) velocityState.azimuthVelocity = 0;
+    if (Math.abs(velocityState.heightVelocity) < 0.01) velocityState.heightVelocity = 0;
+  }
+}
 renderer.domElement.addEventListener('pointerdown', function(e){
   if (e.button !== 0) return;
   if (typeof voxelCityActive !== 'function' || !voxelCityActive()) return;
   if (freeCamera && freeCamera.active) return;   // 飞行中(指针锁定)不启动轨道拖拽
   if (isPointerOverUi(e)) return;
-  _voxDrag.active = true; _voxDrag.x = e.clientX; _voxDrag.y = e.clientY;
+  _voxDrag.active = true;
+  _voxDrag.x = e.clientX; _voxDrag.y = e.clientY;
+  _voxDrag.lastT = performance.now();
+  _voxDrag.azimuthVelocity = 0; _voxDrag.heightVelocity = 0;
   try { renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
 });
 renderer.domElement.addEventListener('pointermove', function(e){
   if (!_voxDrag.active) return;
   var dx = e.clientX - _voxDrag.x, dy = e.clientY - _voxDrag.y;
   _voxDrag.x = e.clientX; _voxDrag.y = e.clientY;
+  var nowVoxDrag = performance.now();
+  var voxDragDt = Math.max(1 / 120, Math.min(0.08, (nowVoxDrag - _voxDrag.lastT) / 1000 || 1 / 60));
+  _voxDrag.lastT = nowVoxDrag;
   markRenderInteraction('vox-drag', 900);
   if (freeCamera && freeCamera.locked && !freeCamera.active && typeof voxSyncCamFromCurrentCamera === 'function' && voxSyncCamFromCurrentCamera()) {
     freeCamera.locked = false;   // 固定机位上拖动:折算回轨道参数,同高度继续环绕(对齐原作 OrbitControls 状态常驻)
     if (typeof saveFreeCameraState === 'function') saveFreeCameraState();
     if (typeof updateFreeCameraHint === 'function') updateFreeCameraHint();
   }
-  _voxCam.azimuth -= dx * 0.006;                                   // 横拖:绕原点旋转
-  // 纵拖:改俯仰角(按半径比例钳位,对齐原作 maxPolarAngle=π/2-0.1),变焦远近时手感一致
-  _voxCam.height = clampRange(_voxCam.height + dy * 0.22, 0.10 * _voxCam.radius, 0.995 * _voxCam.radius);
+  applyVoxelPointerDragState(_voxCam, dx, dy, voxDragDt, _voxCam.radius, _voxDrag);
 });
 function _voxDragEnd(e){ if (_voxDrag.active) { _voxDrag.active = false; try { renderer.domElement.releasePointerCapture(e.pointerId); } catch (_) {} } }
 renderer.domElement.addEventListener('pointerup', _voxDragEnd);

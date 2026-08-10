@@ -105,11 +105,14 @@ test('三个音域回响在视觉预设入口合并为同一张三选一卡片',
   assert.match(css, /\.pc-series-option/);
 });
 
-test('体素歌单宿主只挂到歌单架页，不再落到动效页或控制台根节点', () => {
+test('体素预设保留普通左侧歌单和统一 3D 歌架入口', () => {
   const voxel = read('public/js/modules/02-visual/16-voxel-echo.js');
+  const shelfManager = read('public/js/modules/04-shelf/01-manager-core.js');
+  const shelfInteractions = read('public/js/modules/04-shelf/05-card-interactions.js');
 
-  assert.match(voxel, /data-fx-page="shelf"/);
-  assert.match(voxel, /fxp\.querySelector\('\[data-fx-page="shelf"\]'\) \|\| fxp\.querySelector\('\[data-fx-page="playlist"\]'/);
-  assert.doesNotMatch(voxel, /if \(firstPage\) firstPage\.appendChild\(host\); else fxp\.appendChild\(host\)/);
-  assert.match(voxel, /if \(!firstPage\) return;/);
+  assert.doesNotMatch(voxel, /_voxDockPlaylist/);
+  assert.doesNotMatch(shelfManager, /shelfSuppressedByPreset\s*=\s*\(typeof voxelCityActive/);
+  assert.match(shelfInteractions, /var shouldOpen = shelfHardHidden \|\| !shelfPinnedOpen/);
+  assert.match(shelfInteractions, /if \(shouldOpen\)\s*\{\s*shelfHardHidden = false/);
+  assert.match(shelfInteractions, /setShelfPinnedOpen\(shouldOpen, true\)/);
 });

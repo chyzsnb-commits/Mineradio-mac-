@@ -308,6 +308,9 @@ function bindFxPanel() {
   document.querySelectorAll('#cam-seg button').forEach(function (b) {
     b.addEventListener('click', function () { setCamMode(b.dataset.cam); });
   });
+  document.querySelectorAll('#pointer-drag-follow-seg [data-pointer-drag-follow]').forEach(function (b) {
+    b.addEventListener('click', function () { setPointerDragFollowMode(b.getAttribute('data-pointer-drag-follow')); });
+  });
   document.querySelectorAll('#desktop-lyrics-fps-seg [data-desktop-lyrics-fps]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       fx.desktopLyricsFps = normalizeDesktopLyricsFps(btn.getAttribute('data-desktop-lyrics-fps'));
@@ -399,7 +402,11 @@ function toggleFx(key) {
   }
   if (key === 'lyricGlow' || key === 'lyricGlowBeat') updateLyricGlowControls();
   syncFxUniforms();
-  if (key === 'lyricCameraLock' || key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles' || key === 'bloom' || key === 'edge' || key === 'cinema' || key === 'aiDepth' || key === 'desktopLyrics' || key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight' || key === 'wallpaperMode' || key === 'shelfShowPodcasts' || key === 'shelfMergeCollections' || key === 'liveBackgroundKeep' || key === 'memoryAutoTrimApp' || key === 'memoryAutoTrimOnBackground' || key === 'memoryAutoSystemTrim' || key === 'memorySystemAutoElevate' || key === 'albumBackgroundMouseBind') saveLyricLayout({ user: true, reason: key });
+  if (key === 'lyricCameraLock' || key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles' || key === 'lyricVerticalFloat' || key === 'backgroundStarRiver' || key === 'lyricPauseHold' || key === 'bloom' || key === 'edge' || key === 'cinema' || key === 'aiDepth' || key === 'desktopLyrics' || key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight' || key === 'wallpaperMode' || key === 'shelfShowPodcasts' || key === 'shelfMergeCollections' || key === 'liveBackgroundKeep' || key === 'memoryAutoTrimApp' || key === 'memoryAutoTrimOnBackground' || key === 'memoryAutoSystemTrim' || key === 'memorySystemAutoElevate' || key === 'albumBackgroundMouseBind') saveLyricLayout({ user: true, reason: key });
+  if (key === 'backgroundStarRiver') {
+    if (typeof updateBackgroundStarRiverState === 'function') updateBackgroundStarRiverState(0.016, true);
+    showToast(fx.backgroundStarRiver !== false ? '背景星河已开启' : '背景星河已关闭');
+  }
   if (key === 'floatLayer') { if (fx.floatLayer) createFloatLayer(); else destroyFloatLayer(); saveLyricLayout({ user: true, reason: key }); }
   if (key === 'desktopLyrics') applyDesktopLyricsState(true);
   if (key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight') pushDesktopLyricsState(true);
@@ -429,6 +436,8 @@ function toggleFx(key) {
   if (key === 'lyricGlow') showToast(fx.lyricGlow ? '歌词溢光已开启' : '歌词溢光已关闭');
   if (key === 'lyricGlowBeat') showToast(fx.lyricGlowBeat ? '歌词溢光跟随鼓点' : '歌词溢光已脱离鼓点');
   if (key === 'lyricGlowParticles') showToast(fx.lyricGlowParticles ? '歌词光粒已开启' : '歌词光粒已关闭');
+  if (key === 'lyricVerticalFloat') showToast(fx.lyricVerticalFloat !== false ? '歌词上下浮动已开启' : '歌词上下浮动已关闭');
+  if (key === 'lyricPauseHold') showToast(fx.lyricPauseHold !== false ? '暂停时保留歌词' : '暂停时隐藏歌词');
   if (key === 'desktopLyrics') showToast(fx.desktopLyrics ? '桌面歌词已开启' : '桌面歌词已关闭');
   if (key === 'desktopLyricsClickThrough') showToast(fx.desktopLyricsClickThrough !== false ? '桌面歌词已锁定' : '桌面歌词可移动');
   if (key === 'desktopLyricsCinema') showToast(fx.desktopLyricsCinema !== false ? '桌面歌词电影震动已开启' : '桌面歌词电影震动已关闭，基础漂浮保留');
@@ -551,13 +560,7 @@ function setShelfMode(m, opts) {
 }
 // 播放栏「3D 歌单架」开关:三档 seg 已删,此按钮是 3D 歌架唯一开关——关=硬隐藏,开=恢复(side 模式下先切 stage)
 function toggleShelfFromControls() {
-  // 体素预设下歌单只活在视觉控制台的「歌单」tab(fork 设计):按钮直达该 tab,不召 3D 浮卡盖城市(用户实测)
-  if (typeof voxelCityActive === 'function' && voxelCityActive()) {
-    toggleFxPanel(true);
-    if (typeof setFxPanelTab === 'function') setFxPanelTab('playlist');
-    return;
-  }
-  // 用户澄清(2026-07-03):此按钮 = 右侧 3D 歌单架的消失/出现开关
+  // 此按钮 = 所有预设共用的右侧 3D 歌单架显示/隐藏开关，p10 不再走控制台专属分支。
   if (shelfHardHidden) {
     shelfHardHidden = false;
     setShelfPinnedOpen(true, true);
@@ -748,6 +751,23 @@ function setCamMode(m) {
   if (m === 'off') stopGestureControl();
   else if (m === 'gesture') startGestureControl();
   saveLyricLayout({ user: true, reason: 'cam' });
+}
+
+function setPointerDragFollowMode(mode) {
+  fx.pointerDragFollowMode = normalizePointerDragFollowMode(mode);
+  updatePointerDragFollowControls();
+  saveLyricLayout({ user: true, reason: 'pointerDragFollowMode' });
+  if (typeof showToast === 'function') {
+    var labels = { light: '弱', medium: '中', 'medium-strong': '中强', strong: '强' };
+    showToast('拖动缓冲: ' + (labels[fx.pointerDragFollowMode] || '中强'));
+  }
+}
+
+function updatePointerDragFollowControls() {
+  var mode = normalizePointerDragFollowMode(fx && fx.pointerDragFollowMode);
+  document.querySelectorAll('#pointer-drag-follow-seg [data-pointer-drag-follow]').forEach(function (b) {
+    b.classList.toggle('active', b.getAttribute('data-pointer-drag-follow') === mode);
+  });
 }
 
 // ============================================================

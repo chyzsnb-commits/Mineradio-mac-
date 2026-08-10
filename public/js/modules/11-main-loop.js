@@ -738,9 +738,11 @@ function animate() {
   var targetRotY = orbit.centerLocked ? 0 : (headParallax.active ? headParallax.x * 0.5 : 0) + gestureRotation.y;
   var targetRotX = orbit.centerLocked ? 0 : (headParallax.active ? -headParallax.y * 0.35 : 0) + gestureRotation.x;
   var targetRotZ = orbit.centerLocked ? 0 : (gestureRotation.z || 0);   // v9 双捏旋转(roll)
-  particles.rotation.y += (targetRotY - particles.rotation.y) * 0.055;
-  particles.rotation.x += (targetRotX - particles.rotation.x) * 0.055;
-  particles.rotation.z += (targetRotZ - particles.rotation.z) * 0.055;
+  // 普通预设与 p10 统一:输入只写目标,显示每帧按拖动缓冲率靠近;释放惯性仍由 0.90 单独处理。
+  var dragFollowBlend = typeof pointerDragFollowBlend === 'function' ? pointerDragFollowBlend(dt) : 0.055;
+  particles.rotation.y += (targetRotY - particles.rotation.y) * dragFollowBlend;
+  particles.rotation.x += (targetRotX - particles.rotation.x) * dragFollowBlend;
+  particles.rotation.z += (targetRotZ - particles.rotation.z) * dragFollowBlend;
   if (bloomParticles) {
     bloomParticles.rotation.copy(particles.rotation);
   }
@@ -783,6 +785,8 @@ function animate() {
       scene: scene,
       fx: fx,
       time: uniforms.uTime.value,
+      orbitRadius: orbit && orbit.radius,
+      orbitBaselineRadius: orbit && orbit.baselineRadius,
       audio: { bass: bass, mid: mid, treble: treble, beat: beatPulse, energy: audioEnergy }
     });
   }

@@ -151,7 +151,7 @@ renderer.domElement.addEventListener('contextmenu', function (e) {
   var mode = shelfManager.getMode && shelfManager.getMode();
   if (mode === 'off') {
     setShelfMode('side');
-    mode = 'side';
+    mode = shelfManager.getMode && shelfManager.getMode();
   }
   if (mode !== 'side') return;
   if (shelfManager.hasOpenContent && shelfManager.hasOpenContent()) {
@@ -167,8 +167,14 @@ renderer.domElement.addEventListener('contextmenu', function (e) {
     setShelfPinnedOpen(true, true);
     return;
   }
-  setShelfPinnedOpen(!shelfPinnedOpen, true);
-  if (!shelfPinnedOpen && typeof setFocusZone === 'function') setFocusZone(null, true);
+  var shouldOpen = shelfHardHidden || !shelfPinnedOpen;
+  if (shouldOpen) {
+    shelfHardHidden = false;
+    // 右键只负责唤起歌架；不应把鼠标移动留下的悬停抬升状态带进固定构图。
+    if (shelfManager.clearSelected) shelfManager.clearSelected();
+    if (typeof syncShelfToggleBtn === 'function') syncShelfToggleBtn();
+  }
+  setShelfPinnedOpen(shouldOpen, true);
 });
 
 // 滚轮: 在真实卡片或右侧窄热区内滚卡片; 否则保留给封面粒子/视角

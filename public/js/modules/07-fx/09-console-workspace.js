@@ -9,12 +9,13 @@ var FX_CONSOLE_TABS = [
   { key: 'system', label: '系统' }
 ];
 
-function fxConsoleItem(ref, title, aliases, history) {
+function fxConsoleItem(ref, title, aliases, history, note) {
   return {
     ref: ref,
     title: title,
     aliases: aliases || '',
-    history: history !== false
+    history: history !== false,
+    note: note || ''
   };
 }
 
@@ -38,9 +39,13 @@ var FX_CONSOLE_LAYOUT = [
     groups: [
       { key: 'background', title: '背景媒体', hint: '颜色、封面、图片、视频背景', open: true, items: [
         fxConsoleItem('background-image-input', '背景媒体', '封面 图片 视频 上传 裁切 清除', false),
-        fxConsoleItem('bg-album-toggle-btn', '封面背景', '使用当前封面原图'),
+        fxConsoleItem('video-bg-file', '背景文件', '上传 图片 视频', false),
+        fxConsoleItem('bg-color-picker', '背景纯色', '颜色 纯色 封面渐变 默认背景'),
+        fxConsoleItem('fx-bgopacity', '背景透明度', '颜色 纯色 可见度 不透明度'),
+        fxConsoleItem({ selector: '#bg-media-actions' }, '背景操作', '上传 封面 裁切 清除 图片 视频'),
+        fxConsoleItem('bg-media-state', '背景状态', '当前背景 封面 图片 视频 固定视角', false),
+        fxConsoleItem('video-bg-grid', '已保存背景', '历史 图片 视频 背景', false),
         fxConsoleItem('t-albumBackgroundMouseBind', '封面鼠标视角', '封面 背景 鼠标 视差'),
-        fxConsoleItem('bg-media-crop-btn', '背景裁切', '裁切 缩放 位置'),
         fxConsoleItem('fx-bgglassopacity', '毛玻璃透明', '玻璃 背景模糊'),
         fxConsoleItem('fx-windowbgopacity', '窗口背景透明', '窗口透明度'),
         fxConsoleItem('fx-bgcropx', '裁切左右', '背景水平 位置'),
@@ -71,9 +76,12 @@ var FX_CONSOLE_LAYOUT = [
       { key: 'display', title: '显示与翻译', hint: '歌词来源、行数和双语译文', open: true, items: [
         fxConsoleItem('lyric-source-seg', '歌词来源', '原词 自定义歌词', false),
         fxConsoleItem('lyric-display-mode-seg', '歌词行数', '单行 双行 三行 沉浸 自定义'),
+        fxConsoleItem('lyric-raster-quality-seg', '歌词清晰度', '1x 2x 3x 4x 超采样 分辨率'),
         fxConsoleItem('fx-lyriccustomlines', '显示行数', '自定义歌词行数'),
         fxConsoleItem('lyric-translation-mode-seg', '双语翻译', '译文 当前 双行 多行 关闭'),
-        fxConsoleItem('fx-lyrictranslationgap', '译文间距', '翻译距离')
+        fxConsoleItem('fx-lyrictranslationgap', '译文间距', '翻译距离'),
+        fxConsoleItem('fx-lyrictranslationscale', '译文字号', '翻译 字体大小 缩放'),
+        fxConsoleItem('fx-lyrictranslationopacity', '译文透明度', '翻译 透明度')
       ] },
       { key: 'colors', title: '颜色与光效', hint: '文字、高亮、溢光和亮底可读性', items: [
         fxConsoleItem('lyric-color-grid', '歌词颜色', '文字颜色 封面取色'),
@@ -85,7 +93,8 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-lyricbgadapt', '亮底避光', '亮背景 可读性 自动压光'),
         fxConsoleItem('t-lyricGlow', '歌词溢光', '后层辉光 开关'),
         fxConsoleItem('t-lyricGlowBeat', '鼓点溢光', '歌词辉光 跟随节拍'),
-        fxConsoleItem('t-lyricGlowParticles', '歌词光粒', '歌词粒子 光点')
+        fxConsoleItem('t-lyricGlowParticles', '歌词光粒', '歌词粒子 光点'),
+        fxConsoleItem('t-backgroundStarRiver', '背景星河', '星空 粒子背景')
       ] },
       { key: 'type', title: '字体与排版', hint: '字体、字重、大小、位置和角度', items: [
         fxConsoleItem('lyric-font-grid', '歌词字体', '黑体 宋体 楷宋 Serif Gothic 等宽 上传字体'),
@@ -106,6 +115,8 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-lyriccontextspread', '上下句间距', '上下文距离'),
         fxConsoleItem('fx-lyricedgefade', '边缘渐隐', '歌词边缘淡出'),
         fxConsoleItem('fx-lyricmotionsoftness', '动画柔顺', '歌词滚动 丝滑 缓动'),
+        fxConsoleItem('t-lyricVerticalFloat', '歌词上下浮动', '漂浮 垂直'),
+        fxConsoleItem('t-lyricPauseHold', '暂停保留歌词', '暂停不隐藏'),
         fxConsoleItem('t-lyricCameraLock', '歌词镜头绑定', '跟随镜头 锁定')
       ] },
       { key: 'desktop', title: '桌面歌词', hint: '独立桌面层的开关、锁定与排版', items: [
@@ -127,6 +138,7 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-intensity', '律动强度', '音乐响应 节奏'),
         fxConsoleItem('fx-depth', '画面景深', '立体感 深度'),
         fxConsoleItem('fx-cineshake', '电影镜头', '镜头晃动 强度'),
+        fxConsoleItem('pointer-drag-follow-seg', '拖动缓冲（镜头 / 歌架 / 音柱跟手）', '拖动时跟手程度 弱更跟手 强更有缓冲 松手惯性不变', true, '弱更跟手；强更有缓冲。松手后的惯性不变。'),
         fxConsoleItem('t-cinema', '电影镜头开关', '动态镜头')
       ] },
       { key: 'particles', title: '粒子与光影', hint: '粒子尺寸、运动、扭曲和溢光（仅粒子类预设）', items: [
@@ -408,6 +420,22 @@ function fxConsoleMakeGroup(page, tabMeta, groupMeta) {
   return body;
 }
 
+function fxConsoleAppendItemNote(body, item, node) {
+  if (!item.note) return;
+  var note = document.createElement('div');
+  note.className = 'fx-console-item-note';
+  note.id = 'fx-console-item-note-' + (fxConsoleRegistry.length + 1);
+  var title = document.createElement('strong');
+  title.textContent = item.title;
+  var detail = document.createElement('small');
+  detail.textContent = item.note;
+  note.appendChild(title);
+  note.appendChild(detail);
+  body.appendChild(note);
+  if (!node.getAttribute('aria-label')) node.setAttribute('aria-label', item.title);
+  node.setAttribute('aria-describedby', note.id);
+}
+
 function fxConsoleAppendItem(body, tabMeta, groupMeta, item, state) {
   var node = fxConsoleResolveBlock(item.ref);
   if (!node) {
@@ -431,6 +459,7 @@ function fxConsoleAppendItem(body, tabMeta, groupMeta, item, state) {
     state.toggleGrid.appendChild(node);
   } else {
     state.toggleGrid = null;
+    fxConsoleAppendItemNote(body, item, node);
     body.appendChild(node);
   }
   var entry = {

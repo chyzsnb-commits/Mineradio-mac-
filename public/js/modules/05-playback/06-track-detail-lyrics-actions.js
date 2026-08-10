@@ -824,6 +824,12 @@ function updateLyricTranslationModeControls() {
     btn.classList.toggle('active', btn.dataset.translation === mode);
   });
 }
+function updateLyricRasterQualityControls() {
+  var quality = normalizeLyricRasterQuality(fx && fx.lyricRasterQuality);
+  document.querySelectorAll('#lyric-raster-quality-seg [data-lyric-raster-quality]').forEach(function (btn) {
+    btn.classList.toggle('active', Number(btn.getAttribute('data-lyric-raster-quality')) === quality);
+  });
+}
 function updateLyricMotionStyleControls() {
   var style = normalizeLyricMotionStyle(fx && fx.lyricMotionStyle);
   var seg = document.getElementById('lyric-motion-style-seg');
@@ -940,6 +946,16 @@ function setLyricTranslationMode(mode) {
   scheduleStageLyricOptionRefresh();
   saveLyricLayout({ user: true, reason: 'lyricTranslationMode' });
   showToast('双语翻译已切换');
+}
+function setLyricRasterQuality(value) {
+  var nextQuality = normalizeLyricRasterQuality(value);
+  if (normalizeLyricRasterQuality(fx && fx.lyricRasterQuality) === nextQuality) return;
+  fx.lyricRasterQuality = nextQuality;
+  updateLyricRasterQualityControls();
+  if (typeof clearLyricRasterCache === 'function') clearLyricRasterCache();
+  refreshStageLyricDisplayMode();
+  saveLyricLayout({ user: true, reason: 'lyricRasterQuality' });
+  showToast('歌词清晰度已切换为 ' + nextQuality + 'x');
 }
 function setLyricMotionStyle(style) {
   var nextStyle = normalizeLyricMotionStyle(style);

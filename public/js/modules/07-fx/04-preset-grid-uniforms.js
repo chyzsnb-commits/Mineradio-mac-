@@ -32,12 +32,12 @@ function buildPresetGrid() {
   if (!grid) return;
   var seen = {};
   var order = presetDisplayOrder.filter(function (id) {
-    var ok = id >= 0 && id < presetMeta.length && !seen[id];
+    var ok = id >= 0 && id < presetMeta.length && !seen[id] && !isPresetHidden(id);
     seen[id] = true;
     return ok;
   });
   presetMeta.forEach(function (_, id) {
-    if (!seen[id]) order.push(id);
+    if (!seen[id] && !isPresetHidden(id)) order.push(id);
   });
   var sonicSeriesRendered = false;
   grid.innerHTML = order.map(function (i) {
@@ -107,6 +107,7 @@ function tickPresetTransition() {
 function setPreset(p, opts) {
   opts = opts || {};
   p = Math.max(0, Math.min(presetMeta.length - 1, Number(p) || 0));
+  if (isPresetHidden(p)) p = HIDDEN_PRESET_FALLBACK;   // 云瀑共振(11)内测中，公开构建不可选
   var prev = fx.preset;
   var changed = prev !== p;
   fx.preset = p;
@@ -120,6 +121,7 @@ function setPreset(p, opts) {
   if (typeof updateMineradioMotionGroupVisibility === 'function') updateMineradioMotionGroupVisibility();
   if (typeof updateSonicWorkshopColorControls === 'function') updateSonicWorkshopColorControls();
   if (typeof refreshVoxelLyricStageAfterPresetChange === 'function') refreshVoxelLyricStageAfterPresetChange(changed ? 'voxel-preset-change' : 'voxel-preset-refresh');
+  if (typeof refreshSonicWorkshopLyricStageAfterPresetChange === 'function') refreshSonicWorkshopLyricStageAfterPresetChange(changed ? 'sonic-workshop-preset-change' : 'sonic-workshop-preset-refresh');
   if (changed && !opts.skipTransition) triggerPresetParticleTransition(prev, p);
   // 每个预设对应的相机基线 (改 userOrbit)
   if (changed && !opts.preserveCamera) {
@@ -134,11 +136,11 @@ function setPreset(p, opts) {
     else if (p === 9) { orbit.userRadius = 7.2; orbit.userPhi = 0.06; orbit.userTheta = 0.0; orbit.baselineRadius = 7.2; orbit.baselinePhi = 0.06; }   // 雨境：正视雨幕
     else if (p === 10){ orbit.userRadius = 50.0; orbit.userPhi = 0.20; orbit.userTheta = 0.0; orbit.baselineRadius = 50.0; orbit.baselinePhi = 0.20; }   // 音域回响：远处低角度横扫整片地形
     else if (p === 11){ orbit.userRadius = 7.8; orbit.userPhi = 0.12; orbit.userTheta = 0.0; orbit.baselineRadius = 7.8; orbit.baselinePhi = 0.12; }   // 云瀑共振：正视透明雨瀑
-    else if (p === 12){ orbit.userRadius = 8.4; orbit.userPhi = 0.18; orbit.userTheta = 0.0; orbit.baselineRadius = 8.4; orbit.baselinePhi = 0.18; }   // 声波地形：远处低角度横扫整片地形
-    else if (p === 13){ orbit.userRadius = 8.4; orbit.userPhi = 0.18; orbit.userTheta = 0.0; orbit.baselineRadius = 8.4; orbit.baselinePhi = 0.18; }   // 声波工坊：同声波地形机位
+    else if (p === 12){ orbit.userRadius = 10.0; orbit.userPhi = 0.18; orbit.userTheta = 0.0; orbit.baselineRadius = 10.0; orbit.baselinePhi = 0.18; }   // 声波地形：远处低角度横扫整片地形
+    else if (p === 13){ orbit.userRadius = 10.0; orbit.userPhi = 0.18; orbit.userTheta = 0.0; orbit.baselineRadius = 10.0; orbit.baselinePhi = 0.18; }   // 声波工坊：同声波地形机位
     else { orbit.userRadius = 6.6; orbit.userPhi = 0.08; orbit.userTheta = 0.0; orbit.baselineRadius = 6.6; orbit.baselinePhi = 0.08; }
     // 音域回响体素地形场景很大,放开半径夹紧;其它预设保持原值
-    if (p === 10 || p === 12 || p === 13) { orbit.minRadius = 10.0; orbit.maxRadius = 180.0; }
+    if (p === 10 || p === 12 || p === 13) { orbit.minRadius = 4.0; orbit.maxRadius = 180.0; }
     else { orbit.minRadius = 2.4; orbit.maxRadius = 14.0; }
     if (p !== 5) orbit.baselineTheta = p === 6 ? 0.18 : 0.0;
     // 切预设收尾: 清掉上一预设遗留的指针/手势/视差偏移, 避免叠加到世界锚定的歌架上加剧错位。

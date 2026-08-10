@@ -1,3 +1,35 @@
+// 暂不进公开构建的预设（仍在内测，代码保留）：云瀑共振 preset 11
+var HIDDEN_PRESET_INDICES = [11];
+var HIDDEN_PRESET_FALLBACK = 9;   // 隐藏预设的落点：雨境
+function isPresetHidden(id) {
+  return HIDDEN_PRESET_INDICES.indexOf(Number(id)) >= 0;
+}
+// 拖动跟随与松手惯性是两条独立的物理链：这里的数值只控制目标到显示状态的缓冲。
+var POINTER_DRAG_FOLLOW_DEFAULT_60FPS = 0.055;
+var POINTER_DRAG_FOLLOW_LEVELS = {
+  light: 0.22,
+  medium: 0.12,
+  'medium-strong': POINTER_DRAG_FOLLOW_DEFAULT_60FPS,
+  strong: 0.032
+};
+function normalizePointerDragFollowMode(value) {
+  value = String(value || '');
+  return Object.prototype.hasOwnProperty.call(POINTER_DRAG_FOLLOW_LEVELS, value) ? value : 'medium-strong';
+}
+function pointerDragFollowRateForMode(mode) {
+  return POINTER_DRAG_FOLLOW_LEVELS[normalizePointerDragFollowMode(mode)];
+}
+function getPointerDragFollowRate() {
+  var mode = (typeof fx !== 'undefined' && fx && fx.pointerDragFollowMode)
+    || (typeof fxDefaults !== 'undefined' && fxDefaults && fxDefaults.pointerDragFollowMode)
+    || 'medium-strong';
+  return pointerDragFollowRateForMode(mode);
+}
+function pointerDragFollowBlend(dt) {
+  var frames = Math.max(0, Math.min(6, (Number(dt) || 0) * 60));
+  if (frames <= 0) return 0;
+  return 1 - Math.pow(1 - getPointerDragFollowRate(), frames);
+}
 var fxDefaults = {
   preset: 0,            // 0=emily cover, 1=tunnel, 2=orbit, 3=void, 4=vinyl, 5=wallpaper, 6=skull
   intensity: 0.85,
@@ -23,6 +55,7 @@ var fxDefaults = {
   lyricDisplayMode: 'single',
   lyricTranslationMode: 'off',
   lyricMotionStyle: 'float',
+  lyricRasterQuality: 1, // 歌词纹理超采样档位:1x/2x/3x/4x,默认不改变现有显存预算
   lyricScalePulse: 0,    // 歌词缩放脉动:0=关(稳定缩放),>0 做规律放大缩小(用户可调可关)
   lyricCustomLineCount: 5,
   lyricGlitchCameraBind: false,
@@ -79,6 +112,9 @@ var fxDefaults = {
   floatLayer: false, cinema: true, edge: false, aiDepth: false, bloom: false, lyricGlow: true,
   lyricGlowBeat: true,
   lyricGlowParticles: false,
+  lyricVerticalFloat: true,
+  backgroundStarRiver: true,
+  lyricPauseHold: true,
   lyricCameraLock: false,
   particleLyrics: true,    // v7.2: 粒子歌词
   backCover: false,        // 旧的封面背面粒子层关闭；浮空粒子层会跟随封面翻转
@@ -131,6 +167,7 @@ var fxDefaults = {
   memorySafetyRevision: 3,
   liveBackgroundKeep: false,
   cam: 'off',
+  pointerDragFollowMode: 'medium-strong', // 拖动缓冲:弱/中/中强/强;不改变松手后的 0.90 惯性阻尼
   // 音域回响(体素地形)预设 + 全局背景
   voxAutoRotate: true,
   voxRes: 'mid',
@@ -214,6 +251,11 @@ var fxDefaults = {
   sonicWorkshopPeakColorMode: 'cover',
   sonicWorkshopPeakColor: '#f2f5f8',
 };
+function normalizeLyricRasterQuality(value) {
+  var isNumericInput = typeof value === 'number' || (typeof value === 'string' && value.trim() !== '');
+  var quality = isNumericInput ? Number(value) : NaN;
+  return [1, 2, 3, 4].indexOf(quality) >= 0 ? quality : (fxDefaults.lyricRasterQuality || 1);
+}
 function normalizeForegroundFpsMode(value) {
   var mode = String(value || '').trim().toLowerCase();
   if (mode === 'vsync' || mode === 'adaptive') return mode;
