@@ -71,10 +71,13 @@ test('最近播放滚动层独立合成且滚动时停用卡片重阴影', () =>
   assert.match(css, /\.home-hero[\s\S]*backdrop-filter:/, '首页玻璃效果必须保留');
 });
 
-test('首页最近播放保留滚动能力但不显示原生白色滚动条', () => {
+test('首页最近播放保留深色滚动条，不显示原生白色轨道', () => {
   const css = read('public/css/index.css');
-  assert.match(css, /\.home-recent-list\{[^}]*overflow-y:auto[^}]*scrollbar-width:none/);
-  assert.match(css, /\.home-recent-list::-webkit-scrollbar\{[^}]*display:none/);
+  assert.match(css, /\.home-recent-list\{[^}]*overflow-y:auto[^}]*scrollbar-width:thin[^}]*scrollbar-color:/);
+  assert.match(css, /\.home-recent-list::-webkit-scrollbar\{[^}]*width:6px/);
+  assert.match(css, /\.home-recent-list::-webkit-scrollbar-track\{[^}]*background:rgba\(5,9,14,\.40\)/);
+  assert.match(css, /\.home-recent-list::-webkit-scrollbar-thumb\{[^}]*background:rgba\(116,130,146,\.42\)/);
+  assert.doesNotMatch(css, /\.home-recent-list::-webkit-scrollbar\{[^}]*display:none/);
 });
 
 test('Home 只模糊背景画布，离开 Home 后不再保留模糊', () => {
