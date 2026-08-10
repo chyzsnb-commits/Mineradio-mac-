@@ -819,6 +819,8 @@ function audioInputDeviceLabel(device, index) {
   return device.label || ('输入设备 ' + (index + 1));
 }
 function audioOutputDeviceStatusText() {
+  if (audioOutputRuntime && audioOutputRuntime.state === 'failed') return audioOutputRuntime.message || '输出切换失败';
+  if (audioOutputRuntime && audioOutputRuntime.state === 'pending' && audioOutputDeviceId) return audioOutputRuntime.message || '正在连接输出设备';
   if (audioInputBridgeState && audioInputBridgeState.enabled) {
     var bridgeDevice = audioOutputDeviceById(audioInputBridgeState.deviceId);
     return bridgeDevice ? ('已桥接到 ' + audioOutputDeviceLabel(bridgeDevice, 0)) : '输入桥接等待虚拟设备';
@@ -828,6 +830,9 @@ function audioOutputDeviceStatusText() {
     return primary ? ('当前输出 ' + audioOutputDeviceLabel(primary, 0)) : '当前输出设备待恢复';
   }
   return '当前输出系统默认';
+}
+function markAudioOutputRuntime(state, message) {
+  audioOutputRuntime = { state: state || 'idle', message: String(message || '') };
 }
 function audioOutputDeviceLabel(device, index) {
   if (!device || !device.deviceId) return '系统默认';
@@ -963,8 +968,8 @@ async function refreshAudioOutputDevices(showNotice) {
   }
   try {
     var devices = await navigator.mediaDevices.enumerateDevices();
-    audioOutputDevices = devices.filter(function (device) { return device && device.kind === 'audiooutput' && device.deviceId !== 'default'; });
-    audioInputDevices = devices.filter(function (device) { return device && device.kind === 'audioinput' && device.deviceId !== 'default'; });
+    audioOutputDevices = devices.filter(function (device) { return device && device.kind === 'audiooutput' && device.deviceId && device.deviceId !== 'default'; });
+    audioInputDevices = devices.filter(function (device) { return device && device.kind === 'audioinput' && device.deviceId && device.deviceId !== 'default'; });
     if (audioInputBridgeState && audioInputBridgeState.enabled && audioInputBridgeState.deviceId && !audioOutputDeviceById(audioInputBridgeState.deviceId)) {
       audioInputBridgeState.enabled = false;
       saveAudioInputBridgePreference();
@@ -1122,24 +1127,36 @@ async function applyAudioOutputDevice(media) {
   if (sfxResult === true && !webAudioRouteActive && !media) ok = true;
   syncAudioOutputMirrors('apply-device');
   if (ok) {
+    markAudioOutputRuntime('connected', '输出已连接');
     renderAudioOutputDeviceUi();
     return true;
   }
   if (!hasTarget) {
+    markAudioOutputRuntime('pending', sinkId ? '将在播放时连接输出设备' : '系统默认输出');
     renderAudioOutputDeviceUi();
     return null;
   }
+  var failureMessage = '当前输出接口暂不可用';
   if (errors.length) {
     console.warn('[AudioOutput]', errors);
+    failureMessage += '：' + audioOutputMirrorReadableError(errors[0].error);
     if (errors.some(function (item) { return item.error && item.error.name === 'NotFoundError'; })) {
       audioOutputDeviceId = '';
       saveAudioOutputDevicePreference();
+      failureMessage += '，已恢复系统默认输出';
     }
   }
+  markAudioOutputRuntime('failed', failureMessage);
   renderAudioOutputDeviceUi();
   return false;
 }
 function setAudioOutputDevice(deviceId, showNotice) {
+  var previousOutputDeviceId = audioOutputDeviceId || '';
+  var previousBridgeState = {
+    enabled: !!(audioInputBridgeState && audioInputBridgeState.enabled),
+    deviceId: String(audioInputBridgeState && audioInputBridgeState.deviceId || '')
+  };
+  var previousMirrorDeviceIds = normalizeAudioOutputIdList(audioOutputMirrorDeviceIds);
   audioOutputDeviceId = String(deviceId || '');
   var requestedDeviceId = audioOutputDeviceId;
   if (!requestedDeviceId || requestedDeviceId !== (audioInputBridgeState && audioInputBridgeState.deviceId || '')) {
@@ -1151,14 +1168,28 @@ function setAudioOutputDevice(deviceId, showNotice) {
   audioOutputMirrorDeviceIds = normalizeAudioOutputIdList(audioOutputMirrorDeviceIds).filter(function (id) { return id !== requestedDeviceId; });
   saveAudioOutputMirrorPreference();
   saveAudioOutputDevicePreference();
+  markAudioOutputRuntime(requestedDeviceId ? 'pending' : 'connected', requestedDeviceId ? '正在切换输出设备' : '系统默认输出');
   renderAudioOutputDeviceUi();
   Promise.resolve(applyAudioOutputDevice(audio)).then(function (ok) {
+    if (ok === false) {
+      audioOutputDeviceId = previousOutputDeviceId;
+      audioInputBridgeState = previousBridgeState;
+      audioOutputMirrorDeviceIds = previousMirrorDeviceIds;
+      saveAudioInputBridgePreference();
+      saveAudioOutputMirrorPreference();
+      saveAudioOutputDevicePreference();
+      markAudioOutputRuntime('failed', '输出接口切换失败，已恢复原输出');
+      renderAudioOutputDeviceUi();
+      Promise.resolve(applyAudioOutputDevice(audio));
+      if (showNotice) showToast('输出接口切换失败，已恢复原输出');
+      return;
+    }
     if (!showNotice) return;
     if (!requestedDeviceId) showToast('已切回系统默认输出');
     else if (ok === true) showToast('输出接口已切换');
     else if (ok === null) showToast('输出接口已保存，播放时自动启用');
-    else if (audioReady && audioCtx && typeof audioCtx.setSinkId !== 'function') showToast('当前内核不支持频谱输出实时切换，已保存选择');
-    else showToast('当前输出接口暂不可用，已保存选择');
+    else if (audioReady && audioCtx && typeof audioCtx.setSinkId !== 'function') showToast('当前内核不支持频谱输出实时切换，未切换成功');
+    else showToast('当前输出接口暂不可用，未切换成功');
   });
 }
 function toggleAudioOutputMirrorDevice(deviceId) {
@@ -1196,6 +1227,8 @@ function setAudioInputBridgeDevice(deviceId, showNotice) {
     renderAudioOutputDeviceUi();
     return;
   }
+  var previousOutputDeviceId = audioOutputDeviceId || '';
+  var previousBridgeState = { enabled: !!(audioInputBridgeState && audioInputBridgeState.enabled), deviceId: String(audioInputBridgeState && audioInputBridgeState.deviceId || '') };
   var wasEnabled = !!(audioInputBridgeState && audioInputBridgeState.enabled && audioInputBridgeState.deviceId === deviceId);
   audioInputBridgeState = { enabled: !wasEnabled, deviceId: deviceId };
   saveAudioInputBridgePreference();
@@ -1204,8 +1237,26 @@ function setAudioInputBridgeDevice(deviceId, showNotice) {
     audioOutputMirrorDeviceIds = normalizeAudioOutputIdList(audioOutputMirrorDeviceIds).filter(function (id) { return id !== deviceId; });
     saveAudioOutputMirrorPreference();
     saveAudioOutputDevicePreference();
-    Promise.resolve(applyAudioOutputDevice(audio)).then(function () {
-      if (showNotice) showToast('已连接到虚拟麦克风桥接');
+    markAudioOutputRuntime('pending', '正在连接虚拟麦克风桥接');
+    Promise.resolve(applyAudioOutputDevice(audio)).then(function (ok) {
+      if (ok === true) {
+        if (showNotice) showToast('已连接到虚拟麦克风桥接');
+        return;
+      }
+      if (ok === null) {
+        markAudioOutputRuntime('pending', '将在播放时连接虚拟麦克风桥接');
+        renderAudioOutputDeviceUi();
+        if (showNotice) showToast('虚拟麦克风桥接已保存，播放时连接');
+        return;
+      }
+      audioInputBridgeState = previousBridgeState;
+      audioOutputDeviceId = previousOutputDeviceId;
+      saveAudioInputBridgePreference();
+      saveAudioOutputDevicePreference();
+      markAudioOutputRuntime('failed', '连接虚拟麦克风桥接失败，已恢复原输出');
+      renderAudioOutputDeviceUi();
+      Promise.resolve(applyAudioOutputDevice(audio));
+      if (showNotice) showToast('连接虚拟麦克风桥接失败，已恢复原输出');
     });
   } else {
     if (audioOutputDeviceId === deviceId) {

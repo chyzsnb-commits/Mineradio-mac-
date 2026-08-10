@@ -67,13 +67,13 @@ function savePlaylistPanelTabPreference(tab) {
   try { localStorage.setItem(PLAYLIST_PANEL_TAB_STORE_KEY, normalizePlaylistPanelTab(tab)); } catch (e) { }
 }
 function normalizeCloseBehavior(value) {
-  return value === 'tray' ? 'tray' : 'exit';
+  return 'exit';
 }
 function readCloseBehaviorPreference() {
-  try { return normalizeCloseBehavior(localStorage.getItem(CLOSE_BEHAVIOR_STORE_KEY) || 'exit'); } catch (e) { return 'exit'; }
+  return 'exit';
 }
 function saveCloseBehaviorPreference(value) {
-  try { localStorage.setItem(CLOSE_BEHAVIOR_STORE_KEY, normalizeCloseBehavior(value)); } catch (e) { }
+  try { localStorage.removeItem(CLOSE_BEHAVIOR_STORE_KEY); } catch (e) { }
 }
 function syncCloseBehaviorUi() {
   document.querySelectorAll('#close-behavior-seg [data-close-behavior]').forEach(function (btn) {
@@ -91,19 +91,10 @@ function setCloseBehaviorPreference(value, opts) {
   if (opts.toast) showToast(closeBehaviorPreference === 'tray' ? '关闭按钮将放到后台托盘' : '关闭按钮将直接退出');
 }
 function bindCloseBehaviorControls() {
-  var seg = document.getElementById('close-behavior-seg');
-  if (!seg || seg._bound) return;
-  seg._bound = true;
-  seg.addEventListener('click', function (e) {
-    var btn = e.target && e.target.closest ? e.target.closest('[data-close-behavior]') : null;
-    if (!btn) return;
-    setCloseBehaviorPreference(btn.getAttribute('data-close-behavior'), { toast: true });
-  });
   syncCloseBehaviorUi();
 }
 function initializeDesktopCloseBehavior() {
-  bindCloseBehaviorControls();
-  setCloseBehaviorPreference(closeBehaviorPreference, { toast: false });
+  setCloseBehaviorPreference('exit', { toast: false });
 }
 function normalizeStartupResumeMode(value) {
   return value === 'restart' ? 'restart' : 'resume';

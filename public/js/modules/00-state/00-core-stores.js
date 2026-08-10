@@ -185,6 +185,7 @@ var audioInputBridgeState = readAudioInputBridgePreference();
 var audioOutputMirrorElements = {};
 var audioOutputMirrorRuntime = {};
 var audioOutputMirrorSyncTimer = 0;
+var audioOutputRuntime = { state: 'idle', message: '' };
 var playbackQualityRuntimeCaps = {};
 var qqPlaybackQualityCeiling = '';   // 上游已用 playbackQualityRuntimeCaps 取代;我方 13-start-audio 旧钩子仍读写,保留声明
 var coverCropState = null, coverCropBound = false;

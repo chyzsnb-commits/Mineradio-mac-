@@ -297,8 +297,7 @@ var FX_CONSOLE_LAYOUT = [
   {
     key: 'system',
     groups: [
-      { key: 'startup', title: '启动与退出', hint: '关闭窗口行为和恢复播放方式', open: true, items: [
-        fxConsoleItem('close-behavior-seg', '关闭窗口', '直接退出 后台托盘'),
+      { key: 'startup', title: '启动与退出', hint: '启动后恢复播放方式', open: true, items: [
         fxConsoleItem('t-startupAutoplay', '启动自动播放', '打开软件继续播放'),
         fxConsoleItem('t-startupFastSkip', '秒启动跳过启动页', '快速启动'),
         fxConsoleItem('startup-resume-mode-seg', '恢复播放位置', '按上次进度 重播整首')
@@ -727,14 +726,13 @@ function captureFxConsoleState() {
   }
   return {
     fx: snapshot || {},
-    closeBehavior: typeof closeBehaviorPreference !== 'undefined' ? closeBehaviorPreference : null,
     startupResumeMode: typeof startupResumeModePreference !== 'undefined' ? startupResumeModePreference : null,
     startupAutoplay: typeof startupAutoplayPreference !== 'undefined' ? !!startupAutoplayPreference : null,
     startupFastSkip: typeof startupFastSkipPreference !== 'undefined' ? !!startupFastSkipPreference : null
   };
 }
 
-var FX_CONSOLE_PREF_KEYS = ['closeBehavior', 'startupResumeMode', 'startupAutoplay', 'startupFastSkip'];
+var FX_CONSOLE_PREF_KEYS = ['startupResumeMode', 'startupAutoplay', 'startupFastSkip'];
 var FX_CONSOLE_EXCLUDED_FX_KEYS = { backgroundAlbumCover: true };
 
 function fxConsoleValueEqual(a, b) {
@@ -864,9 +862,6 @@ function fxConsoleTryApplyInputAdapter(record, targetState, changes) {
 }
 
 function fxConsoleApplyPreferences(state, changes) {
-  if (changes.prefs.indexOf('closeBehavior') >= 0 && state.closeBehavior != null && typeof setCloseBehaviorPreference === 'function') {
-    setCloseBehaviorPreference(state.closeBehavior, { toast: false });
-  }
   if (changes.prefs.indexOf('startupResumeMode') >= 0 && state.startupResumeMode != null && typeof setStartupResumeModePreference === 'function') {
     setStartupResumeModePreference(state.startupResumeMode, { toast: false });
   }

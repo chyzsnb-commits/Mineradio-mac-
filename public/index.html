@@ -1001,11 +1001,6 @@
             <button data-performance-background="keep">保持运行</button>
             <button data-performance-background="release">停止释放</button>
           </div>
-          <div class="fx-section-label">关闭窗口</div>
-          <div class="fx-seg" id="close-behavior-seg" title="点击右上角关闭按钮时的行为">
-            <button data-close-behavior="exit">直接退出</button>
-            <button data-close-behavior="tray">后台托盘</button>
-          </div>
           <div class="fx-section-label">启动播放</div>
           <div id="startup-toggle-grid" class="fx-toggle-grid startup-toggle-grid">
             <div class="fx-toggle" id="t-startupAutoplay" onclick="toggleStartupAutoplay()" title="打开软件后从上次保存进度自动继续播放">
@@ -1914,6 +1909,17 @@
         <div class="btn-row">
           <button class="modal-btn" onclick="closeTrackDetailModal()">关闭</button>
         </div>
+      </div>
+    </div>
+
+    <div id="audio-output-workflow-modal" class="modal-mask">
+      <div class="modal audio-output-workflow-modal" role="dialog" aria-modal="true" aria-labelledby="audio-output-workflow-title">
+        <button class="login-panel-close" type="button" onclick="closeAudioOutputWorkflowPanel()" aria-label="关闭播放输出路由">×</button>
+        <div class="audio-output-workflow-title">
+          <b id="audio-output-workflow-title">播放输出路由</b>
+          <small id="audio-output-workflow-subtitle">正在读取输出设备</small>
+        </div>
+        <div id="audio-output-workflow-body" class="audio-output-workflow-body"></div>
       </div>
     </div>
 

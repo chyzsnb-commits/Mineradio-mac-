@@ -3,7 +3,6 @@ function bindFxPanel() {
   organizeFxPanel();
   relabelFxPanelControls();
   bindHotkeySettings();
-  bindCloseBehaviorControls();
   bindStartupResumeModeControls();
   bindAudioOutputControls();
   if (typeof bindSystemMemoryControls === 'function') bindSystemMemoryControls();
