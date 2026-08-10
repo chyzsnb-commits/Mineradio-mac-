@@ -2542,7 +2542,7 @@ ipcMain.handle('mineradio-local-library-remove', async (_event, ids) => {
   }
 });
 
-// ---- 壁纸库（macOS）：从 Win 电脑 WE 库（SMB 挂载 / HTTP 源）读取图片/视频壁纸 ----
+// ---- 壁纸库：本地库与 Windows Mineradio 服务（固定 HTTP 协议） ----
 let wallpaperLibraryBridge = null;
 function getWallpaperLibraryBridge() {
   if (!wallpaperLibraryBridge) {
@@ -2563,6 +2563,35 @@ ipcMain.handle('mineradio-wallpaper-library-list', async () => {
 });
 ipcMain.handle('mineradio-wallpaper-library-media', async (_event, recordId, kind) => {
   return getWallpaperLibraryBridge().getMediaFile(recordId, kind);
+});
+ipcMain.handle('mineradio-wallpaper-windows-discover', async () => {
+  return getWallpaperLibraryBridge().discoverWindowsSources();
+});
+ipcMain.handle('mineradio-wallpaper-windows-connect', async (_event, baseUrl) => {
+  return getWallpaperLibraryBridge().connectWindowsSource(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-windows-live-status', async (_event, baseUrl) => {
+  return getWallpaperLibraryBridge().getWindowsLiveStatus(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-windows-export-start', async (_event, baseUrl, sceneId, seconds) => {
+  return getWallpaperLibraryBridge().startWindowsSceneExport(baseUrl, sceneId, seconds);
+});
+ipcMain.handle('mineradio-wallpaper-windows-export-status', async (_event, baseUrl, jobId) => {
+  return getWallpaperLibraryBridge().getWindowsExportJob(baseUrl, jobId);
+});
+ipcMain.handle('mineradio-wallpaper-windows-exported-videos', async (_event, baseUrl) => {
+  return getWallpaperLibraryBridge().listWindowsExportedVideos(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-windows-export-download', async (_event, baseUrl, fileName) => {
+  const safeName = path.basename(String(fileName || '')).replace(/[^a-z0-9._ -]/gi, '_') || 'wallpaper-scene.mp4';
+  const owner = BrowserWindow.getFocusedWindow() || mainWindow;
+  const selected = await dialog.showSaveDialog(owner, {
+    title: '保存导出的壁纸视频',
+    defaultPath: safeName,
+    filters: [{ name: '视频', extensions: ['mp4', 'webm', 'mov'] }],
+  });
+  if (selected.canceled || !selected.filePath) return { ok: false, error: 'DOWNLOAD_CANCELLED' };
+  return getWallpaperLibraryBridge().downloadWindowsExport(baseUrl, fileName, selected.filePath);
 });
 
 function lyricCacheDirectoryPath() {

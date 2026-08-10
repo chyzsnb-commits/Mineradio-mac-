@@ -22,24 +22,24 @@ test('壁纸库主进程扫描器已迁移且 Mac 安全', () => {
   assert.match(library, /async addManualRoot\(/);
   assert.match(library, /async performScan\(/);
 
-  // 桥接:目录 + HTTP 双通道
+  // 桥接:本地目录 + Windows 固定 HTTP 协议
   assert.match(bridge, /async function scanDirectory\(/);
   assert.match(bridge, /async function scanHttpSource\(/);
+  assert.match(bridge, /class WindowsWallpaperClient/);
+  assert.match(bridge, /MINERADIO_WALLPAPER/);
+  assert.match(bridge, /\/api\/ping/);
   assert.match(bridge, /api\/wallpapers/);
   assert.match(mainJs, /mineradio-wallpaper-library-scan-dir/);
   assert.match(mainJs, /mineradio-wallpaper-library-scan-http/);
   assert.match(mainJs, /mineradio-wallpaper-library-list/);
   assert.match(mainJs, /mineradio-wallpaper-library-media/);
 
-  // Win 端录制 mp4 方案:导出页 + 导出视频列表合并
-  const share = read('tools/wallpaper-share-server.js');
-  assert.match(share, /\/export\.html/);
-  assert.match(share, /\/api\/exported-videos/);
-  assert.match(share, /\/api\/exported-file/);
-  assert.match(share, /MediaRecorder/);
-  assert.match(share, /getDisplayMedia/);
-  assert.match(bridge, /api\/exported-videos/);
-  assert.match(bridge, /Scene 导出/);
+  // Scene 仅由 Windows 后台导出，Mac 不录屏也不直接读取 .pkg。
+  assert.match(bridge, /\/api\/export-scene/);
+  assert.match(bridge, /\/api\/export-jobs/);
+  assert.match(bridge, /\/api\/exported-file/);
+  assert.match(bridge, /\/api\/live\//);
+  assert.doesNotMatch(bridge, /getDisplayMedia/);
 
   // 雨境/云瀑/音域回响控件已进 FX 控制台动效 tab(修复用户反馈的动效设置消失)
   const consoleWs = read('public/js/modules/07-fx/09-console-workspace.js');
@@ -89,16 +89,20 @@ test('壁纸库渲染层面板与入口已接线', () => {
   const css = read('public/css/index.css');
 
   assert.match(loader, /07-fx\/10-wallpaper-library-panel\.js/);
-  assert.match(preload, /wallpaperLibraryScanDir:/);
-  assert.match(preload, /wallpaperLibraryScanHttp:/);
-  assert.match(preload, /wallpaperLibraryList:/);
-  assert.match(panel, /function scanWallpaperLibraryDir\(/);
-  assert.match(panel, /function scanWallpaperLibraryHttp\(/);
+  assert.match(preload, /wallpaperWindowsDiscover:/);
+  assert.match(preload, /wallpaperWindowsConnect:/);
+  assert.match(preload, /wallpaperWindowsExportDownload:/);
+  assert.match(panel, /function discoverWindowsWallpaperSources\(/);
+  assert.match(panel, /function connectWindowsWallpaperSource\(/);
   assert.match(panel, /function selectWallpaperLibraryRecord\(/);
-  assert.match(panel, /Scene 场景壁纸需 Wallpaper Engine 软件/);
+  assert.match(panel, /wallpaper-live-preview/);
+  assert.match(panel, /wallpaperLibraryStopLivePreview/);
+  assert.doesNotMatch(panel, /getDisplayMedia/);
   assert.ok(indexHtml.includes('id="wallpaper-library-modal"'), 'index.html 应包含壁纸库面板');
   assert.ok(indexHtml.includes('onclick="openWallpaperLibraryPanel()"'), '应有壁纸库入口');
+  assert.ok(indexHtml.includes('Windows 壁纸库'), '应明确标识 Windows 壁纸库入口');
   assert.match(css, /\.wallpaper-library-modal/);
   assert.match(css, /\.wallpaper-library-list/);
   assert.match(css, /\.wallpaper-library-preview/);
+  assert.match(css, /\.wallpaper-live-preview/);
 });

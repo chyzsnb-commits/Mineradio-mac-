@@ -1,189 +1,252 @@
 'use strict';
 
-// 壁纸库面板（macOS）：从另一台 Windows 电脑（Win 版 Mineradio + Wallpaper Engine 库）读取壁纸。
-// 两种来源：① 目录扫描（SMB 挂载路径 /Volumes/... 或本地拷贝的 WE 库目录）
-//            ② HTTP 源（Win 端可选共享脚本提供 /api/wallpapers 列表）
-// 图片/视频壁纸可点选播放；Scene 场景壁纸（PKGV）需 WE 引擎，Mac 不可播，标注不可用。
-
+// Windows Wallpaper Engine 服务只经由主进程验证和提交任务；渲染层只消费已验证的 URL。
 var wallpaperLibraryState = {
   records: [],
-  selectedId: null,
-  sourceKind: '',       // 'dir' | 'http'
-  sourceValue: '',
-  playing: false,
+  selectedId: '',
+  baseUrl: '',
+  host: '',
+  search: '',
+  type: 'all',
+  sort: 'title',
+  exportTask: null,
+  exportPoller: 0,
 };
 
-function wallpaperLibraryPanelEl(id) {
-  return document.getElementById(id);
+function wallpaperLibraryPanelEl(id) { return document.getElementById(id); }
+function wallpaperLibraryEsc(value) {
+  return String(value || '').replace(/[&<>"']/g, function (char) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char];
+  });
 }
-
-function wallpaperLibraryRenderStatus(text) {
+function wallpaperLibraryApi(name) {
+  return window.desktopWindow && typeof window.desktopWindow[name] === 'function' ? window.desktopWindow[name] : null;
+}
+function wallpaperLibraryRenderStatus(text, kind) {
   var el = wallpaperLibraryPanelEl('wallpaper-library-status');
-  if (el) el.textContent = text || '';
+  if (!el) return;
+  el.textContent = text || '';
+  el.dataset.kind = kind || '';
 }
-
+function wallpaperLibrarySelectedRecord() {
+  return (wallpaperLibraryState.records || []).find(function (record) { return record.id === wallpaperLibraryState.selectedId; }) || null;
+}
+function wallpaperLibraryVisibleRecords() {
+  var query = wallpaperLibraryState.search.trim().toLowerCase();
+  return (wallpaperLibraryState.records || []).filter(function (record) {
+    return (wallpaperLibraryState.type === 'all' || record.type === wallpaperLibraryState.type)
+      && (!query || (record.title + ' ' + record.type).toLowerCase().indexOf(query) >= 0);
+  }).sort(function (left, right) {
+    if (wallpaperLibraryState.sort === 'type') return left.type.localeCompare(right.type) || left.title.localeCompare(right.title);
+    return left.title.localeCompare(right.title);
+  });
+}
+function wallpaperLibraryThumb(record) {
+  var preview = wallpaperLibraryEsc(record.previewUrl || '');
+  if (!preview) return '<div class="wallpaper-thumb wallpaper-thumb-empty">无缩略图</div>';
+  if (record.type === 'video') return '<video class="wallpaper-thumb-media" muted playsinline preload="metadata" src="' + preview + '"></video>';
+  return '<img class="wallpaper-thumb-media" src="' + preview + '" alt="" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{className:\'wallpaper-thumb wallpaper-thumb-empty\',textContent:\'无缩略图\'}))">';
+}
 function wallpaperLibraryRenderRecords() {
   var list = wallpaperLibraryPanelEl('wallpaper-library-list');
   if (!list) return;
-  var records = wallpaperLibraryState.records || [];
+  var records = wallpaperLibraryVisibleRecords();
+  if (!wallpaperLibraryState.baseUrl) {
+    list.innerHTML = '<div class="wallpaper-library-empty">正在扫描局域网 Windows Mineradio 服务，也可输入地址手动连接。</div>';
+    return;
+  }
   if (!records.length) {
-    list.innerHTML = '<div class="wallpaper-library-empty">还没有壁纸。选择壁纸库目录（SMB 挂载或拷贝的 WE 库）或输入 Win 电脑的 HTTP 壁纸源地址。</div>';
+    list.innerHTML = '<div class="wallpaper-library-empty">' + ((wallpaperLibraryState.records || []).length ? '没有匹配的壁纸。' : '该 Windows 壁纸库为空。') + '</div>';
     return;
   }
-  list.innerHTML = records.map(function (r, i) {
-    var typeLabel = r.type === 'video' ? '视频' : '图片';
-    var sceneNote = r.enginePlayable ? '' : (r.projectType === 'scene' ? '<span class="wallpaper-scene-note">需 WE 软件</span>' : '');
-    var preview = r.httpPreviewUrl || r.httpUrl || (r.mediaFile ? 'mineradio-wallpaper://' + encodeURIComponent(r.mediaFile) : '');
-    var thumb = preview
-      ? '<div class="wallpaper-thumb" style="background-image:url(\'' + preview.replace(/'/g, "\\'") + '\')"></div>'
-      : '<div class="wallpaper-thumb wallpaper-thumb-empty"></div>';
-    return '<button type="button" class="wallpaper-record' + (r.id === wallpaperLibraryState.selectedId ? ' active' : '') +
-      '" data-wallpaper-index="' + i + '" onclick="selectWallpaperLibraryRecord(' + i + ')">' +
-      thumb +
-      '<span class="wallpaper-record-copy"><span class="wallpaper-record-title">' + escHtml(r.title || '壁纸') + '</span>' +
-      '<span class="wallpaper-record-meta">' + typeLabel + sceneNote + '</span></span>' +
-      (r.enginePlayable ? '<span class="wallpaper-badge">Scene</span>' : '') +
-      '</button>';
+  list.innerHTML = records.map(function (record) {
+    var typeLabel = record.type === 'scene' ? 'Scene 实时预览' : (record.type === 'video' ? '视频' : '图片');
+    return '<button type="button" class="wallpaper-record' + (record.id === wallpaperLibraryState.selectedId ? ' active' : '') + '" data-wallpaper-id="' + wallpaperLibraryEsc(record.id) + '">' +
+      wallpaperLibraryThumb(record) +
+      '<span class="wallpaper-record-copy"><span class="wallpaper-record-title">' + wallpaperLibraryEsc(record.title) + '</span><span class="wallpaper-record-meta">' + typeLabel + '</span></span>' +
+      '<span class="wallpaper-badge">' + (record.type === 'scene' ? 'Scene' : record.type === 'video' ? 'Video' : 'Image') + '</span></button>';
   }).join('');
+  Array.prototype.forEach.call(list.querySelectorAll('[data-wallpaper-id]'), function (button) {
+    button.addEventListener('click', function () { selectWallpaperLibraryRecord(button.dataset.wallpaperId); });
+  });
 }
-
+function wallpaperLibraryStopLivePreview() {
+  var preview = wallpaperLibraryPanelEl('wallpaper-library-preview');
+  if (!preview) return;
+  Array.prototype.forEach.call(preview.querySelectorAll('img.wallpaper-live-preview'), function (image) {
+    image.removeAttribute('src');
+    image.remove();
+  });
+}
+function wallpaperLibraryRenderExport(record) {
+  var exportEl = wallpaperLibraryPanelEl('wallpaper-library-export');
+  if (!exportEl) return;
+  var task = wallpaperLibraryState.exportTask;
+  if (!record || record.type !== 'scene') { exportEl.innerHTML = ''; return; }
+  var state = task && task.sceneId === record.sceneId ? task : null;
+  var detail = !state ? 'Windows 将离屏渲染并生成 MP4。' : state.message;
+  var action = !state || state.state === 'failed' || state.state === 'stopped'
+    ? '<button type="button" class="modal-btn small" onclick="startWindowsSceneExport()">' + (state ? '重试导出 MP4' : '导出 MP4') + '</button>'
+    : state.state === 'completed'
+      ? '<button type="button" class="modal-btn small" onclick="downloadWindowsSceneExport()">保存 MP4</button>'
+      : '<button type="button" class="modal-btn small secondary" onclick="stopWindowsSceneExportPolling()">停止等待</button>';
+  exportEl.innerHTML = '<div class="wallpaper-export-controls"><label>时长 <input id="wallpaper-library-export-seconds" type="number" min="1" max="300" value="' + (state && state.seconds || 30) + '"> 秒</label>' + action + '</div><div class="wallpaper-export-state" data-state="' + wallpaperLibraryEsc(state && state.state || 'ready') + '">' + wallpaperLibraryEsc(detail) + '</div>';
+}
 function wallpaperLibraryRenderDetail() {
-  var el = wallpaperLibraryPanelEl('wallpaper-library-preview');
-  var metaEl = wallpaperLibraryPanelEl('wallpaper-library-preview-meta');
-  if (!el || !metaEl) return;
-  var r = null;
-  (wallpaperLibraryState.records || []).forEach(function (rec) {
-    if (rec.id === wallpaperLibraryState.selectedId) r = rec;
-  });
-  if (!r) {
-    el.innerHTML = '<div class="wallpaper-library-preview-empty">选择一张壁纸预览</div>';
-    metaEl.textContent = '';
+  var preview = wallpaperLibraryPanelEl('wallpaper-library-preview');
+  var meta = wallpaperLibraryPanelEl('wallpaper-library-preview-meta');
+  if (!preview || !meta) return;
+  wallpaperLibraryStopLivePreview();
+  var record = wallpaperLibrarySelectedRecord();
+  if (!record) {
+    preview.innerHTML = '<div class="wallpaper-library-preview-empty">选择一张壁纸预览</div>';
+    meta.textContent = '';
+    wallpaperLibraryRenderExport(null);
     return;
   }
-  if (r.enginePlayable) {
-    el.innerHTML = '<div class="wallpaper-library-preview-empty">Scene 场景壁纸需 Wallpaper Engine 软件运行，Mac 无法播放。</div>';
-    metaEl.textContent = r.title || '';
-    return;
-  }
-  var src = r.httpUrl || r.httpPreviewUrl || (r.mediaFile ? 'mineradio-wallpaper://' + encodeURIComponent(r.mediaFile) : '');
-  if (!src) {
-    el.innerHTML = '<div class="wallpaper-library-preview-empty">无法定位壁纸文件</div>';
-    metaEl.textContent = r.title || '';
-    return;
-  }
-  if (r.type === 'video') {
-    el.innerHTML = '<video controls autoplay muted loop playsinline src="' + src.replace(/"/g, '&quot;') + '"></video>';
+  meta.textContent = record.title + ' · ' + (record.type === 'scene' ? 'Scene · ' + wallpaperLibraryState.host : record.type === 'video' ? '视频' : '图片');
+  if (record.type === 'scene') {
+    preview.innerHTML = '<img class="wallpaper-live-preview" src="' + wallpaperLibraryEsc(record.liveUrl) + '" alt="Windows 实时预览"><div class="wallpaper-live-label">Windows 实时预览</div>';
+    wallpaperLibraryCheckLiveStatus();
+  } else if (!record.fileUrl) {
+    preview.innerHTML = '<div class="wallpaper-library-preview-empty">此壁纸没有可用预览文件</div>';
+  } else if (record.type === 'video') {
+    preview.innerHTML = '<video controls muted playsinline preload="metadata" src="' + wallpaperLibraryEsc(record.fileUrl) + '"></video>';
   } else {
-    el.innerHTML = '<img src="' + src.replace(/"/g, '&quot;') + '" alt="">';
+    preview.innerHTML = '<img src="' + wallpaperLibraryEsc(record.fileUrl) + '" alt="' + wallpaperLibraryEsc(record.title) + '">';
   }
-  metaEl.textContent = r.title || '';
+  wallpaperLibraryRenderExport(record);
 }
-
-async function refreshWallpaperLibraryList() {
-  if (!window.desktopWindow || typeof window.desktopWindow.wallpaperLibraryList !== 'function') {
-    wallpaperLibraryRenderStatus('仅桌面版支持壁纸库');
-    return;
-  }
-  wallpaperLibraryRenderStatus('正在读取壁纸库...');
-  var result = await window.desktopWindow.wallpaperLibraryList().catch(function () { return null; });
-  if (!result || !result.ok) {
-    wallpaperLibraryRenderStatus(result && result.error ? ('读取失败：' + result.error) : '读取失败');
-    return;
-  }
-  wallpaperLibraryState.records = (result.records || []).map(function (rec) {
-    return {
-      id: String(rec.id || rec.projectRoot || ''),
-      title: rec.title || '',
-      type: rec.playable ? (rec.mediaType === 'video' ? 'video' : 'image') : 'image',
-      enginePlayable: rec.enginePlayable === true,
-      projectType: rec.projectType || '',
-      mediaFile: rec.mediaFile || '',
-    };
-  });
-  wallpaperLibraryRenderRecords();
-  if (!wallpaperLibraryState.selectedId && wallpaperLibraryState.records.length) {
-    wallpaperLibraryState.selectedId = wallpaperLibraryState.records[0].id;
-  }
-  wallpaperLibraryRenderDetail();
-  wallpaperLibraryRenderStatus('共 ' + wallpaperLibraryState.records.length + ' 个壁纸');
+async function wallpaperLibraryCheckLiveStatus() {
+  var getStatus = wallpaperLibraryApi('wallpaperWindowsLiveStatus');
+  if (!getStatus || !wallpaperLibraryState.baseUrl) return;
+  var result = await getStatus(wallpaperLibraryState.baseUrl).catch(function () { return null; });
+  if (!result || !result.ok) wallpaperLibraryRenderStatus('实时预览服务暂不可用，正在尝试连接。', 'warning');
 }
-
-async function scanWallpaperLibraryDir() {
-  var input = wallpaperLibraryPanelEl('wallpaper-library-dir-input');
-  var dir = input && input.value.trim();
-  if (!dir) { wallpaperLibraryRenderStatus('请输入壁纸库目录路径（如 /Volumes/共享盘/.../431960 或本地 WE 库目录）'); return; }
-  if (!window.desktopWindow || typeof window.desktopWindow.wallpaperLibraryScanDir !== 'function') return;
-  wallpaperLibraryRenderStatus('正在扫描目录...');
-  var result = await window.desktopWindow.wallpaperLibraryScanDir(dir).catch(function () { return null; });
-  if (!result || !result.ok) {
-    wallpaperLibraryRenderStatus(result && result.error ? ('扫描失败：' + result.error) : '扫描失败');
-    return;
-  }
-  wallpaperLibraryState.sourceKind = 'dir';
-  wallpaperLibraryState.sourceValue = dir;
-  await refreshWallpaperLibraryList();
-}
-
-async function scanWallpaperLibraryHttp() {
+function wallpaperLibraryUseConnection(result, sourceLabel) {
+  if (!result || !result.ok) return false;
+  wallpaperLibraryState.baseUrl = result.baseUrl;
+  wallpaperLibraryState.host = result.host || result.baseUrl;
+  wallpaperLibraryState.records = Array.isArray(result.records) ? result.records : [];
+  wallpaperLibraryState.selectedId = wallpaperLibraryState.records.length ? wallpaperLibraryState.records[0].id : '';
+  try { localStorage.setItem('mineradio.windows-wallpaper.base-url', result.baseUrl); } catch (_) {}
   var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
-  var url = input && input.value.trim();
-  if (!url) { wallpaperLibraryRenderStatus('请输入 Win 电脑的 HTTP 壁纸源地址（如 http://192.168.1.10:8123）'); return; }
-  if (!window.desktopWindow || typeof window.desktopWindow.wallpaperLibraryScanHttp !== 'function') return;
-  wallpaperLibraryRenderStatus('正在连接壁纸源...');
-  var result = await window.desktopWindow.wallpaperLibraryScanHttp(url).catch(function () { return null; });
+  if (input) input.value = result.baseUrl;
+  wallpaperLibraryRenderRecords();
+  wallpaperLibraryRenderDetail();
+  wallpaperLibraryRenderStatus(sourceLabel + '：' + wallpaperLibraryState.host + ' · ' + wallpaperLibraryState.records.length + ' 个壁纸', 'ok');
+  return true;
+}
+async function connectWindowsWallpaperSource() {
+  var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
+  var connect = wallpaperLibraryApi('wallpaperWindowsConnect');
+  var baseUrl = input && input.value.trim();
+  if (!baseUrl) { wallpaperLibraryRenderStatus('请输入 Windows 地址，例如 http://192.168.1.20:8123', 'warning'); return; }
+  if (!connect) { wallpaperLibraryRenderStatus('仅桌面版支持 Windows 壁纸库', 'error'); return; }
+  wallpaperLibraryRenderStatus('正在验证 Windows Mineradio 服务...', 'loading');
+  var result = await connect(baseUrl).catch(function () { return null; });
+  if (!wallpaperLibraryUseConnection(result, '已连接')) wallpaperLibraryRenderStatus('连接失败：服务离线或 /api/ping 未确认。', 'error');
+}
+async function discoverWindowsWallpaperSources() {
+  var discover = wallpaperLibraryApi('wallpaperWindowsDiscover');
+  if (!discover) return;
+  wallpaperLibraryRenderStatus('正在扫描局域网 Windows Mineradio 服务...', 'loading');
+  var result = await discover().catch(function () { return null; });
+  var service = result && result.ok && Array.isArray(result.services) ? result.services[0] : null;
+  if (service && wallpaperLibraryUseConnection(service, '自动发现')) return;
+  if (!wallpaperLibraryState.baseUrl) wallpaperLibraryRenderStatus('未发现在线 Windows 服务。可输入 http://Windows-IP:8123 手动连接。', 'warning');
+}
+function selectWallpaperLibraryRecord(id) {
+  if (!id || id === wallpaperLibraryState.selectedId) return;
+  wallpaperLibraryState.selectedId = id;
+  wallpaperLibraryRenderRecords();
+  wallpaperLibraryRenderDetail();
+}
+function wallpaperLibraryClearExportPoller() {
+  if (wallpaperLibraryState.exportPoller) clearTimeout(wallpaperLibraryState.exportPoller);
+  wallpaperLibraryState.exportPoller = 0;
+}
+async function pollWindowsSceneExport() {
+  var task = wallpaperLibraryState.exportTask;
+  var getStatus = wallpaperLibraryApi('wallpaperWindowsExportStatus');
+  if (!task || task.stopped || !getStatus) return;
+  var result = await getStatus(wallpaperLibraryState.baseUrl, task.id).catch(function () { return null; });
   if (!result || !result.ok) {
-    wallpaperLibraryRenderStatus(result && result.error ? ('连接失败：' + result.error) : '连接失败');
-    return;
+    task.state = 'failed'; task.message = '无法读取导出状态，可重试。';
+  } else if (result.state === 'completed') {
+    task.state = 'completed'; task.output = result.output; task.message = 'Windows 已完成导出，可以保存 MP4。';
+  } else if (result.state === 'failed') {
+    task.state = 'failed'; task.message = 'Windows 导出失败，可重试。';
+  } else {
+    task.state = result.state === 'running' ? 'running' : 'queued';
+    task.message = task.state === 'running' ? 'Windows 正在离屏渲染并编码 MP4...' : 'Windows 已收到导出任务，正在排队...';
   }
-  wallpaperLibraryState.sourceKind = 'http';
-  wallpaperLibraryState.sourceValue = url;
-  wallpaperLibraryState.records = (result.records || []).map(function (r, i) {
-    return {
-      id: String(r.id || 'http-' + i),
-      title: r.title || '',
-      type: r.type === 'video' ? 'video' : 'image',
-      httpUrl: r.httpUrl || '',
-      httpPreviewUrl: r.httpPreviewUrl || r.httpUrl || '',
-    };
-  });
-  wallpaperLibraryRenderRecords();
-  if (wallpaperLibraryState.records.length) wallpaperLibraryState.selectedId = wallpaperLibraryState.records[0].id;
-  wallpaperLibraryRenderDetail();
-  wallpaperLibraryRenderStatus('共 ' + wallpaperLibraryState.records.length + ' 个壁纸（HTTP 源）');
+  wallpaperLibraryRenderExport(wallpaperLibrarySelectedRecord());
+  if (task.state === 'queued' || task.state === 'running') wallpaperLibraryState.exportPoller = setTimeout(pollWindowsSceneExport, 1500);
 }
-
-function selectWallpaperLibraryRecord(index) {
-  var records = wallpaperLibraryState.records || [];
-  var r = records[index];
-  if (!r) return;
-  wallpaperLibraryState.selectedId = r.id;
-  wallpaperLibraryRenderRecords();
-  wallpaperLibraryRenderDetail();
+async function startWindowsSceneExport() {
+  var record = wallpaperLibrarySelectedRecord();
+  var start = wallpaperLibraryApi('wallpaperWindowsExportStart');
+  var input = wallpaperLibraryPanelEl('wallpaper-library-export-seconds');
+  if (!record || record.type !== 'scene' || !start || wallpaperLibraryState.exportPoller) return;
+  var seconds = Math.max(1, Math.min(300, Math.round(Number(input && input.value) || 30)));
+  wallpaperLibraryState.exportTask = { sceneId: record.sceneId, state: 'starting', seconds: seconds, message: '正在提交 Windows 导出任务...' };
+  wallpaperLibraryRenderExport(record);
+  var result = await start(wallpaperLibraryState.baseUrl, record.sceneId, seconds).catch(function () { return null; });
+  if (!result || !result.ok) {
+    wallpaperLibraryState.exportTask.state = 'failed'; wallpaperLibraryState.exportTask.message = '导出任务未被 Windows 接受，可重试。';
+    wallpaperLibraryRenderExport(record); return;
+  }
+  wallpaperLibraryState.exportTask.id = result.id;
+  wallpaperLibraryState.exportTask.state = result.state || 'queued';
+  wallpaperLibraryState.exportTask.message = 'Windows 已收到导出任务，正在排队...';
+  wallpaperLibraryRenderExport(record);
+  pollWindowsSceneExport();
 }
-
+function stopWindowsSceneExportPolling() {
+  var task = wallpaperLibraryState.exportTask;
+  if (!task) return;
+  wallpaperLibraryClearExportPoller();
+  task.stopped = true; task.state = 'stopped'; task.message = '已停止等待；Windows 上的任务可能仍在继续。';
+  wallpaperLibraryRenderExport(wallpaperLibrarySelectedRecord());
+}
+async function downloadWindowsSceneExport() {
+  var task = wallpaperLibraryState.exportTask;
+  var download = wallpaperLibraryApi('wallpaperWindowsExportDownload');
+  if (!task || task.state !== 'completed' || !task.output || !download) return;
+  task.message = '请选择保存位置...';
+  wallpaperLibraryRenderExport(wallpaperLibrarySelectedRecord());
+  var result = await download(wallpaperLibraryState.baseUrl, task.output).catch(function () { return null; });
+  task.message = result && result.ok ? '已保存 MP4。' : (result && result.error === 'DOWNLOAD_CANCELLED' ? '已取消保存。' : '保存失败，可重试。');
+  wallpaperLibraryRenderExport(wallpaperLibrarySelectedRecord());
+}
+function wallpaperLibraryBindControls() {
+  var search = wallpaperLibraryPanelEl('wallpaper-library-search');
+  var type = wallpaperLibraryPanelEl('wallpaper-library-type');
+  var sort = wallpaperLibraryPanelEl('wallpaper-library-sort');
+  if (search) search.addEventListener('input', function () { wallpaperLibraryState.search = search.value || ''; wallpaperLibraryRenderRecords(); });
+  if (type) type.addEventListener('change', function () { wallpaperLibraryState.type = type.value || 'all'; wallpaperLibraryRenderRecords(); });
+  if (sort) sort.addEventListener('change', function () { wallpaperLibraryState.sort = sort.value || 'title'; wallpaperLibraryRenderRecords(); });
+}
 function openWallpaperLibraryPanel() {
   var mask = wallpaperLibraryPanelEl('wallpaper-library-modal');
   if (!mask) return;
-  mask.classList.add('show');
-  mask.setAttribute('aria-hidden', 'false');
-  refreshWallpaperLibraryList();
+  mask.classList.add('show'); mask.setAttribute('aria-hidden', 'false');
+  var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
+  if (input && !input.value) { try { input.value = localStorage.getItem('mineradio.windows-wallpaper.base-url') || ''; } catch (_) {} }
+  if (input && input.value) connectWindowsWallpaperSource();
+  discoverWindowsWallpaperSources();
 }
-
 function closeWallpaperLibraryPanel() {
   var mask = wallpaperLibraryPanelEl('wallpaper-library-modal');
+  wallpaperLibraryClearExportPoller();
+  wallpaperLibraryStopLivePreview();
   if (!mask) return;
-  mask.classList.remove('show');
-  mask.setAttribute('aria-hidden', 'true');
+  mask.classList.remove('show'); mask.setAttribute('aria-hidden', 'true');
 }
-
 var wallpaperLibraryMask = wallpaperLibraryPanelEl('wallpaper-library-modal');
 if (wallpaperLibraryMask) {
-  wallpaperLibraryMask.addEventListener('click', function (e) {
-    if (e.target === wallpaperLibraryMask) closeWallpaperLibraryPanel();
-  });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && wallpaperLibraryMask && wallpaperLibraryMask.classList.contains('show')) {
-      closeWallpaperLibraryPanel();
-    }
-  });
+  wallpaperLibraryBindControls();
+  wallpaperLibraryMask.addEventListener('click', function (event) { if (event.target === wallpaperLibraryMask) closeWallpaperLibraryPanel(); });
+  document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && wallpaperLibraryMask.classList.contains('show')) closeWallpaperLibraryPanel(); });
 }

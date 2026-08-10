@@ -178,7 +178,7 @@
               <button class="home-chip home-console-chip" type="button"
                 onclick="openHomePlayerConsole()">展开播放器控制台</button>
               <button class="home-chip" type="button" onclick="openLocalLibraryPanel()">本地曲库</button>
-              <button class="home-chip" type="button" onclick="openWallpaperLibraryPanel()">壁纸库</button>
+              <button class="home-chip" type="button" onclick="openWallpaperLibraryPanel()">Windows 壁纸库</button>
             </div>
           </div>
         </div>
@@ -1825,7 +1825,7 @@
       <div class="modal wallpaper-library-modal">
         <div class="local-library-head">
           <div class="local-library-title">
-            <h2>壁纸库</h2>
+            <h2>Windows 壁纸库</h2>
             <span class="local-library-count" id="wallpaper-library-status">读取中...</span>
           </div>
           <div class="local-library-head-actions">
@@ -1834,24 +1834,27 @@
         </div>
         <div class="wallpaper-library-sources">
           <div class="wallpaper-source-row">
-            <input id="wallpaper-library-dir-input" type="text" placeholder="壁纸库目录路径（SMB 挂载 /Volumes/... 或 WE 库目录）">
-            <button class="modal-btn small" type="button" onclick="scanWallpaperLibraryDir()">扫描目录</button>
+            <input id="wallpaper-library-http-input" type="url" placeholder="Windows 地址，例如 http://192.168.1.20:8123">
+            <button class="modal-btn small" type="button" onclick="connectWindowsWallpaperSource()">连接</button>
+            <button class="modal-btn small secondary" type="button" onclick="discoverWindowsWallpaperSources()">重新扫描</button>
           </div>
-          <div class="wallpaper-source-row">
-            <input id="wallpaper-library-http-input" type="text" placeholder="Win 电脑 HTTP 壁纸源（http://192.168.x.x:8123）">
-            <button class="modal-btn small" type="button" onclick="scanWallpaperLibraryHttp()">连接源</button>
-          </div>
+        </div>
+        <div class="wallpaper-library-filters">
+          <input id="wallpaper-library-search" type="search" placeholder="搜索壁纸">
+          <select id="wallpaper-library-type" aria-label="壁纸类型"><option value="all">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="scene">Scene</option></select>
+          <select id="wallpaper-library-sort" aria-label="排序"><option value="title">按名称</option><option value="type">按类型</option></select>
         </div>
         <div class="wallpaper-library-body">
           <div class="wallpaper-library-list" id="wallpaper-library-list">
-            <div class="wallpaper-library-empty">还没有壁纸。选择壁纸库目录或输入 HTTP 壁纸源。</div>
+            <div class="wallpaper-library-empty">正在扫描局域网 Windows Mineradio 服务。</div>
           </div>
-          <div class="wallpaper-library-preview" id="wallpaper-library-preview">
-            <div class="wallpaper-library-preview-empty">选择一张壁纸预览</div>
+          <div class="wallpaper-library-detail">
+            <div class="wallpaper-library-preview" id="wallpaper-library-preview"><div class="wallpaper-library-preview-empty">选择一张壁纸预览</div></div>
+            <div class="wallpaper-library-preview-meta" id="wallpaper-library-preview-meta"></div>
+            <div id="wallpaper-library-export"></div>
           </div>
         </div>
-        <div class="wallpaper-library-preview-meta" id="wallpaper-library-preview-meta"></div>
-        <div class="wallpaper-library-note">图片/视频壁纸可在 Mac 直接播放；Scene 场景壁纸需 Wallpaper Engine 软件，Mac 无法播放。壁纸库可从另一台 Windows 电脑（Win 版 Mineradio + WE 库）通过 SMB 共享或 HTTP 源获取。</div>
+        <div class="wallpaper-library-note">图片和视频在 Mac 直接预览；Scene 使用 Windows 的实时画面预览，并由 Windows 离屏渲染导出 MP4。关闭详情会断开实时预览连接。</div>
       </div>
     </div>
 

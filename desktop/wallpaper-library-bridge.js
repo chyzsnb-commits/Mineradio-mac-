@@ -3,6 +3,10 @@
 // 读取 WE 壁纸库（图片/视频壁纸），供 Mac 壁纸模式播放。Scene 场景壁纸（PKGV）需 WE 引擎，标注不可用。
 // 自包含：仅通过 init(refs) 接入主进程的 protocol / ipcMain / app，不侵入式改 main.js。
 const path = require('path');
+const fs = require('fs');
+const dgram = require('dgram');
+const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
 const { WallpaperEngineLibrary, registerWallpaperEngineScheme } = require('./wallpaper-engine-library');
 
 const IS_MAC = process.platform === 'darwin';
@@ -10,9 +14,187 @@ const IS_MAC = process.platform === 'darwin';
 // HTTP 壁纸源（Win 端可选共享脚本）：列表 + 媒体文件代理
 const HTTP_SOURCE_TIMEOUT_MS = 8000;
 const HTTP_SOURCE_MAX_LIST_BYTES = 4 * 1024 * 1024;
+const WINDOWS_DISCOVERY_PORT = 45678;
+const WINDOWS_DISCOVERY_PREFIX = 'MINERADIO_WALLPAPER ';
+const WINDOWS_DISCOVERY_WAIT_MS = 8000;
 
 let library = null;
 let refs = {};
+let windowsClient = null;
+
+function normalizeWindowsBaseUrl(value) {
+  const raw = String(value || '').trim().replace(/\/+$/, '');
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'http:' || !url.hostname || url.username || url.password || url.pathname !== '/') return '';
+    return url.origin;
+  } catch (_) {
+    return '';
+  }
+}
+
+function serviceUrl(baseUrl, pathname) {
+  return normalizeWindowsBaseUrl(baseUrl) + pathname;
+}
+
+function resolveWindowsAssetUrl(baseUrl, value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try { return new URL(raw, normalizeWindowsBaseUrl(baseUrl) + '/').href; } catch (_) { return ''; }
+}
+
+function safeExportFileName(value) {
+  const name = String(value || '').trim();
+  return /^[a-z0-9][a-z0-9._ -]{0,180}\.(?:mp4|webm|mov)$/i.test(name) && path.basename(name) === name ? name : '';
+}
+
+function normalizeWindowsWallpaperRecord(rawRecord, baseUrl, index) {
+  const raw = rawRecord && typeof rawRecord === 'object' ? rawRecord : {};
+  const id = String(raw.id || raw.projectId || raw.sceneId || raw.scene || 'wallpaper-' + Number(index || 0)).trim();
+  const declared = String(raw.type || raw.kind || raw.mediaType || '').toLowerCase();
+  const sceneId = String(raw.sceneId || raw.scene || (declared === 'scene' ? id : '')).trim();
+  const videoValue = typeof raw.video === 'string' ? raw.video : '';
+  const imageValue = typeof raw.image === 'string' ? raw.image : '';
+  const type = sceneId || declared === 'scene' ? 'scene' : (declared === 'video' || raw.video === true || videoValue ? 'video' : 'image');
+  const previewValue = raw.previewUrl || raw.preview || raw.thumbnail || raw.cover || imageValue || videoValue || '';
+  const directValue = raw.fileUrl || raw.url || raw.file || '';
+  const encodedId = encodeURIComponent(id);
+  const fileUrl = type === 'scene' ? '' : (resolveWindowsAssetUrl(baseUrl, directValue) || serviceUrl(baseUrl, '/api/wallpaper-file?id=' + encodedId));
+  return {
+    id,
+    title: String(raw.title || raw.name || id || '未命名壁纸').trim().slice(0, 180) || '未命名壁纸',
+    type,
+    previewUrl: resolveWindowsAssetUrl(baseUrl, previewValue),
+    fileUrl,
+    sceneId: type === 'scene' ? (sceneId || id) : '',
+    liveUrl: type === 'scene' ? serviceUrl(baseUrl, '/api/live/' + encodeURIComponent(sceneId || id)) : '',
+    sourceHost: normalizeWindowsBaseUrl(baseUrl),
+  };
+}
+
+class WindowsWallpaperClient {
+  constructor(options) {
+    const opts = options || {};
+    this.fetchImpl = opts.fetchImpl || global.fetch;
+    this.dgramImpl = opts.dgramImpl || dgram;
+  }
+
+  async requestJson(url, options) {
+    if (typeof this.fetchImpl !== 'function') return { ok: false, error: 'FETCH_UNAVAILABLE' };
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), HTTP_SOURCE_TIMEOUT_MS) : null;
+    try {
+      const response = await this.fetchImpl(url, Object.assign({ headers: { Accept: 'application/json' } }, options || {}, {
+        signal: controller ? controller.signal : undefined,
+      }));
+      const data = await response.json().catch(() => null);
+      return { ok: response.ok, status: response.status, data };
+    } catch (error) {
+      return { ok: false, error: error && error.name === 'AbortError' ? 'HTTP_TIMEOUT' : 'HTTP_FAILED' };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  async connect(baseUrl) {
+    const base = normalizeWindowsBaseUrl(baseUrl);
+    if (!base) return { ok: false, error: 'INVALID_URL' };
+    const ping = await this.requestJson(serviceUrl(base, '/api/ping'));
+    if (!ping.ok) return { ok: false, error: ping.error || 'PING_FAILED' };
+    if (!ping.data || ping.data.ok !== true) return { ok: false, error: 'PING_REJECTED' };
+    const listing = await this.requestJson(serviceUrl(base, '/api/wallpapers'));
+    if (!listing.ok) return { ok: false, error: listing.error || 'WALLPAPERS_FAILED' };
+    if (!listing.data || listing.data.ok !== true || !Array.isArray(listing.data.records)) return { ok: false, error: 'WALLPAPERS_REJECTED' };
+    return {
+      ok: true,
+      baseUrl: base,
+      host: String(ping.data.host || ping.data.name || new URL(base).host),
+      records: listing.data.records.map((record, index) => normalizeWindowsWallpaperRecord(record, base, index)),
+    };
+  }
+
+  async discover(waitMs) {
+    const socket = this.dgramImpl.createSocket({ type: 'udp4', reuseAddr: true });
+    const candidates = new Set();
+    const wait = Math.max(500, Math.min(Number(waitMs) || WINDOWS_DISCOVERY_WAIT_MS, 12000));
+    return new Promise((resolve) => {
+      let finished = false;
+      const finish = async () => {
+        if (finished) return;
+        finished = true;
+        try { socket.close(); } catch (_) {}
+        const attempts = await Promise.all([...candidates].map((url) => this.connect(url)));
+        resolve({ ok: true, services: attempts.filter((result) => result.ok) });
+      };
+      socket.on('message', (message) => {
+        const match = new RegExp('^' + WINDOWS_DISCOVERY_PREFIX + '([^\\s]+)$').exec(String(message || '').trim());
+        const base = match ? normalizeWindowsBaseUrl('http://' + match[1]) : '';
+        if (base) candidates.add(base);
+      });
+      socket.on('error', () => finish());
+      try { socket.bind(WINDOWS_DISCOVERY_PORT, () => setTimeout(finish, wait)); } catch (_) { finish(); }
+    });
+  }
+
+  async getLiveStatus(baseUrl) {
+    const base = normalizeWindowsBaseUrl(baseUrl);
+    if (!base) return { ok: false, error: 'INVALID_URL' };
+    const result = await this.requestJson(serviceUrl(base, '/api/live-status'));
+    return result.ok && result.data && result.data.ok === true ? { ok: true, status: result.data } : { ok: false, error: result.error || 'LIVE_UNAVAILABLE' };
+  }
+
+  async startSceneExport(baseUrl, sceneId, seconds) {
+    const base = normalizeWindowsBaseUrl(baseUrl);
+    const scene = String(sceneId || '').trim();
+    const duration = Math.max(1, Math.min(300, Math.round(Number(seconds) || 30)));
+    if (!base || !scene) return { ok: false, error: 'INVALID_EXPORT_REQUEST' };
+    const result = await this.requestJson(serviceUrl(base, '/api/export-scene?scene=' + encodeURIComponent(scene) + '&seconds=' + duration), { method: 'POST' });
+    if (result.status !== 202 || !result.data || result.data.ok !== true || !result.data.id) return { ok: false, error: result.error || 'EXPORT_REJECTED' };
+    return { ok: true, id: String(result.data.id), scene, seconds: duration, state: String(result.data.state || 'queued'), statusUrl: String(result.data.statusUrl || '') };
+  }
+
+  async getExportJob(baseUrl, jobId) {
+    const base = normalizeWindowsBaseUrl(baseUrl);
+    const id = String(jobId || '').trim();
+    if (!base || !id) return { ok: false, error: 'INVALID_EXPORT_JOB' };
+    const result = await this.requestJson(serviceUrl(base, '/api/export-jobs?id=' + encodeURIComponent(id)));
+    if (!result.ok || !result.data || result.data.ok !== true) return { ok: false, error: result.error || 'EXPORT_STATUS_FAILED' };
+    const state = String(result.data.state || '');
+    const output = safeExportFileName(result.data.output);
+    if (state === 'completed' && !output) return { ok: false, error: 'EXPORT_OUTPUT_INVALID' };
+    return { ok: true, id, state, output, downloadUrl: state === 'completed' ? serviceUrl(base, '/api/exported-file?name=' + encodeURIComponent(output)) : '' };
+  }
+
+  async listExportedVideos(baseUrl) {
+    const base = normalizeWindowsBaseUrl(baseUrl);
+    if (!base) return { ok: false, error: 'INVALID_URL' };
+    const result = await this.requestJson(serviceUrl(base, '/api/exported-videos'));
+    if (!result.ok || !result.data || result.data.ok !== true || !Array.isArray(result.data.records)) return { ok: false, error: result.error || 'EXPORTED_VIDEOS_FAILED' };
+    return { ok: true, records: result.data.records.map((record) => {
+      const name = safeExportFileName(record && (record.name || record.output));
+      return name ? { name, url: serviceUrl(base, '/api/exported-file?name=' + encodeURIComponent(name)) } : null;
+    }).filter(Boolean) };
+  }
+
+  async downloadExportedFile(baseUrl, fileName, destination) {
+    const base = normalizeWindowsBaseUrl(baseUrl);
+    const name = safeExportFileName(fileName);
+    const target = String(destination || '').trim();
+    if (!base || !name || !target) return { ok: false, error: 'INVALID_DOWNLOAD_REQUEST' };
+    const response = await this.fetchImpl(serviceUrl(base, '/api/exported-file?name=' + encodeURIComponent(name)));
+    if (!response || !response.ok || !response.body) return { ok: false, error: 'DOWNLOAD_FAILED' };
+    const temporary = target + '.mineradio-part';
+    try {
+      await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(temporary));
+      await fs.promises.rename(temporary, target);
+      return { ok: true, filePath: target };
+    } catch (_) {
+      try { await fs.promises.unlink(temporary); } catch (_) {}
+      return { ok: false, error: 'DOWNLOAD_WRITE_FAILED' };
+    }
+  }
+}
 
 function init(options) {
   refs = Object.assign(refs, options || {});
@@ -20,6 +202,7 @@ function init(options) {
   if (!library && userDataPath) {
     library = new WallpaperEngineLibrary({ userDataPath });
   }
+  if (!windowsClient) windowsClient = new WindowsWallpaperClient();
   return {
     scanDirectory,
     scanHttpSource,
@@ -28,6 +211,13 @@ function init(options) {
     addManualRoot,
     removeManualRoot,
     getLibrary,
+    discoverWindowsSources: (waitMs) => windowsClient.discover(waitMs),
+    connectWindowsSource: (baseUrl) => windowsClient.connect(baseUrl),
+    getWindowsLiveStatus: (baseUrl) => windowsClient.getLiveStatus(baseUrl),
+    startWindowsSceneExport: (baseUrl, sceneId, seconds) => windowsClient.startSceneExport(baseUrl, sceneId, seconds),
+    getWindowsExportJob: (baseUrl, jobId) => windowsClient.getExportJob(baseUrl, jobId),
+    listWindowsExportedVideos: (baseUrl) => windowsClient.listExportedVideos(baseUrl),
+    downloadWindowsExport: (baseUrl, fileName, destination) => windowsClient.downloadExportedFile(baseUrl, fileName, destination),
   };
 }
 
@@ -71,49 +261,8 @@ async function getMediaFile(recordId, kind) {
 
 // HTTP 源：Win 端可选共享脚本返回 { records: [{ id, title, type: image|video, url, previewUrl }] }
 async function scanHttpSource(baseUrl) {
-  const url = String(baseUrl || '').trim().replace(/\/+$/, '');
-  if (!url) return { ok: false, error: 'EMPTY_URL' };
-  if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'INVALID_URL' };
-  try {
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), HTTP_SOURCE_TIMEOUT_MS) : null;
-    const res = await fetch(url + '/api/wallpapers', {
-      signal: controller ? controller.signal : undefined,
-      headers: { Accept: 'application/json' },
-    });
-    if (timer) clearTimeout(timer);
-    if (!res.ok) return { ok: false, error: 'HTTP_' + res.status };
-    const text = await res.text();
-    if (text.length > HTTP_SOURCE_MAX_LIST_BYTES) return { ok: false, error: 'LIST_TOO_LARGE' };
-    const data = JSON.parse(text);
-    const records = Array.isArray(data && data.records) ? data.records.map((r, i) => ({
-      id: String(r.id || 'http-' + i),
-      title: String(r.title || '壁纸 ' + (i + 1)),
-      type: r.type === 'video' ? 'video' : 'image',
-      httpUrl: String(r.url || ''),
-      httpPreviewUrl: String(r.previewUrl || r.url || ''),
-      source: 'http',
-    })).filter(r => r.httpUrl) : [];
-    // 合并 Win 端已导出的场景视频(_exported/ 下的 mp4)
-    let exported = [];
-    try {
-      const evRes = await fetch(url + '/api/exported-videos', { signal: controller ? controller.signal : undefined });
-      if (evRes.ok) {
-        const evData = await evRes.json();
-        exported = Array.isArray(evData && evData.records) ? evData.records.map((r, i) => ({
-          id: 'exported-' + i,
-          title: 'Scene 导出 · ' + String(r.name || '视频 ' + (i + 1)),
-          type: 'video',
-          httpUrl: String(r.url || ''),
-          httpPreviewUrl: String(r.url || ''),
-          source: 'http-exported',
-        })).filter(r => r.httpUrl) : [];
-      }
-    } catch (_) {}
-    return { ok: true, records: records.concat(exported), baseUrl: url };
-  } catch (e) {
-    return { ok: false, error: e && e.name === 'AbortError' ? 'HTTP_TIMEOUT' : (e && e.message || 'HTTP_FAILED') };
-  }
+  if (!windowsClient) windowsClient = new WindowsWallpaperClient();
+  return windowsClient.connect(baseUrl);
 }
 
-module.exports = { init };
+module.exports = { init, WindowsWallpaperClient, normalizeWindowsWallpaperRecord, normalizeWindowsBaseUrl };
