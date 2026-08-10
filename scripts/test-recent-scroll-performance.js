@@ -71,6 +71,23 @@ test('最近播放滚动层独立合成且滚动时停用卡片重阴影', () =>
   assert.match(css, /\.home-hero[\s\S]*backdrop-filter:/, '首页玻璃效果必须保留');
 });
 
+test('首页最近播放保留滚动能力但不显示原生白色滚动条', () => {
+  const css = read('public/css/index.css');
+  assert.match(css, /\.home-recent-list\{[^}]*overflow-y:auto[^}]*scrollbar-width:none/);
+  assert.match(css, /\.home-recent-list::-webkit-scrollbar\{[^}]*display:none/);
+});
+
+test('Home 只模糊背景画布，离开 Home 后不再保留模糊', () => {
+  const css = read('public/css/index.css');
+  const homeBlurRule = css.match(/body\.empty-home-active #canvas-container\s*\{[^}]*\}/);
+  const previewBlurRule = css.match(/body\.home-wallpaper-preview #canvas-container\s*\{[^}]*\}/);
+  assert.ok(homeBlurRule && /filter:\s*blur\(/.test(homeBlurRule[0]), 'Home 可见时背景画布必须模糊');
+  assert.ok(previewBlurRule && /filter:\s*blur\(/.test(previewBlurRule[0]), 'Home 壁纸预览不能覆盖背景模糊');
+  const home = read('public/js/modules/05-playback/04-home-empty-wallpaper.js');
+  assert.match(home, /document\.body\.classList\.remove\('home-wallpaper-preview'\)/);
+  assert.match(home, /homeSuppressed\s*=\s*true[\s\S]*?updateEmptyHomeVisibility\(/, '离开 Home 必须撤销背景模糊的状态类');
+});
+
 test('负载监视器使用 GPU 文案并保持 CPU 与内存之间', () => {
   const hud = read('public/js/modules/07-fx/05-fx-panel-performance.js');
   const cpuRow = hud.indexOf('<span>CPU</span>');
