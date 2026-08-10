@@ -1823,39 +1823,49 @@
 
     <div id="wallpaper-library-modal" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true">
       <div class="modal wallpaper-library-modal">
-        <div class="local-library-head">
-          <div class="local-library-title">
-            <h2>Windows 壁纸库</h2>
-            <span class="local-library-count" id="wallpaper-library-status">读取中...</span>
+        <div class="wallpaper-library-head">
+          <div>
+            <div class="wallpaper-library-kicker">WINDOWS WALLPAPER LIBRARY</div>
+            <h2 id="wallpaper-library-title">Wallpaper Engine 壁纸库</h2>
+            <p>从局域网 Windows Mineradio 读取真实库项目。图片和视频在 Mac 预览；Scene 使用 Windows 的实时画面，并由 Windows 导出 MP4。</p>
           </div>
-          <div class="local-library-head-actions">
-            <button class="modal-btn small" type="button" onclick="closeWallpaperLibraryPanel()">关闭</button>
-          </div>
+          <button class="wallpaper-library-close" type="button" onclick="closeWallpaperLibraryPanel()" aria-label="关闭 Windows 壁纸库">×</button>
         </div>
-        <div class="wallpaper-library-sources">
-          <div class="wallpaper-source-row">
-            <input id="wallpaper-library-http-input" type="url" placeholder="Windows 地址，例如 http://192.168.1.20:8123">
+        <div class="wallpaper-library-toolbar">
+          <div class="wallpaper-library-search-row">
+            <input id="wallpaper-library-search" type="search" placeholder="搜索壁纸名称" autocomplete="off">
+            <select id="wallpaper-library-type" aria-label="壁纸类型"><option value="all">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="scene">Scene</option></select>
+            <select id="wallpaper-library-sort" aria-label="排序"><option value="title">按名称</option><option value="type">按类型</option></select>
+          </div>
+          <div class="wallpaper-library-source-row">
+            <button id="wallpaper-library-read-ip" class="modal-btn small primary" type="button" onclick="discoverWindowsWallpaperSources()">读取 Windows IP</button>
+            <input id="wallpaper-library-http-input" class="wallpaper-library-address" type="url" placeholder="Windows 地址，例如 http://192.168.1.20:8123">
             <button class="modal-btn small" type="button" onclick="connectWindowsWallpaperSource()">连接</button>
-            <button id="wallpaper-library-read-ip" class="modal-btn small secondary" type="button" onclick="discoverWindowsWallpaperSources()">读取 Windows IP</button>
+            <button class="modal-btn small secondary" type="button" onclick="discoverWindowsWallpaperSources()">刷新</button>
           </div>
-          <div id="wallpaper-library-discovered-ip" class="wallpaper-library-discovered-ip" aria-live="polite">等待读取 Windows 内网地址</div>
         </div>
-        <div class="wallpaper-library-filters">
-          <input id="wallpaper-library-search" type="search" placeholder="搜索壁纸">
-          <select id="wallpaper-library-type" aria-label="壁纸类型"><option value="all">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="scene">Scene</option></select>
-          <select id="wallpaper-library-sort" aria-label="排序"><option value="title">按名称</option><option value="type">按类型</option></select>
+        <div class="wallpaper-library-connection" aria-live="polite">
+          <span id="wallpaper-library-status">正在读取 Windows 壁纸库...</span>
+          <span id="wallpaper-library-discovered-ip" class="wallpaper-library-discovered-ip">等待读取 Windows 内网地址</span>
         </div>
         <div class="wallpaper-library-body">
           <div class="wallpaper-library-list" id="wallpaper-library-list">
             <div class="wallpaper-library-empty">正在扫描局域网 Windows Mineradio 服务。</div>
           </div>
-          <div class="wallpaper-library-detail">
-            <div class="wallpaper-library-preview" id="wallpaper-library-preview"><div class="wallpaper-library-preview-empty">选择一张壁纸预览</div></div>
-            <div class="wallpaper-library-preview-meta" id="wallpaper-library-preview-meta"></div>
-            <div id="wallpaper-library-export"></div>
+          <div id="wallpaper-library-details-drawer" class="wallpaper-library-details-drawer" aria-hidden="true" onclick="if(event.target===this)closeWallpaperLibraryDetail()">
+            <section class="wallpaper-library-detail" aria-label="壁纸详情">
+              <div class="wallpaper-library-detail-head">
+                <div>
+                  <div class="wallpaper-library-kicker">WINDOWS PREVIEW</div>
+                  <div class="wallpaper-library-preview-meta" id="wallpaper-library-preview-meta"></div>
+                </div>
+                <button class="wallpaper-library-close" type="button" onclick="closeWallpaperLibraryDetail()" aria-label="关闭壁纸详情">×</button>
+              </div>
+              <div class="wallpaper-library-preview" id="wallpaper-library-preview"><div class="wallpaper-library-preview-empty">选择一张壁纸预览</div></div>
+              <div id="wallpaper-library-export"></div>
+            </section>
           </div>
         </div>
-        <div class="wallpaper-library-note">图片和视频在 Mac 直接预览；Scene 使用 Windows 的实时画面预览，并由 Windows 离屏渲染导出 MP4。关闭详情会断开实时预览连接。</div>
       </div>
     </div>
 

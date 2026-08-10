@@ -105,6 +105,27 @@ test('UDP 被过滤时扫描当前私有子网并找到通过 ping 的 Windows �
   assert.equal(result.services[0].baseUrl, 'http://192.168.1.121:8123');
 });
 
+test('UDP 监听报错时仍回退到私网 ping 探测', async () => {
+  class FailingSocket {
+    constructor() { this.handlers = {}; }
+    on(name, handler) { this.handlers[name] = handler; }
+    bind() { queueMicrotask(() => this.handlers.error(new Error('udp unavailable'))); }
+    close() {}
+  }
+  const client = new WindowsWallpaperClient({
+    dgramImpl: { createSocket: () => new FailingSocket() },
+    networkInterfaces: () => ({ en0: [{ family: 'IPv4', internal: false, address: '10.42.0.8', netmask: '255.255.255.0' }] }),
+    fetchImpl: async (url) => {
+      if (url.startsWith('http://10.42.0.9:8123/api/ping')) return jsonResponse(200, { ok: true });
+      if (url.startsWith('http://10.42.0.9:8123/api/wallpapers')) return jsonResponse(200, { ok: true, records: [] });
+      return jsonResponse(404, { ok: false });
+    },
+  });
+  const result = await client.discover(500);
+  assert.equal(result.services.length, 1);
+  assert.equal(result.services[0].baseUrl, 'http://10.42.0.9:8123');
+});
+
 test('壁纸记录兼容 image、video 和 scene 字段，并保留无缩略图状态', () => {
   const image = normalizeWindowsWallpaperRecord({ id: 'img', title: '图片', image: true }, 'http://10.0.0.2:8123');
   const video = normalizeWindowsWallpaperRecord({ id: 'vid', title: '视频', video: '/preview.mp4' }, 'http://10.0.0.2:8123');
@@ -170,4 +191,14 @@ test('Windows 壁纸库入口接通发现、实时预览、导出与用户选定
   assert.ok(html.includes('id="wallpaper-library-export"'));
   assert.match(css, /\.wallpaper-live-preview/);
   assert.match(css, /\.wallpaper-export-state/);
+  assert.match(html, /class="wallpaper-library-kicker"/);
+  assert.match(html, /class="wallpaper-library-toolbar"/);
+  assert.match(html, /class="wallpaper-library-search-row"/, '搜索应独立为 Windows 同款的主工具栏行');
+  assert.match(html, /class="wallpaper-library-source-row"/, 'Mac 专属连接控件应置于次行，不能挤占搜索主行');
+  assert.match(html, /id="wallpaper-library-details-drawer"/);
+  assert.match(panel, /function closeWallpaperLibraryDetail\(/);
+  assert.match(css, /\.wallpaper-library-search-row\{[^}]*grid-template-columns:.*minmax\(0,1fr\)/, '主工具栏应让搜索输入占据主要宽度');
+  assert.match(css, /\.wallpaper-library-source-row\{[^}]*grid-template-columns:/, '连接控件必须有独立的响应式布局');
+  assert.match(css, /\.wallpaper-library-list\{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/, '桌面端应保持 Windows 风格的四列网格');
+  assert.match(css, /\.wallpaper-library-card\{[^}]*aspect-ratio:16\/9/);
 });

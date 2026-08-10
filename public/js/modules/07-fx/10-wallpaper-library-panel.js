@@ -67,10 +67,10 @@ function wallpaperLibraryRenderRecords() {
   }
   list.innerHTML = records.map(function (record) {
     var typeLabel = record.type === 'scene' ? 'Scene 实时预览' : (record.type === 'video' ? '视频' : '图片');
-    return '<button type="button" class="wallpaper-record' + (record.id === wallpaperLibraryState.selectedId ? ' active' : '') + '" data-wallpaper-id="' + wallpaperLibraryEsc(record.id) + '">' +
+    return '<button type="button" class="wallpaper-library-card' + (record.id === wallpaperLibraryState.selectedId ? ' active' : '') + '" data-wallpaper-id="' + wallpaperLibraryEsc(record.id) + '" aria-label="预览 ' + wallpaperLibraryEsc(record.title) + '">' +
       wallpaperLibraryThumb(record) +
-      '<span class="wallpaper-record-copy"><span class="wallpaper-record-title">' + wallpaperLibraryEsc(record.title) + '</span><span class="wallpaper-record-meta">' + typeLabel + '</span></span>' +
-      '<span class="wallpaper-badge">' + (record.type === 'scene' ? 'Scene' : record.type === 'video' ? 'Video' : 'Image') + '</span></button>';
+      '<span class="wallpaper-library-card-meta"><span class="wallpaper-library-card-title">' + wallpaperLibraryEsc(record.title) + '</span><small>' + typeLabel + '</small></span>' +
+      '<span class="wallpaper-library-card-type">' + (record.type === 'scene' ? 'Scene' : record.type === 'video' ? 'Video' : 'Image') + '</span></button>';
   }).join('');
   Array.prototype.forEach.call(list.querySelectorAll('[data-wallpaper-id]'), function (button) {
     button.addEventListener('click', function () { selectWallpaperLibraryRecord(button.dataset.wallpaperId); });
@@ -101,15 +101,20 @@ function wallpaperLibraryRenderExport(record) {
 function wallpaperLibraryRenderDetail() {
   var preview = wallpaperLibraryPanelEl('wallpaper-library-preview');
   var meta = wallpaperLibraryPanelEl('wallpaper-library-preview-meta');
-  if (!preview || !meta) return;
+  var drawer = wallpaperLibraryPanelEl('wallpaper-library-details-drawer');
+  if (!preview || !meta || !drawer) return;
   wallpaperLibraryStopLivePreview();
   var record = wallpaperLibrarySelectedRecord();
   if (!record) {
+    drawer.classList.remove('show');
+    drawer.setAttribute('aria-hidden', 'true');
     preview.innerHTML = '<div class="wallpaper-library-preview-empty">选择一张壁纸预览</div>';
     meta.textContent = '';
     wallpaperLibraryRenderExport(null);
     return;
   }
+  drawer.classList.add('show');
+  drawer.setAttribute('aria-hidden', 'false');
   meta.textContent = record.title + ' · ' + (record.type === 'scene' ? 'Scene · ' + wallpaperLibraryState.host : record.type === 'video' ? '视频' : '图片');
   if (record.type === 'scene') {
     preview.innerHTML = '<img class="wallpaper-live-preview" src="' + wallpaperLibraryEsc(record.liveUrl) + '" alt="Windows 实时预览"><div class="wallpaper-live-label">Windows 实时预览</div>';
@@ -134,7 +139,7 @@ function wallpaperLibraryUseConnection(result, sourceLabel) {
   wallpaperLibraryState.baseUrl = result.baseUrl;
   wallpaperLibraryState.host = result.host || result.baseUrl;
   wallpaperLibraryState.records = Array.isArray(result.records) ? result.records : [];
-  wallpaperLibraryState.selectedId = wallpaperLibraryState.records.length ? wallpaperLibraryState.records[0].id : '';
+  wallpaperLibraryState.selectedId = '';
   try { localStorage.setItem('mineradio.windows-wallpaper.base-url', result.baseUrl); } catch (_) {}
   var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
   if (input) input.value = result.baseUrl;
@@ -167,6 +172,12 @@ async function discoverWindowsWallpaperSources() {
 function selectWallpaperLibraryRecord(id) {
   if (!id || id === wallpaperLibraryState.selectedId) return;
   wallpaperLibraryState.selectedId = id;
+  wallpaperLibraryRenderRecords();
+  wallpaperLibraryRenderDetail();
+}
+function closeWallpaperLibraryDetail() {
+  wallpaperLibraryState.selectedId = '';
+  wallpaperLibraryStopLivePreview();
   wallpaperLibraryRenderRecords();
   wallpaperLibraryRenderDetail();
 }
@@ -248,7 +259,7 @@ function openWallpaperLibraryPanel() {
 function closeWallpaperLibraryPanel() {
   var mask = wallpaperLibraryPanelEl('wallpaper-library-modal');
   wallpaperLibraryClearExportPoller();
-  wallpaperLibraryStopLivePreview();
+  closeWallpaperLibraryDetail();
   if (!mask) return;
   mask.classList.remove('show'); mask.setAttribute('aria-hidden', 'true');
 }

@@ -179,6 +179,7 @@ class WindowsWallpaperClient {
       let finished = false;
       let timeout = 0;
       let fallbackTimer = 0;
+      let fallbackPromise = null;
       const finish = async () => {
         if (finished) return;
         finished = true;
@@ -188,12 +189,6 @@ class WindowsWallpaperClient {
         const attempts = await Promise.all([...candidates].map((url) => this.connect(url)));
         resolve({ ok: true, services: attempts.filter((result) => result.ok) });
       };
-      socket.on('message', (message) => {
-        const match = new RegExp('^' + WINDOWS_DISCOVERY_PREFIX + '([^\\s]+)$').exec(String(message || '').trim());
-        const base = match ? normalizeWindowsBaseUrl('http://' + match[1]) : '';
-        if (base) candidates.add(base);
-      });
-      socket.on('error', () => finish());
       const finishWithServices = (services) => {
         if (finished) return;
         finished = true;
@@ -203,9 +198,17 @@ class WindowsWallpaperClient {
         resolve({ ok: true, services });
       };
       const runFallback = async () => {
-        const services = await this.scanPrivateSubnets();
+        if (!fallbackPromise) fallbackPromise = this.scanPrivateSubnets();
+        const services = await fallbackPromise;
         if (services.length) finishWithServices(services);
+        return services;
       };
+      socket.on('message', (message) => {
+        const match = new RegExp('^' + WINDOWS_DISCOVERY_PREFIX + '([^\\s]+)$').exec(String(message || '').trim());
+        const base = match ? normalizeWindowsBaseUrl('http://' + match[1]) : '';
+        if (base) candidates.add(base);
+      });
+      socket.on('error', () => { runFallback().then((services) => finishWithServices(services || [])); });
       try {
         socket.bind(WINDOWS_DISCOVERY_PORT, () => {
           timeout = setTimeout(finish, wait);
