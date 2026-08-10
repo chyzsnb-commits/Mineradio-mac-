@@ -8419,11 +8419,14 @@ body.login-guide-active #login-guide-canvas {
 .audio-output-workflow-modal {
   width: min(1080px, calc(100vw - 44px));
   max-width: min(1080px, calc(100vw - 44px));
+  height: min(900px, calc(100vh - 42px));
   max-height: calc(100vh - 42px);
   padding: 24px 28px 24px;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   text-align: left;
-  scrollbar-width: thin;
   background: radial-gradient(circle at 18% 10%, rgba(255, 255, 255, .09), transparent 28%), radial-gradient(circle at 78% 62%, rgba(var(--fc-accent-rgb), .055), transparent 38%), rgba(6, 7, 10, .34);
   border-color: rgba(255, 255, 255, .060);
   border-radius: 24px;
@@ -8451,7 +8454,33 @@ body.login-guide-active #login-guide-canvas {
 
 .audio-output-workflow-body {
   position: relative;
-  min-height: 430px
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 10px 2px 0;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .18) rgba(255, 255, 255, .035)
+}
+
+.audio-output-workflow-body::-webkit-scrollbar {
+  width: 6px
+}
+
+.audio-output-workflow-body::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, .035);
+  border-radius: 999px
+}
+
+.audio-output-workflow-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .18);
+  border: 1px solid rgba(0, 0, 0, .20);
+  border-radius: 999px
+}
+
+.audio-output-workflow-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, .30)
 }
 
 .audio-output-workflow-modal .audio-route-graph {
@@ -8489,10 +8518,9 @@ body.login-guide-active #login-guide-canvas {
 }
 
 .audio-output-workflow-modal .route-node-grid {
-  max-height: min(136px, calc(100vh - 390px));
-  overflow: auto;
-  padding-right: 2px;
-  overscroll-behavior: contain
+  max-height: none;
+  overflow: visible;
+  padding-right: 0
 }
 
 .audio-output-workflow-modal .route-lane.bridge .route-node-grid {

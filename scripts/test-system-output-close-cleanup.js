@@ -37,6 +37,24 @@ test('播放输出的路由入口有实际弹窗承载设备选择', () => {
   assert.match(output, /function openAudioOutputWorkflowPanel\(\)/);
 });
 
+test('播放输出路由只保留一个深色滚动容器，设备节点不再生成第二根白色滚动条', () => {
+  const css = read('public/css/index.css');
+
+  assert.match(css, /\.audio-output-workflow-modal\s*\{[\s\S]*?display:\s*flex[\s\S]*?overflow:\s*hidden[\s\S]*?\}/);
+  assert.match(css, /\.audio-output-workflow-body\s*\{[\s\S]*?overflow-y:\s*auto[\s\S]*?overscroll-behavior:\s*contain[\s\S]*?\}/);
+  assert.match(css, /\.audio-output-workflow-modal\s+\.route-node-grid\s*\{[\s\S]*?max-height:\s*none[\s\S]*?overflow:\s*visible[\s\S]*?\}/);
+  assert.match(css, /\.audio-output-workflow-body::\-webkit-scrollbar\s*\{[\s\S]*?width:\s*[4-8]px[\s\S]*?\}/);
+  assert.match(css, /\.audio-output-workflow-body::\-webkit-scrollbar-thumb\s*\{[\s\S]*?rgba\(255,\s*255,\s*255,\s*\.1[0-9][\s\S]*?\}/);
+});
+
+test('Electron 重复建窗时必须复用进行中的启动，不得把窗口切到未监听的新端口', () => {
+  const main = read('desktop/main.js');
+
+  assert.match(main, /let createWindowInFlight\s*=\s*null;/);
+  assert.match(main, /function createWindow\(\)\s*\{[\s\S]*?if \(createWindowInFlight\) return createWindowInFlight;[\s\S]*?createWindowInFlight = createWindowInternal\(\)/);
+  assert.match(main, /async function createWindowInternal\(\)\s*\{[\s\S]*?const port = await findOpenPort\(3000\)/);
+});
+
 test('主输出与虚拟麦克风桥接只在真实路由成功后报告已连接', () => {
   const output = read('public/js/modules/05-playback/00-api-quality-output.js');
 

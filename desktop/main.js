@@ -33,6 +33,7 @@ const {
 } = require('../spotify-api');
 
 let mainWindow = null;
+let createWindowInFlight = null;
 let localServer = null;
 let mainServerPort = 0;
 let localMusicLibrary = null;
@@ -2914,7 +2915,19 @@ ipcMain.on('mineradio-handpose-frame', (_e, buf) => {
 ipcMain.on('mineradio-handpose-stop', () => killHandpose());
 app.on('before-quit', () => killHandpose());
 
-async function createWindow() {
+function createWindow() {
+  if (createWindowInFlight) return createWindowInFlight;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    focusMainWindow();
+    return Promise.resolve(mainWindow);
+  }
+  createWindowInFlight = createWindowInternal().finally(() => {
+    createWindowInFlight = null;
+  });
+  return createWindowInFlight;
+}
+
+async function createWindowInternal() {
   htmlFullscreenActive = false;
   windowFullscreenActive = false;
   const port = await findOpenPort(3000);

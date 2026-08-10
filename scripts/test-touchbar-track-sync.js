@@ -77,7 +77,7 @@ test('渲染进程桥接切歌和播放状态到 Touch Bar', () => {
 
 test('Touch Bar 在主页面加载前初始化，避免错过首个歌曲状态', () => {
   const source = read('desktop/main.js');
-  const createStart = source.indexOf('async function createWindow()');
+  const createStart = source.indexOf('async function createWindowInternal()');
   const loadAt = source.indexOf('await mainWindow.loadURL', createStart);
   const initAt = source.indexOf('touchbar.init(', createStart);
 
