@@ -1020,8 +1020,8 @@ var _voxCam = { radius: VOX_CAM_DEF_RADIUS, height: VOX_CAM_DEF_HEIGHT, azimuth:
 var _voxCamDisplay = { radius: VOX_CAM_DEF_RADIUS, height: VOX_CAM_DEF_HEIGHT, azimuth: VOX_CAM_DEF_AZIMUTH };
 var voxelShelfCompositionMix = 0;
 var voxelShelfCompositionTarget = 0;
-// p10 旧场景使用约 103 单位的相机半径，而通用歌架焦点使用约 4-6 单位。
-// 这里只做坐标尺度适配；右键仍只改变 shelfPinnedOpen，焦点镜头和阻尼全部复用通用 orbit。
+// p10 的体素世界远大于通用场景。歌架 focus 只借用右侧构图方位，
+// 不借用通用的近景半径/仰角，否则会把镜头推进音柱内部。
 function voxelShelfCompositionShouldFocus() {
   if (typeof voxelCityActive === 'function' && !voxelCityActive()) return false;
   if (typeof freeCamera !== 'undefined' && freeCamera && (freeCamera.active || freeCamera.locked)) return false;
@@ -1070,19 +1070,13 @@ function voxelShelfCameraFocusPose() {
   if (!orbit.focus.active && !/^shelf-/.test(focusType)) return null;
   var baselineRadius = Number(orbit.baselineRadius);
   if (!isFinite(baselineRadius) || baselineRadius <= 0) baselineRadius = 6.6;
-  var orbitRadius = Number(orbit.radius);
-  if (!isFinite(orbitRadius) || orbitRadius <= 0) orbitRadius = baselineRadius;
   var baselineTheta = Number(orbit.baselineTheta) || 0;
-  var baselinePhi = Number(orbit.baselinePhi) || 0;
   var theta = Number(orbit.theta);
-  var phi = Number(orbit.phi);
   if (!isFinite(theta)) theta = baselineTheta;
-  if (!isFinite(phi)) phi = baselinePhi;
-  var radius = VOX_CAM_DEF_RADIUS * (orbitRadius / baselineRadius);
-  // 通用相机的 phi 是相对水平面的仰角；p10 的旧实现把它叠到默认俯角，
-  // 造成右键后仍沿旧俯视构图。按 Win 的 focus 姿态直接换算高度。
-  var mappedPhi = phi;
-  mappedPhi = clampRange(mappedPhi, -1.48, 1.48);
+  var nativeRadius = typeof _voxCam !== 'undefined' && _voxCam ? Number(_voxCam.radius) : NaN;
+  var nativeHeight = typeof _voxCam !== 'undefined' && _voxCam ? Number(_voxCam.height) : NaN;
+  if (!isFinite(nativeRadius) || nativeRadius <= 0) nativeRadius = VOX_CAM_DEF_RADIUS;
+  if (!isFinite(nativeHeight)) nativeHeight = VOX_CAM_DEF_HEIGHT;
   var lookAt = orbit.lookAt || { x: 0, y: 0, z: 0 };
   var scale = VOX_CAM_DEF_RADIUS / baselineRadius;
   var frameYaw = voxelShelfWorldFrameYaw();
@@ -1090,8 +1084,8 @@ function voxelShelfCameraFocusPose() {
   var lookX = Number(lookAt.x) || 0;
   var lookZ = Number(lookAt.z) || 0;
   return {
-    radius: radius,
-    height: radius * Math.sin(mappedPhi),
+    radius: nativeRadius,
+    height: nativeHeight,
     azimuth: VOX_CAM_DEF_AZIMUTH + (theta - baselineTheta),
     lookAt: {
       x: (cosYaw * lookX + sinYaw * lookZ) * scale,

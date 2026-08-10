@@ -120,7 +120,7 @@ test('右键唤起歌架前必须清除悬停选中，避免 p10 以抬升卡片
   );
 });
 
-test('p10 只把通用 focus 的平滑姿态映射到旧场景尺度', () => {
+test('p10 歌架 focus 保留原生完整柱体构图，不继承通用近景半径与高度', () => {
   assert.match(voxel, /function voxelShelfCameraFocusPose\(/);
   assert.match(voxel, /function voxelShelfWorldFrameYaw\(/);
   assert.doesNotMatch(voxel, /readVoxelShelfCompositionMix/);
@@ -132,6 +132,7 @@ test('p10 只把通用 focus 的平滑姿态映射到旧场景尺度', () => {
     VOX_CAM_DEF_HEIGHT: 48,
     VOX_CAM_DEF_AZIMUTH: -Math.PI / 4,
     VOX_CAM_DEF_LOOKY: 0,
+    _voxCam: { radius: 127, height: 48, azimuth: -Math.PI / 4 },
     clampRange: (value, min, max) => Math.max(min, Math.min(max, value)),
     orbit: {
       focus: { active: true, type: 'shelf-side' },
@@ -147,11 +148,17 @@ test('p10 只把通用 focus 的平滑姿态映射到旧场景尺度', () => {
   vm.runInNewContext(`${frameYaw}; ${pinnedOffset}; ${helper}; this.voxelShelfCameraFocusPose = voxelShelfCameraFocusPose;`, context);
   const pose = context.voxelShelfCameraFocusPose();
   assert.ok(pose, '通用 shelf focus 激活时必须返回 p10 相机姿态');
-  assert.ok(pose.radius < 103, '歌架 focus 应按通用相机半径平滑推近');
+  assert.equal(pose.radius, 127, '歌架 focus 不得把 p10 镜头推进柱体内');
+  assert.equal(pose.height, 48, '歌架 focus 不得用通用负仰角覆盖 p10 原生高度');
   assert.ok(pose.azimuth > -Math.PI / 4, '歌架 focus 应使用通用 theta 向右转');
-  assert.ok(pose.height < 0, 'Win shelf-side 的负仰角必须保留，不能被 p10 硬钳到地平线以上');
   assert.ok(pose.lookAt.x > 0, '歌架 focus 应使用通用 lookAt 偏移');
   assert.ok(Math.abs(pose.lookAt.x - 2.32 * (103 / 6.6)) > 0.1, '歌架 focus 的 lookAt 必须转换到 p10 世界方位');
+  context._voxCam.radius = 82;
+  context._voxCam.height = 31;
+  context.orbit.radius = 4.2;
+  const zoomedPose = context.voxelShelfCameraFocusPose();
+  assert.equal(zoomedPose.radius, 82, '用户滚轮缩放后的 p10 半径不得在右键时被重置');
+  assert.equal(zoomedPose.height, 31, '用户调整后的 p10 高度不得在右键时被重置');
   context.orbit.focus.active = false;
   context.orbit.focus.type = null;
   assert.equal(context.voxelShelfCameraFocusPose(), null, '没有 focus 时必须回到 p10 自由镜头');
@@ -232,13 +239,13 @@ test('p10 交互边界仍尊重启动页、播放切换保护和空歌单', () =
   assert.match(shelfInteractions, /shelfPlaybackSwitchGuardActive\(\)/);
 });
 
-test('左边缘歌单必须停留 600ms 后才触发，不能进入边缘即呼出', () => {
-  assert.match(peekPanels, /var PLAYLIST_EDGE_DWELL_MS\s*=\s*600/);
+test('左边缘歌单必须停留 300ms 后才触发，不能进入边缘即呼出', () => {
+  assert.match(peekPanels, /var PLAYLIST_EDGE_DWELL_MS\s*=\s*300/);
   const edge = readFunction(peekPanels, 'isPlaylistEdgeTrigger');
   let now = 0;
   const context = {
     performance: { now: () => now },
-    PLAYLIST_EDGE_DWELL_MS: 600,
+    PLAYLIST_EDGE_DWELL_MS: 300,
     secondaryPlaylistEdgeGuard: { enteredAt: 0, timer: null, x: 0, y: 0, H: 0 },
     isVisualPointerDragActive: () => false,
     isSecondaryLeftDisplaySeamGuardActive: () => false,
@@ -247,10 +254,10 @@ test('左边缘歌单必须停留 600ms 后才触发，不能进入边缘即呼�
   vm.runInNewContext(`${edge}; this.isPlaylistEdgeTrigger = isPlaylistEdgeTrigger;`, context);
   now = 1;
   assert.equal(context.isPlaylistEdgeTrigger(0, 300, 800), false, '首次进入边缘不能立即呼出');
-  now = 599;
-  assert.equal(context.isPlaylistEdgeTrigger(0, 300, 800), false, '停留不足 600ms 不能呼出');
-  now = 601;
-  assert.equal(context.isPlaylistEdgeTrigger(0, 300, 800), true, '连续停留 600ms 后才允许呼出');
+  now = 299;
+  assert.equal(context.isPlaylistEdgeTrigger(0, 300, 800), false, '停留不足 300ms 不能呼出');
+  now = 301;
+  assert.equal(context.isPlaylistEdgeTrigger(0, 300, 800), true, '连续停留 300ms 后才允许呼出');
 });
 
 test('左键拖动期间必须同时抑制左侧歌单和右侧 3D 歌架唤醒', () => {
@@ -281,7 +288,7 @@ test('p10 拖动中的帧不会叠加释放惯性，边缘触发只在有效垂�
   const edge = readFunction(peekPanels, 'isPlaylistEdgeTrigger');
   const edgeContext = {
     performance: { now: () => 1 },
-    PLAYLIST_EDGE_DWELL_MS: 600,
+    PLAYLIST_EDGE_DWELL_MS: 300,
     secondaryPlaylistEdgeGuard: { enteredAt: 0, timer: null, x: 0, y: 0, H: 0 },
     resetSecondaryPlaylistEdgeGuard() {},
     isSecondaryLeftDisplaySeamGuardActive() { return false; },
@@ -289,7 +296,7 @@ test('p10 拖动中的帧不会叠加释放惯性，边缘触发只在有效垂�
   };
   vm.runInNewContext(`${edge}; this.isPlaylistEdgeTrigger = isPlaylistEdgeTrigger;`, edgeContext);
   assert.equal(edgeContext.isPlaylistEdgeTrigger(0, 300, 800), false, '有效左边缘首次进入应等待');
-  edgeContext.performance.now = () => 601;
+  edgeContext.performance.now = () => 301;
   assert.equal(edgeContext.isPlaylistEdgeTrigger(0, 300, 800), true, '有效左边缘持续停留后必须触发');
   assert.equal(edgeContext.isPlaylistEdgeTrigger(0, 80, 800), false, '顶部控制区不能误触发歌单');
 });

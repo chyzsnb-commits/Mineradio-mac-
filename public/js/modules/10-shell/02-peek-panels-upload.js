@@ -157,7 +157,7 @@ function maybeShowUploadTipOnce() {
 var secondaryPlaylistEdgeGuard = { enteredAt: 0, timer: null, x: 0, y: 0, H: 0 };
 var SECONDARY_PLAYLIST_EDGE_MIN_X = 14;
 var SECONDARY_PLAYLIST_EDGE_MAX_X = 118;
-var PLAYLIST_EDGE_DWELL_MS = 600;
+var PLAYLIST_EDGE_DWELL_MS = 300;
 var SECONDARY_PLAYLIST_EDGE_DWELL_MS = PLAYLIST_EDGE_DWELL_MS;
 var SECONDARY_PLAYLIST_SEAM_CLOSE_X = 12;
 function isVisualPointerDragActive(e) {
