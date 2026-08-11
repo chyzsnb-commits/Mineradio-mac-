@@ -21,6 +21,7 @@ const WINDOWS_DISCOVERY_WAIT_MS = 8000;
 const WINDOWS_SUBNET_PROBE_DELAY_MS = 350;
 const WINDOWS_SUBNET_PROBE_TIMEOUT_MS = 900;
 const WINDOWS_SUBNET_PROBE_CONCURRENCY = 24;
+const WINDOWS_MEDIA_MAX_BYTES = 256 * 1024 * 1024;
 
 let library = null;
 let refs = {};
@@ -51,6 +52,20 @@ function resolveWindowsAssetUrl(baseUrl, value) {
 function safeExportFileName(value) {
   const name = String(value || '').trim();
   return /^[a-z0-9][a-z0-9._ -]{0,180}\.(?:mp4|webm|mov)$/i.test(name) && path.basename(name) === name ? name : '';
+}
+
+function safeWallpaperRecordId(value) {
+  const id = String(value || '').trim();
+  return id && id.length <= 240 && !/[\x00-\x1f\x7f]/.test(id) ? id : '';
+}
+
+function mediaExtensionForMime(mime, fallback) {
+  const normalized = String(mime || '').toLowerCase().split(';')[0].trim();
+  const extensions = {
+    'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+    'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
+  };
+  return extensions[normalized] || fallback;
 }
 
 function privateSubnetProbeUrls(networkInterfaces) {
@@ -112,6 +127,7 @@ class WindowsWallpaperClient {
     this.fetchImpl = opts.fetchImpl || global.fetch;
     this.dgramImpl = opts.dgramImpl || dgram;
     this.networkInterfaces = opts.networkInterfaces || os.networkInterfaces;
+    this.trustedBases = new Set();
   }
 
   async requestJson(url, options, timeoutMs) {
@@ -140,6 +156,7 @@ class WindowsWallpaperClient {
     const listing = await this.requestJson(serviceUrl(base, '/api/wallpapers'));
     if (!listing.ok) return { ok: false, error: listing.error || 'WALLPAPERS_FAILED' };
     if (!listing.data || listing.data.ok !== true || !Array.isArray(listing.data.records)) return { ok: false, error: 'WALLPAPERS_REJECTED' };
+    this.trustedBases.add(base);
     return {
       ok: true,
       baseUrl: base,
@@ -258,6 +275,45 @@ class WindowsWallpaperClient {
     }).filter(Boolean) };
   }
 
+  async downloadMedia(url, expectedType, name) {
+    if (typeof this.fetchImpl !== 'function') return { ok: false, error: 'FETCH_UNAVAILABLE' };
+    try {
+      const response = await this.fetchImpl(url);
+      if (!response || !response.ok || typeof response.arrayBuffer !== 'function') return { ok: false, error: 'MEDIA_RESPONSE_FAILED' };
+      const mime = String(response.headers && response.headers.get && response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      if (!mime || (expectedType === 'image' ? !/^image\//.test(mime) : !/^video\//.test(mime))) return { ok: false, error: 'MEDIA_TYPE_REJECTED' };
+      const length = Number(response.headers && response.headers.get && response.headers.get('content-length') || 0);
+      if (Number.isFinite(length) && length > WINDOWS_MEDIA_MAX_BYTES) return { ok: false, error: 'MEDIA_TOO_LARGE' };
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (!bytes.length) return { ok: false, error: 'MEDIA_EMPTY' };
+      if (bytes.length > WINDOWS_MEDIA_MAX_BYTES) return { ok: false, error: 'MEDIA_TOO_LARGE' };
+      return { ok: true, mime, name, bytes };
+    } catch (_) {
+      return { ok: false, error: 'MEDIA_DOWNLOAD_FAILED' };
+    }
+  }
+
+  async downloadWallpaperMedia(baseUrl, recordId, type) {
+    const base = normalizeWindowsBaseUrl(baseUrl);
+    const id = safeWallpaperRecordId(recordId);
+    const expectedType = type === 'video' ? 'video' : (type === 'image' ? 'image' : '');
+    if (!base || !id || !expectedType) return { ok: false, error: 'INVALID_MEDIA_REQUEST' };
+    if (!this.trustedBases.has(base)) return { ok: false, error: 'UNVERIFIED_SOURCE' };
+    const fallback = expectedType === 'video' ? 'mp4' : 'png';
+    const result = await this.downloadMedia(serviceUrl(base, '/api/wallpaper-file?id=' + encodeURIComponent(id)), expectedType, 'wallpaper-' + id + '.' + fallback);
+    if (!result.ok) return result;
+    result.name = 'wallpaper-' + id + '.' + mediaExtensionForMime(result.mime, fallback);
+    return result;
+  }
+
+  async downloadExportedMedia(baseUrl, fileName) {
+    const base = normalizeWindowsBaseUrl(baseUrl);
+    const name = safeExportFileName(fileName);
+    if (!base || !name) return { ok: false, error: 'INVALID_MEDIA_REQUEST' };
+    if (!this.trustedBases.has(base)) return { ok: false, error: 'UNVERIFIED_SOURCE' };
+    return this.downloadMedia(serviceUrl(base, '/api/exported-file?name=' + encodeURIComponent(name)), 'video', name);
+  }
+
   async downloadExportedFile(baseUrl, fileName, destination) {
     const base = normalizeWindowsBaseUrl(baseUrl);
     const name = safeExportFileName(fileName);
@@ -296,6 +352,8 @@ function init(options) {
     startWindowsSceneExport: (baseUrl, sceneId, seconds) => windowsClient.startSceneExport(baseUrl, sceneId, seconds),
     getWindowsExportJob: (baseUrl, jobId) => windowsClient.getExportJob(baseUrl, jobId),
     listWindowsExportedVideos: (baseUrl) => windowsClient.listExportedVideos(baseUrl),
+    downloadWindowsWallpaperMedia: (baseUrl, recordId, type) => windowsClient.downloadWallpaperMedia(baseUrl, recordId, type),
+    downloadWindowsExportedMedia: (baseUrl, fileName) => windowsClient.downloadExportedMedia(baseUrl, fileName),
     downloadWindowsExport: (baseUrl, fileName, destination) => windowsClient.downloadExportedFile(baseUrl, fileName, destination),
   };
 }

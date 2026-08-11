@@ -23,6 +23,22 @@ function jsonResponse(status, body) {
   };
 }
 
+function binaryResponse(status, mime, bytes, headers) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get: (name) => {
+        const key = String(name || '').toLowerCase();
+        return key === 'content-type' ? mime : String(headers && headers[key] || '');
+      },
+    },
+    async arrayBuffer() {
+      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    },
+  };
+}
+
 test('壁纸桥初始化后必须暴露可用的 Windows 发现与连接入口', () => {
   const bridge = init({ userDataPath: path.join(root, '.tmp-wallpaper-library-test') });
   assert.equal(typeof bridge.discoverWindowsSources, 'function');
@@ -159,6 +175,50 @@ test('Scene 导出只接受 202 任务，完成后才允许下载', async () => 
   assert.equal(status.downloadUrl, 'http://192.168.1.20:8123/api/exported-file?name=demo.mp4');
 });
 
+test('已验证 Windows 服务的图片视频与已完成 Scene 可下载为本地背景媒体', async () => {
+  const calls = [];
+  const client = new WindowsWallpaperClient({
+    fetchImpl: async (url) => {
+      calls.push(url);
+      if (url.endsWith('/api/ping')) return jsonResponse(200, { ok: true });
+      if (url.endsWith('/api/wallpapers')) return jsonResponse(200, { ok: true, records: [] });
+      if (url.endsWith('/api/wallpaper-file?id=poster')) return binaryResponse(200, 'image/png', Buffer.from([137, 80, 78, 71]));
+      if (url.endsWith('/api/exported-file?name=scene.mp4')) return binaryResponse(200, 'video/mp4', Buffer.from([0, 0, 0, 24]));
+      throw new Error('unexpected request ' + url);
+    },
+  });
+
+  await client.connect('http://192.168.1.20:8123');
+  const image = await client.downloadWallpaperMedia('http://192.168.1.20:8123', 'poster', 'image');
+  const scene = await client.downloadExportedMedia('http://192.168.1.20:8123', 'scene.mp4');
+
+  assert.deepEqual(image, { ok: true, mime: 'image/png', name: 'wallpaper-poster.png', bytes: Buffer.from([137, 80, 78, 71]) });
+  assert.deepEqual(scene, { ok: true, mime: 'video/mp4', name: 'scene.mp4', bytes: Buffer.from([0, 0, 0, 24]) });
+  assert.deepEqual(calls, [
+    'http://192.168.1.20:8123/api/ping',
+    'http://192.168.1.20:8123/api/wallpapers',
+    'http://192.168.1.20:8123/api/wallpaper-file?id=poster',
+    'http://192.168.1.20:8123/api/exported-file?name=scene.mp4',
+  ]);
+});
+
+test('背景下载拒绝未验证来源和错误媒体类型', async () => {
+  const client = new WindowsWallpaperClient({
+    fetchImpl: async () => binaryResponse(200, 'text/html', Buffer.from('not media')),
+  });
+  assert.deepEqual(await client.downloadWallpaperMedia('http://192.168.1.20:8123', 'poster', 'image'), { ok: false, error: 'UNVERIFIED_SOURCE' });
+  client.trustedBases.add('http://192.168.1.20:8123');
+  assert.deepEqual(await client.downloadWallpaperMedia('http://192.168.1.20:8123', 'poster', 'image'), { ok: false, error: 'MEDIA_TYPE_REJECTED' });
+});
+
+test('背景下载拒绝超过本地库安全上限的响应并允许调用者重试', async () => {
+  const client = new WindowsWallpaperClient({
+    fetchImpl: async () => binaryResponse(200, 'video/mp4', Buffer.from([0, 0, 0, 24]), { 'content-length': String(256 * 1024 * 1024 + 1) }),
+  });
+  client.trustedBases.add('http://192.168.1.20:8123');
+  assert.deepEqual(await client.downloadWallpaperMedia('http://192.168.1.20:8123', 'clip', 'video'), { ok: false, error: 'MEDIA_TOO_LARGE' });
+});
+
 test('Windows 壁纸库入口接通发现、实时预览、导出与用户选定目录下载', () => {
   const preload = read('desktop/preload.js');
   const main = read('desktop/main.js');
@@ -172,6 +232,7 @@ test('Windows 壁纸库入口接通发现、实时预览、导出与用户选定
   assert.match(preload, /wallpaperWindowsExportStart:/);
   assert.match(preload, /wallpaperWindowsExportStatus:/);
   assert.match(preload, /wallpaperWindowsExportDownload:/);
+  assert.match(preload, /wallpaperWindowsDownloadMedia:/);
   assert.match(main, /mineradio-wallpaper-windows-discover/);
   assert.match(main, /dialog\.showSaveDialog/);
   assert.match(panel, /function discoverWindowsWallpaperSources\(/);
@@ -179,6 +240,11 @@ test('Windows 壁纸库入口接通发现、实时预览、导出与用户选定
   assert.match(panel, /wallpaperWindowsExportStart/);
   assert.match(panel, /wallpaperWindowsExportStatus/);
   assert.match(panel, /wallpaperWindowsExportDownload/);
+  assert.match(panel, /function applyWindowsWallpaperToMineradio\(/);
+  assert.match(panel, /下载并应用到 Mineradio/);
+  assert.match(panel, /应用 MP4 到 Mineradio/);
+  assert.match(panel, /putCustomBackgroundBlob/);
+  assert.match(panel, /setCustomBackgroundMedia/);
   assert.match(panel, /function wallpaperLibraryStopLivePreview\(/);
   assert.doesNotMatch(panel, /getDisplayMedia/);
   assert.ok(html.includes('Windows 壁纸库'));

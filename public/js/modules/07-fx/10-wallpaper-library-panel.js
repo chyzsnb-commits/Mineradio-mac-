@@ -11,6 +11,7 @@ var wallpaperLibraryState = {
   sort: 'title',
   exportTask: null,
   exportPoller: 0,
+  applyTask: null,
 };
 
 function wallpaperLibraryPanelEl(id) { return document.getElementById(id); }
@@ -84,19 +85,47 @@ function wallpaperLibraryStopLivePreview() {
     image.remove();
   });
 }
+function wallpaperLibrarySavedMediaKey(record, output) {
+  if (!record) return '';
+  return 'mineradio.windows-wallpaper.saved-media:' + [wallpaperLibraryState.baseUrl, record.type, record.type === 'scene' ? record.sceneId : record.id, output || ''].join('|');
+}
+function wallpaperLibraryReadSavedMedia(key) {
+  if (!key) return null;
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) { return null; }
+}
+function wallpaperLibraryWriteSavedMedia(key, media) {
+  if (!key || !media) return;
+  try { localStorage.setItem(key, JSON.stringify(media)); } catch (_) {}
+}
+function wallpaperLibraryApplyTaskFor(record, output) {
+  var task = wallpaperLibraryState.applyTask;
+  var key = wallpaperLibrarySavedMediaKey(record, output);
+  return task && task.key === key ? task : null;
+}
+function wallpaperLibraryRenderApply(record, output) {
+  if (!record) return '';
+  var task = wallpaperLibraryApplyTaskFor(record, output);
+  var isScene = record.type === 'scene';
+  var label = isScene ? '应用 MP4 到 Mineradio' : '下载并应用到 Mineradio';
+  if (task && task.state === 'downloading') return '<div class="wallpaper-export-state" data-state="running">正在下载并保存到 Mineradio 本地背景库...</div>';
+  if (task && task.state === 'completed') return '<div class="wallpaper-export-state" data-state="completed">已保存到 Mineradio 本地背景库并应用，之后无需重新下载。</div><button type="button" class="modal-btn small secondary" onclick="applyWindowsWallpaperToMineradio()">再次应用</button>';
+  var detail = task && task.state === 'failed' ? '<div class="wallpaper-export-state" data-state="failed">' + wallpaperLibraryEsc(task.message || '下载失败，可重试。') + '</div>' : '<div class="wallpaper-export-state">保存到 Mineradio 本地背景库后可离线使用。</div>';
+  return '<div class="wallpaper-export-controls"><button type="button" class="modal-btn small" onclick="applyWindowsWallpaperToMineradio()">' + label + '</button></div>' + detail;
+}
 function wallpaperLibraryRenderExport(record) {
   var exportEl = wallpaperLibraryPanelEl('wallpaper-library-export');
   if (!exportEl) return;
   var task = wallpaperLibraryState.exportTask;
-  if (!record || record.type !== 'scene') { exportEl.innerHTML = ''; return; }
+  if (!record) { exportEl.innerHTML = ''; return; }
+  if (record.type !== 'scene') { exportEl.innerHTML = wallpaperLibraryRenderApply(record, ''); return; }
   var state = task && task.sceneId === record.sceneId ? task : null;
   var detail = !state ? 'Windows 将离屏渲染并生成 MP4。' : state.message;
   var action = !state || state.state === 'failed' || state.state === 'stopped'
     ? '<button type="button" class="modal-btn small" onclick="startWindowsSceneExport()">' + (state ? '重试导出 MP4' : '导出 MP4') + '</button>'
     : state.state === 'completed'
-      ? '<button type="button" class="modal-btn small" onclick="downloadWindowsSceneExport()">保存 MP4</button>'
+      ? '<button type="button" class="modal-btn small secondary" onclick="downloadWindowsSceneExport()">保存 MP4 到文件夹</button>'
       : '<button type="button" class="modal-btn small secondary" onclick="stopWindowsSceneExportPolling()">停止等待</button>';
-  exportEl.innerHTML = '<div class="wallpaper-export-controls"><label>时长 <input id="wallpaper-library-export-seconds" type="number" min="1" max="300" value="' + (state && state.seconds || 30) + '"> 秒</label>' + action + '</div><div class="wallpaper-export-state" data-state="' + wallpaperLibraryEsc(state && state.state || 'ready') + '">' + wallpaperLibraryEsc(detail) + '</div>';
+  exportEl.innerHTML = '<div class="wallpaper-export-controls"><label>时长 <input id="wallpaper-library-export-seconds" type="number" min="1" max="300" value="' + (state && state.seconds || 30) + '"> 秒</label>' + action + '</div><div class="wallpaper-export-state" data-state="' + wallpaperLibraryEsc(state && state.state || 'ready') + '">' + wallpaperLibraryEsc(detail) + '</div>' + (state && state.state === 'completed' ? wallpaperLibraryRenderApply(record, state.output || '') : '');
 }
 function wallpaperLibraryRenderDetail() {
   var preview = wallpaperLibraryPanelEl('wallpaper-library-preview');
@@ -238,6 +267,54 @@ async function downloadWindowsSceneExport() {
   var result = await download(wallpaperLibraryState.baseUrl, task.output).catch(function () { return null; });
   task.message = result && result.ok ? '已保存 MP4。' : (result && result.error === 'DOWNLOAD_CANCELLED' ? '已取消保存。' : '保存失败，可重试。');
   wallpaperLibraryRenderExport(wallpaperLibrarySelectedRecord());
+}
+function wallpaperLibraryBlobFromResult(result) {
+  var bytes = result && result.bytes;
+  if (bytes instanceof ArrayBuffer) return new Blob([bytes], { type: result.mime || '' });
+  if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(bytes)) {
+    return new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)], { type: result.mime || '' });
+  }
+  return null;
+}
+async function applyWindowsWallpaperToMineradio() {
+  var record = wallpaperLibrarySelectedRecord();
+  var download = wallpaperLibraryApi('wallpaperWindowsDownloadMedia');
+  if (!record || !download || !wallpaperLibraryState.baseUrl || typeof putCustomBackgroundBlob !== 'function' || typeof setCustomBackgroundMedia !== 'function') return;
+  var exportTask = wallpaperLibraryState.exportTask;
+  var output = record.type === 'scene' && exportTask && exportTask.sceneId === record.sceneId && exportTask.state === 'completed' ? exportTask.output : '';
+  if (record.type === 'scene' && !output) return;
+  var key = wallpaperLibrarySavedMediaKey(record, output);
+  var task = wallpaperLibraryApplyTaskFor(record, output);
+  if (task && task.state === 'downloading') return;
+  wallpaperLibraryState.applyTask = { key: key, state: 'downloading', message: '' };
+  wallpaperLibraryRenderExport(record);
+  try {
+    var saved = wallpaperLibraryReadSavedMedia(key);
+    if (saved && saved.id && typeof getCustomBackgroundBlob === 'function' && await getCustomBackgroundBlob(saved.id)) {
+      setCustomBackgroundMedia(saved);
+      if (typeof renderVideoBgGrid === 'function') renderVideoBgGrid();
+      wallpaperLibraryState.applyTask = { key: key, state: 'completed' };
+      wallpaperLibraryRenderExport(record);
+      return;
+    }
+    var request = record.type === 'scene'
+      ? { kind: 'scene-export', fileName: output }
+      : { kind: 'wallpaper', recordId: record.id, type: record.type };
+    var result = await download(wallpaperLibraryState.baseUrl, request);
+    var blob = result && result.ok ? wallpaperLibraryBlobFromResult(result) : null;
+    if (!blob || !blob.size) throw new Error(result && result.error || 'MEDIA_DOWNLOAD_FAILED');
+    var type = /^image\//i.test(result.mime || '') ? 'image' : 'video';
+    var id = 'windows-bg-' + type + '-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+    var media = { type: type, id: id, name: String(result.name || record.title || '').slice(0, 120), mime: String(result.mime || '').slice(0, 80), size: blob.size };
+    await putCustomBackgroundBlob(id, blob, media);
+    wallpaperLibraryWriteSavedMedia(key, media);
+    setCustomBackgroundMedia(media);
+    if (typeof renderVideoBgGrid === 'function') renderVideoBgGrid();
+    wallpaperLibraryState.applyTask = { key: key, state: 'completed' };
+  } catch (error) {
+    wallpaperLibraryState.applyTask = { key: key, state: 'failed', message: error && error.message || '下载失败，可重试。' };
+  }
+  wallpaperLibraryRenderExport(record);
 }
 function wallpaperLibraryBindControls() {
   var search = wallpaperLibraryPanelEl('wallpaper-library-search');

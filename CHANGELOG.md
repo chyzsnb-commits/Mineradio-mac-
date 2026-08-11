@@ -1,5 +1,7 @@
 # Changelog
 
+- Windows 壁纸库新增“下载并应用到 Mineradio”本地化链路：图片、视频和已完成导出的 Scene MP4 现在通过已验证的 Windows 服务下载，写入既有 IndexedDB 背景媒体库后立即应用；重启或 Windows 断线后继续使用 Mac 本地副本，同一项目再次选择会直接复用本地媒体而不重复下载。新增 MIME、来源验证、空文件与 `256 MiB` 上限保护，失败态可重试且不会改变当前背景。Scene 仍须先由 Windows 完成导出，原“保存 MP4 到文件夹”保留为次级操作。专项 `12/12`、完整 `npm run check`、语法和 `git diff --check` 通过；真实 Windows 服务正向下载/导出待人工验收。[来源: `desktop/wallpaper-library-bridge.js`、`desktop/main.js`、`desktop/preload.js`、`public/js/modules/07-fx/10-wallpaper-library-panel.js`、`scripts/test-windows-wallpaper-library.js`]
+
 - 修复 Windows 壁纸库在卡片媒体绝对定位、比例计算意外失效时的网格堆叠：四列列表现在显式保留 `128px` 最小行高，卡片固定占满网格单元并继续优先采用 `16:9`。详情抽屉改为与可视内容区等高的独立滚动层，预览、导出状态和操作不再被弹窗底部裁掉。新增布局回归断言；壁纸库专项 `9/9`、完整 `npm run check` `282/282`、`git diff --check` 通过。未构建 DMG，待用户在真实 Windows 服务与实际窗口尺寸下验收。[来源: `public/css/index.css`、`scripts/test-windows-wallpaper-library.js`]
 
 - Windows 壁纸库按 Windows 端信息层级重排：保留宽幅深色弹窗、四列 `16:9` 真实缩略图网格和覆盖式详情抽屉；搜索与筛选成为主工具栏行，Mac 专属的自动读取 Windows IP、手动地址、连接和刷新改为独立次行，避免挤占搜索区域。不会伪造 Windows 本机的收藏、隐藏或项目设置按钮，因为局域网 HTTP 协议没有这些写接口。发现链路维持 UDP `45678` 广播、私网 `/24` ping 回退、UDP 异常回退与 `/api/ping` 认证；Windows 服务离线时不误报在线。专项 9/9、完整 `npm run check` 282/282、语法和 `git diff --check` 通过；本次检查时 `192.168.1.121:8123` 与 `192.168.1.107:8123` 均 TCP 超时，尚未声称真实 Windows 卡片/Scene 正向验收完成。[来源: `desktop/wallpaper-library-bridge.js`、`public/index.html`、`public/css/index.css`、`public/js/modules/07-fx/10-wallpaper-library-panel.js`、`scripts/test-windows-wallpaper-library.js`]

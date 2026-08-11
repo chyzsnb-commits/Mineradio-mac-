@@ -94,6 +94,7 @@ const desktopWindowApi = {
   wallpaperWindowsExportStatus: (baseUrl, jobId) => ipcRenderer.invoke('mineradio-wallpaper-windows-export-status', String(baseUrl || ''), String(jobId || '')),
   wallpaperWindowsExportDownload: (baseUrl, fileName) => ipcRenderer.invoke('mineradio-wallpaper-windows-export-download', String(baseUrl || ''), String(fileName || '')),
   wallpaperWindowsExportedVideos: (baseUrl) => ipcRenderer.invoke('mineradio-wallpaper-windows-exported-videos', String(baseUrl || '')),
+  wallpaperWindowsDownloadMedia: (baseUrl, payload) => ipcRenderer.invoke('mineradio-wallpaper-windows-download-media', String(baseUrl || ''), payload || {}),
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
   readCurrentFxAutosaveSync: () => ipcRenderer.sendSync('mineradio-current-fx-autosave-read-sync'),

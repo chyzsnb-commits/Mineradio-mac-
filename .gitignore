@@ -29,6 +29,7 @@ CrashDumps/
 # Tool caches (must never be committed)
 build/.omc/
 .omc/
+.superpowers/
 
 # Local secrets / env
 .env

@@ -2582,6 +2582,13 @@ ipcMain.handle('mineradio-wallpaper-windows-export-status', async (_event, baseU
 ipcMain.handle('mineradio-wallpaper-windows-exported-videos', async (_event, baseUrl) => {
   return getWallpaperLibraryBridge().listWindowsExportedVideos(baseUrl);
 });
+ipcMain.handle('mineradio-wallpaper-windows-download-media', async (_event, baseUrl, payload) => {
+  const request = payload && typeof payload === 'object' ? payload : {};
+  if (request.kind === 'scene-export') {
+    return getWallpaperLibraryBridge().downloadWindowsExportedMedia(baseUrl, String(request.fileName || ''));
+  }
+  return getWallpaperLibraryBridge().downloadWindowsWallpaperMedia(baseUrl, String(request.recordId || ''), String(request.type || ''));
+});
 ipcMain.handle('mineradio-wallpaper-windows-export-download', async (_event, baseUrl, fileName) => {
   const safeName = path.basename(String(fileName || '')).replace(/[^a-z0-9._ -]/gi, '_') || 'wallpaper-scene.mp4';
   const owner = BrowserWindow.getFocusedWindow() || mainWindow;
