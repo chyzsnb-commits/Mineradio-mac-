@@ -78,14 +78,14 @@ test('ping 未确认 ok 时不能把广播地址标记为在线', async () => {
   assert.deepEqual(result, { ok: false, error: 'PING_REJECTED' });
 });
 
-test('UDP 广播只发现通过 ping 验证的 Windows 服务', async () => {
+test('UDP 广播携带的动态端口优先通过 ping 验证', async () => {
   class FakeSocket {
     constructor() { this.handlers = {}; }
     on(name, handler) { this.handlers[name] = handler; }
     bind(port, callback) {
       assert.equal(port, 45678);
       callback();
-      queueMicrotask(() => this.handlers.message(Buffer.from('MINERADIO_WALLPAPER 192.168.1.20:8123')));
+      queueMicrotask(() => this.handlers.message(Buffer.from('MINERADIO_WALLPAPER 192.168.1.20:8144')));
     }
     close() {}
   }
@@ -99,48 +99,107 @@ test('UDP 广播只发现通过 ping 验证的 Windows 服务', async () => {
   const result = await client.discover(500);
   assert.equal(result.ok, true);
   assert.equal(result.services.length, 1);
-  assert.equal(result.services[0].baseUrl, 'http://192.168.1.20:8123');
+  assert.equal(result.services[0].baseUrl, 'http://192.168.1.20:8144');
 });
 
-test('UDP 被过滤时扫描当前私有子网并找到通过 ping 的 Windows 服务', async () => {
+test('广播端口失效时只扫描已发现 IP 的 8123 到 8155，且并发不超过 4', async () => {
+  class FakeSocket {
+    constructor() { this.handlers = {}; }
+    on(name, handler) { this.handlers[name] = handler; }
+    bind(_port, callback) {
+      callback();
+      queueMicrotask(() => this.handlers.message(Buffer.from('MINERADIO_WALLPAPER 192.168.1.20:8143')));
+    }
+    close() {}
+  }
+  const calls = [];
+  let active = 0;
+  let peak = 0;
+  const client = new WindowsWallpaperClient({
+    dgramImpl: { createSocket: () => new FakeSocket() },
+    fetchImpl: async (url) => {
+      calls.push(url);
+      if (url.endsWith('/api/ping')) {
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        active -= 1;
+        return url.startsWith('http://192.168.1.20:8144/') ? jsonResponse(200, { ok: true }) : jsonResponse(404, { ok: false });
+      }
+      if (url.startsWith('http://192.168.1.20:8144/api/wallpapers')) return jsonResponse(200, { ok: true, records: [] });
+      return jsonResponse(404, { ok: false });
+    },
+  });
+  const result = await client.discover(500);
+  assert.equal(result.services.length, 1);
+  assert.equal(result.services[0].baseUrl, 'http://192.168.1.20:8144');
+  assert.ok(peak <= 4, '端口探测并发必须受限');
+  const pingUrls = calls.filter((url) => url.endsWith('/api/ping'));
+  assert.ok(pingUrls.every((url) => /^http:\/\/192\.168\.1\.20:(?:812[3-9]|813\d|814\d|815[0-5])\/api\/ping$/.test(url)));
+});
+
+test('广播只有 Windows IP 时只在该主机的受限端口范围内回退', async () => {
+  class FakeSocket {
+    constructor() { this.handlers = {}; }
+    on(name, handler) { this.handlers[name] = handler; }
+    bind(_port, callback) {
+      callback();
+      queueMicrotask(() => this.handlers.message(Buffer.from('MINERADIO_WALLPAPER 10.0.0.9')));
+    }
+    close() {}
+  }
+  const calls = [];
+  const client = new WindowsWallpaperClient({
+    dgramImpl: { createSocket: () => new FakeSocket() },
+    fetchImpl: async (url) => {
+      calls.push(url);
+      if (url.startsWith('http://10.0.0.9:8123/api/ping')) return jsonResponse(200, { ok: true });
+      if (url.startsWith('http://10.0.0.9:8123/api/wallpapers')) return jsonResponse(200, { ok: true, records: [] });
+      return jsonResponse(404, { ok: false });
+    },
+  });
+  const result = await client.discover(500);
+  assert.equal(result.services[0].baseUrl, 'http://10.0.0.9:8123');
+  assert.ok(calls.every((url) => url.startsWith('http://10.0.0.9:')));
+});
+
+test('没有广播或 UDP 监听失败时不扫描整个私有子网', async () => {
   class SilentSocket {
     on() {}
     bind(_port, callback) { callback(); }
     close() {}
   }
+  const calls = [];
   const client = new WindowsWallpaperClient({
     dgramImpl: { createSocket: () => new SilentSocket() },
-    networkInterfaces: () => ({ en0: [{ family: 'IPv4', internal: false, address: '192.168.1.120', netmask: '255.255.255.0' }] }),
+    networkInterfaces: () => { throw new Error('不得读取网段后全网扫描'); },
     fetchImpl: async (url) => {
-      if (url.startsWith('http://192.168.1.121:8123/api/ping')) return jsonResponse(200, { ok: true, name: 'mineradio-wallpaper' });
-      if (url.startsWith('http://192.168.1.121:8123/api/wallpapers')) return jsonResponse(200, { ok: true, records: [] });
+      calls.push(url);
       return jsonResponse(404, { ok: false });
     },
   });
   const result = await client.discover(500);
-  assert.equal(result.services.length, 1);
-  assert.equal(result.services[0].baseUrl, 'http://192.168.1.121:8123');
+  assert.deepEqual(result.services, []);
+  assert.deepEqual(calls, []);
 });
 
-test('UDP 监听报错时仍回退到私网 ping 探测', async () => {
-  class FailingSocket {
-    constructor() { this.handlers = {}; }
-    on(name, handler) { this.handlers[name] = handler; }
-    bind() { queueMicrotask(() => this.handlers.error(new Error('udp unavailable'))); }
-    close() {}
-  }
+test('手动地址只接受明确的 1024 到 65535 端口', async () => {
+  const calls = [];
   const client = new WindowsWallpaperClient({
-    dgramImpl: { createSocket: () => new FailingSocket() },
-    networkInterfaces: () => ({ en0: [{ family: 'IPv4', internal: false, address: '10.42.0.8', netmask: '255.255.255.0' }] }),
     fetchImpl: async (url) => {
-      if (url.startsWith('http://10.42.0.9:8123/api/ping')) return jsonResponse(200, { ok: true });
-      if (url.startsWith('http://10.42.0.9:8123/api/wallpapers')) return jsonResponse(200, { ok: true, records: [] });
-      return jsonResponse(404, { ok: false });
+      calls.push(url);
+      return jsonResponse(200, { ok: true, records: [] });
     },
   });
-  const result = await client.discover(500);
-  assert.equal(result.services.length, 1);
-  assert.equal(result.services[0].baseUrl, 'http://10.42.0.9:8123');
+  assert.deepEqual(await client.connect('http://192.168.1.20'), { ok: false, error: 'INVALID_URL' });
+  assert.deepEqual(await client.connect('http://192.168.1.20:1023'), { ok: false, error: 'INVALID_URL' });
+  const accepted = await client.connect('http://192.168.1.20:65535');
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.baseUrl, 'http://192.168.1.20:65535');
+  assert.deepEqual(calls, [
+    'http://192.168.1.20:65535/api/ping',
+    'http://192.168.1.20:65535/api/wallpapers',
+  ]);
 });
 
 test('壁纸记录兼容 image、video 和 scene 字段，并保留无缩略图状态', () => {

@@ -4,7 +4,6 @@
 // 自包含：仅通过 init(refs) 接入主进程的 protocol / ipcMain / app，不侵入式改 main.js。
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const dgram = require('dgram');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
@@ -18,9 +17,10 @@ const HTTP_SOURCE_MAX_LIST_BYTES = 4 * 1024 * 1024;
 const WINDOWS_DISCOVERY_PORT = 45678;
 const WINDOWS_DISCOVERY_PREFIX = 'MINERADIO_WALLPAPER ';
 const WINDOWS_DISCOVERY_WAIT_MS = 8000;
-const WINDOWS_SUBNET_PROBE_DELAY_MS = 350;
-const WINDOWS_SUBNET_PROBE_TIMEOUT_MS = 900;
-const WINDOWS_SUBNET_PROBE_CONCURRENCY = 24;
+const WINDOWS_PORT_PROBE_MIN = 8123;
+const WINDOWS_PORT_PROBE_MAX = 8155;
+const WINDOWS_PORT_PROBE_TIMEOUT_MS = 900;
+const WINDOWS_PORT_PROBE_CONCURRENCY = 4;
 const WINDOWS_MEDIA_MAX_BYTES = 256 * 1024 * 1024;
 
 let library = null;
@@ -32,7 +32,8 @@ function normalizeWindowsBaseUrl(value) {
   if (!raw) return '';
   try {
     const url = new URL(raw);
-    if (url.protocol !== 'http:' || !url.hostname || url.username || url.password || url.pathname !== '/') return '';
+    const port = Number(url.port);
+    if (url.protocol !== 'http:' || !url.hostname || url.username || url.password || url.pathname !== '/' || !Number.isInteger(port) || port < 1024 || port > 65535) return '';
     return url.origin;
   } catch (_) {
     return '';
@@ -68,33 +69,19 @@ function mediaExtensionForMime(mime, fallback) {
   return extensions[normalized] || fallback;
 }
 
-function privateSubnetProbeUrls(networkInterfaces) {
-  const interfaces = typeof networkInterfaces === 'function' ? networkInterfaces() : {};
-  const candidates = [];
-  for (const entries of Object.values(interfaces || {})) {
-    for (const entry of entries || []) {
-      const address = String(entry && entry.address || '');
-      const parts = address.split('.').map(Number);
-      const privateRange = (parts[0] === 10)
-        || (parts[0] === 192 && parts[1] === 168)
-        || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31);
-      if (entry && !entry.internal && (entry.family === 'IPv4' || entry.family === 4) && privateRange && parts.length === 4 && parts.every(Number.isInteger)) {
-        for (let host = 1; host <= 254; host += 1) {
-          if (host === parts[3]) continue;
-          candidates.push({
-            distance: Math.abs(host - parts[3]),
-            url: 'http://' + parts.slice(0, 3).join('.') + '.' + host + ':8123',
-          });
-        }
-      }
-    }
-  }
-  const seen = new Set();
-  return candidates.sort((left, right) => left.distance - right.distance).map((candidate) => candidate.url).filter((url) => {
-    if (seen.has(url)) return false;
-    seen.add(url);
-    return true;
-  });
+function parseWindowsDiscoveryAnnouncement(message) {
+  const raw = String(message || '').trim();
+  if (!raw.startsWith(WINDOWS_DISCOVERY_PREFIX)) return null;
+  const token = raw.slice(WINDOWS_DISCOVERY_PREFIX.length).trim();
+  const match = /^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d+))?$/.exec(token);
+  if (!match) return null;
+  const host = match[1];
+  if (!host.split('.').every((part) => Number(part) >= 0 && Number(part) <= 255)) return null;
+  const port = match[2] ? Number(match[2]) : 0;
+  return {
+    host,
+    baseUrl: Number.isInteger(port) && port >= 1024 && port <= 65535 ? normalizeWindowsBaseUrl('http://' + host + ':' + port) : '',
+  };
 }
 
 function normalizeWindowsWallpaperRecord(rawRecord, baseUrl, index) {
@@ -157,7 +144,6 @@ class WindowsWallpaperClient {
     const opts = options || {};
     this.fetchImpl = opts.fetchImpl || global.fetch;
     this.dgramImpl = opts.dgramImpl || dgram;
-    this.networkInterfaces = opts.networkInterfaces || os.networkInterfaces;
     this.trustedBases = new Set();
   }
 
@@ -199,70 +185,59 @@ class WindowsWallpaperClient {
   async probeWindowsService(baseUrl) {
     const base = normalizeWindowsBaseUrl(baseUrl);
     if (!base) return false;
-    const ping = await this.requestJson(serviceUrl(base, '/api/ping'), undefined, WINDOWS_SUBNET_PROBE_TIMEOUT_MS);
+    const ping = await this.requestJson(serviceUrl(base, '/api/ping'), undefined, WINDOWS_PORT_PROBE_TIMEOUT_MS);
     return !!(ping.ok && ping.data && ping.data.ok === true);
   }
 
-  async scanPrivateSubnets() {
-    const candidates = privateSubnetProbeUrls(this.networkInterfaces);
-    const services = [];
+  async scanDiscoveredWindowsHost(host) {
+    const candidates = Array.from({ length: WINDOWS_PORT_PROBE_MAX - WINDOWS_PORT_PROBE_MIN + 1 }, (_, index) => {
+      return 'http://' + host + ':' + (WINDOWS_PORT_PROBE_MIN + index);
+    });
+    let service = null;
     let next = 0;
     const worker = async () => {
-      while (next < candidates.length && !services.length) {
+      while (next < candidates.length && !service) {
         const candidate = candidates[next++];
         if (!await this.probeWindowsService(candidate)) continue;
         const result = await this.connect(candidate);
-        if (result.ok && !services.length) services.push(result);
+        if (result.ok && !service) service = result;
       }
     };
-    await Promise.all(Array.from({ length: Math.min(WINDOWS_SUBNET_PROBE_CONCURRENCY, candidates.length) }, worker));
-    return services;
+    await Promise.all(Array.from({ length: Math.min(WINDOWS_PORT_PROBE_CONCURRENCY, candidates.length) }, worker));
+    return service;
   }
 
   async discover(waitMs) {
     const socket = this.dgramImpl.createSocket({ type: 'udp4', reuseAddr: true });
-    const candidates = new Set();
+    const announcements = new Map();
     const wait = Math.max(500, Math.min(Number(waitMs) || WINDOWS_DISCOVERY_WAIT_MS, 12000));
     return new Promise((resolve) => {
       let finished = false;
       let timeout = 0;
-      let fallbackTimer = 0;
-      let fallbackPromise = null;
       const finish = async () => {
         if (finished) return;
         finished = true;
         if (timeout) clearTimeout(timeout);
-        if (fallbackTimer) clearTimeout(fallbackTimer);
         try { socket.close(); } catch (_) {}
-        const attempts = await Promise.all([...candidates].map((url) => this.connect(url)));
-        resolve({ ok: true, services: attempts.filter((result) => result.ok) });
-      };
-      const finishWithServices = (services) => {
-        if (finished) return;
-        finished = true;
-        if (timeout) clearTimeout(timeout);
-        if (fallbackTimer) clearTimeout(fallbackTimer);
-        try { socket.close(); } catch (_) {}
+        const services = [];
+        for (const announcement of announcements.values()) {
+          let result = null;
+          if (announcement.baseUrl && await this.probeWindowsService(announcement.baseUrl)) result = await this.connect(announcement.baseUrl);
+          else result = await this.scanDiscoveredWindowsHost(announcement.host);
+          if (result && result.ok) services.push(result);
+        }
         resolve({ ok: true, services });
       };
-      const runFallback = async () => {
-        if (!fallbackPromise) fallbackPromise = this.scanPrivateSubnets();
-        const services = await fallbackPromise;
-        if (services.length) finishWithServices(services);
-        return services;
-      };
       socket.on('message', (message) => {
-        const match = new RegExp('^' + WINDOWS_DISCOVERY_PREFIX + '([^\\s]+)$').exec(String(message || '').trim());
-        const base = match ? normalizeWindowsBaseUrl('http://' + match[1]) : '';
-        if (base) candidates.add(base);
+        const announcement = parseWindowsDiscoveryAnnouncement(message);
+        if (announcement) announcements.set(announcement.host, announcement);
       });
-      socket.on('error', () => { runFallback().then((services) => finishWithServices(services || [])); });
+      socket.on('error', finish);
       try {
         socket.bind(WINDOWS_DISCOVERY_PORT, () => {
           timeout = setTimeout(finish, wait);
-          fallbackTimer = setTimeout(runFallback, Math.min(WINDOWS_SUBNET_PROBE_DELAY_MS, Math.max(80, wait - 50)));
         });
-      } catch (_) { runFallback().then((services) => finishWithServices(services || [])); }
+      } catch (_) { finish(); }
     });
   }
 
@@ -433,4 +408,4 @@ async function scanHttpSource(baseUrl) {
   return windowsClient.connect(baseUrl);
 }
 
-module.exports = { init, WindowsWallpaperClient, normalizeWindowsWallpaperRecord, normalizeWindowsWallpaperRecords, normalizeWindowsBaseUrl, privateSubnetProbeUrls };
+module.exports = { init, WindowsWallpaperClient, normalizeWindowsWallpaperRecord, normalizeWindowsWallpaperRecords, normalizeWindowsBaseUrl, parseWindowsDiscoveryAnnouncement };
