@@ -351,14 +351,15 @@ async function refreshUserPlaylists(force) {
       loginStatus.loggedIn ? apiJson('/api/podcast/my') : Promise.resolve({ collections: [], loggedIn: false }),
       qqLoginStatus.loggedIn ? apiJson('/api/qq/user/playlists') : Promise.resolve({ playlists: [] }),
       kugouLoginStatus.loggedIn ? apiJson('/api/kugou/user/playlists') : Promise.resolve({ playlists: [] }),
+      qishuiLoginStatus.loggedIn ? apiJson('/api/qishui/user/playlists') : Promise.resolve({ playlists: [] }),
       spotifyLoginStatus.loggedIn ? apiJson('/api/spotify/user/playlists') : Promise.resolve({ playlists: [] })
     ]);
     var neteaseLists = (result[0].playlists || []).map(function (pl) { pl.provider = 'netease'; pl.source = 'netease'; return pl; });
     qqPlaylists = (result[2].playlists || []).map(function (pl) { pl.provider = 'qq'; pl.source = 'qq'; return pl; });
     kugouPlaylists = (result[3].playlists || []).map(function (pl) { pl.provider = 'kugou'; pl.source = 'kugou'; return pl; });
-    qishuiPlaylists = [];
-    spotifyPlaylists = (result[4].playlists || []).map(function (pl) { pl.provider = 'spotify'; pl.source = 'spotify'; return pl; });
-    userPlaylists = neteaseLists.concat(qqPlaylists).concat(kugouPlaylists).concat(spotifyPlaylists);
+    qishuiPlaylists = (result[4].playlists || []).map(function (pl) { pl.provider = 'qishui'; pl.source = 'qishui'; return pl; });
+    spotifyPlaylists = (result[5].playlists || []).map(function (pl) { pl.provider = 'spotify'; pl.source = 'spotify'; return pl; });
+    userPlaylists = neteaseLists.concat(qqPlaylists).concat(kugouPlaylists).concat(qishuiPlaylists).concat(spotifyPlaylists);
     myPodcastCollections = result[1].collections || [];
     var animatePanel = isPlaylistPanelVisibleForRender();
     renderUserPlaylistsList({ animate: animatePanel, reset: true });

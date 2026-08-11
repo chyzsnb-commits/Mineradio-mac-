@@ -329,7 +329,7 @@ function canReloadCurrentTrackForQuality() {
   if (!audio || !audio.src || audio.paused || audio.ended) return false;
   var song = playQueue[currentIdx];
   if (!song || song.type === 'local' || song.source === 'local') return false;
-  return songProviderKey(song) === 'netease' || songProviderKey(song) === 'qq' || songProviderKey(song) === 'kugou';
+  return songProviderKey(song) === 'netease' || songProviderKey(song) === 'qq' || songProviderKey(song) === 'kugou' || songProviderKey(song) === 'qishui';
 }
 var playbackQualitySwitchState = {
   running: false,
@@ -369,6 +369,9 @@ function playbackQualityStreamUrl(song, provider, requestedQuality) {
       '&vipRequired=' + encodeURIComponent(song.vipRequired || song.needVip || song.onlyVipPlayable || song.only_vip_playable ? '1' : '') +
       '&privilege=' + encodeURIComponent(song.privilege || song.Privilege || song.mediaPrivilege || song.media_privilege || '') +
       '&fee=' + encodeURIComponent(song.fee || song.Fee || '') + qualityParam;
+  }
+  if (provider === 'qishui') {
+    return '/api/qishui/song/url?id=' + encodeURIComponent(song.id || song.providerSongId || '') + qualityParam;
   }
   return '/api/song/url?id=' + encodeURIComponent(song.id || '') + qualityParam;
 }
