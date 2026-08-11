@@ -2,6 +2,8 @@
 
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**
 
+> 状态更新（2026-08-11）：Windows 壁纸库批量导入与二次性能修复已创建独立 PR [#100](https://github.com/chyzsnb-commits/mr/pull/100)，当前可合并；原记录中的“待 PR”状态以此为准。
+
 - **2026-08-11 Windows 壁纸库批量导入与二次性能修复（独立分支，待 PR，未构建 DMG）：** 用户反馈浏览仍很卡，并要求多选/全选导入。根因一是打开缓存地址时并行执行 `connect` 和局域网发现，导致重复 `ping/list` 和可能的私网探测；根因二是点击卡片、关闭详情都会 `innerHTML` 重建整个网格，重新创建远程媒体和观察器。现打开逻辑单飞：缓存地址先直连，只有失败/缺失才发现；详情改为局部切换 `.active`，搜索/筛选/排序才重建。新增独立多选状态、卡片勾选、全选当前结果和顺序本地导入队列。图片/视频与已完成导出的 Scene MP4 进入 IndexedDB 本地背景库但批量不自动替换当前背景；未导出 Scene 明确跳过。专项 `16/16`、完整 `npm run check` `289/289`、语法与差异检查通过；动态 304 条模拟记录确认详情前后保留同一 DOM 节点、筛选图片全选 `152/152`；缓存直连 `connect=1/discover=0`，失败时 `1/1` 回退发现。Electron 正从本工作树运行、`127.0.0.1:3000` 监听。**未验证边界：** 当前模拟浏览器无真实 Electron preload/Windows 服务，真实远程吞吐、媒体解码和批量下载需要 Windows 服务在线后人工验收。[来源: `public/js/modules/07-fx/10-wallpaper-library-panel.js`、`public/index.html`、`public/css/index.css`、`scripts/test-windows-wallpaper-library.js`]
 
 - **2026-08-11 Windows Scene 录制导出路由（独立分支，待 PR，未构建 DMG）：** 用户确认 Windows 已有 Scene 录制传输能力。实际根因是 Windows 列表把 `preview.jpg` / `preview.gif` 标为 `image`，但同时携带 `sceneNeedsEngine: true`；Mac 忽略该字段后把低清预览下载到本地。现 Windows 记录先按项目目录归组：`sceneNeedsEngine` 项目改为 Scene，目录名作为 Scene ID，复用已有 `/api/live`、`/api/export-scene`、任务轮询、`/api/exported-file` 和“应用 MP4 到 Mineradio”链；视频项目存在真实视频时忽略 `preview.*`。普通原始图片保持原文件下载。未新增或变更 Windows HTTP 接口。专项 `14/14`、完整 `npm run check` `287/287`、语法与差异检查通过。**未验证边界：** 当前 Windows `:8123` 只读请求超时，无法声称实时预览、录制完成或实际 MP4 传输已验收。[来源: `desktop/wallpaper-library-bridge.js`、`scripts/test-windows-wallpaper-library.js`、`docs/superpowers/specs/2026-08-11-wallpaper-scene-export-routing-design.md`]
