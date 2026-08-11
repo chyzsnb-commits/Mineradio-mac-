@@ -201,4 +201,6 @@ test('Windows 壁纸库入口接通发现、实时预览、导出与用户选定
   assert.match(css, /\.wallpaper-library-source-row\{[^}]*grid-template-columns:/, '连接控件必须有独立的响应式布局');
   assert.match(css, /\.wallpaper-library-list\{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/, '桌面端应保持 Windows 风格的四列网格');
   assert.match(css, /\.wallpaper-library-card\{[^}]*aspect-ratio:16\/9/);
+  assert.match(css, /\.wallpaper-library-card\{[^}]*width:100%[^}]*min-height:128px[^}]*box-sizing:border-box/, '网格卡片必须有独立的尺寸兜底，不能因媒体绝对定位而折叠为文字行高');
+  assert.match(css, /\.wallpaper-library-detail\{[^}]*height:100%[^}]*min-height:0[^}]*box-sizing:border-box[^}]*overflow-y:auto/, '详情抽屉应在自身内部滚动，不能被外层弹窗裁掉导出操作');
 });
