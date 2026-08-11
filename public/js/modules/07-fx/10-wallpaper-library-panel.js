@@ -51,8 +51,50 @@ function wallpaperLibraryVisibleRecords() {
 function wallpaperLibraryThumb(record) {
   var preview = wallpaperLibraryEsc(record.previewUrl || '');
   if (!preview) return '<div class="wallpaper-thumb wallpaper-thumb-empty">无缩略图</div>';
-  if (record.type === 'video') return '<video class="wallpaper-thumb-media" muted playsinline preload="metadata" src="' + preview + '"></video>';
-  return '<img class="wallpaper-thumb-media" src="' + preview + '" alt="" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{className:\'wallpaper-thumb wallpaper-thumb-empty\',textContent:\'无缩略图\'}))">';
+  if (record.type === 'video') return '<video class="wallpaper-thumb-media" muted playsinline preload="none" data-wallpaper-preview="' + preview + '"></video>';
+  return '<img class="wallpaper-thumb-media" loading="lazy" decoding="async" data-wallpaper-preview="' + preview + '" alt="" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{className:\'wallpaper-thumb wallpaper-thumb-empty\',textContent:\'无缩略图\'}))">';
+}
+function wallpaperLibraryLoadLazyMedia(media) {
+  if (!media || media.dataset.previewLoaded === 'true' || !media.dataset.wallpaperPreview) return;
+  media.dataset.previewLoaded = 'true';
+  media.setAttribute('src', media.dataset.wallpaperPreview);
+  if (media.tagName === 'VIDEO') {
+    media.preload = 'metadata';
+    media.load();
+  }
+}
+function wallpaperLibraryBindLazyMedia(list) {
+  if (!list) return;
+  if (list._wallpaperMediaObserver) list._wallpaperMediaObserver.disconnect();
+  var mediaItems = list.querySelectorAll('[data-wallpaper-preview]');
+  if (!mediaItems.length) return;
+  if (!window.IntersectionObserver) {
+    Array.prototype.forEach.call(mediaItems, wallpaperLibraryLoadLazyMedia);
+    return;
+  }
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting) return;
+      wallpaperLibraryLoadLazyMedia(entry.target);
+      observer.unobserve(entry.target);
+    });
+  }, { root: list, rootMargin: '280px 0px' });
+  list._wallpaperMediaObserver = observer;
+  Array.prototype.forEach.call(mediaItems, function (media) { observer.observe(media); });
+}
+function wallpaperLibraryMarkScrollActivity(list) {
+  if (!list) return;
+  list.classList.add('is-scrolling');
+  clearTimeout(list._wallpaperScrollStopTimer);
+  list._wallpaperScrollStopTimer = setTimeout(function () {
+    list.classList.remove('is-scrolling');
+  }, 180);
+}
+function wallpaperLibraryBindScrollPerformance(list) {
+  if (!list || list._wallpaperScrollPerformanceBound) return;
+  list._wallpaperScrollPerformanceBound = true;
+  list.addEventListener('wheel', function () { wallpaperLibraryMarkScrollActivity(list); }, { passive: true });
+  list.addEventListener('scroll', function () { wallpaperLibraryMarkScrollActivity(list); }, { passive: true });
 }
 function wallpaperLibraryRenderRecords() {
   var list = wallpaperLibraryPanelEl('wallpaper-library-list');
@@ -76,6 +118,8 @@ function wallpaperLibraryRenderRecords() {
   Array.prototype.forEach.call(list.querySelectorAll('[data-wallpaper-id]'), function (button) {
     button.addEventListener('click', function () { selectWallpaperLibraryRecord(button.dataset.wallpaperId); });
   });
+  wallpaperLibraryBindLazyMedia(list);
+  wallpaperLibraryBindScrollPerformance(list);
 }
 function wallpaperLibraryStopLivePreview() {
   var preview = wallpaperLibraryPanelEl('wallpaper-library-preview');

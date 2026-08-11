@@ -1,5 +1,7 @@
 # Changelog
 
+- 优化 Windows 壁纸库的大列表滚动：图片改为原生懒加载与异步解码，视频首屏不预读；网格以可视区为根按需挂载媒体，并在滚动中临时关闭卡片位移和重阴影以降低重绘。保留既有滚动条、网格、搜索、详情和预览逻辑。专项 `13/13`、完整 `npm run check` `286/286` 通过；304 条模拟记录首屏仅挂载 `20` 个媒体，滚动后渐进至 `40` 个。真实 Windows 服务下的远程网络和实际手感仍待人工验收。[来源: `public/js/modules/07-fx/10-wallpaper-library-panel.js`、`public/css/index.css`、`scripts/test-windows-wallpaper-library.js`]
+
 - 修复 Windows 壁纸库详情在中等窗口宽度被网格覆盖、右侧内容显示不全的问题：内容区在详情打开时改为独立“缩略图网格 + 详情”双列，详情不再绝对覆盖网格；视口 `≤920px` 自动切为完整全宽详情，关闭后恢复网格。详情仍在自身区域内滚动，预览、下载和导出逻辑未改。新增布局回归断言；专项 `12/12`、完整 `npm run check` `285/285`、真实浏览器宽屏零重叠和窄屏完整边界检查通过。真实 Windows 服务的远程媒体传输仍待人工验收。[来源: `public/css/index.css`、`scripts/test-windows-wallpaper-library.js`]
 
 - Windows 壁纸库新增“下载并应用到 Mineradio”本地化链路：图片、视频和已完成导出的 Scene MP4 现在通过已验证的 Windows 服务下载，写入既有 IndexedDB 背景媒体库后立即应用；重启或 Windows 断线后继续使用 Mac 本地副本，同一项目再次选择会直接复用本地媒体而不重复下载。新增 MIME、来源验证、空文件与 `256 MiB` 上限保护，失败态可重试且不会改变当前背景。Scene 仍须先由 Windows 完成导出，原“保存 MP4 到文件夹”保留为次级操作。专项 `12/12`、完整 `npm run check`、语法和 `git diff --check` 通过；真实 Windows 服务正向下载/导出待人工验收。[来源: `desktop/wallpaper-library-bridge.js`、`desktop/main.js`、`desktop/preload.js`、`public/js/modules/07-fx/10-wallpaper-library-panel.js`、`scripts/test-windows-wallpaper-library.js`]

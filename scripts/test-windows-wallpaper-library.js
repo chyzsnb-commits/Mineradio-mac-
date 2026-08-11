@@ -219,6 +219,20 @@ test('背景下载拒绝超过本地库安全上限的响应并允许调用者�
   assert.deepEqual(await client.downloadWallpaperMedia('http://192.168.1.20:8123', 'clip', 'video'), { ok: false, error: 'MEDIA_TOO_LARGE' });
 });
 
+test('壁纸库滚动时延迟挂载媒体并停用重绘成本高的卡片效果', () => {
+  const panel = read('public/js/modules/07-fx/10-wallpaper-library-panel.js');
+  const css = read('public/css/index.css');
+
+  assert.match(panel, /loading="lazy" decoding="async" data-wallpaper-preview=/, '图片缩略图应延迟加载并异步解码');
+  assert.match(panel, /preload="none" data-wallpaper-preview=/, '视频缩略图不应在首屏一次性预读');
+  assert.match(panel, /function wallpaperLibraryBindLazyMedia\(/, '缩略图应由可视区观察器按需挂载');
+  assert.match(panel, /new IntersectionObserver\(/, '按需挂载必须以壁纸网格为观察根节点');
+  assert.match(panel, /function wallpaperLibraryMarkScrollActivity\(/, '滚动期间应切换低开销状态');
+  assert.match(panel, /addEventListener\('scroll',\s*function \(\) \{ wallpaperLibraryMarkScrollActivity\(list\); \},\s*\{ passive: true \}\)/, '滚动监听必须为被动监听');
+  assert.match(css, /\.wallpaper-library-list\{[^}]*overscroll-behavior:contain[^}]*contain:layout paint[^}]*will-change:scroll-position[^}]*transform:translateZ\(0\)/, '滚动网格应独立合成，限制布局与绘制影响范围');
+  assert.match(css, /\.wallpaper-library-list\.is-scrolling \.wallpaper-library-card:hover\{[^}]*transform:none[^}]*box-shadow:/, '滚动中不能触发卡片位移和重阴影');
+});
+
 test('Windows 壁纸库入口接通发现、实时预览、导出与用户选定目录下载', () => {
   const preload = read('desktop/preload.js');
   const main = read('desktop/main.js');
