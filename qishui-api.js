@@ -257,6 +257,9 @@ function requestJsonWithMeta(targetUrl, opts, body) {
       err.cause = e;
       err.body = meta.text;
       err.headers = meta.headers || {};
+      err.statusCode = meta.statusCode || 0;
+      err.responseType = String((meta.headers && meta.headers['content-type']) || '');
+      err.code = 'QISHUI_INVALID_JSON';
       throw err;
     }
   });
@@ -883,6 +886,31 @@ function qishuiUnavailable(message, category, extra) {
     reason: restriction.category,
     message: restriction.message,
   }, extra || {});
+}
+
+function qishuiPlaybackDiagnostic(opts) {
+  opts = opts || {};
+  let requestHost = normalizeText(opts.requestHost || '');
+  try { requestHost = new URL(opts.requestUrl || '').hostname.toLowerCase(); } catch (_) {}
+  const err = opts.error || {};
+  const statusCode = Number(opts.statusCode || err.statusCode || 0) || 0;
+  const code = normalizeText(opts.code || err.code || '');
+  let reason = '汽水接口没有返回可播放流';
+  if (statusCode === 401 || statusCode === 403) reason = '汽水登录态、播放授权或区域权限被接口拒绝';
+  else if (statusCode === 404) reason = '汽水接口没有找到该曲目播放资源';
+  else if (statusCode === 429) reason = '汽水接口暂时限制了请求';
+  else if (/TIMEOUT|ETIMEDOUT|ECONNRESET|ENOTFOUND|NETWORK/i.test(code + ' ' + (err.message || ''))) reason = '连接汽水播放接口超时或网络不可达';
+  else if (code === 'QISHUI_AUDIO_SOURCE_EMPTY') reason = '汽水接口响应成功，但没有提供可播放流';
+  else if (code === 'QISHUI_INVALID_JSON') reason = '汽水播放接口返回非 JSON 响应，无法确认可播放流（可能需要重新登录、接口变更或被上游拦截）';
+  return {
+    sourceId: normalizeText(opts.sourceId || ''),
+    stage: normalizeText(opts.stage || 'track_v2'),
+    requestHost,
+    statusCode,
+    responseType: normalizeText(opts.responseType || err.responseType || (statusCode ? 'http-error' : 'json')),
+    code,
+    reason,
+  };
 }
 
 function getQishuiStatus(cookieText) {
@@ -2373,10 +2401,6 @@ async function handleQishuiLyric(id) {
   return { provider: 'qishui', lyric: '', tlyric: '', yrc: '', ytlrc: '', source: 'none' };
 }
 
-async function handleQishuiSongUrl() {
-  return qishuiUnavailable('汽水音乐开放平台只接入推荐/相关歌曲能力，当前没有可交给 Mineradio <audio> 直连播放的官方音频 URL。');
-}
-
 function qishuiPrimaryTrackFromV2(payload) {
   const data = (payload && payload.data) || payload || {};
   return pickObject(data.track, data.track_info, data.trackInfo, payload && payload.track, payload && payload.track_info, payload && payload.trackInfo);
@@ -2401,16 +2425,32 @@ async function fetchQishuiPcTrackV2(trackId, cookieText) {
     queue_type: 'favorite_track_playlist',
     scene_name: 'library',
   });
-  const json = await requestJson(qishuiPcUrl('/luna/pc/track_v2', qishuiPcAppParams()), {
-    method: 'POST',
-    timeoutMs: 10000,
-    headers: Object.assign(qishuiWebHeaders(cookieText, { sessionOnly: true, pcApp: true }), {
-      'Content-Length': Buffer.byteLength(body),
-    }),
-  }, body);
-  const err = qishuiPcStatusError(json, 'QISHUI_PC_TRACK_V2_FAILED');
-  if (err) throw err;
-  return json;
+  const targetUrl = qishuiPcUrl('/luna/pc/track_v2', qishuiPcAppParams());
+  try {
+    const meta = await requestJsonWithMeta(targetUrl, {
+      method: 'POST',
+      timeoutMs: 10000,
+      headers: Object.assign(qishuiWebHeaders(cookieText, { sessionOnly: true, pcApp: true }), {
+        'Content-Length': Buffer.byteLength(body),
+      }),
+    }, body);
+    const json = meta.json || {};
+    const err = qishuiPcStatusError(json, 'QISHUI_PC_TRACK_V2_FAILED');
+    if (err) throw err;
+    return {
+      payload: json,
+      diagnostic: qishuiPlaybackDiagnostic({
+        sourceId: trackId,
+        stage: 'track_v2',
+        requestUrl: targetUrl,
+        statusCode: meta.statusCode,
+        responseType: String(meta.headers && meta.headers['content-type'] || 'json'),
+      }),
+    };
+  } catch (err) {
+    err.qishuiDiagnostic = qishuiPlaybackDiagnostic({ sourceId: trackId, stage: 'track_v2', requestUrl: targetUrl, error: err });
+    throw err;
+  }
 }
 
 async function fetchQishuiPlayerInfo(playerInfoUrl, cookieText) {
@@ -2487,8 +2527,10 @@ async function handleQishuiSongUrl(opts, cookieText) {
   const requestedQuality = normalizeText(opts.quality || '');
   const cacheKey = 'track-v2|' + qishuiCookieFingerprint(cookie) + '|' + id + '|' + requestedQuality;
   return qishuiPlaybackCache.wrap(cacheKey, 4 * 60 * 1000, async () => {
+    let fetched = null;
     try {
-      const payload = await fetchQishuiPcTrackV2(id, cookie);
+      fetched = await fetchQishuiPcTrackV2(id, cookie);
+      const payload = fetched.payload;
       const resolved = await resolveQishuiDownloadInfo(id, payload, cookie);
       const track = resolved.track || {};
       const stream = resolved.best;
@@ -2512,12 +2554,22 @@ async function handleQishuiSongUrl(opts, cookieText) {
         requestedQuality,
         source: 'qishui-pc-track-v2',
         encrypted: !!stream.auth,
+        diagnostic: fetched.diagnostic,
       };
     } catch (err) {
-      return qishuiUnavailable('Qishui did not return a playable audio source: ' + (err && err.message || String(err)), 'source_unavailable', {
+      const upstream = fetched && fetched.diagnostic || {};
+      const diagnostic = err && err.qishuiDiagnostic || qishuiPlaybackDiagnostic({
+        sourceId: id,
+        stage: 'stream_parse',
+        requestHost: upstream.requestHost,
+        statusCode: upstream.statusCode,
+        responseType: upstream.responseType,
+        error: err,
+      });
+      return qishuiUnavailable(diagnostic.reason, 'source_unavailable', {
         loggedIn: true,
         playbackKeyReady: true,
-        rawError: err && err.message || String(err),
+        diagnostic,
       });
     }
   });

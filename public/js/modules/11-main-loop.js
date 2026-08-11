@@ -23,6 +23,22 @@ if (window.__mineradioPerf && typeof window.__mineradioPerf.registerRenderState 
   window.__mineradioPerf = renderPerfState;
 }
 var splashWarmRenderLast = 0;
+// DOM 滚动与 Three.js 共用主线程；滚动期间把 3D 预算压到 20 FPS，滚轮事件
+// 先于实际 scroll 事件到达，因此两者都只更新时间戳，不做布局读取或 DOM 重建。
+var documentScrollActiveUntil = 0;
+var documentScrollPerf = { events: 0, lastAt: 0 };
+window.__mineradioScrollPerf = documentScrollPerf;
+function isDocumentScrollActive(now) {
+  return (Number(now) || performance.now()) < documentScrollActiveUntil;
+}
+function markDocumentScrollActivity() {
+  documentScrollActiveUntil = performance.now() + 180;
+  documentScrollPerf.events += 1;
+  documentScrollPerf.lastAt = performance.now();
+  if (window.__mineradioPerf && window.__mineradioPerf.count) window.__mineradioPerf.count('scroll.event');
+}
+document.addEventListener('wheel', markDocumentScrollActivity, { passive: true, capture: true });
+document.addEventListener('scroll', markDocumentScrollActivity, { passive: true, capture: true });
 function isMainSceneCoveredBySplash() {
   return document.body.classList.contains('splash-active') && !document.body.classList.contains('splash-revealing');
 }
@@ -36,7 +52,7 @@ function currentRenderAdaptiveContext(now) {
 }
 function resolveAdaptiveRenderCadence(now, mode) {
   if (isDeepBackgroundMode()) return null;
-  if (typeof isHomeRecentScrollActive === 'function' && isHomeRecentScrollActive(now)) return null;
+  if (isDocumentScrollActive(now) || (typeof isHomeRecentScrollActive === 'function' && isHomeRecentScrollActive(now))) return null;
   mode = mode || ((typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive');
   if (mode !== 'adaptive' || RENDER_VISIBLE_VSYNC || typeof selectAdaptiveRenderCadence !== 'function') return null;
   var context = currentRenderAdaptiveContext(now);
@@ -70,8 +86,8 @@ function getAdaptiveRenderFps(now) {
   if (typeof isVisibleBackgroundMode === 'function' && isVisibleBackgroundMode()) return 15;
   var mode = (typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive';
   var fixedFps = (typeof foregroundFixedFpsForMode === 'function') ? foregroundFixedFpsForMode(mode) : null;
-  if (typeof isHomeRecentScrollActive === 'function' && isHomeRecentScrollActive(now)) {
-    return fixedFps !== null && fixedFps > 0 ? Math.min(30, fixedFps) : 30;
+  if (isDocumentScrollActive(now) || (typeof isHomeRecentScrollActive === 'function' && isHomeRecentScrollActive(now))) {
+    return fixedFps !== null && fixedFps > 0 ? Math.min(20, fixedFps) : 20;
   }
   if (fixedFps !== null) {
     if (fixedFps === 0) return foregroundFpsGovernorCap();   // vsync:交给治理器决定上限(45/30/60 钳位)或 0=真 vsync

@@ -2021,7 +2021,7 @@ body.home-wallpaper-preview #canvas-container {
 .home-recent-list::-webkit-scrollbar{width:6px}
 .home-recent-list::-webkit-scrollbar-track{background:rgba(5,9,14,.40);border-radius:999px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.32)}
 .home-recent-list::-webkit-scrollbar-thumb{background:rgba(116,130,146,.42);border-radius:999px}
-.home-recent-card{display:flex;align-items:center;gap:10px;padding:7px;border-radius:14px;border:1px solid rgba(255,255,255,.085);background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.022));box-shadow:0 10px 28px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.05);color:#fff;text-align:left;font-family:inherit;cursor:pointer;min-width:0;transition:transform .18s,border-color .18s,background .18s,box-shadow .18s}
+.home-recent-card{display:flex;align-items:center;gap:10px;padding:7px;border-radius:14px;border:1px solid rgba(255,255,255,.085);background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.022));box-shadow:0 10px 28px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.05);color:#fff;text-align:left;font-family:inherit;cursor:pointer;min-width:0;content-visibility:auto;contain-intrinsic-size:auto 58px;transition:transform .18s,border-color .18s,background .18s,box-shadow .18s}
 .home-recent-card > *{pointer-events:none}
 .home-recent-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--home-accent) 40%,rgba(255,255,255,.16));background:linear-gradient(145deg,rgba(255,255,255,.085),rgba(255,255,255,.035));box-shadow:0 16px 38px rgba(0,0,0,.26),0 0 22px color-mix(in srgb,var(--home-accent) 12%,transparent)}
 .home-recent-list.is-scrolling .home-recent-card{transition:none}
@@ -8519,6 +8519,28 @@ body.login-guide-active #login-guide-canvas {
   transition: min-width .46s cubic-bezier(.16, 1, .3, 1), box-shadow .46s ease, background .46s ease
 }
 
+.login-panel-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px
+}
+
+.login-session-logout {
+  border: 1px solid rgba(255, 132, 132, .30);
+  border-radius: 7px;
+  padding: 6px 9px;
+  background: rgba(255, 112, 112, .075);
+  color: rgba(255, 210, 210, .92);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer
+}
+
+.login-session-logout:hover {
+  border-color: rgba(255, 158, 158, .58);
+  background: rgba(255, 112, 112, .14)
+}
+
 .audio-output-workflow-modal {
   width: min(1080px, calc(100vw - 44px));
   max-width: min(1080px, calc(100vw - 44px));
@@ -8689,7 +8711,7 @@ body.login-guide-active #login-guide-canvas {
   padding: 0
 }
 
-.login-panel-head > div {
+.login-panel-head > div:first-child {
   display: none
 }
 

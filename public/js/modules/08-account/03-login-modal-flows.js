@@ -580,6 +580,24 @@ function setLoginProvider(provider, silent) {
   updateLoginProviderUi();
   if (!silent && document.getElementById('login-modal').classList.contains('show')) refreshQr();
 }
+function updateLoginSessionLogoutAction() {
+  var button = document.getElementById('login-session-logout');
+  if (!button) return;
+  var connected = providerHasLiveLogin(loginProvider);
+  button.hidden = !connected;
+  if (!connected) return;
+  var providerLabel = platformMeta(loginProvider).label;
+  button.textContent = '退出 ' + providerLabel;
+  button.setAttribute('aria-label', '退出 ' + providerLabel);
+}
+async function logoutLoginProvider() {
+  if (!providerHasLiveLogin(loginProvider)) return;
+  if (typeof logoutPlatformAccount !== 'function') {
+    showToast('退出功能尚未就绪，请重新打开账号面板');
+    return;
+  }
+  await logoutPlatformAccount(loginProvider, { keepLoginModalOpen: true });
+}
 function qishuiPublicSearchReady() {
   return !!(qishuiLoginStatus && (qishuiLoginStatus.searchReady || qishuiLoginStatus.publicCatalog));
 }
@@ -728,6 +746,7 @@ function updateLoginProviderUi() {
   var isQQ = loginProvider === 'qq';
   var isKugou = loginProvider === 'kugou';
   var isQishui = loginProvider === 'qishui';
+  updateLoginSessionLogoutAction();
   var isNetease = loginProvider === 'netease';
   var isManualCookieProvider = isNetease || isQQ || isKugou || isQishui;
   var title = document.getElementById('login-modal-title');

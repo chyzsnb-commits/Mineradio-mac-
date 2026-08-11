@@ -238,6 +238,36 @@ function markHomeRecentScrollActivity() {
 function homeRecentPlays() {
   return (listenStatsState.history || []).filter(function (item) { return item && (item.id || item.mid || item.key); }).slice(0, 30);
 }
+var homeRecentCoverObserver = null;
+function bindHomeRecentCoverLazyLoading(listEl) {
+  if (!listEl) return;
+  if (homeRecentCoverObserver) {
+    homeRecentCoverObserver.disconnect();
+    homeRecentCoverObserver = null;
+  }
+  var nodes = listEl.querySelectorAll('[data-home-recent-cover]');
+  if (!nodes.length) return;
+  function hydrate(node) {
+    if (!node || node.dataset.homeRecentCoverLoaded === '1') return;
+    var src = node.getAttribute('data-home-recent-cover') || '';
+    if (!src) return;
+    node.style.backgroundImage = 'url("' + cssImageUrl(src) + '")';
+    node.dataset.homeRecentCoverLoaded = '1';
+    node.removeAttribute('data-home-recent-cover');
+  }
+  if (typeof IntersectionObserver !== 'function') {
+    Array.prototype.slice.call(nodes, 0, 8).forEach(hydrate);
+    return;
+  }
+  homeRecentCoverObserver = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting) return;
+      hydrate(entry.target);
+      homeRecentCoverObserver.unobserve(entry.target);
+    });
+  }, { root: listEl, rootMargin: '180px 0px' });
+  Array.prototype.forEach.call(nodes, function (node) { homeRecentCoverObserver.observe(node); });
+}
 function renderHomeRecentBlock() {
   var statsEl = document.getElementById('home-recent-stats');
   var listEl = document.getElementById('home-recent-list');
@@ -273,7 +303,7 @@ function renderHomeRecentBlock() {
   listEl.innerHTML = plays.map(function (item, i) {
     var cover = item.cover ? coverUrlWithSize(item.cover, 120) : '';
     return '<button class="home-recent-card" type="button" onclick="playHomeRecentCard(' + i + ')">' +
-      '<div class="home-recent-thumb" style="' + (cover ? 'background-image:url(&quot;' + escHtml(cssImageUrl(cover)) + '&quot;)' : '') + '"></div>' +
+      '<div class="home-recent-thumb"' + (cover ? ' data-home-recent-cover="' + escHtml(cover) + '"' : '') + '></div>' +
       '<div class="home-recent-meta">' +
         '<div class="home-recent-name">' + escHtml(item.name || '未知歌曲') + '</div>' +
         '<div class="home-recent-artist">' + escHtml(item.artist || item.source || '') + '</div>' +
@@ -281,6 +311,7 @@ function renderHomeRecentBlock() {
     '</button>';
   }).join('');
   listEl._recentPlays = plays;
+  bindHomeRecentCoverLazyLoading(listEl);
 }
 function playHomeRecentCard(index) {
   var listEl = document.getElementById('home-recent-list');

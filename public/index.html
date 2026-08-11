@@ -1607,7 +1607,11 @@
       <div class="modal dual-login-modal">
         <div class="login-panel-head">
           <div><b>登录接入</b><small>拖接口端口到 MR</small></div>
-          <button class="login-panel-close" type="button" onclick="closeLoginModal()">×</button>
+          <div class="login-panel-head-actions">
+            <button id="login-session-logout" class="login-session-logout" type="button" hidden
+              onclick="logoutLoginProvider()">退出当前平台</button>
+            <button class="login-panel-close" type="button" onclick="closeLoginModal()">×</button>
+          </div>
         </div>
         <div id="login-node-graph" class="login-node-graph" data-provider="netease">
           <svg id="login-workflow-svg" class="workflow-link-layer login-link-layer" aria-hidden="true"></svg>

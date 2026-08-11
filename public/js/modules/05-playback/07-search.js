@@ -598,7 +598,7 @@ async function switchCurrentSongSource(provider) {
     closeControlSourceSwitcher();
     safeRenderQueuePanel('manual-source-switch', { scrollCurrent: miniQueueOpen });
     updateControlTrackInfo(playQueue[currentIdx]);
-    showSourceFallbackNotice('正在切换音源', (song.name || '当前歌曲') + ' -> ' + controlSourceProviderTitle(provider));
+    showSourceSwitchNotice('正在切换音源', (song.name || '当前歌曲') + ' -> ' + controlSourceProviderTitle(provider));
     await playQueueAt(currentIdx, {
       manual: true,
       resumeAt: currentResumeSeconds(0),
@@ -614,7 +614,7 @@ async function switchCurrentSongSource(provider) {
       safeRenderQueuePanel('manual-source-switch-restore', { scrollCurrent: miniQueueOpen });
       updateControlTrackInfo(playQueue[currentIdx]);
     }
-    showSourceFallbackNotice('音源切换失败', '已保留当前播放队列，请稍后再试。');
+    showSourceSwitchNotice('音源切换失败', '已保留当前播放队列，请稍后再试。');
   } finally {
     controlSourceSwitcherState.loading = false;
     forcePlaybackControlsInteractive();

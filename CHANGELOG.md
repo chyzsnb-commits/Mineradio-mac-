@@ -1,5 +1,9 @@
 # Changelog
 
+- 修复登录接入弹窗的两处回归：新增“退出当前平台”后，`.login-panel-head > div { display:none }` 错误隐藏了动作区，导致退出和关闭按钮不可见；现只隐藏旧标题节点。已登录状态下还会调用不存在的 `loginProviderDisplayName()`，触发运行时错误并中断后续登录 UI 更新；现复用已有平台名称元数据。登录弹窗开场不再对整块半透明玻璃面板施加 `blur(12px)`，避免短暂发白。Chrome 本地页验证“退出 网易云音乐”可见、面板 `filter:none`；专项与完整 `npm run check` `321/321` 通过。
+
+- 修复 macOS 汽水音乐播放诊断丢失上游元数据的问题：已登录会话搜索“蝴蝶 / 陶喆”命中准确曲目 `6705032260845832194`，但本机服务未获得可播放流，故不将自动切换视为汽水播放成功。`track_v2` 在上游以 2xx 返回非 JSON 内容时现保留 HTTP 状态、Content-Type 和 `QISHUI_INVALID_JSON`，界面会说明“无法确认可播放流（可能需要重新登录、接口变更或被上游拦截）”；不读取、不记录 Cookie、Token、签名 URL，也不绕过登录、版权、地区或访问控制。新增回归覆盖该 2xx 非 JSON 分支；真实 Chrome `canplay`、`playing` 与持续 10 秒播放尚未获得证据。
+
 - 修复 macOS 汽水音乐“歌单入口存在但无法真实使用”的完整前端链路：已登录时歌单面板会请求并渲染 `/api/qishui/user/playlists`，详情和“播放歌单”会走 `/api/qishui/playlist/tracks`；首次播放、无缝预取与当前歌曲切音质统一请求 `/api/qishui/song/url`，不再错误请求网易云接口。新增列表/详情/队列/音频路由回归以及本地假上游正向契约测试；未登录、空歌单和无可播地址均返回明确失败状态。完整 `npm run check` `315/315` 通过。真实已登录汽水账号的受保护音频解密和浏览器播放仍需用户在 Electron 中验收。
 
 - 修复 Windows 壁纸库“读取 Windows IP”在 UDP 广播未抵达 Mac 时完全没有候选的问题：主进程现在记录 UDP `45678` 的监听、最后消息、解析失败和每个 `/api/ping` 结果；无广播时先查本机 ARP 邻居，再受限地在活跃私网接口的同段渐进探测 `8123–8155`，优先 `8130`，全局最多 `32` 个短超时请求。只接受私网地址和 `/api/ping` 返回 `ok: true` 的服务；大网段只从本机 `/24` 渐进，绝不扫描公网或完整端口空间。界面会区分未收到广播、广播格式错误、ping 超时/拒绝/连接失败，并说明 Windows 应监听 `0.0.0.0`、防火墙需放行 UDP `45678` 与 TCP 服务端口。模拟无 UDP + ARP `192.168.1.107` + `8130` 已自动回填完整地址；专项 `27/27`、完整检查 `306/306` 通过。当前实网 `192.168.1.107:8130` 返回连接拒绝，故真实跨机正向链路仍待 Windows 服务恢复后验收。
@@ -371,6 +375,8 @@
 - 追加修复 P10 一级歌架黑屏根因：固定 P10 独立歌架比例，不再读取会在预设初始化中变化的普通 `orbit.baselineRadius`；右键一级歌架锚到相机前方安全空间，并校准到用户标注的中部构图。Electron 实截图确认封面、文字和玻璃卡面可读；P10 专项 21/21，完整检查 271/271。
 
 ## 2026-08-11
+
+- 修复播放状态通知堆叠和全局滚动抢帧：同一播放链的“切换中 / 取流失败 / 切换结果”现在同步替换为唯一一张当前状态卡，避免多张 `backdrop-filter` 卡片长期叠在右上角。搜索、歌单、FX 设置、迷你队列和歌词详情不再在每个 `wheel` 事件阻止默认滚动并创建 GSAP `scrollTop` 动画，改回浏览器原生合成滚动；任一滚动期间 3D 渲染预算暂降至 20 FPS。首页最近播放封面改为可视区附近才加载，避免首屏同时解码全部封面。新增回归测试；`npm run check` 327/327、语法和差异检查通过。真实歌曲播放时的主观滚动手感仍需 Electron 验收。[来源: `public/js/modules/05-playback/11-provider-fallback.js`、`public/js/modules/06-lyrics/01-playlist-panel-shell.js`、`public/js/modules/05-playback/03-home-discover-weather.js`、`public/js/modules/11-main-loop.js`、`scripts/test-account-logout-and-qishui-diagnostics.js`、`scripts/test-recent-scroll-performance.js`]
 
 - 修复 Windows 壁纸库自动发现的真实失效：macOS `arp -an` 的 `(incomplete)` 项此前被误当作可达邻居，导致动态端口 `8128` 从未被请求。
 - 仅保留真实 ARP 邻居；弹窗自动、读取和刷新复用单飞发现事务，手动、缓存、UDP、子网来源分开显示。

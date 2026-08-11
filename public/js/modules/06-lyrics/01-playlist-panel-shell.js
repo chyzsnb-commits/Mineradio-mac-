@@ -40,45 +40,10 @@ function smoothScrollToItem(scroller, item, opts) {
 function bindSmoothWheelScroll(scroller) {
   if (!scroller || scroller.__smoothWheelBound) return;
   scroller.__smoothWheelBound = true;
-  var targetTop = scroller.scrollTop;
-  var tween = null;
-  scroller.__syncSmoothWheelTarget = function (top) {
-    if (tween) {
-      tween.kill();
-      tween = null;
-    }
-    targetTop = isFinite(top) ? top : scroller.scrollTop;
-  };
-  scroller.addEventListener('wheel', function (e) {
-    if (!window.gsap || e.ctrlKey) return;
-    var max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-    if (max <= 0 || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-    var delta = e.deltaY;
-    if (e.deltaMode === 1) delta *= 18;
-    else if (e.deltaMode === 2) delta *= scroller.clientHeight;
-    var current = tween ? targetTop : scroller.scrollTop;
-    var next = Math.max(0, Math.min(max, current + delta));
-    if (next === current && ((delta < 0 && scroller.scrollTop <= 0) || (delta > 0 && scroller.scrollTop >= max - 1))) {
-      targetTop = scroller.scrollTop;
-      return;
-    }
-    e.preventDefault();
-    targetTop = next;
-    if (tween) tween.kill();
-    tween = window.gsap.to(scroller, {
-      scrollTop: targetTop,
-      duration: 0.24,
-      ease: 'power2.out',
-      overwrite: true,
-      onComplete: function () {
-        tween = null;
-        targetTop = scroller.scrollTop;
-      }
-    });
-  }, { passive: false });
-  scroller.addEventListener('scroll', function () {
-    if (!tween) targetTop = scroller.scrollTop;
-  }, { passive: true });
+  // 触控板的滚动应由浏览器合成器直接完成。此前每个 wheel 都 preventDefault 后
+  // 创建/销毁一个 GSAP scrollTop tween，使搜索、歌单、设置和歌词详情回到主线程。
+  // 保留该标记供已有调用方去重；点击“定位当前歌曲”仍由 smoothScrollToItem 动画。
+  scroller.__nativeWheelScrolling = true;
 }
 function bindSmoothQueueScrolling() {
   if (smoothWheelScrollBound) return;

@@ -2,6 +2,7 @@
 function openGsapModal(mask) {
   if (!mask) return;
   var panel = mask.querySelector('.modal');
+  var isLoginPanel = panel && panel.classList.contains('dual-login-modal');
   mask.classList.add('show');
   if (window.gsap) {
     window.gsap.killTweensOf(mask);
@@ -13,8 +14,10 @@ function openGsapModal(mask) {
     );
     if (panel) {
       window.gsap.fromTo(panel,
-        { autoAlpha: 0, y: 26, scale: 0.965, filter: 'blur(12px)' },
-        { autoAlpha: 1, y: 0, scale: 1, filter: 'blur(0px)', duration: 0.68, ease: 'expo.out', overwrite: true }
+        isLoginPanel
+          ? { autoAlpha: 0, y: 18, scale: 0.985, filter: 'none' }
+          : { autoAlpha: 0, y: 26, scale: 0.965, filter: 'blur(12px)' },
+        { autoAlpha: 1, y: 0, scale: 1, filter: isLoginPanel ? 'none' : 'blur(0px)', duration: isLoginPanel ? 0.42 : 0.68, ease: 'expo.out', overwrite: true }
       );
     }
   } else {

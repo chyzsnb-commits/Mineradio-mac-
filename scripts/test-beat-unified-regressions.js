@@ -15,7 +15,7 @@ test('keeps the Beat playback storm and QQ CDN fixes', () => {
 
   assert.match(playback, /isQQPlayback && !song\.vipRequired && await retryQQPlaybackWithCompatibleQuality/);
   assert.match(fallback, /PLAYBACK_SKIP_CASCADE_MAX = 8/);
-  assert.match(fallback, /while \(stack\.children\.length > 4 && stack\.lastElementChild\) stack\.removeChild/);
+  assert.match(fallback, /while \(stack\.lastElementChild\) stack\.removeChild/);
   assert.match(server, /sawDefinite404/);
   assert.match(server, /probeRes\.status === 404 \|\| probeRes\.status === 403/);
   assert.match(server, /async function refreshQQMusicKey/);

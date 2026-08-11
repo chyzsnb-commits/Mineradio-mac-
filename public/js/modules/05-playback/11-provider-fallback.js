@@ -178,6 +178,15 @@ function playbackRestrictionMessage(song, data) {
   if (category === 'copyright_unavailable' || category === 'url_unavailable') return message + ' · 可以试试另一个平台版本';
   return message;
 }
+function qishuiPlaybackFailureDetail(data) {
+  var diagnostic = data && data.diagnostic || {};
+  var parts = [];
+  if (diagnostic.reason) parts.push(diagnostic.reason);
+  if (diagnostic.requestHost) parts.push('请求主机 ' + diagnostic.requestHost);
+  if (diagnostic.statusCode) parts.push('HTTP ' + diagnostic.statusCode);
+  if (diagnostic.stage) parts.push('阶段 ' + diagnostic.stage);
+  return parts.join(' · ') || (data && data.message) || '汽水接口没有返回可播放流';
+}
 function qqPlaybackRetryQualities(requestedQuality, resolvedLevel) {
   requestedQuality = normalizePlaybackQualityForProvider(requestedQuality || getProviderPlaybackQuality('qq'), 'qq');
   resolvedLevel = String(resolvedLevel || '').toLowerCase();
@@ -254,6 +263,10 @@ function showSourceFallbackNotice(title, body, opts) {
   _lastFallbackNoticeAt = now;
   var stack = ensureSourceFallbackStack();
   if (stack) {
+    // 播放失败、自动换源和音质兼容来自同一条异步播放链。保留多张历史卡会
+    // 让较早阶段在较晚阶段完成后仍占屏，且每张卡都带昂贵的 backdrop-filter。
+    // 这里是“当前播放状态”而不是通知中心，因此每次同步替换为唯一一张卡。
+    // 保留旧的 kind/replace 清理契约，随后再统一清掉其它来源的历史卡。
     if (opts.kind && opts.replace) {
       Array.prototype.slice.call(stack.children || []).forEach(function (existing) {
         if (existing && existing.dataset && existing.dataset.noticeKind === opts.kind) {
@@ -261,6 +274,7 @@ function showSourceFallbackNotice(title, body, opts) {
         }
       });
     }
+    while (stack.lastElementChild) stack.removeChild(stack.lastElementChild);
     var card = document.createElement('div');
     card.className = 'source-fallback-card';
     if (opts.kind) card.dataset.noticeKind = opts.kind;
@@ -282,10 +296,6 @@ function showSourceFallbackNotice(title, body, opts) {
     card.appendChild(head);
     card.appendChild(bodyElNew);
     stack.insertBefore(card, stack.firstChild || null);
-    // ⚠死循环根因:removeSourceFallbackCard 是 260ms 延时删卡,children.length 不会当场减少,
-    // 放在 while 里会永远 >4 → 主线程死循环冻死("点不动")。换源级联一冒出第 5 条通知就触发。
-    // 修:多余的卡片同步硬删(直接 removeChild),必定收敛。
-    while (stack.children.length > 4 && stack.lastElementChild) stack.removeChild(stack.lastElementChild);
     requestAnimationFrame(function () { card.classList.add('show'); });
     setTimeout(function () { removeSourceFallbackCard(card); }, 5600);
     return;
@@ -299,6 +309,9 @@ function showSourceFallbackNotice(title, body, opts) {
   notice.classList.add('show');
   if (sourceFallbackNoticeTimer) clearTimeout(sourceFallbackNoticeTimer);
   sourceFallbackNoticeTimer = setTimeout(closeSourceFallbackNotice, 5000);
+}
+function showSourceSwitchNotice(title, body) {
+  showSourceFallbackNotice(title, body, { kind: 'source-switch', replace: true });
 }
 function normalizeMatchText(text) {
   return String(text || '').toLowerCase()
@@ -434,9 +447,16 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
   if (!song || song.type === 'local' || song.type === 'podcast' || song.source === 'podcast') return false;
   var category = playbackRestrictionCategory(song, data);
   var fromLabel = playbackProviderLabel(song);
+  var isQishuiPlayback = playbackLoginProvider(song) === 'qishui';
+  var qishuiDetail = isQishuiPlayback ? qishuiPlaybackFailureDetail(data) : '';
   var alternateProvider = alternatePlaybackProvider(song);
   var targetLabel = alternateProvider === 'qq' ? 'QQ 音乐' : (alternateProvider === 'kugou' ? '酷狗音乐' : (alternateProvider === 'spotify' ? 'Spotify' : '网易云'));
-  if (!opts.startupAutoplay) showSourceFallbackNotice('正在自动换源', fromLabel + ' 当前不可播，正在查找 ' + targetLabel + ' 的同名同歌手版本。');
+  if (!opts.startupAutoplay) showSourceSwitchNotice(
+    isQishuiPlayback ? '汽水未返回可播放流' : '正在自动换源',
+    isQishuiPlayback
+      ? qishuiDetail + '。正在查找 ' + targetLabel + ' 的同名同歌手版本。'
+      : fromLabel + ' 当前不可播，正在查找 ' + targetLabel + ' 的同名同歌手版本。'
+  );
   try {
     var alternate = await searchAlternatePlatformSong(song);
     if (token !== trackSwitchToken) return true;
@@ -457,10 +477,16 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
     playQueue[idx] = altHydrated;
     safeRenderQueuePanel('source-fallback', { scrollCurrent: miniQueueOpen });
     safeShelfRebuild('source-fallback');
-    if (!opts.startupAutoplay) showSourceFallbackNotice('已自动切换音源', (song.name || '当前歌曲') + ' 已从 ' + fromLabel + ' 切到 ' + targetLabel + '。');
     var fallbackPlaybackOpts = { fallbackDepth: 1, startupAutoplay: !!opts.startupAutoplay, preserveHomeState: !!opts.preserveHomeState };
     if (opts.resumeAt != null) fallbackPlaybackOpts.resumeAt = opts.resumeAt;
-    await playQueueAt(idx, fallbackPlaybackOpts);
+    var fallbackStarted = await playQueueAt(idx, fallbackPlaybackOpts);
+    if (!opts.startupAutoplay) {
+      if (fallbackStarted) {
+        showSourceSwitchNotice('已自动切换音源', (song.name || '当前歌曲') + ' 已从 ' + fromLabel + ' 切到 ' + targetLabel + '。' + (isQishuiPlayback ? ' 原因：' + qishuiDetail + '。' : ''));
+      } else {
+        showSourceSwitchNotice('音源切换失败', targetLabel + ' 版本也没有确认开始播放，已保留诊断信息。');
+      }
+    }
     return true;
   } catch (e) {
     if (token !== trackSwitchToken) return true;

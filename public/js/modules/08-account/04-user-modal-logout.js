@@ -2,7 +2,7 @@ function loggedProviderCount() {
   return ['netease', 'qq', 'kugou', 'qishui', 'spotify'].filter(function (key) { return hasPlatformLogin(key); }).length;
 }
 function updateUserModalUi() {
-  activeAccountProvider = firstLoggedProvider();
+  if (!hasPlatformLogin(activeAccountProvider)) activeAccountProvider = firstLoggedProvider();
   var st = platformStatus(activeAccountProvider);
   var meta = platformMeta(activeAccountProvider);
   var chip = document.getElementById('account-provider-chip');
@@ -48,7 +48,7 @@ function updateUserModalUi() {
   if (logoutBtn) logoutBtn.textContent =
     activeAccountProvider === 'qq' ? '退出 QQ 音乐' :
     (activeAccountProvider === 'kugou' ? '退出酷狗音乐' :
-    (activeAccountProvider === 'qishui' ? '清除汽水授权' :
+    (activeAccountProvider === 'qishui' ? '退出汽水音乐' :
     (activeAccountProvider === 'spotify' ? '退出 Spotify' : '退出网易云')));
   if (hint) hint.textContent = dualAccountMode
     ? '右上角已切换为多平台并排展示。'
@@ -96,7 +96,13 @@ function openProviderLogin(provider) {
   showLoginModal({ provider: provider });
 }
 async function logoutActiveAccount() {
-  if (activeAccountProvider === 'spotify') {
+  return logoutPlatformAccount(activeAccountProvider);
+}
+async function logoutPlatformAccount(provider, opts) {
+  opts = opts || {};
+  provider = provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease')));
+  activeAccountProvider = provider;
+  if (provider === 'spotify') {
     try { await apiJson('/api/spotify/logout'); } catch (e) { }
     try {
       if (window.desktopWindow && typeof window.desktopWindow.clearSpotifyMusicLogin === 'function') {
@@ -112,10 +118,11 @@ async function logoutActiveAccount() {
     safeShelfRebuild('spotify-logout');
     if (hasAnyPlatformLogin()) updateUserModalUi();
     else closeUserModal();
+    if (opts.keepLoginModalOpen && typeof updateLoginProviderUi === 'function') updateLoginProviderUi();
     showToast('已退出 Spotify');
     return;
   }
-  if (activeAccountProvider === 'kugou') {
+  if (provider === 'kugou') {
     try { await apiJson('/api/kugou/logout'); } catch (e) { }
     try {
       if (window.desktopWindow && typeof window.desktopWindow.clearKugouMusicLogin === 'function') {
@@ -130,10 +137,11 @@ async function logoutActiveAccount() {
     renderUserBtn();
     if (hasAnyPlatformLogin()) updateUserModalUi();
     else closeUserModal();
+    if (opts.keepLoginModalOpen && typeof updateLoginProviderUi === 'function') updateLoginProviderUi();
     showToast('已退出酷狗音乐');
     return;
   }
-  if (activeAccountProvider === 'qq') {
+  if (provider === 'qq') {
     try { await apiJson('/api/qq/logout'); } catch (e) { }
     try {
       if (window.desktopWindow && typeof window.desktopWindow.clearQQMusicLogin === 'function') {
@@ -149,12 +157,44 @@ async function logoutActiveAccount() {
     renderUserBtn();
     if (hasAnyPlatformLogin()) updateUserModalUi();
     else closeUserModal();
+    if (opts.keepLoginModalOpen && typeof updateLoginProviderUi === 'function') updateLoginProviderUi();
     showToast('已退出 QQ 音乐');
     return;
   }
-  doLogout();
+  if (provider === 'qishui') {
+    try {
+      var qishuiLogoutResult = await apiJson('/api/qishui/logout');
+      if (!qishuiLogoutResult || qishuiLogoutResult.ok !== true) throw new Error('QISHUI_LOGOUT_REJECTED');
+    } catch (e) {
+      showToast('退出汽水音乐失败，已保留当前登录态');
+      return false;
+    }
+    try {
+      if (window.desktopWindow && typeof window.desktopWindow.clearQishuiMusicLogin === 'function') {
+        var qishuiSessionResult = await window.desktopWindow.clearQishuiMusicLogin();
+        if (qishuiSessionResult && qishuiSessionResult.ok === false) throw new Error('QISHUI_DESKTOP_SESSION_CLEAR_FAILED');
+      }
+    } catch (e) {
+      showToast('汽水本地会话清理失败，请重试');
+      return false;
+    }
+    qishuiLoginStatus = { provider: 'qishui', loggedIn: false, configured: false, webSession: false, tokenConfigured: false, nickname: '汽水音乐', userId: '', avatar: '', playbackKeyReady: false, playbackMode: 'recommend-match' };
+    qishuiPlaylists = [];
+    userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
+    dualAccountMode = false;
+    activeAccountProvider = firstLoggedProvider();
+    renderUserBtn();
+    safeShelfRebuild('qishui-logout');
+    if (hasAnyPlatformLogin()) updateUserModalUi();
+    else closeUserModal();
+    if (opts.keepLoginModalOpen && typeof updateLoginProviderUi === 'function') updateLoginProviderUi();
+    showToast('已退出汽水音乐');
+    return true;
+  }
+  doLogout(opts);
 }
-async function doLogout() {
+async function doLogout(opts) {
+  opts = opts || {};
   await apiJson('/api/logout');
   try {
     if (window.desktopWindow && typeof window.desktopWindow.clearNeteaseMusicLogin === 'function') {
@@ -173,6 +213,7 @@ async function doLogout() {
   safeRenderQueuePanel('logout', { scrollCurrent: miniQueueOpen });
   renderUserBtn();
   safeShelfRebuild('logout');
-  closeUserModal();
+  if (!opts.keepLoginModalOpen) closeUserModal();
+  if (opts.keepLoginModalOpen && typeof updateLoginProviderUi === 'function') updateLoginProviderUi();
   showToast('已退出登录');
 }

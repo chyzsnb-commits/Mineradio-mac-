@@ -875,8 +875,7 @@ async function playQueueAt(idx, opts) {
     safePlaybackStep('trial-banner-reset', function () { document.getElementById('trial-banner').classList.remove('show'); });
     if (song.type === 'local' || song.source === 'local' || song.localUrl) {
       markPlayPhase('local-audio');
-      await playLocalQueueSong(song, idx, token, firstVisualPlay, opts, restoreResumeAt);
-      return;
+      return await playLocalQueueSong(song, idx, token, firstVisualPlay, opts, restoreResumeAt);
     }
     safePlaybackStep('show-loading', function () { showLoading({ trackSwitch: true, seamlessCover: true }); });
     if (!qualitySwitch) lyricSunEnergy = 0; lyricSunTarget = 0; lyricSunHold = 0; lyricSunAvg = 0; lyricSunPeak = 0.55;
@@ -1142,7 +1141,7 @@ async function playQueueAt(idx, opts) {
         }
         return;
       }
-      confirmQueuePlaybackStarted(idx, token);
+      if (!confirmQueuePlaybackStarted(idx, token)) return false;
       forcePlaybackControlsInteractive();
       if (albumGaplessHandoff && albumGaplessPreviousAudio && albumGaplessPreviousAudio !== audio) {
         setTimeout(function () {
@@ -1175,6 +1174,7 @@ async function playQueueAt(idx, opts) {
       }
       if (!qualitySwitch) scheduleAlbumGaplessPreloadForCurrent(token, albumGaplessHandoff ? 'album-gapless-handoff-started' : 'track-started');
       if (!qualitySwitch) safePlaybackStep('shelf-preview-suppress-end', suppressShelfPreviewForPlaybackSwitch);
+      return true;
     } catch (err) {
       if (typeof token !== 'undefined') clearFailedPlaybackAudioSource(token);
       console.error('Play failed:', { phase: playPhase, error: err }, err);
