@@ -198,6 +198,27 @@ function qqPlaybackRetryQualities(requestedQuality, resolvedLevel) {
   }
   return pool.filter(function (q) { return q !== requestedQuality; });
 }
+function playbackFallbackRequestCurrent(opts, token) {
+  if (token !== trackSwitchToken) return false;
+  return playbackFallbackNavigationCurrent(opts);
+}
+function playbackFallbackNavigationCurrent(opts) {
+  if (!opts || typeof opts.playRequestCurrent !== 'function') return true;
+  try { return opts.playRequestCurrent() !== false; } catch (e) { return false; }
+}
+function playbackFallbackOutcome(handled, started) {
+  return { handled: !!handled, started: started === true };
+}
+function playbackRetryOptionsWithoutPreload(opts) {
+  var next = Object.assign({}, opts || {});
+  delete next.preloadedAudio;
+  delete next.preloadedData;
+  delete next.preloadedProxyAudioUrl;
+  delete next.albumGaplessHandoff;
+  delete next.albumGaplessMixed;
+  delete next.albumGaplessReleaseReason;
+  return next;
+}
 async function retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data, requestedQuality) {
   opts = opts || {};
   // 失败总次数防护：同一首歌 15 秒内失败超 3 次就不再降级（交由上层 skip 到下一首）
@@ -213,19 +234,19 @@ async function retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data
     if (q && tried.indexOf(q) < 0) tried.push(q);
   });
   var candidates = qqPlaybackRetryQualities(requestedQuality, data && data.level).filter(function (q) { return tried.indexOf(q) < 0; });
-  if (!candidates.length || token !== trackSwitchToken) return false;
+  if (!candidates.length || !playbackFallbackRequestCurrent(opts, token)) return false;
   var nextQuality = candidates[0];
   var resolvedQuality = normalizePlaybackQuality(data && data.level);
   markPlaybackQualityRuntimeCap(song, 'qq', nextQuality, 'qq-url-unavailable');
   if (!opts.startupAutoplay) showSourceFallbackNotice('QQ 音质自动兼容', '当前音质启动失败，正在切到 ' + playbackQualityLabel(nextQuality, 'qq') + '。');
   var retryResumeAt = opts.resumeAt;
   if (retryResumeAt == null && opts.startupAutoplay && pendingPlaybackResumeAt > 0) retryResumeAt = pendingPlaybackResumeAt;
-  await playQueueAt(idx, Object.assign({}, opts, {
+  var retryStarted = await playQueueAt(idx, Object.assign(playbackRetryOptionsWithoutPreload(opts), {
     qualityOverride: nextQuality,
     qqQualityTried: tried,
     resumeAt: retryResumeAt,
   }));
-  return true;
+  return playbackFallbackOutcome(true, retryStarted === true);
 }
 var sourceFallbackNoticeTimer = null;
 function closeSourceFallbackNotice() {
@@ -378,6 +399,11 @@ function resetPlaybackSkipCascade() {
 function confirmQueuePlaybackStarted(idx, token) {
   if (token !== trackSwitchToken || idx !== currentIdx || !audio || audio.paused || audio.ended) return false;
   resetPlaybackSkipCascade();
+  setTimeout(function () {
+    if (token === trackSwitchToken && idx === currentIdx && audio && !audio.paused && !audio.ended) {
+      saveLastPlaybackSnapshot(true, 'track-started');
+    }
+  }, 80);
   return true;
 }
 function markQueueItemPlaybackFailed(idx) {
@@ -400,6 +426,10 @@ function skipFailedQueueItem(idx, token, message, opts) {
   opts = opts || {};
   hideLoading();
   if (token !== trackSwitchToken) return;
+  var nextPlaybackOpts = opts.playbackOpts || { fallbackDepth: 0 };
+  if (typeof nextPlaybackOpts.playRequestCurrent === 'function') {
+    try { if (nextPlaybackOpts.playRequestCurrent() === false) return; } catch (e) { return; }
+  }
   markQueueItemPlaybackFailed(idx);
   if (playQueue.length <= 1) {
     if (!opts.silent) showSourceFallbackNotice('没有可跳过的下一首', message || '当前歌曲不可播放，队列里没有其他歌曲。');
@@ -418,21 +448,22 @@ function skipFailedQueueItem(idx, token, message, opts) {
   }
   if (!opts.silent) showSourceFallbackNotice('已跳过受限歌曲', message || '未找到同名同歌手的另一个平台版本，正在播放下一首。');
   currentIdx = nextIdx;
-  playQueueAt(nextIdx, opts.playbackOpts || { fallbackDepth: 0 });
+  playQueueAt(nextIdx, nextPlaybackOpts);
 }
 async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
   opts = opts || {};
   // 失败总次数防护：同一首歌 15 秒内失败超 3 次就跳下一首，不再换源
   if (_playbackFailExceeded(song, idx)) {
     console.warn('[FB-DIAG] 换源被失败计数器拦截→跳下一首', song && song.name, 'idx=' + idx);
-    var skipOpts0 = opts.startupAutoplay ? { silent: true, playbackOpts: { fallbackDepth: 0, startupAutoplay: true } } : null;
+    var skipOpts0 = opts.startupAutoplay ? { silent: true, playbackOpts: { fallbackDepth: 0, startupAutoplay: true, playRequestCurrent: opts.playRequestCurrent } } : null;
     skipFailedQueueItem(idx, token, '当前歌曲多次播放失败，已跳过。', skipOpts0);
-    return true;
+    return playbackFallbackOutcome(true, false);
   }
   var _failN2 = _recordPlaybackFail(song, idx);
   console.warn('[FB-DIAG] 自动换源', song && song.name, 'idx=' + idx, '第' + _failN2 + '次');
   var skipPlaybackOpts = { fallbackDepth: 0, startupAutoplay: true };
   if (opts.resumeAt != null) skipPlaybackOpts.resumeAt = opts.resumeAt;
+  if (typeof opts.playRequestCurrent === 'function') skipPlaybackOpts.playRequestCurrent = opts.playRequestCurrent;
   var skipOpts = opts.startupAutoplay ? { silent: true, playbackOpts: skipPlaybackOpts } : null;
   if (opts.fallbackDepth > 0) {
     // 用户手动点中的歌只自动匹配一次。替代源仍不可播时停下来说明原因，
@@ -442,7 +473,7 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
       markQueueItemPlaybackFailed(idx);
       handlePlaybackUnavailable(song, data);
     }
-    return true;
+    return playbackFallbackOutcome(true, false);
   }
   if (!song || song.type === 'local' || song.type === 'podcast' || song.source === 'podcast') return false;
   var category = playbackRestrictionCategory(song, data);
@@ -459,7 +490,7 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
   );
   try {
     var alternate = await searchAlternatePlatformSong(song);
-    if (token !== trackSwitchToken) return true;
+    if (!playbackFallbackRequestCurrent(opts, token)) return playbackFallbackOutcome(true, false);
     if (!alternate) {
       if (category === 'login_required') return false;
       if (opts.startupAutoplay) skipFailedQueueItem(idx, token, '没有找到同名同歌手的 ' + targetLabel + ' 版本，正在播放下一首。', skipOpts);
@@ -467,7 +498,7 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
         markQueueItemPlaybackFailed(idx);
         handlePlaybackUnavailable(song, data);
       }
-      return true;
+      return playbackFallbackOutcome(true, false);
     }
     alternate.autoFallbackFrom = songProviderKey(song);
     // 保留换源前的失败标记，避免换源后队列项被新对象覆盖导致 18 秒退避失效
@@ -479,23 +510,25 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
     safeShelfRebuild('source-fallback');
     var fallbackPlaybackOpts = { fallbackDepth: 1, startupAutoplay: !!opts.startupAutoplay, preserveHomeState: !!opts.preserveHomeState };
     if (opts.resumeAt != null) fallbackPlaybackOpts.resumeAt = opts.resumeAt;
+    if (typeof opts.playRequestCurrent === 'function') fallbackPlaybackOpts.playRequestCurrent = opts.playRequestCurrent;
     var fallbackStarted = await playQueueAt(idx, fallbackPlaybackOpts);
-    if (!opts.startupAutoplay) {
+    var fallbackUiCurrent = playbackFallbackNavigationCurrent(opts) && idx === currentIdx && playQueue[idx] === altHydrated;
+    if (!opts.startupAutoplay && fallbackUiCurrent) {
       if (fallbackStarted) {
         showSourceSwitchNotice('已自动切换音源', (song.name || '当前歌曲') + ' 已从 ' + fromLabel + ' 切到 ' + targetLabel + '。' + (isQishuiPlayback ? ' 原因：' + qishuiDetail + '。' : ''));
       } else {
         showSourceSwitchNotice('音源切换失败', targetLabel + ' 版本也没有确认开始播放，已保留诊断信息。');
       }
     }
-    return true;
+    return playbackFallbackOutcome(true, fallbackStarted === true);
   } catch (e) {
-    if (token !== trackSwitchToken) return true;
+    if (!playbackFallbackRequestCurrent(opts, token)) return playbackFallbackOutcome(true, false);
     if (opts.startupAutoplay) skipFailedQueueItem(idx, token, '自动换源搜索失败，正在播放下一首。', skipOpts);
     else {
       markQueueItemPlaybackFailed(idx);
       handlePlaybackUnavailable(song, data);
     }
-    return true;
+    return playbackFallbackOutcome(true, false);
   }
 }
 function handlePlaybackUnavailable(song, data) {

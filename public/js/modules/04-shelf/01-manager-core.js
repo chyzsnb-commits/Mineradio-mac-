@@ -18,6 +18,7 @@ function makeShelfManager() {
   var cardBuildQueue = null;
   var selectedIdx = -1;
   var coverBindResumeUntil = -10;
+  var queueCurrentIdx = -1;
 
   // v7.2 PSP 风格状态
   var centerIdx = 0;          // 当前居中卡片 index (在 items 数组中的位置)
@@ -54,6 +55,12 @@ function makeShelfManager() {
     return source;
   }
 
+  function platformShelfHasItems() {
+    if (!hasAnyPlatformLogin() || (!userPlaylists.length && !myPodcastCollections.length)) return false;
+    if (activePlaylists().length) return true;
+    return !!(shelfShowsPodcasts() && (shelfPane === 'mine' || shelfMergesCollections()) && myPodcastCollections.length);
+  }
+
   function currentItems() {
     if (hasAnyPlatformLogin() && (userPlaylists.length || myPodcastCollections.length)) {
       var source = activePlaylists();
@@ -76,7 +83,7 @@ function makeShelfManager() {
       return playQueue.map(function (song, idx) {
         return {
           type: 'queue', title: song.name, sub: song.artist || '未知歌手',
-          cover: songCoverSrc(song, 360), tag: idx === currentIdx ? '正在播放' : ('#' + (idx + 1)), queueIndex: idx
+          cover: songCoverSrc(song, 360), tag: idx === currentIdx ? '正在播放' : ('#' + (idx + 1)), queueIndex: idx, songRef: song
         };
       });
     }
@@ -277,20 +284,34 @@ function makeShelfManager() {
     renderedStart = -1;
   }
 
+  function disposeOneCard(card) {
+    if (!card) return;
+    if (group && card.mesh && card.mesh.parent === group) group.remove(card.mesh);
+    if (card.mesh && card.mesh.material) {
+      if (card.mesh.material.map) card.mesh.material.map.dispose();
+      card.mesh.material.dispose();
+    }
+    if (card.mesh && card.mesh.geometry) card.mesh.geometry.dispose();
+  }
+
   function scheduleQueuedCardBuild(job) {
     function step(deadline) {
       if (!job || job.cancelled || cardBuildQueue !== job || !group) return;
       var started = performance.now();
       var built = 0;
-      while (job.next <= job.end && built < 2 && performance.now() - started < 7) {
-        var card = buildOneCard(allItems[job.next], job.next);
+      function hasNext() {
+        return job.indices ? job.next < job.indices.length : job.next <= job.end;
+      }
+      while (hasNext() && built < 2 && performance.now() - started < 7) {
+        var itemIndex = job.indices ? job.indices[job.next] : job.next;
+        var card = buildOneCard(allItems[itemIndex], itemIndex);
         cards.push(card);
         drawCard(card, card.item);
         warmTextureUpload(card.texture);
         job.next += 1;
         built += 1;
       }
-      if (job.next <= job.end) {
+      if (hasNext()) {
         if (window.requestIdleCallback) {
           requestIdleCallback(step, { timeout: 180 });
         } else {
@@ -337,6 +358,103 @@ function makeShelfManager() {
     }
   }
 
+  function syncQueueRenderedWindow(asyncBuild) {
+    if (!group || !allItems.length) return false;
+    var total = allItems.length;
+    var center = Math.round(centerTarget);
+    var start = Math.max(0, center - SHELF_VISIBLE_RADIUS);
+    var end = Math.min(total - 1, start + SHELF_MAX_RENDER - 1);
+    start = Math.max(0, end - SHELF_MAX_RENDER + 1);
+    cancelCardBuildQueue();
+
+    var reusable = Object.create(null);
+    cards.forEach(function (card) {
+      if (card && card.index >= start && card.index <= end && !reusable[card.index]) {
+        reusable[card.index] = card;
+      } else {
+        disposeOneCard(card);
+      }
+    });
+
+    var nextCards = [];
+    var missing = [];
+    for (var itemIdx = start; itemIdx <= end; itemIdx++) {
+      var existing = reusable[itemIdx];
+      if (!existing) {
+        missing.push(itemIdx);
+        continue;
+      }
+      existing.item = allItems[itemIdx];
+      existing.mesh.userData.action = { kind: 'playQueue', index: itemIdx };
+      existing.isCenter = itemIdx === center;
+      drawCard(existing, existing.item);
+      nextCards.push(existing);
+    }
+    cards = nextCards;
+    renderedStart = start;
+
+    // 大跳转时先构建中心卡，余下缺口留给 idle 队列，避免一帧重建 11 张 CanvasTexture。
+    missing.sort(function (a, b) { return Math.abs(a - center) - Math.abs(b - center); });
+    if (missing.length && asyncBuild !== false) {
+      if (missing[0] === center) {
+        var centerCard = buildOneCard(allItems[center], center);
+        centerCard.isCenter = true;
+        cards.push(centerCard);
+        drawCard(centerCard, centerCard.item);
+        missing.shift();
+      }
+      if (missing.length) {
+        cardBuildQueue = { indices: missing, next: 0, cancelled: false, raf: 0 };
+        scheduleQueuedCardBuild(cardBuildQueue);
+      }
+    } else {
+      missing.forEach(function (itemIndex) {
+        var card = buildOneCard(allItems[itemIndex], itemIndex);
+        cards.push(card);
+        drawCard(card, card.item);
+      });
+    }
+    return true;
+  }
+
+  function syncQueueCurrent(nextIndex, asyncCards) {
+    if (!group || mode === 'off') return true;
+    var nextShowsQueue = !platformShelfHasItems() && playQueue.length > 0;
+    var currentShowsQueue = !!(allItems.length && allItems[0].type === 'queue');
+
+    // 登录后歌架展示的是一级歌单/播客，当前播放歌曲变化不会改变这些卡片。
+    if (!nextShowsQueue && !currentShowsQueue) {
+      if (sig() !== lastSig) return false;
+      return true;
+    }
+    if (!nextShowsQueue || !currentShowsQueue) return false;
+    nextIndex = Math.round(Number(nextIndex));
+    if (!isFinite(nextIndex) || nextIndex < 0 || nextIndex >= playQueue.length) return false;
+    if (allItems.length !== playQueue.length) return false;
+    for (var i = 0; i < allItems.length; i++) {
+      if (allItems[i].type !== 'queue' || allItems[i].queueIndex !== i || allItems[i].songRef !== playQueue[i]) return false;
+    }
+
+    var previousIndex = queueCurrentIdx;
+    if (previousIndex >= 0 && previousIndex < allItems.length && previousIndex !== nextIndex) {
+      allItems[previousIndex].tag = '#' + (previousIndex + 1);
+    }
+    var song = playQueue[nextIndex];
+    var currentItem = allItems[nextIndex];
+    currentItem.title = song.name;
+    currentItem.sub = song.artist || '未知歌手';
+    currentItem.cover = songCoverSrc(song, 360);
+    currentItem.tag = '正在播放';
+    queueCurrentIdx = nextIndex;
+    centerTarget = nextIndex;
+    centerSmooth = nextIndex;
+    centerIdx = nextIndex;
+    if (!syncQueueRenderedWindow(asyncCards)) return false;
+    lastSig = sig(allItems);
+    lastCardRedrawAt = -10;
+    return true;
+  }
+
   function rebuild(asyncCards) {
     if (!group) return;
     disposeRenderedCards();
@@ -361,9 +479,13 @@ function makeShelfManager() {
       centerTarget = Math.min(allItems.length - 1, currentIdx);
       centerSmooth = centerTarget;
       centerIdx = centerTarget;
+      queueCurrentIdx = centerTarget;
     } else if (centerTarget >= allItems.length) {
       centerTarget = Math.max(0, allItems.length - 1);
       centerSmooth = centerTarget;
+      queueCurrentIdx = -1;
+    } else {
+      queueCurrentIdx = -1;
     }
     if (selectedIdx >= allItems.length) selectedIdx = -1;
     syncRenderedWindow(true, !!asyncCards);
@@ -709,10 +831,19 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       if (m === mode && group) return;
       mode = m;
       if (m === 'off') {
-        if (group) { scene.remove(group); cards.forEach(function (c) { c.texture.dispose(); c.mesh.material.dispose(); c.mesh.geometry.dispose(); }); }
+        if (group) {
+          disposeRenderedCards();
+          scene.remove(group);
+        } else {
+          cancelCardBuildQueue();
+        }
         if (connectorParticles) { scene.remove(connectorParticles); connectorParticles.geometry.dispose(); connectorParticles.material.dispose(); connectorParticles = null; }
         if (floorMirror) { scene.remove(floorMirror); floorMirror.geometry.dispose(); floorMirror.material.dispose(); floorMirror = null; }
-        group = null; cards = [];
+        group = null;
+        cards = [];
+        allItems = [];
+        queueCurrentIdx = -1;
+        lastSig = '';
         if (contentList) contentList.close();
         return;
       }
@@ -841,10 +972,14 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       }
       if (group && mode !== 'off' && uniforms.uTime.value - lastUpdate > 0.2) {
         lastUpdate = uniforms.uTime.value;
-        rebuild();
+        // 切歌封面通常在播放确认后约半秒到达。此处若无条件 rebuild，会绕过
+        // syncQueueCurrent 的增量窗口并再次销毁整组 CanvasTexture。
+        // 队列歌架只更新当前卡；登录歌单/播客与当前播放封面无关，直接保持。
+        if (!syncQueueCurrent(currentIdx, true)) rebuild(true);
       }
     },
     rebuild: rebuild,
+    syncQueueCurrent: syncQueueCurrent,
     refreshTheme: function () {
       cards.forEach(function (c) {
         c.drawKey = '';

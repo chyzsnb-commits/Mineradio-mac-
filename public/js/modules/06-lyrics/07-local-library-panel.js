@@ -133,6 +133,7 @@ function removeLocalLibraryTrackFromQueue(localFileId) {
     if (playQueue[i] && normalizedLocalLibraryFileId(playQueue[i].localFileId) === targetId) { qIdx = i; break; }
   }
   if (qIdx < 0) return;
+  if (typeof cancelTrackNavigationRequest === 'function') cancelTrackNavigationRequest('local-library-remove');
   var wasCurrent = qIdx === currentIdx;
   playQueue.splice(qIdx, 1);
   if (currentIdx >= playQueue.length) currentIdx = playQueue.length - 1;

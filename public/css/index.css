@@ -7957,7 +7957,21 @@ html:fullscreen body.desktop-shell .control-cluster.modes {
 
 body.desktop-shell.desktop-fullscreen .control-cluster.actions,
 html:fullscreen body.desktop-shell .control-cluster.actions {
-  overflow: visible
+  overflow: visible;
+  flex-wrap: nowrap;
+  align-content: center
+}
+
+body.desktop-shell.desktop-fullscreen .control-cluster.actions .control-track,
+html:fullscreen body.desktop-shell .control-cluster.actions .control-track {
+  flex: 1 1 0;
+  min-width: 0
+}
+
+body.desktop-shell.desktop-fullscreen .control-cluster.actions .control-meta,
+html:fullscreen body.desktop-shell .control-cluster.actions .control-meta {
+  flex: 1 1 0;
+  min-width: 0
 }
 
 body.desktop-shell.desktop-fullscreen .control-meta,

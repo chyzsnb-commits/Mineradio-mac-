@@ -156,6 +156,8 @@ function deactivateHomeWallpaperPreview(playback) {
   }
 }
 function switchPlaybackVisualToEmily() {
+  var hadHomeVisual = !!(homeVisualPresetActive || startupVisualPreviewActive || document.body.classList.contains('home-wallpaper-preview'));
+  if (!hadHomeVisual) return false;
   if (homeVisualPresetActive) {
     deactivateHomeWallpaperPreview(true);
   }
@@ -169,6 +171,7 @@ function switchPlaybackVisualToEmily() {
   }
   if (typeof updateRenderPowerClasses === 'function') updateRenderPowerClasses();
   if (typeof recoverVisualsAfterBackground === 'function' && !isDeepBackgroundMode()) recoverVisualsAfterBackground('playback-visual');
+  return true;
 }
 function applyStartupStarfieldPreset() {
   if (playing || currentIdx >= 0 || hasRestoredPlaybackCandidate()) return;

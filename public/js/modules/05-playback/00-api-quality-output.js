@@ -727,7 +727,10 @@ function bindAudioOutputControls() {
   refreshAudioOutputDevices(false);
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener && !bindAudioOutputControls._deviceChangeBound) {
     bindAudioOutputControls._deviceChangeBound = true;
-    navigator.mediaDevices.addEventListener('devicechange', function () { refreshAudioOutputDevices(false); });
+    navigator.mediaDevices.addEventListener('devicechange', function () {
+      invalidateAudioOutputSinkCache();
+      refreshAudioOutputDevices(false);
+    });
   }
 }
 function readAudioOutputDevicePreference() {
@@ -1009,7 +1012,10 @@ function bindAudioOutputMirrorEvents(media) {
   if (!media || media._mineradioAudioMirrorBound) return;
   media._mineradioAudioMirrorBound = true;
   ['play', 'playing', 'pause', 'ended', 'seeking', 'seeked', 'ratechange', 'volumechange', 'emptied'].forEach(function (name) {
-    media.addEventListener(name, function () { syncAudioOutputMirrors(name); });
+    media.addEventListener(name, function () {
+      if (typeof isPlaybackTrackTeardownEvent === 'function' && isPlaybackTrackTeardownEvent(media, name)) return;
+      syncAudioOutputMirrors(name);
+    });
   });
 }
 function removeAudioOutputMirror(id) {
@@ -1122,6 +1128,40 @@ function syncAudioOutputMirrors(reason) {
     audioOutputMirrorSyncTimer = setInterval(function () { syncAudioOutputMirrors('clock'); }, 2200);
   }
 }
+var audioOutputSinkAppliedCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+var audioOutputSinkPendingCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+var audioOutputSinkCacheEpoch = 0;
+function invalidateAudioOutputSinkCache() {
+  audioOutputSinkCacheEpoch += 1;
+  audioOutputSinkAppliedCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+}
+async function applyAudioSinkOnce(target, sinkId) {
+  if (!target) return { ok: null, supported: false, cached: false, error: null };
+  if (typeof target.setSinkId !== 'function') return { ok: false, supported: false, cached: false, error: null };
+  if (target.state === 'closed' && audioOutputSinkAppliedCache) audioOutputSinkAppliedCache.delete(target);
+  if (audioOutputSinkAppliedCache && audioOutputSinkAppliedCache.get(target) === sinkId) {
+    return { ok: true, supported: true, cached: true, error: null };
+  }
+  var cacheEpoch = audioOutputSinkCacheEpoch;
+  var pending = audioOutputSinkPendingCache && audioOutputSinkPendingCache.get(target);
+  if (pending && pending.sinkId === sinkId && pending.epoch === cacheEpoch) return pending.promise;
+  var predecessor = pending && pending.promise ? pending.promise : Promise.resolve();
+  var operation = predecessor.then(function () {
+    return target.setSinkId(sinkId);
+  }).then(function () {
+    if (cacheEpoch === audioOutputSinkCacheEpoch && audioOutputSinkAppliedCache) audioOutputSinkAppliedCache.set(target, sinkId);
+    return { ok: true, supported: true, cached: false, error: null };
+  }).catch(function (error) {
+    return { ok: false, supported: true, cached: false, error: error };
+  });
+  if (audioOutputSinkPendingCache) audioOutputSinkPendingCache.set(target, { sinkId: sinkId, epoch: cacheEpoch, promise: operation });
+  var result = await operation;
+  if (audioOutputSinkPendingCache) {
+    var current = audioOutputSinkPendingCache.get(target);
+    if (current && current.promise === operation) audioOutputSinkPendingCache.delete(target);
+  }
+  return result;
+}
 async function applyAudioOutputDevice(media) {
   var sinkId = audioOutputDeviceId || '';
   var hasTarget = !!(media || audioCtx || uiSfxCtx);
@@ -1130,15 +1170,10 @@ async function applyAudioOutputDevice(media) {
   var sfxResult = null;
   var errors = [];
   async function applySink(target, label) {
-    if (!target) return null;
-    if (typeof target.setSinkId !== 'function') return false;
-    try {
-      await target.setSinkId(sinkId);
-      return true;
-    } catch (e) {
-      errors.push({ label: label, error: e });
-      return false;
-    }
+    var result = await applyAudioSinkOnce(target, sinkId);
+    if (result.ok === null) return null;
+    if (!result.ok && result.error) errors.push({ label: label, error: result.error });
+    return result.ok;
   }
   bindAudioOutputMirrorEvents(media);
   mediaResult = await applySink(media, 'audio');

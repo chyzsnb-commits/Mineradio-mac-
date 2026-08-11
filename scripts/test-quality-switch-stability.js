@@ -198,6 +198,25 @@ test('音质通知使用单卡替换，音质入口收进歌曲信息行', () =>
   assert.match(css, /\.quality-control\.is-unavailable[\s\S]*?#quality-btn/, '无可用歌曲时必须有不可用状态');
 });
 
+test('桌面全屏长歌名保持左侧控制簇单行', () => {
+  assert.match(
+    css,
+    /body\.desktop-shell\.desktop-fullscreen \.control-cluster\.actions,\s*html:fullscreen body\.desktop-shell \.control-cluster\.actions\s*\{[^}]*flex-wrap:\s*nowrap[^}]*align-content:\s*center/s,
+    '全屏左侧歌曲区必须保持单行，不能让收藏和添加按钮掉到第二行'
+  );
+  assert.match(
+    css,
+    /body\.desktop-shell\.desktop-fullscreen \.control-cluster\.actions \.control-track,\s*html:fullscreen body\.desktop-shell \.control-cluster\.actions \.control-track\s*\{[^}]*flex:\s*1 1 0[^}]*min-width:\s*0/s,
+    '全屏歌曲信息容器必须允许收缩'
+  );
+  assert.match(
+    css,
+    /body\.desktop-shell\.desktop-fullscreen \.control-cluster\.actions \.control-meta,\s*html:fullscreen body\.desktop-shell \.control-cluster\.actions \.control-meta\s*\{[^}]*flex:\s*1 1 0[^}]*min-width:\s*0/s,
+    '全屏标题容器必须把空间让给固定按钮'
+  );
+  assert.match(css, /\.control-title-text\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/s, '长歌名必须省略而不是穿过音质胶囊');
+});
+
 test('内联音质选择保留可用、选中和 VIP/曲目上限状态', () => {
   assert.match(qualitySource, /btn\.disabled\s*=\s*!currentSong/, '未播放歌曲时音质胶囊必须不可操作');
   assert.match(qualitySource, /wrap\.classList\.toggle\('is-loading'/, '切换流时必须同步加载状态');

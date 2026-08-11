@@ -174,6 +174,15 @@ function switchPlaylistTab(tab, opts) {
   if (podcastPane) podcastPane.style.display = tab === 'podcasts' ? '' : 'none';
   var toplistPane = document.getElementById('toplist-pane');
   if (toplistPane) toplistPane.style.display = tab === 'toplist' ? '' : 'none';
+  if (tab === 'queue') {
+    var queueList = document.getElementById('queue-list');
+    if (queuePanelDirty && typeof flushDeferredQueuePanel === 'function') {
+      flushDeferredQueuePanel('playlist-queue-tab');
+    } else if (queueList && queueList.dataset && queueList.dataset.currentMarkerDirty === '1' && typeof safeRenderQueuePanel === 'function') {
+      delete queueList.dataset.currentMarkerDirty;
+      safeRenderQueuePanel('playlist-queue-tab-current', { animate: false, scrollCurrent: false, deferWhenHidden: false });
+    }
+  }
   if ((tab === 'playlists' || tab === 'podcasts') && opts.refresh !== false) refreshUserPlaylists();
   if (tab === 'toplist' && opts.refresh !== false && typeof loadToplists === 'function') loadToplists();
   if (opts.animate !== false) animatePlaylistPanelCurrentTab(document.getElementById('playlist-panel'));
@@ -224,7 +233,7 @@ function renderMiniQueuePanel(opts) {
   $list.innerHTML = visibleQueue.map(function (song, i) {
     var thumb = songCoverSrc(song, 60);
     var imgTag = thumb ? '<img src="' + thumb + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div class="mini-queue-cover"></div>';
-    return '<div class="mini-queue-item' + (i === currentIdx ? ' now' : '') + '" onclick="playQueueAt(' + i + ')">' +
+    return '<div class="mini-queue-item' + (i === currentIdx ? ' now' : '') + '" data-queue-index="' + i + '" onclick="playQueueAt(' + i + ')">' +
       imgTag +
       '<div class="mini-queue-info"><div class="mini-queue-name">' + escHtml(song.name) + '</div><div class="mini-queue-sub">' + escHtml(song.artist || '') + '</div></div>' +
       '<button class="mini-queue-remove mini-queue-next" onclick="event.stopPropagation();queueIndexNext(' + i + ')" title="下一首播放">下</button>' +
@@ -264,7 +273,7 @@ function renderQueuePanel(opts) {
   $ql.innerHTML = visibleQueue.map(function (song, i) {
     var thumb = songCoverSrc(song, 60);
     var imgTag = thumb ? '<img src="' + thumb + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:38px;height:38px;border-radius:6px;background:rgba(255,255,255,.06);flex-shrink:0"></div>';
-    return '<div class="queue-item' + (i === currentIdx ? ' now' : '') + '" onclick="playQueueAt(' + i + ')">' +
+    return '<div class="queue-item' + (i === currentIdx ? ' now' : '') + '" data-queue-index="' + i + '" onclick="playQueueAt(' + i + ')">' +
       imgTag +
       '<div class="qi-info"><div class="qi-name">' + escHtml(song.name) + '</div><div class="qi-sub"><button class="queue-artist-link" type="button" onclick="event.stopPropagation();openQueueArtist(' + i + ')">' + escHtml(song.artist || '未知歌手') + '</button></div></div>' +
       '<div class="qi-act">' +

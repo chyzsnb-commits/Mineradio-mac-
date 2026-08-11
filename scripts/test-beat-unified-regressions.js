@@ -13,7 +13,9 @@ test('keeps the Beat playback storm and QQ CDN fixes', () => {
   const playback = read('public/js/modules/05-playback/13-playback-start-audio.js');
   const server = read('server.js');
 
-  assert.match(playback, /isQQPlayback && !song\.vipRequired && await retryQQPlaybackWithCompatibleQuality/);
+  assert.match(playback, /if \(isQQPlayback && !song\.vipRequired\)/);
+  assert.match(playback, /qqUrlRetryOutcome = await retryQQPlaybackWithCompatibleQuality/);
+  assert.match(playback, /qqUrlRetryOutcome && qqUrlRetryOutcome\.handled/);
   assert.match(fallback, /PLAYBACK_SKIP_CASCADE_MAX = 8/);
   assert.match(fallback, /while \(stack\.lastElementChild\) stack\.removeChild/);
   assert.match(server, /sawDefinite404/);
