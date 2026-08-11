@@ -1,5 +1,7 @@
 # Changelog
 
+- 修复每首新歌播放初期的周期性卡顿：根因是未命中节拍缓存时，切歌后约 `0.9s + 0.8s + 1.4s` 就会强制启动完整音频解码、四段 `OfflineAudioContext` 渲染与 PCM 分析；缓存命中时，下一首预热也可能在 `2.6s` 后启动同类工作。现在当前曲目的重分析至少等待 `12s` 稳定播放，队列预热至少等待 `24s`；用户交互活跃或浏览器 idle 预算不足 `18ms` 时重排而不强制执行，磁盘/内存缓存命中和实时频谱保持即时。新增回归测试；前置专项 `5/5` 与主套件 `295/295` 通过（合计 `300/300`）。[来源: `public/js/modules/00-state/03-beat-dj-state.js`、`public/js/modules/03-beat/00-tempo-worker-cache-prefetch.js`、`scripts/test-beat-startup-protection.js`]
+
 - 新增本地壁纸文件夹与 macOS 缓存管理：背景媒体区可在 Finder 打开 `~/Library/Application Support/Mineradio/Wallpapers`，上传或从 Windows 壁纸库导入的图片/视频同步镜像到该目录；系统「缓存与存储」可按歌词、网络、节奏分析和人声分离临时文件显示占用、执行安全清理，或在二次确认后清除本地壁纸。安全清理不移除 Cookie、登录态、设置或壁纸。修复背景裁切拖动卡顿：拖动只更新 CSS 裁切变量，静止 `280ms` 后才保存，不再逐事件重读 IndexedDB、重建 Blob/Object URL 或 `video.load()`。`npm run check` 的前置专项 `5/5` 与主套件 `294/294` 均通过（合计 `299/299`）；浏览器运行探针连续 12 次裁切最大 `0.2ms`，完整背景应用 token 未变化。Finder 与真实媒体解码仍需用户在 Electron 中人工确认。[来源: `desktop/cache-manager.js`、`desktop/main.js`、`public/js/modules/07-fx/02-accent-background-controls.js`、`scripts/test-macos-cache-wallpaper-manager.js`]
 
 - 恢复底栏音质与汽水音源选择的真实入口：简约模式及 `≤1180px` 的 DIY 模式不再隐藏音质胶囊，既有同曲无缝换流、失败恢复旧音频和播放进度逻辑保持不变。底栏音源菜单现在把当前来源置顶并补回 QS；汽水匹配直连本机 `/api/qishui/search`，不会回落网易云；没有官方可播源的 Spotify 明确显示为不可用而不能误点。专项 `23/23`、完整 `npm run check` `294/294`、`1000×700` 实际页面边界检查通过。未用真实汽水授权曲目完成跨源播放验收。[来源: `public/css/index.css`、`public/js/modules/05-playback/07-search.js`、`scripts/test-quality-switch-stability.js`、`scripts/test-qishui-mac-integration.js`]

@@ -1,5 +1,7 @@
 # Mineradio AI Handoff
 
+> 状态更新（2026-08-11）：本工作树的新分支 `codex/playback-startup-stability` 已修复新歌开始后数秒的节拍分析抢占问题，待创建独立 PR。根因是旧配置在 `0.9s` 延迟、`0.8s` 播放门槛和最长 `1.4s` idle 超时后强制开始 `decodeAudioData` / `OfflineAudioContext` / PCM 分析；缓存命中后队列预热还可能在 `2.6s` 后做同类工作。当前曲目自动全量分析改为至少稳定播放 `12s`，队列预热至少 `24s`，交互活跃或 idle 预算少于 `18ms` 时继续重排，绝不以 timeout 强制抢占。实时频谱和缓存命中不受影响。新增 `scripts/test-beat-startup-protection.js`；`npm run check` 为前置专项 `5/5` + 主套件 `295/295`，合计 `300/300`。Electron 已从本工作树启动，`127.0.0.1:3000` 返回 `200`。边界：尚未以用户实际歌曲录制 CPU trace；若在 12 秒后仍有可感卡顿，应把全量分析移出播放期而不是再次缩短等待值。
+
 > 状态更新（2026-08-11）：本工作树 `codex/wallpaper-cache-manager` 已完成本地壁纸文件夹、分类缓存管理与背景裁切热路径修复，待创建新的独立 PR。`npm run check` 已包含专项，前置专项 `5/5` 与主套件 `294/294` 均通过（合计 `299/299`）；真实 Electron 的 Finder 打开、实际本地媒体和删除确认仍待用户点击验收。
 
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**

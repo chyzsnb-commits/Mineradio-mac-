@@ -27,9 +27,12 @@ var djBeatMapBusy = false;
 var djBeatMapToken = 0;
 var djBeatAnalysisTimer = null;
 var beatAnalysisConfig = {
-  delayMs: 900,
-  minPlaybackSec: 0.8,
-  idleTimeout: 1400,
+  // 全量离线解码会与刚启动的媒体解码和 WebGL 争用资源，首段只保留实时频谱。
+  delayMs: 1200,
+  minPlaybackSec: 12,
+  prefetchMinPlaybackSec: 24,
+  idleMinBudgetMs: 18,
+  retryMs: 900,
   skipMusicTempoWhilePlaying: false
 };
 var beatCam = {
