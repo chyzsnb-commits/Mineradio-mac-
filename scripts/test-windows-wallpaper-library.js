@@ -269,4 +269,6 @@ test('Windows 壁纸库入口接通发现、实时预览、导出与用户选定
   assert.match(css, /\.wallpaper-library-card\{[^}]*aspect-ratio:16\/9/);
   assert.match(css, /\.wallpaper-library-card\{[^}]*width:100%[^}]*min-height:128px[^}]*box-sizing:border-box/, '网格卡片必须有独立的尺寸兜底，不能因媒体绝对定位而折叠为文字行高');
   assert.match(css, /\.wallpaper-library-detail\{[^}]*height:100%[^}]*min-height:0[^}]*box-sizing:border-box[^}]*overflow-y:auto/, '详情抽屉应在自身内部滚动，不能被外层弹窗裁掉导出操作');
+  assert.match(css, /\.wallpaper-library-body:has\(\.wallpaper-library-details-drawer\.show\)\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(360px,42%\)/, '桌面端打开详情时必须为右侧详情预留独立列，不能覆盖并挤压网格');
+  assert.match(css, /@media \(max-width:920px\)\{[\s\S]*?\.wallpaper-library-body:has\(\.wallpaper-library-details-drawer\.show\) \.wallpaper-library-list\{display:none\}/, '窗口空间不足时详情必须完整全宽显示，不能保留被裁切的侧栏');
 });
