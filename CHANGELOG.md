@@ -1,5 +1,7 @@
 # Changelog
 
+- 优化 Windows 壁纸库的打开与浏览性能，并增加多选本地导入：已保存的 Windows 地址现在优先直连，成功后不再重复扫描局域网；卡片选择与关闭详情只切换已有节点状态，不再重建数百张远程缩略图。工具栏新增卡片勾选、“全选当前结果”和“导入选中到 Mineradio”；图片、视频及已完成导出的 Scene MP4 按顺序写入 Mac 本地背景库，批量过程不切换当前背景，未导出的 Scene 会明确列为待导出。专项 `16/16`、完整 `npm run check` `289/289` 通过；304 条模拟记录动态检查确认详情节点保留、图片筛选全选 `152/152`，缓存直连为 `connect=1/discover=0`，直连失败才回退发现。真实 Windows 网络吞吐与下载耗时仍待在线服务人工验收。[来源: `public/js/modules/07-fx/10-wallpaper-library-panel.js`、`public/index.html`、`public/css/index.css`、`scripts/test-windows-wallpaper-library.js`]
+
 - 修复 Windows 壁纸库把 Wallpaper Engine Scene 的 `preview.jpg` / `preview.gif` 当成普通图片下载的问题：读取 `sceneNeedsEngine` 后按项目目录将其归类为 Scene，复用已有 Windows 离屏渲染和 MP4 导出，再下载并应用到 Mac 本地背景库。视频项目若同时提供预览图与真实视频，列表只保留真实视频。没有新增或修改 Windows HTTP 接口。专项 `14/14`、完整 `npm run check` `287/287` 通过；本轮 Windows 服务只读请求超时，真实导出待人工验收。[来源: `desktop/wallpaper-library-bridge.js`、`scripts/test-windows-wallpaper-library.js`]
 
 - 优化 Windows 壁纸库的大列表滚动：图片改为原生懒加载与异步解码，视频首屏不预读；网格以可视区为根按需挂载媒体，并在滚动中临时关闭卡片位移和重阴影以降低重绘。保留既有滚动条、网格、搜索、详情和预览逻辑。专项 `13/13`、完整 `npm run check` `286/286` 通过；304 条模拟记录首屏仅挂载 `20` 个媒体，滚动后渐进至 `40` 个。真实 Windows 服务下的远程网络和实际手感仍待人工验收。[来源: `public/js/modules/07-fx/10-wallpaper-library-panel.js`、`public/css/index.css`、`scripts/test-windows-wallpaper-library.js`]

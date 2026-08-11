@@ -9,6 +9,9 @@ var wallpaperLibraryState = {
   search: '',
   type: 'all',
   sort: 'title',
+  selectedIds: new Set(),
+  connectionPromise: null,
+  batchTask: null,
   exportTask: null,
   exportPoller: 0,
   applyTask: null,
@@ -96,6 +99,38 @@ function wallpaperLibraryBindScrollPerformance(list) {
   list.addEventListener('wheel', function () { wallpaperLibraryMarkScrollActivity(list); }, { passive: true });
   list.addEventListener('scroll', function () { wallpaperLibraryMarkScrollActivity(list); }, { passive: true });
 }
+function wallpaperLibraryUpdateCardSelection() {
+  var list = wallpaperLibraryPanelEl('wallpaper-library-list');
+  if (!list) return;
+  Array.prototype.forEach.call(list.querySelectorAll('[data-wallpaper-id]'), function (card) {
+    var selected = wallpaperLibraryState.selectedIds.has(card.dataset.wallpaperId);
+    card.classList.toggle('is-batch-selected', selected);
+    var checkbox = card.querySelector('.wallpaper-library-card-select');
+    if (checkbox) checkbox.checked = selected;
+    card.classList.toggle('active', card.dataset.wallpaperId === wallpaperLibraryState.selectedId);
+  });
+  var selectAll = wallpaperLibraryPanelEl('wallpaper-library-select-all');
+  var records = wallpaperLibraryVisibleRecords();
+  var allSelected = records.length > 0 && records.every(function (record) { return wallpaperLibraryState.selectedIds.has(record.id); });
+  if (selectAll) selectAll.textContent = allSelected ? '取消全选' : '全选当前结果';
+  var count = wallpaperLibraryPanelEl('wallpaper-library-selected-count');
+  if (count) count.textContent = wallpaperLibraryState.selectedIds.size ? '已选 ' + wallpaperLibraryState.selectedIds.size + ' 张' : '未选择壁纸';
+}
+function toggleWallpaperLibraryRecordSelection(id, checked) {
+  if (!id) return;
+  if (checked) wallpaperLibraryState.selectedIds.add(id);
+  else wallpaperLibraryState.selectedIds.delete(id);
+  wallpaperLibraryUpdateCardSelection();
+}
+function toggleWallpaperLibraryVisibleSelection() {
+  var records = wallpaperLibraryVisibleRecords();
+  var allSelected = records.length > 0 && records.every(function (record) { return wallpaperLibraryState.selectedIds.has(record.id); });
+  records.forEach(function (record) {
+    if (allSelected) wallpaperLibraryState.selectedIds.delete(record.id);
+    else wallpaperLibraryState.selectedIds.add(record.id);
+  });
+  wallpaperLibraryUpdateCardSelection();
+}
 function wallpaperLibraryRenderRecords() {
   var list = wallpaperLibraryPanelEl('wallpaper-library-list');
   if (!list) return;
@@ -110,16 +145,26 @@ function wallpaperLibraryRenderRecords() {
   }
   list.innerHTML = records.map(function (record) {
     var typeLabel = record.type === 'scene' ? 'Scene 实时预览' : (record.type === 'video' ? '视频' : '图片');
-    return '<button type="button" class="wallpaper-library-card' + (record.id === wallpaperLibraryState.selectedId ? ' active' : '') + '" data-wallpaper-id="' + wallpaperLibraryEsc(record.id) + '" aria-label="预览 ' + wallpaperLibraryEsc(record.title) + '">' +
+      return '<div class="wallpaper-library-card' + (record.id === wallpaperLibraryState.selectedId ? ' active' : '') + (wallpaperLibraryState.selectedIds.has(record.id) ? ' is-batch-selected' : '') + '" data-wallpaper-id="' + wallpaperLibraryEsc(record.id) + '" role="button" tabindex="0" aria-label="预览 ' + wallpaperLibraryEsc(record.title) + '">' +
+      '<label class="wallpaper-library-card-select-wrap" title="选择 ' + wallpaperLibraryEsc(record.title) + '"><input class="wallpaper-library-card-select" type="checkbox"' + (wallpaperLibraryState.selectedIds.has(record.id) ? ' checked' : '') + ' aria-label="选择 ' + wallpaperLibraryEsc(record.title) + '"></label>' +
       wallpaperLibraryThumb(record) +
       '<span class="wallpaper-library-card-meta"><span class="wallpaper-library-card-title">' + wallpaperLibraryEsc(record.title) + '</span><small>' + typeLabel + '</small></span>' +
-      '<span class="wallpaper-library-card-type">' + (record.type === 'scene' ? 'Scene' : record.type === 'video' ? 'Video' : 'Image') + '</span></button>';
+      '<span class="wallpaper-library-card-type">' + (record.type === 'scene' ? 'Scene' : record.type === 'video' ? 'Video' : 'Image') + '</span></div>';
   }).join('');
   Array.prototype.forEach.call(list.querySelectorAll('[data-wallpaper-id]'), function (button) {
-    button.addEventListener('click', function () { selectWallpaperLibraryRecord(button.dataset.wallpaperId); });
+    button.addEventListener('click', function (event) {
+      if (event.target && event.target.closest('.wallpaper-library-card-select-wrap')) return;
+      selectWallpaperLibraryRecord(button.dataset.wallpaperId);
+    });
+    button.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectWallpaperLibraryRecord(button.dataset.wallpaperId); }
+    });
+    var checkbox = button.querySelector('.wallpaper-library-card-select');
+    if (checkbox) checkbox.addEventListener('change', function () { toggleWallpaperLibraryRecordSelection(button.dataset.wallpaperId, checkbox.checked); });
   });
   wallpaperLibraryBindLazyMedia(list);
   wallpaperLibraryBindScrollPerformance(list);
+  wallpaperLibraryUpdateCardSelection();
 }
 function wallpaperLibraryStopLivePreview() {
   var preview = wallpaperLibraryPanelEl('wallpaper-library-preview');
@@ -213,6 +258,7 @@ function wallpaperLibraryUseConnection(result, sourceLabel) {
   wallpaperLibraryState.host = result.host || result.baseUrl;
   wallpaperLibraryState.records = Array.isArray(result.records) ? result.records : [];
   wallpaperLibraryState.selectedId = '';
+  wallpaperLibraryState.selectedIds.clear();
   try { localStorage.setItem('mineradio.windows-wallpaper.base-url', result.baseUrl); } catch (_) {}
   var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
   if (input) input.value = result.baseUrl;
@@ -230,7 +276,9 @@ async function connectWindowsWallpaperSource() {
   if (!connect) { wallpaperLibraryRenderStatus('仅桌面版支持 Windows 壁纸库', 'error'); return; }
   wallpaperLibraryRenderStatus('正在验证 Windows Mineradio 服务...', 'loading');
   var result = await connect(baseUrl).catch(function () { return null; });
-  if (!wallpaperLibraryUseConnection(result, '已连接')) wallpaperLibraryRenderStatus('连接失败：服务离线或 /api/ping 未确认。', 'error');
+  var connected = wallpaperLibraryUseConnection(result, '已连接');
+  if (!connected) wallpaperLibraryRenderStatus('连接失败：服务离线或 /api/ping 未确认。', 'error');
+  return connected;
 }
 async function discoverWindowsWallpaperSources() {
   var discover = wallpaperLibraryApi('wallpaperWindowsDiscover');
@@ -245,13 +293,13 @@ async function discoverWindowsWallpaperSources() {
 function selectWallpaperLibraryRecord(id) {
   if (!id || id === wallpaperLibraryState.selectedId) return;
   wallpaperLibraryState.selectedId = id;
-  wallpaperLibraryRenderRecords();
+  wallpaperLibraryUpdateCardSelection();
   wallpaperLibraryRenderDetail();
 }
 function closeWallpaperLibraryDetail() {
   wallpaperLibraryState.selectedId = '';
   wallpaperLibraryStopLivePreview();
-  wallpaperLibraryRenderRecords();
+  wallpaperLibraryUpdateCardSelection();
   wallpaperLibraryRenderDetail();
 }
 function wallpaperLibraryClearExportPoller() {
@@ -320,6 +368,60 @@ function wallpaperLibraryBlobFromResult(result) {
   }
   return null;
 }
+async function wallpaperLibraryImportRecord(record) {
+  var download = wallpaperLibraryApi('wallpaperWindowsDownloadMedia');
+  if (!record || !download || !wallpaperLibraryState.baseUrl || typeof putCustomBackgroundBlob !== 'function') throw new Error('IMPORT_UNAVAILABLE');
+  var exportTask = wallpaperLibraryState.exportTask;
+  var output = record.type === 'scene' && exportTask && exportTask.sceneId === record.sceneId && exportTask.state === 'completed' ? exportTask.output : '';
+  if (record.type === 'scene' && !output) throw new Error('SCENE_EXPORT_REQUIRED');
+  var key = wallpaperLibrarySavedMediaKey(record, output);
+  var saved = wallpaperLibraryReadSavedMedia(key);
+  if (saved && saved.id && typeof getCustomBackgroundBlob === 'function' && await getCustomBackgroundBlob(saved.id)) return { reused: true, media: saved };
+  var request = record.type === 'scene'
+    ? { kind: 'scene-export', fileName: output }
+    : { kind: 'wallpaper', recordId: record.id, type: record.type };
+  var result = await download(wallpaperLibraryState.baseUrl, request);
+  var blob = result && result.ok ? wallpaperLibraryBlobFromResult(result) : null;
+  if (!blob || !blob.size) throw new Error(result && result.error || 'MEDIA_DOWNLOAD_FAILED');
+  var type = /^image\//i.test(result.mime || '') ? 'image' : 'video';
+  var id = 'windows-bg-' + type + '-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+  var media = { type: type, id: id, name: String(result.name || record.title || '').slice(0, 120), mime: String(result.mime || '').slice(0, 80), size: blob.size };
+  await putCustomBackgroundBlob(id, blob, media);
+  wallpaperLibraryWriteSavedMedia(key, media);
+  return { reused: false, media: media };
+}
+function wallpaperLibraryRenderBatchState() {
+  var state = wallpaperLibraryPanelEl('wallpaper-library-batch-state');
+  var task = wallpaperLibraryState.batchTask;
+  if (!state) return;
+  if (!task) { state.textContent = ''; state.dataset.state = ''; return; }
+  state.dataset.state = task.state || '';
+  state.textContent = task.message || '';
+}
+async function importSelectedWindowsWallpapers() {
+  if (wallpaperLibraryState.batchTask && wallpaperLibraryState.batchTask.state === 'running') return;
+  var records = (wallpaperLibraryState.records || []).filter(function (record) { return wallpaperLibraryState.selectedIds.has(record.id); });
+  if (!records.length) { wallpaperLibraryRenderStatus('请先勾选要导入的图片或视频壁纸。', 'warning'); return; }
+  var task = wallpaperLibraryState.batchTask = { state: 'running', completed: 0, reused: 0, failed: [], skipped: 0, message: '准备导入 ' + records.length + ' 张壁纸...' };
+  wallpaperLibraryRenderBatchState();
+  for (var index = 0; index < records.length; index += 1) {
+    var record = records[index];
+    task.message = '正在导入 ' + (index + 1) + '/' + records.length + '：' + record.title;
+    wallpaperLibraryRenderBatchState();
+    try {
+      var imported = await wallpaperLibraryImportRecord(record);
+      if (imported.reused) task.reused += 1;
+      else task.completed += 1;
+    } catch (error) {
+      if (error && error.message === 'SCENE_EXPORT_REQUIRED') task.skipped += 1;
+      else task.failed.push(record.title);
+    }
+  }
+  task.state = task.failed.length ? 'failed' : 'completed';
+  task.message = '导入完成：新增 ' + task.completed + ' 张，复用本地 ' + task.reused + ' 张' + (task.skipped ? '，Scene 待导出 ' + task.skipped + ' 张' : '') + (task.failed.length ? '，失败 ' + task.failed.length + ' 张。' : '。');
+  if (typeof renderVideoBgGrid === 'function') renderVideoBgGrid();
+  wallpaperLibraryRenderBatchState();
+}
 async function applyWindowsWallpaperToMineradio() {
   var record = wallpaperLibrarySelectedRecord();
   var download = wallpaperLibraryApi('wallpaperWindowsDownloadMedia');
@@ -341,18 +443,14 @@ async function applyWindowsWallpaperToMineradio() {
       wallpaperLibraryRenderExport(record);
       return;
     }
-    var request = record.type === 'scene'
-      ? { kind: 'scene-export', fileName: output }
-      : { kind: 'wallpaper', recordId: record.id, type: record.type };
-    var result = await download(wallpaperLibraryState.baseUrl, request);
-    var blob = result && result.ok ? wallpaperLibraryBlobFromResult(result) : null;
-    if (!blob || !blob.size) throw new Error(result && result.error || 'MEDIA_DOWNLOAD_FAILED');
-    var type = /^image\//i.test(result.mime || '') ? 'image' : 'video';
-    var id = 'windows-bg-' + type + '-' + Date.now() + '-' + Math.random().toString(16).slice(2);
-    var media = { type: type, id: id, name: String(result.name || record.title || '').slice(0, 120), mime: String(result.mime || '').slice(0, 80), size: blob.size };
-    await putCustomBackgroundBlob(id, blob, media);
-    wallpaperLibraryWriteSavedMedia(key, media);
-    setCustomBackgroundMedia(media);
+    var result;
+    if (record.type === 'scene') {
+      result = await wallpaperLibraryImportRecord(record);
+      setCustomBackgroundMedia(result.media);
+    } else {
+      result = await wallpaperLibraryImportRecord(record);
+      setCustomBackgroundMedia(result.media);
+    }
     if (typeof renderVideoBgGrid === 'function') renderVideoBgGrid();
     wallpaperLibraryState.applyTask = { key: key, state: 'completed' };
   } catch (error) {
@@ -364,9 +462,24 @@ function wallpaperLibraryBindControls() {
   var search = wallpaperLibraryPanelEl('wallpaper-library-search');
   var type = wallpaperLibraryPanelEl('wallpaper-library-type');
   var sort = wallpaperLibraryPanelEl('wallpaper-library-sort');
+  var selectAll = wallpaperLibraryPanelEl('wallpaper-library-select-all');
+  var batchImport = wallpaperLibraryPanelEl('wallpaper-library-batch-import');
   if (search) search.addEventListener('input', function () { wallpaperLibraryState.search = search.value || ''; wallpaperLibraryRenderRecords(); });
   if (type) type.addEventListener('change', function () { wallpaperLibraryState.type = type.value || 'all'; wallpaperLibraryRenderRecords(); });
   if (sort) sort.addEventListener('change', function () { wallpaperLibraryState.sort = sort.value || 'title'; wallpaperLibraryRenderRecords(); });
+  if (selectAll) selectAll.addEventListener('click', toggleWallpaperLibraryVisibleSelection);
+  if (batchImport) batchImport.addEventListener('click', importSelectedWindowsWallpapers);
+}
+async function wallpaperLibraryOpenSavedOrDiscover() {
+  var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
+  var saved = input && input.value.trim();
+  if (!saved) {
+    try { saved = localStorage.getItem('mineradio.windows-wallpaper.base-url') || ''; } catch (_) {}
+    if (input && saved) input.value = saved;
+  }
+  var connected = false;
+  if (saved) connected = await connectWindowsWallpaperSource();
+  if (!connected) await discoverWindowsWallpaperSources();
 }
 function openWallpaperLibraryPanel() {
   var mask = wallpaperLibraryPanelEl('wallpaper-library-modal');
@@ -374,8 +487,8 @@ function openWallpaperLibraryPanel() {
   mask.classList.add('show'); mask.setAttribute('aria-hidden', 'false');
   var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
   if (input && !input.value) { try { input.value = localStorage.getItem('mineradio.windows-wallpaper.base-url') || ''; } catch (_) {} }
-  if (input && input.value) connectWindowsWallpaperSource();
-  discoverWindowsWallpaperSources();
+  if (wallpaperLibraryState.connectionPromise) return;
+  wallpaperLibraryState.connectionPromise = wallpaperLibraryOpenSavedOrDiscover().finally(function () { wallpaperLibraryState.connectionPromise = null; });
 }
 function closeWallpaperLibraryPanel() {
   var mask = wallpaperLibraryPanelEl('wallpaper-library-modal');

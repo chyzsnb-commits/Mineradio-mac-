@@ -1837,6 +1837,12 @@
             <select id="wallpaper-library-type" aria-label="壁纸类型"><option value="all">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="scene">Scene</option></select>
             <select id="wallpaper-library-sort" aria-label="排序"><option value="title">按名称</option><option value="type">按类型</option></select>
           </div>
+          <div class="wallpaper-library-batch-row">
+            <button id="wallpaper-library-select-all" class="modal-btn small secondary" type="button">全选当前结果</button>
+            <span id="wallpaper-library-selected-count" class="wallpaper-library-selected-count">未选择壁纸</span>
+            <button id="wallpaper-library-batch-import" class="modal-btn small primary" type="button">导入选中到 Mineradio</button>
+            <span id="wallpaper-library-batch-state" class="wallpaper-library-batch-state" aria-live="polite"></span>
+          </div>
           <div class="wallpaper-library-source-row">
             <button id="wallpaper-library-read-ip" class="modal-btn small primary" type="button" onclick="discoverWindowsWallpaperSources()">读取 Windows IP</button>
             <input id="wallpaper-library-http-input" class="wallpaper-library-address" type="url" placeholder="Windows 地址，例如 http://192.168.1.20:8123">

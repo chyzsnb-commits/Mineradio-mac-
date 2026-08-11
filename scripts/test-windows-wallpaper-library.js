@@ -256,6 +256,37 @@ test('壁纸库滚动时延迟挂载媒体并停用重绘成本高的卡片效�
   assert.match(css, /\.wallpaper-library-list\.is-scrolling \.wallpaper-library-card:hover\{[^}]*transform:none[^}]*box-shadow:/, '滚动中不能触发卡片位移和重阴影');
 });
 
+test('已保存 Windows 地址优先直连，详情选中不应重建整个远程网格', () => {
+  const panel = read('public/js/modules/07-fx/10-wallpaper-library-panel.js');
+
+  assert.match(panel, /async function wallpaperLibraryOpenSavedOrDiscover\(\)[\s\S]*?await connectWindowsWallpaperSource\(\)[\s\S]*?if \(!connected\) await discoverWindowsWallpaperSources\(\)/, '已有地址时应先直连，失败后才发现局域网服务');
+  assert.match(panel, /function wallpaperLibraryUpdateCardSelection\([\s\S]*?classList\.toggle\('active'/, '选择变化应局部更新已有卡片');
+  assert.match(panel, /function selectWallpaperLibraryRecord\(id\) \{[\s\S]*?wallpaperLibraryUpdateCardSelection\(\)[\s\S]*?wallpaperLibraryRenderDetail\(\)/, '点击卡片不能重建整个网格');
+  const selectBody = panel.match(/function selectWallpaperLibraryRecord\(id\) \{([\s\S]*?)\n\}/);
+  const closeBody = panel.match(/function closeWallpaperLibraryDetail\(\) \{([\s\S]*?)\n\}/);
+  assert.ok(selectBody && closeBody, '选择和关闭函数必须存在');
+  assert.doesNotMatch(selectBody[1], /wallpaperLibraryRenderRecords\(/, '点击卡片不能重建整个网格');
+  assert.doesNotMatch(closeBody[1], /wallpaperLibraryRenderRecords\(/, '关闭详情不能重建整个网格');
+});
+
+test('壁纸库提供多选、当前结果全选和顺序导入本地库的入口', () => {
+  const panel = read('public/js/modules/07-fx/10-wallpaper-library-panel.js');
+  const html = read('public/index.html');
+  const css = read('public/css/index.css');
+
+  assert.ok(html.includes('id="wallpaper-library-select-all"'), '工具栏应提供全选当前结果按钮');
+  assert.ok(html.includes('id="wallpaper-library-batch-import"'), '工具栏应提供批量导入按钮');
+  assert.match(panel, /selectedIds:\s*new Set\(\)/, '多选状态必须独立保存，不能复用详情选中态');
+  assert.match(panel, /function toggleWallpaperLibraryRecordSelection\(/, '卡片应可独立勾选');
+  assert.match(panel, /function toggleWallpaperLibraryVisibleSelection\(/, '全选只作用于当前搜索筛选结果');
+  assert.match(panel, /async function importSelectedWindowsWallpapers\(/, '批量导入必须有独立队列');
+  assert.match(panel, /for \(var index = 0; index < records\.length; index \+= 1\)/, '批量导入必须顺序执行，不能压垮 Windows 服务');
+  assert.match(panel, /if \(record\.type === 'scene'\)[\s\S]*?SCENE_EXPORT_REQUIRED/, '未导出的 Scene 必须明确跳过，不能伪装已导入');
+  assert.match(panel, /record\.type === 'scene'[\s\S]*?scene-export/, '已完成导出的 Scene 应复用已导出 MP4 进入批量本地库');
+  assert.match(css, /\.wallpaper-library-card-select-wrap\{[^}]*position:absolute/, '多选框必须位于卡片上层，不能与预览点击冲突');
+  assert.match(css, /\.wallpaper-library-batch-row\{[^}]*display:flex/, '批量工具栏需要独立排列，避免挤占连接控件');
+});
+
 test('Windows 壁纸库入口接通发现、实时预览、导出与用户选定目录下载', () => {
   const preload = read('desktop/preload.js');
   const main = read('desktop/main.js');
