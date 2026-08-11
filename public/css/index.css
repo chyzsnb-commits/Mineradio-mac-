@@ -16590,6 +16590,36 @@ html.mineradio-public-release #qq-cookie-panel {
   line-height: 1.45
 }
 
+.cache-storage-custom {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 10px;
+  margin-top: 9px;
+  padding: 9px;
+  border: 1px solid rgba(126, 200, 210, .14);
+  border-radius: 7px;
+  background: rgba(12, 31, 34, .36);
+  color: rgba(232, 246, 247, .7);
+  font-size: 10px
+}
+
+.cache-storage-custom label {
+  min-width: 0;
+  line-height: 1.35
+}
+
+.cache-storage-custom input {
+  margin: 0 4px 0 0;
+  accent-color: var(--fc-accent, #00f5d4)
+}
+
+.cache-storage-custom label.danger { color: rgba(255, 183, 162, .84) }
+.cache-storage-custom .fx-mini-btn { grid-column: 1 / -1; justify-self: start }
+
+@media (max-width: 520px) {
+  .cache-storage-custom { grid-template-columns: 1fr }
+}
+
 /* Windows 壁纸库：沿用 Windows 端的全宽卡片库，Mac 只显示远端已验证内容。 */
 .wallpaper-library-modal{position:relative;width:min(1120px,94vw);max-width:none;height:min(780px,88vh);max-height:none;padding:22px;display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(114,195,214,.2);border-radius:20px;background:#071416;box-shadow:0 24px 70px rgba(0,0,0,.56)}
 .wallpaper-library-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex:0 0 auto}.wallpaper-library-kicker{color:#65bde0;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.4px}.wallpaper-library-head h2{margin:5px 0 6px;color:#f1fbfc;font-size:22px;line-height:1.2}.wallpaper-library-head p{max-width:760px;margin:0;color:rgba(221,238,239,.57);font-size:12px;line-height:1.55}.wallpaper-library-close{flex:0 0 34px;width:34px;height:34px;padding:0;border:1px solid rgba(221,239,239,.17);border-radius:50%;background:rgba(6,18,20,.64);color:rgba(232,244,244,.72);font:inherit;font-size:20px;line-height:1;cursor:pointer}.wallpaper-library-close:hover{background:rgba(82,148,159,.18);color:#fff}

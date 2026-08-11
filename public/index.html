@@ -954,6 +954,7 @@
       <div class="fx-section-label"><span>视频 / 图片背景</span></div>
       <div class="bg-media-actions" id="bg-media-actions">
         <button class="fx-mini-btn ghost" id="bg-media-upload-btn" type="button" title="上传图片或视频背景" onclick="document.getElementById('background-image-input').click()">上传</button>
+        <button class="fx-mini-btn ghost" type="button" title="在 Finder 中打开 Mineradio 壁纸库" onclick="openMineradioWallpaperFolder()">打开壁纸文件夹</button>
         <button class="fx-mini-btn ghost" id="bg-album-toggle-btn" type="button" title="使用当前封面原图" onclick="toggleCustomBackgroundAlbumCover()">封面</button>
         <button class="fx-mini-btn ghost" id="bg-media-crop-btn" type="button" onclick="openCustomBackgroundCropModal()">裁切</button>
         <button class="fx-mini-btn ghost" id="bg-media-clear-btn" type="button" onclick="clearCustomBackgroundImage()">清除</button>
@@ -1078,11 +1079,12 @@
           </div>
           <div class="fx-section-label">本地缓存</div>
           <div class="cache-storage-panel" id="cache-storage-panel">
-            <div class="cache-storage-head"><span>歌词磁盘缓存</span><span id="cache-storage-total">读取中...</span></div>
+            <div class="cache-storage-head"><span>缓存与本地壁纸</span><span id="cache-storage-total">读取中...</span></div>
             <code class="cache-storage-path" id="cache-storage-root">桌面版启动后读取</code>
             <div class="cache-storage-actions">
               <button class="fx-mini-btn ghost" type="button" onclick="refreshMineradioCacheSettings()">刷新占用</button>
-              <button class="fx-mini-btn ghost" type="button" id="cache-storage-clear" onclick="clearMineradioLyricCache()" disabled>清理歌词缓存</button>
+              <button class="fx-mini-btn ghost" type="button" id="cache-storage-clear" onclick="clearMineradioSafeCaches()" disabled>清理安全缓存</button>
+              <button class="fx-mini-btn ghost" type="button" onclick="openMineradioCacheCleanupDialog()">自定义清理</button>
             </div>
             <div class="cache-storage-row"><span>歌词 / 译文缓存</span><b id="cache-storage-lyrics-size">—</b></div>
             <code class="cache-storage-path small" id="cache-storage-lyrics-path">—</code>
@@ -1090,11 +1092,21 @@
             <code class="cache-storage-path small" id="cache-storage-chromium-path">—</code>
             <div class="cache-storage-row"><span>节奏分析缓存</span><b id="cache-storage-beatmaps-size">—</b></div>
             <code class="cache-storage-path small" id="cache-storage-beatmaps-path">—</code>
+            <div class="cache-storage-row"><span>人声分离临时文件</span><b id="cache-storage-stems-size">—</b></div>
+            <code class="cache-storage-path small" id="cache-storage-stems-path">—</code>
             <div class="cache-storage-row"><span>Wallpaper Engine 静音场景缓存</span><b id="cache-storage-wallpaper-size">—</b></div>
             <code class="cache-storage-path small" id="cache-storage-wallpaper-path">—</code>
             <div class="cache-storage-row muted"><span>设置与登录资料（安全固定）</span><b id="cache-storage-userdata-size">—</b></div>
             <code class="cache-storage-path small" id="cache-storage-userdata-path">—</code>
-            <div class="fx-sub cache-storage-note" id="cache-storage-note">歌词磁盘缓存（userData/cache/lyrics）· 单条 ≤1MB、总量 ≤96MB 自动淘汰</div>
+            <div class="cache-storage-custom" id="cache-storage-custom" hidden>
+              <label><input type="checkbox" value="lyrics" checked> 歌词 / 译文</label>
+              <label><input type="checkbox" value="network" checked> 网络、封面与音频分片</label>
+              <label><input type="checkbox" value="beatmaps" checked> 节奏分析</label>
+              <label><input type="checkbox" value="aiStems" checked> 人声分离临时文件</label>
+              <label class="danger"><input type="checkbox" value="wallpapers"> 本地壁纸资料（会从 Mineradio 壁纸库删除）</label>
+              <button class="fx-mini-btn ghost" type="button" onclick="confirmMineradioCustomCacheCleanup()">清理所选项目</button>
+            </div>
+            <div class="fx-sub cache-storage-note" id="cache-storage-note">安全清理不会移除登录、设置或本地壁纸资料</div>
           </div>
           <div class="fx-slider"><label>粒子尺寸</label><input id="fx-point" type="range" min="0.5" max="2.2"
               step="0.01"><output></output></div>

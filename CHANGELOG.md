@@ -1,5 +1,7 @@
 # Changelog
 
+- 新增本地壁纸文件夹与 macOS 缓存管理：背景媒体区可在 Finder 打开 `~/Library/Application Support/Mineradio/Wallpapers`，上传或从 Windows 壁纸库导入的图片/视频同步镜像到该目录；系统「缓存与存储」可按歌词、网络、节奏分析和人声分离临时文件显示占用、执行安全清理，或在二次确认后清除本地壁纸。安全清理不移除 Cookie、登录态、设置或壁纸。修复背景裁切拖动卡顿：拖动只更新 CSS 裁切变量，静止 `280ms` 后才保存，不再逐事件重读 IndexedDB、重建 Blob/Object URL 或 `video.load()`。`npm run check` 的前置专项 `5/5` 与主套件 `294/294` 均通过（合计 `299/299`）；浏览器运行探针连续 12 次裁切最大 `0.2ms`，完整背景应用 token 未变化。Finder 与真实媒体解码仍需用户在 Electron 中人工确认。[来源: `desktop/cache-manager.js`、`desktop/main.js`、`public/js/modules/07-fx/02-accent-background-controls.js`、`scripts/test-macos-cache-wallpaper-manager.js`]
+
 - 恢复底栏音质与汽水音源选择的真实入口：简约模式及 `≤1180px` 的 DIY 模式不再隐藏音质胶囊，既有同曲无缝换流、失败恢复旧音频和播放进度逻辑保持不变。底栏音源菜单现在把当前来源置顶并补回 QS；汽水匹配直连本机 `/api/qishui/search`，不会回落网易云；没有官方可播源的 Spotify 明确显示为不可用而不能误点。专项 `23/23`、完整 `npm run check` `294/294`、`1000×700` 实际页面边界检查通过。未用真实汽水授权曲目完成跨源播放验收。[来源: `public/css/index.css`、`public/js/modules/05-playback/07-search.js`、`scripts/test-quality-switch-stability.js`、`scripts/test-qishui-mac-integration.js`]
 
 - Windows 壁纸库新增默认关闭的“壁纸鼠标视差”，独立于封面鼠标视角并接入正常设置、DIY 存档与导入导出。Scene 详情先显示真实静态缩略图，释放旧 MJPEG 后再延迟连接实时预览；单客户端占用或加载失败会保留静态图、有限重试并给出“重试实时预览”。Scene 导出完成后“保存 MP4 到文件夹”与“应用 MP4 到 Mineradio”在同一操作行，应用中会明确禁用。专项 `19/19`、完整 `npm run check` `294/294` 通过；真实 Windows 服务已确认静态兜底在 `409` 实时流占用时仍可用。[来源: `public/js/modules/07-fx/10-wallpaper-library-panel.js`、`public/js/modules/07-fx/02-accent-background-controls.js`、`scripts/test-windows-wallpaper-library.js`]

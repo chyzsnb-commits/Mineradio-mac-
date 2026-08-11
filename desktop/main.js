@@ -18,6 +18,7 @@ const { createCrashDiagnostics } = require('./crash-diagnostics');
 const { LocalMusicLibrary, registerLocalMusicScheme } = require('./local-music-library');
 const { applyOfficialProviderLogin } = require('./official-login-bridge');
 const { WallpaperEngineLibrary, registerWallpaperEngineScheme } = require('./wallpaper-engine-library');
+const { clearDirectoryContents, safeWallpaperLibraryFileName, scanDirectoryUsage } = require('./cache-manager');
 registerLocalMusicScheme(protocol);
 registerWallpaperEngineScheme(protocol);
 
@@ -2604,6 +2605,61 @@ ipcMain.handle('mineradio-wallpaper-windows-export-download', async (_event, bas
 function lyricCacheDirectoryPath() {
   return path.join(app.getPath('userData'), 'cache', 'lyrics');
 }
+function wallpaperLibraryDirectoryPath() {
+  return path.join(app.getPath('userData'), 'Wallpapers');
+}
+function mineradioCacheDirectories() {
+  const userData = app.getPath('userData');
+  return {
+    lyrics: lyricCacheDirectoryPath(),
+    beatmaps: path.join(userData, 'beatmaps'),
+    aiStems: path.join(userData, 'ai-stems'),
+    wallpapers: wallpaperLibraryDirectoryPath(),
+  };
+}
+function wallpaperMirrorPayload(payload) {
+  const value = payload && typeof payload === 'object' ? payload : {};
+  const mime = String(value.mime || '').toLowerCase();
+  const bytes = value.bytes;
+  if (!/^image\/(png|jpe?g|webp|gif)$/i.test(mime) && !/^video\/(mp4|webm|quicktime)$/i.test(mime)) {
+    throw new Error('WALLPAPER_MIME_NOT_ALLOWED');
+  }
+  if (!(Buffer.isBuffer(bytes) || bytes instanceof Uint8Array || bytes instanceof ArrayBuffer)) {
+    throw new Error('WALLPAPER_BYTES_INVALID');
+  }
+  const buffer = Buffer.from(bytes);
+  if (!buffer.length || buffer.length > 256 * 1024 * 1024) throw new Error('WALLPAPER_SIZE_INVALID');
+  return {
+    buffer,
+    mime,
+    id: String(value.id || 'wallpaper').slice(0, 160),
+    name: String(value.name || '').slice(0, 180),
+  };
+}
+ipcMain.handle('mineradio-wallpaper-local-store', async (_event, payload) => {
+  try {
+    const data = wallpaperMirrorPayload(payload);
+    const dir = wallpaperLibraryDirectoryPath();
+    await fs.promises.mkdir(dir, { recursive: true });
+    const filename = safeWallpaperLibraryFileName(data.name, data.mime, data.id);
+    const target = path.join(dir, filename);
+    if (path.dirname(target) !== dir) throw new Error('WALLPAPER_PATH_INVALID');
+    await fs.promises.writeFile(target, data.buffer);
+    return { ok: true, path: target, name: filename, bytes: data.buffer.length };
+  } catch (error) {
+    return { ok: false, error: error && error.message || 'WALLPAPER_STORE_FAILED' };
+  }
+});
+ipcMain.handle('mineradio-wallpaper-local-open', async () => {
+  try {
+    const dir = wallpaperLibraryDirectoryPath();
+    await fs.promises.mkdir(dir, { recursive: true });
+    const error = await shell.openPath(dir);
+    return error ? { ok: false, error } : { ok: true, path: dir };
+  } catch (error) {
+    return { ok: false, error: error && error.message || 'WALLPAPER_FOLDER_OPEN_FAILED' };
+  }
+});
 function lyricCacheFilePath(key) {
   const digest = crypto.createHash('sha256').update(String(key || '')).digest('hex');
   return path.join(lyricCacheDirectoryPath(), `${digest}.json`);
@@ -2682,26 +2738,30 @@ ipcMain.handle('spotify-music-clear-login', async () => {
 // Windows v2.1.0 对齐（缓存设置 · Mac 只读版）: 只读歌词缓存占用 + 手动清理，
 // 不迁移 Chromium 缓存目录搬迁（避免破坏 macOS 登录态/会话，见 AGENTS.md 硬约束）。
 async function mineradioCacheUsageSnapshot() {
-  const dir = lyricCacheDirectoryPath();
-  let lyricsBytes = 0;
-  let lyricsCount = 0;
-  try {
-    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isFile() || !/^[a-f0-9]{64}\.json$/i.test(entry.name)) continue;
-      try {
-        const st = await fs.promises.stat(path.join(dir, entry.name));
-        lyricsBytes += st.size;
-        lyricsCount += 1;
-      } catch (_) {}
-    }
-  } catch (_) {}
+  const dirs = mineradioCacheDirectories();
+  const [lyrics, beatmaps, aiStems, wallpapers, chromiumBytes] = await Promise.all([
+    scanDirectoryUsage(dirs.lyrics),
+    scanDirectoryUsage(dirs.beatmaps),
+    scanDirectoryUsage(dirs.aiStems),
+    scanDirectoryUsage(dirs.wallpapers),
+    session.defaultSession.getCacheSize().catch(() => 0),
+  ]);
   return {
     ok: true,
-    rootPath: dir,
-    lyricsPath: dir,
-    lyricsBytes,
-    lyricsCount,
+    rootPath: app.getPath('userData'),
+    lyricsPath: dirs.lyrics,
+    lyricsBytes: lyrics.bytes,
+    lyricsCount: lyrics.files,
+    beatmapsPath: dirs.beatmaps,
+    beatmapsBytes: beatmaps.bytes,
+    beatmapsCount: beatmaps.files,
+    aiStemsPath: dirs.aiStems,
+    aiStemsBytes: aiStems.bytes,
+    aiStemsCount: aiStems.files,
+    wallpapersPath: dirs.wallpapers,
+    wallpapersBytes: wallpapers.bytes,
+    wallpapersCount: wallpapers.files,
+    chromiumBytes: Math.max(0, Number(chromiumBytes) || 0),
     userDataPath: app.getPath('userData'),
     restartRequired: false,
   };
@@ -2717,21 +2777,31 @@ ipcMain.handle('mineradio-cache-get-usage', async () => {
 
 ipcMain.handle('mineradio-cache-clear-lyrics', async () => {
   try {
-    const dir = lyricCacheDirectoryPath();
-    let removed = 0;
-    try {
-      const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isFile() || !/^[a-f0-9]{64}\.json$/i.test(entry.name)) continue;
-        try {
-          await fs.promises.unlink(path.join(dir, entry.name));
-          removed += 1;
-        } catch (_) {}
-      }
-    } catch (_) {}
-    return Object.assign({ ok: true, removed }, await mineradioCacheUsageSnapshot());
+    const removed = await clearDirectoryContents(lyricCacheDirectoryPath());
+    return Object.assign({ ok: true, removed: removed.files }, await mineradioCacheUsageSnapshot());
   } catch (e) {
     return { ok: false, error: e.message || 'CACHE_CLEAR_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-cache-clear-selected', async (_event, payload) => {
+  const allowed = new Set(['lyrics', 'beatmaps', 'aiStems', 'network', 'wallpapers']);
+  const categories = Array.from(new Set((payload && Array.isArray(payload.categories) ? payload.categories : [])
+    .map((item) => String(item || '')))).filter((item) => allowed.has(item));
+  try {
+    const dirs = mineradioCacheDirectories();
+    const cleared = {};
+    for (const category of categories) {
+      if (category === 'network') {
+        await session.defaultSession.clearCache();
+        cleared.network = true;
+      } else {
+        cleared[category] = await clearDirectoryContents(dirs[category]);
+      }
+    }
+    return Object.assign({ ok: true, cleared }, await mineradioCacheUsageSnapshot());
+  } catch (error) {
+    return { ok: false, error: error && error.message || 'CACHE_CLEAR_FAILED' };
   }
 });
 

@@ -339,7 +339,36 @@ function updateAlbumBackgroundMouseBindControl(activeMedia, albumMode) {
       ? '让当前歌曲封面背景跟随鼠标产生轻微视差'
       : '当前歌曲没有可用封面';
 }
+var customBackgroundCropPersistTimer = 0;
+function updateCustomBackgroundCropPreview() {
+  if (window.performance && typeof performance.mark === 'function') performance.mark('mineradio-bg-crop-input');
+  updateCustomBackgroundControls({ cropOnly: true });
+  if (typeof updateCustomBackgroundCropModalView === 'function') updateCustomBackgroundCropModalView();
+  if (window.performance && typeof performance.mark === 'function' && typeof performance.measure === 'function') {
+    performance.mark('mineradio-bg-crop-preview-complete');
+    try { performance.measure('mineradio-bg-crop-preview', 'mineradio-bg-crop-input', 'mineradio-bg-crop-preview-complete'); } catch (_) {}
+  }
+}
+function flushCustomBackgroundCropPersist() {
+  if (customBackgroundCropPersistTimer) {
+    clearTimeout(customBackgroundCropPersistTimer);
+    customBackgroundCropPersistTimer = 0;
+  }
+  saveLyricLayout({ user: true, reason: 'backgroundMediaCrop' });
+}
+function scheduleCustomBackgroundCropPersist() {
+  if (customBackgroundCropPersistTimer) clearTimeout(customBackgroundCropPersistTimer);
+  customBackgroundCropPersistTimer = setTimeout(function () {
+    customBackgroundCropPersistTimer = 0;
+    saveLyricLayout({ user: true, reason: 'backgroundMediaCrop' });
+  }, 280);
+}
 function updateCustomBackgroundControls() {
+  var options = arguments[0];
+  if (options && options.cropOnly === true) {
+    applyCustomBackgroundCropVars(document.documentElement, document.getElementById('custom-bg'));
+    return;
+  }
   applyCustomBackground();
   if (typeof updateAlbumBackgroundMouseView === 'function') updateAlbumBackgroundMouseView();
   updateCustomBackgroundMouseParallax();
@@ -464,16 +493,16 @@ function setCustomBackgroundCrop(key, value, silent) {
   var meta = allowed[key];
   var next = clampRange(Number(value), meta[0], meta[1]);
   fx[key] = isFinite(next) ? next : meta[2];
-  updateCustomBackgroundControls();
-  saveLyricLayout({ user: true, reason: 'backgroundMediaCrop' });
+  updateCustomBackgroundCropPreview();
+  flushCustomBackgroundCropPersist();
   if (!silent) showToast('\u80cc\u666f\u88c1\u5207\u5df2\u66f4\u65b0');
 }
 function resetCustomBackgroundCrop() {
   fx.backgroundMediaCropX = fxDefaults.backgroundMediaCropX == null ? 50 : fxDefaults.backgroundMediaCropX;
   fx.backgroundMediaCropY = fxDefaults.backgroundMediaCropY == null ? 50 : fxDefaults.backgroundMediaCropY;
   fx.backgroundMediaZoom = fxDefaults.backgroundMediaZoom == null ? 1 : fxDefaults.backgroundMediaZoom;
-  updateCustomBackgroundControls();
-  saveLyricLayout({ user: true, reason: 'backgroundMediaCrop' });
+  updateCustomBackgroundCropPreview();
+  flushCustomBackgroundCropPersist();
   showToast('\u80cc\u666f\u88c1\u5207\u5df2\u590d\u4f4d');
 }
 function customBackgroundCropSnapshot() {
@@ -488,8 +517,7 @@ function applyCustomBackgroundCropSnapshot(snapshot) {
   fx.backgroundMediaCropX = clampRange(Number(snapshot.x), 0, 100);
   fx.backgroundMediaCropY = clampRange(Number(snapshot.y), 0, 100);
   fx.backgroundMediaZoom = clampRange(Number(snapshot.zoom), 1, 2.8);
-  updateCustomBackgroundControls();
-  updateCustomBackgroundCropModalView();
+  updateCustomBackgroundCropPreview();
 }
 function customBackgroundCropMediaSrc(media) {
   if (!media) return '';
@@ -660,7 +688,7 @@ function resetCustomBackgroundCropInModal() {
   });
 }
 function commitCustomBackgroundCropModal() {
-  saveLyricLayout({ user: true, reason: 'backgroundMediaCrop' });
+  flushCustomBackgroundCropPersist();
   showToast('\u80cc\u666f\u88c1\u5207\u5df2\u66f4\u65b0');
   closeCustomBackgroundCropModal(false);
 }
@@ -711,6 +739,7 @@ function readBackgroundImageFile(file) {
     showToast('请选择图片文件');
     return;
   }
+  mirrorCustomBackgroundBlob(file, { id: 'bg-image-source-' + Date.now(), name: file.name || '', mime: file.type || '', size: file.size || 0 });
   var reader = new FileReader();
   reader.onload = function (e) {
     var img = new Image();
@@ -746,6 +775,7 @@ function readBackgroundVideoFile(file) {
   }
   var id = 'bg-video-' + Date.now() + '-' + Math.random().toString(16).slice(2);
   putCustomBackgroundBlob(id, file, { name: file.name || '', mime: file.type || '', size: file.size || 0 }).then(function () {
+    mirrorCustomBackgroundBlob(file, { id: id, name: file.name || '', mime: file.type || '', size: file.size || 0 });
     setCustomBackgroundMedia({ type: 'video', id: id, name: file.name || '', mime: file.type || '', size: file.size || 0 });
     openCustomBackgroundCropModalSoon();
   }).catch(function (err) {
@@ -768,6 +798,26 @@ function readBackgroundMediaFile(file) {
   if (/^image\//i.test(file.type || '')) readBackgroundImageFile(file);
   else if (/^video\//i.test(file.type || '')) readBackgroundVideoFile(file);
   else showToast('请选择图片或视频文件');
+}
+function mirrorCustomBackgroundBlob(blob, meta) {
+  if (!blob || !window.desktopWindow || typeof window.desktopWindow.storeLocalWallpaperMedia !== 'function' || typeof blob.arrayBuffer !== 'function') return Promise.resolve({ ok: false, skipped: true });
+  meta = meta || {};
+  return blob.arrayBuffer().then(function (buffer) {
+    return window.desktopWindow.storeLocalWallpaperMedia({
+      id: String(meta.id || 'wallpaper'),
+      name: String(meta.name || ''),
+      mime: String(meta.mime || blob.type || ''),
+      bytes: new Uint8Array(buffer)
+    });
+  }).catch(function () { return { ok: false }; });
+}
+function syncCustomBackgroundLibraryToFolder() {
+  if (typeof listCustomBackgroundMediaEntries !== 'function') return Promise.resolve({ ok: true, count: 0 });
+  return listCustomBackgroundMediaEntries().then(function (entries) {
+    return Promise.all(entries.map(function (entry) {
+      return mirrorCustomBackgroundBlob(entry.blob, entry);
+    })).then(function () { return { ok: true, count: entries.length }; });
+  });
 }
 function applyUiAccentColor() {
   var color = normalizeHexColor(fx.uiAccentColor || '#00f5d4', '#00f5d4');

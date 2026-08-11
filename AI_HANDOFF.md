@@ -1,10 +1,14 @@
 # Mineradio AI Handoff
 
+> 状态更新（2026-08-11）：本工作树 `codex/wallpaper-cache-manager` 已完成本地壁纸文件夹、分类缓存管理与背景裁切热路径修复，待创建新的独立 PR。`npm run check` 已包含专项，前置专项 `5/5` 与主套件 `294/294` 均通过（合计 `299/299`）；真实 Electron 的 Finder 打开、实际本地媒体和删除确认仍待用户点击验收。
+
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**
 
 > 状态更新（2026-08-11）：Windows 壁纸库批量导入与二次性能修复已创建独立 PR [#100](https://github.com/chyzsnb-commits/mr/pull/100)，当前可合并；原记录中的“待 PR”状态以此为准。
 
 > 状态更新（2026-08-11）：本页第一条“壁纸视差/Scene 预览恢复 + 底栏音质与汽水音源入口”已创建独立 PR [#101](https://github.com/chyzsnb-commits/mr/pull/101)，父提交为 PR #100 的远端 head `b5937a8`；远端 tree 已与本地 `HEAD` 核对一致，当前可合并，未更新 `main`。
+
+- **2026-08-11 本地壁纸文件夹、缓存管理与背景裁切性能（本工作树，待新 PR，未构建 DMG）：** 背景媒体区新增“打开壁纸文件夹”，桌面版将本地上传与 Windows 壁纸库导入的图片/视频镜像至 `app.getPath('userData')/Wallpapers` 后在 Finder 打开。系统「缓存与存储」按歌词、Chromium HTTP 缓存、节奏分析、人声分离临时文件和壁纸显示占用；安全清理只清前四项，明确勾选壁纸后才二次确认并同步清掉 IndexedDB 背景库与当前背景，不删除 Cookie、登录、设置或未勾选壁纸。裁切原卡顿根因是 `input` 事件每次进入完整 `updateCustomBackgroundControls()`，继而触发 IndexedDB Blob 读取、Object URL 重建和 `video.load()`；现在仅写裁切 CSS 变量，`280ms` 停止输入才保存。`npm run check` 前置专项 `5/5`、主套件 `294/294`、差异检查通过；浏览器运行探针连续 12 次预览最大 `0.2ms`、`customBgApplyToken` 未变化。**未验证边界：** 普通浏览器没有 Electron preload，因此 Finder、实际 IPC 占用统计及真实媒体解码要用 Electron 复验，不能据浏览器探针声称已完成此部分。[来源: `desktop/cache-manager.js`、`desktop/main.js`、`public/js/modules/07-fx/02-accent-background-controls.js`、`scripts/test-macos-cache-wallpaper-manager.js`]
 
 - **2026-08-11 壁纸视差/Scene 预览恢复 + 底栏音质与汽水音源入口（本工作树，待新 PR，未构建 DMG）：** 壁纸部分新增独立默认关闭的 `wallpaperMouseParallax`，正常设置和 DIY 存档/导入导出均携带；本地图片/视频以临时 RAF 轻微跟随鼠标，清除或切走媒体立即归位。Scene 详情先保留 `previewUrl` 静态图，再在释放旧 `<img>` 的 `src` 后延迟接入 MJPEG；`409` 或失败最多重试一次，静态图持续显示并给出“重试实时预览”。导出完成态将“保存 MP4 到文件夹”和“应用 MP4 到 Mineradio”置于同一操作行。实测 Windows 服务中已有实时流占用时，新 Scene 收到 `409`，静态兜底仍完整可见。播放部分根因是 CSS 把 `simple-mode` 与 `≤1180px` 的 DIY `#quality-control` 直接隐藏，且音源菜单的 provider 列表遗漏 qishui；现入口均恢复。音源菜单按当前来源置顶，QS 查询只走 `/api/qishui/search`，Spotify `playable:false` 明确不可点；换源继续复用 `resumeAt` 与 `sourceSwitch:true`。专项 `23/23`、完整 `npm run check` `294/294`、语法/差异检查通过。实际页面 `1000×700` 下音质与菜单均在窗口内，汽水作为当前项时 QS 位于一级菜单首项。**未验证边界：** 未以真实登录汽水客户端的真实曲目确认跨源匹配和可播流，不能称已完成真实汽水播放验收；浏览器有既有无效封面 URL `403` 和未用户手势启动 AudioContext 警告，均与本改动无关。Electron 从本工作树 `npm start` 运行在 `http://127.0.0.1:3000`。[来源: `public/js/modules/05-playback/07-search.js`、`public/css/index.css`、`scripts/test-quality-switch-stability.js`、`scripts/test-qishui-mac-integration.js`、`scripts/test-windows-wallpaper-library.js`]
 

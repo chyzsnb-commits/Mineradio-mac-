@@ -466,8 +466,9 @@ async function wallpaperLibraryImportRecord(record) {
   var id = 'windows-bg-' + type + '-' + Date.now() + '-' + Math.random().toString(16).slice(2);
   var media = { type: type, id: id, name: String(result.name || record.title || '').slice(0, 120), mime: String(result.mime || '').slice(0, 80), size: blob.size };
   await putCustomBackgroundBlob(id, blob, media);
+  if (typeof mirrorCustomBackgroundBlob === 'function') await mirrorCustomBackgroundBlob(blob, media);
   wallpaperLibraryWriteSavedMedia(key, media);
-  return { reused: false, media: media };
+  return { reused: false, media: media, blob: blob };
 }
 function wallpaperLibraryRenderBatchState() {
   var state = wallpaperLibraryPanelEl('wallpaper-library-batch-state');

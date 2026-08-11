@@ -65,11 +65,17 @@ function bindFxPanel() {
       if (pair[1] === 'backgroundMediaCropX' || pair[1] === 'backgroundMediaCropY') {
         fx[pair[1]] = Math.round(clampRange(fx[pair[1]], 0, 100));
         el.value = fx[pair[1]];
-        updateCustomBackgroundControls();
+        if (out) out.textContent = String(fx[pair[1]]);
+        updateCustomBackgroundCropPreview();
+        scheduleCustomBackgroundCropPersist();
+        return;
       }
       if (pair[1] === 'backgroundMediaZoom') {
         fx.backgroundMediaZoom = clampRange(fx.backgroundMediaZoom, 1, 2.8);
-        updateCustomBackgroundControls();
+        if (out) out.textContent = Number(fx.backgroundMediaZoom).toFixed(2);
+        updateCustomBackgroundCropPreview();
+        scheduleCustomBackgroundCropPersist();
+        return;
       }
       if (pair[1] === 'windowBackgroundOpacity') {
         fx.windowBackgroundOpacity = clampRange(fx.windowBackgroundOpacity, 0, 1);
@@ -158,6 +164,11 @@ function bindFxPanel() {
       if (isStageLyricRealtimeFxKey(pair[1]) || isDesktopLyricRealtimeFxKey(pair[1])) scheduleLyricLayoutSave(360, saveOpts);
       else saveLyricLayout(saveOpts);
     });
+    if (/^backgroundMedia(CropX|CropY|Zoom)$/.test(pair[1]) && !el._customCropCommitBound) {
+      el._customCropCommitBound = true;
+      el.addEventListener('change', function () { flushCustomBackgroundCropPersist(); });
+      el.addEventListener('pointerup', function () { flushCustomBackgroundCropPersist(); });
+    }
   });
   var lyricPicker = document.getElementById('lyric-color-picker');
   if (lyricPicker) {
