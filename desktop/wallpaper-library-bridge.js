@@ -101,7 +101,9 @@ function normalizeWindowsWallpaperRecord(rawRecord, baseUrl, index) {
   const raw = rawRecord && typeof rawRecord === 'object' ? rawRecord : {};
   const id = String(raw.id || raw.projectId || raw.sceneId || raw.scene || 'wallpaper-' + Number(index || 0)).trim();
   const declared = String(raw.type || raw.kind || raw.mediaType || '').toLowerCase();
-  const sceneId = String(raw.sceneId || raw.scene || (declared === 'scene' ? id : '')).trim();
+  const projectId = String(raw.projectId || id.split('/')[0] || id).trim();
+  const engineScene = raw.sceneNeedsEngine === true;
+  const sceneId = String(raw.sceneId || raw.scene || (engineScene ? projectId : '') || (declared === 'scene' ? id : '')).trim();
   const videoValue = typeof raw.video === 'string' ? raw.video : '';
   const imageValue = typeof raw.image === 'string' ? raw.image : '';
   const type = sceneId || declared === 'scene' ? 'scene' : (declared === 'video' || raw.video === true || videoValue ? 'video' : 'image');
@@ -119,6 +121,35 @@ function normalizeWindowsWallpaperRecord(rawRecord, baseUrl, index) {
     liveUrl: type === 'scene' ? serviceUrl(baseUrl, '/api/live/' + encodeURIComponent(sceneId || id)) : '',
     sourceHost: normalizeWindowsBaseUrl(baseUrl),
   };
+}
+
+function windowsWallpaperProjectId(rawRecord, index) {
+  const raw = rawRecord && typeof rawRecord === 'object' ? rawRecord : {};
+  const id = String(raw.projectId || raw.id || raw.sceneId || raw.scene || 'wallpaper-' + Number(index || 0)).trim();
+  return String(raw.projectId || id.split('/')[0] || id).trim() || 'wallpaper-' + Number(index || 0);
+}
+
+function windowsWallpaperIsPreview(rawRecord) {
+  const raw = rawRecord && typeof rawRecord === 'object' ? rawRecord : {};
+  if (raw.isPreview === true) return true;
+  const id = String(raw.id || raw.file || raw.url || '').split('?')[0];
+  return /^preview\.(jpe?g|png|webp|gif)$/i.test(id.split('/').pop() || '');
+}
+
+function normalizeWindowsWallpaperRecords(rawRecords, baseUrl) {
+  const groups = new Map();
+  (Array.isArray(rawRecords) ? rawRecords : []).forEach((rawRecord, index) => {
+    const key = windowsWallpaperProjectId(rawRecord, index);
+    const entries = groups.get(key) || [];
+    entries.push({ record: normalizeWindowsWallpaperRecord(rawRecord, baseUrl, index), preview: windowsWallpaperIsPreview(rawRecord) });
+    groups.set(key, entries);
+  });
+  return Array.from(groups.values()).flatMap((entries) => {
+    const scene = entries.find((entry) => entry.record.type === 'scene');
+    if (scene) return [scene.record];
+    const originals = entries.filter((entry) => !entry.preview);
+    return (originals.length ? originals : entries).map((entry) => entry.record);
+  });
 }
 
 class WindowsWallpaperClient {
@@ -161,7 +192,7 @@ class WindowsWallpaperClient {
       ok: true,
       baseUrl: base,
       host: String(ping.data.host || ping.data.name || new URL(base).host),
-      records: listing.data.records.map((record, index) => normalizeWindowsWallpaperRecord(record, base, index)),
+      records: normalizeWindowsWallpaperRecords(listing.data.records, base),
     };
   }
 
@@ -402,4 +433,4 @@ async function scanHttpSource(baseUrl) {
   return windowsClient.connect(baseUrl);
 }
 
-module.exports = { init, WindowsWallpaperClient, normalizeWindowsWallpaperRecord, normalizeWindowsBaseUrl, privateSubnetProbeUrls };
+module.exports = { init, WindowsWallpaperClient, normalizeWindowsWallpaperRecord, normalizeWindowsWallpaperRecords, normalizeWindowsBaseUrl, privateSubnetProbeUrls };

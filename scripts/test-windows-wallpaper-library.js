@@ -9,6 +9,7 @@ const {
   init,
   WindowsWallpaperClient,
   normalizeWindowsWallpaperRecord,
+  normalizeWindowsWallpaperRecords,
 } = require('../desktop/wallpaper-library-bridge');
 
 const root = path.resolve(__dirname, '..');
@@ -154,6 +155,28 @@ test('壁纸记录兼容 image、video 和 scene 字段，并保留无缩略图�
   assert.equal(video.previewUrl, 'http://10.0.0.2:8123/preview.mp4');
   assert.equal(scene.type, 'scene');
   assert.equal(scene.liveUrl, 'http://10.0.0.2:8123/api/live/demo');
+});
+
+test('Windows 的 Scene 预览图必须复用现有录制导出链，不能作为低清图片下载', () => {
+  const records = normalizeWindowsWallpaperRecords([
+    { id: '3339375188/preview.jpg', title: 'Kazemi Flowers', type: 'image', previewUrl: '/api/wallpaper-file?id=3339375188%2Fpreview.jpg', projectType: 'Scene', sceneNeedsEngine: true },
+    { id: '3434913151/preview.jpg', title: '海绵宝宝', type: 'image', projectType: 'Video' },
+    { id: '3434913151/Conch-Street-4K.mp4', title: '海绵宝宝', type: 'video', url: '/api/wallpaper-file?id=3434913151%2FConch-Street-4K.mp4', projectType: 'Video' },
+  ], 'http://10.0.0.2:8123');
+
+  assert.equal(records.length, 2);
+  assert.deepEqual(records[0], {
+    id: '3339375188/preview.jpg',
+    title: 'Kazemi Flowers',
+    type: 'scene',
+    previewUrl: 'http://10.0.0.2:8123/api/wallpaper-file?id=3339375188%2Fpreview.jpg',
+    fileUrl: '',
+    sceneId: '3339375188',
+    liveUrl: 'http://10.0.0.2:8123/api/live/3339375188',
+    sourceHost: 'http://10.0.0.2:8123',
+  });
+  assert.equal(records[1].id, '3434913151/Conch-Street-4K.mp4');
+  assert.equal(records[1].type, 'video');
 });
 
 test('Scene 导出只接受 202 任务，完成后才允许下载', async () => {

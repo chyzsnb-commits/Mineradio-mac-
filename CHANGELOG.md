@@ -1,5 +1,7 @@
 # Changelog
 
+- 修复 Windows 壁纸库把 Wallpaper Engine Scene 的 `preview.jpg` / `preview.gif` 当成普通图片下载的问题：读取 `sceneNeedsEngine` 后按项目目录将其归类为 Scene，复用已有 Windows 离屏渲染和 MP4 导出，再下载并应用到 Mac 本地背景库。视频项目若同时提供预览图与真实视频，列表只保留真实视频。没有新增或修改 Windows HTTP 接口。专项 `14/14`、完整 `npm run check` `287/287` 通过；本轮 Windows 服务只读请求超时，真实导出待人工验收。[来源: `desktop/wallpaper-library-bridge.js`、`scripts/test-windows-wallpaper-library.js`]
+
 - 优化 Windows 壁纸库的大列表滚动：图片改为原生懒加载与异步解码，视频首屏不预读；网格以可视区为根按需挂载媒体，并在滚动中临时关闭卡片位移和重阴影以降低重绘。保留既有滚动条、网格、搜索、详情和预览逻辑。专项 `13/13`、完整 `npm run check` `286/286` 通过；304 条模拟记录首屏仅挂载 `20` 个媒体，滚动后渐进至 `40` 个。真实 Windows 服务下的远程网络和实际手感仍待人工验收。[来源: `public/js/modules/07-fx/10-wallpaper-library-panel.js`、`public/css/index.css`、`scripts/test-windows-wallpaper-library.js`]
 
 - 修复 Windows 壁纸库详情在中等窗口宽度被网格覆盖、右侧内容显示不全的问题：内容区在详情打开时改为独立“缩略图网格 + 详情”双列，详情不再绝对覆盖网格；视口 `≤920px` 自动切为完整全宽详情，关闭后恢复网格。详情仍在自身区域内滚动，预览、下载和导出逻辑未改。新增布局回归断言；专项 `12/12`、完整 `npm run check` `285/285`、真实浏览器宽屏零重叠和窄屏完整边界检查通过。真实 Windows 服务的远程媒体传输仍待人工验收。[来源: `public/css/index.css`、`scripts/test-windows-wallpaper-library.js`]
