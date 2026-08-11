@@ -766,7 +766,9 @@ function preferredLyricSourceForSong(song) {
   if (!hasCustom) return 'original';
   var pref = key ? customLyricPrefs[key] : '';
   if (pref === 'custom') return 'custom';
-  if (pref === 'original') return 'original';
+  // “自动”保持自动歌词优先，但没有可信歌词时仍回退用户已存的本地版本。
+  // 旧版 original 偏好也按自动处理，避免升级后把云盘歌曲重新降级为标题占位。
+  if (originalLyricsState && originalLyricsState.timingSource !== 'fallback' && originalLyricsState.timingSource !== 'pending') return 'original';
   return originalLyricsState.timingSource === 'fallback' ? 'custom' : 'original';
 }
 function applyPreferredLyricsForCurrent(silent) {
@@ -790,7 +792,7 @@ function setLyricSourceMode(mode, silent) {
     applyOriginalLyricsState();
   }
   if (key) {
-    customLyricPrefs[key] = mode;
+    customLyricPrefs[key] = mode === 'custom' ? 'custom' : 'auto';
     saveCustomLyricPrefs();
   }
   if (!silent) showToast(mode === 'custom' ? '已切换到自定义歌词' : '已切换到原歌词');
@@ -804,12 +806,12 @@ function updateCustomLyricControls() {
   var customBtn = document.getElementById('lyric-source-custom');
   if (originalBtn) {
     originalBtn.classList.toggle('active', lyricSourceMode !== 'custom');
-    originalBtn.title = '使用网易云或本地解析歌词';
+    originalBtn.title = '自动歌词优先；无可用歌词时回退已保存的本地歌词';
   }
   if (customBtn) {
     customBtn.classList.toggle('active', lyricSourceMode === 'custom');
     customBtn.classList.toggle('has-custom', hasCustom);
-    customBtn.title = hasCustom ? '打开并编辑自定义歌词' : '新增自定义歌词';
+    customBtn.title = hasCustom ? '使用、导入或编辑本地歌词' : '导入或编辑本地歌词';
   }
 }
 function updateLyricDisplayModeControls() {
@@ -1022,6 +1024,51 @@ function saveCustomLyricForCurrent() {
   setCustomLyricStatus(saved ? ('已保存 ' + lines.length + ' 行，并切换为自定义歌词') : '已应用，但本地存储空间不足', saved ? 'good' : 'fail');
   showToast(saved ? '自定义歌词已保存' : '自定义歌词已应用');
   setTimeout(function () { closeCustomLyricModal(); }, 520);
+}
+function triggerCustomLyricImport() {
+  var input = document.getElementById('custom-lyric-file-input');
+  if (input) input.click();
+}
+function decodeImportedLyricBuffer(buffer) {
+  var bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer || []);
+  if (!bytes.length) return '';
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return new TextDecoder('utf-8').decode(bytes.subarray(3)).trim();
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes.subarray(2)).trim();
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    var swapped = new Uint8Array(bytes.length - 2);
+    for (var index = 2; index + 1 < bytes.length; index += 2) { swapped[index - 2] = bytes[index + 1]; swapped[index - 1] = bytes[index]; }
+    return new TextDecoder('utf-16le').decode(swapped).trim();
+  }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes).trim(); }
+  catch (_) { try { return new TextDecoder('gb18030').decode(bytes).trim(); } catch (_) { return ''; } }
+}
+async function importCustomLyricFile(file) {
+  var song = currentLyricSong();
+  var key = songCustomLyricKey(song);
+  var name = String(file && file.name || '');
+  if (!song || !key) { showToast('先播放或选择一首歌'); return false; }
+  if (!/\.(lrc|txt)$/i.test(name)) { setCustomLyricStatus('请选择 .lrc 或 .txt 歌词文件', 'fail'); return false; }
+  if (!file || !file.size || file.size > 512 * 1024) { setCustomLyricStatus('歌词文件需小于 512KB', 'fail'); return false; }
+  try {
+    var text = decodeImportedLyricBuffer(await file.arrayBuffer());
+    var lines = parseCustomLyricText(text);
+    if (!lines.length) { setCustomLyricStatus('没有识别到可显示的歌词行', 'fail'); return false; }
+    customLyricMap[key] = { text: text, updatedAt: Date.now(), importedName: name };
+    if (lyricSourceMode === 'custom') customLyricPrefs[key] = 'custom';
+    else customLyricPrefs[key] = 'auto';
+    var saved = saveCustomLyricMap();
+    saveCustomLyricPrefs();
+    var input = document.getElementById('custom-lyric-input');
+    if (input) input.value = text;
+    applyPreferredLyricsForCurrent(true);
+    updateCustomLyricControls();
+    setCustomLyricStatus(saved ? ('已导入 ' + lines.length + ' 行；可在“自动 / 本地歌词”间切换') : '已导入，但本地存储空间不足', saved ? 'good' : 'fail');
+    showToast(saved ? '歌词已导入本地' : '歌词仅在本次运行可用');
+    return true;
+  } catch (error) {
+    setCustomLyricStatus('歌词文件读取失败', 'fail');
+    return false;
+  }
 }
 function deleteCustomLyricForCurrent() {
   var song = currentLyricSong();

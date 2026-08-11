@@ -1,5 +1,7 @@
 # Changelog
 
+- 新增本地歌词与云盘无词回退：本地曲库继续使用同名 LRC 和音频内嵌歌词；播放器可在“自动 / 本地歌词”间切换，歌词弹窗可导入不超过 512 KiB 的 LRC/TXT，兼容 UTF-8、UTF-16、GB18030。自动模式优先可信平台歌词，无词时才回退已保存的本地歌词。跨源借词必须同时匹配标题、歌手、时长（差值不超过 3 秒）和候选唯一性；当前或候选为翻唱/Remix、时长缺失、歌词为空或候选不唯一都拒绝，不缓存也不覆盖当前歌词。专项 3/3、前置专项 5/5、主套件 298/298 通过（合计 303/303）；真实云盘账号、版权歌词仍待 Electron 人工验收。
+
 - 修复每首新歌播放初期的周期性卡顿：根因是未命中节拍缓存时，切歌后约 `0.9s + 0.8s + 1.4s` 就会强制启动完整音频解码、四段 `OfflineAudioContext` 渲染与 PCM 分析；缓存命中时，下一首预热也可能在 `2.6s` 后启动同类工作。现在当前曲目的重分析至少等待 `12s` 稳定播放，队列预热至少等待 `24s`；用户交互活跃或浏览器 idle 预算不足 `18ms` 时重排而不强制执行，磁盘/内存缓存命中和实时频谱保持即时。新增回归测试；前置专项 `5/5` 与主套件 `295/295` 通过（合计 `300/300`）。[来源: `public/js/modules/00-state/03-beat-dj-state.js`、`public/js/modules/03-beat/00-tempo-worker-cache-prefetch.js`、`scripts/test-beat-startup-protection.js`]
 
 - 新增本地壁纸文件夹与 macOS 缓存管理：背景媒体区可在 Finder 打开 `~/Library/Application Support/Mineradio/Wallpapers`，上传或从 Windows 壁纸库导入的图片/视频同步镜像到该目录；系统「缓存与存储」可按歌词、网络、节奏分析和人声分离临时文件显示占用、执行安全清理，或在二次确认后清除本地壁纸。安全清理不移除 Cookie、登录态、设置或壁纸。修复背景裁切拖动卡顿：拖动只更新 CSS 裁切变量，静止 `280ms` 后才保存，不再逐事件重读 IndexedDB、重建 Blob/Object URL 或 `video.load()`。`npm run check` 的前置专项 `5/5` 与主套件 `294/294` 均通过（合计 `299/299`）；浏览器运行探针连续 12 次裁切最大 `0.2ms`，完整背景应用 token 未变化。Finder 与真实媒体解码仍需用户在 Electron 中人工确认。[来源: `desktop/cache-manager.js`、`desktop/main.js`、`public/js/modules/07-fx/02-accent-background-controls.js`、`scripts/test-macos-cache-wallpaper-manager.js`]
