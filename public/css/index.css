@@ -521,7 +521,7 @@ body.desktop-shell.desktop-fullscreen #top-right {
   object-position: var(--custom-bg-position-x, 50%) var(--custom-bg-position-y, 50%);
   opacity: var(--custom-bg-video-opacity, 0);
   filter: none;
-  transform: scale(calc(1.002 * var(--custom-bg-zoom, 1)));
+  transform: translate3d(var(--wallpaper-bg-parallax-x, 0%), var(--wallpaper-bg-parallax-y, 0%), 0) scale(calc(1.002 * var(--custom-bg-zoom, 1)));
   transform-origin: var(--custom-bg-position-x, 50%) var(--custom-bg-position-y, 50%);
   transition: opacity .35s ease;
   pointer-events: none;
@@ -537,7 +537,7 @@ body.desktop-shell.desktop-fullscreen #top-right {
   background-position: var(--custom-bg-position-x, 50%) var(--custom-bg-position-y, 50%);
   opacity: var(--custom-bg-image-opacity, 0);
   filter: none;
-  transform: translate3d(var(--album-bg-mouse-x, 0%), var(--album-bg-mouse-y, 0%), 0) scale(calc(1.002 * var(--custom-bg-zoom, 1)));
+  transform: translate3d(var(--album-bg-mouse-x, 0%), var(--album-bg-mouse-y, 0%), 0) translate3d(var(--wallpaper-bg-parallax-x, 0%), var(--wallpaper-bg-parallax-y, 0%), 0) scale(calc(1.002 * var(--custom-bg-zoom, 1)));
   transform-origin: var(--custom-bg-position-x, 50%) var(--custom-bg-position-y, 50%);
   transition: opacity .35s ease, background-image .35s ease, background-position .22s ease, transform .22s ease;
   pointer-events: none;
@@ -578,6 +578,20 @@ body.custom-background-override.custom-background-flat:not(.custom-bg-glass-acti
 
 body.custom-background-video #custom-bg::before {
   opacity: 0 !important
+}
+
+body.custom-background-parallax #custom-bg-video,
+body.custom-background-parallax #custom-bg::before {
+  transition: opacity .35s ease, background-image .35s ease, background-position .08s linear
+}
+
+body.custom-background-parallax #custom-bg-video {
+  transform: translate3d(var(--wallpaper-bg-parallax-x, 0%), var(--wallpaper-bg-parallax-y, 0%), 0) scale(calc(1.002 * var(--custom-bg-zoom, 1))) scale(1.025)
+}
+
+body.custom-background-parallax #custom-bg::before {
+  transform: translate3d(var(--album-bg-mouse-x, 0%), var(--album-bg-mouse-y, 0%), 0) translate3d(var(--wallpaper-bg-parallax-x, 0%), var(--wallpaper-bg-parallax-y, 0%), 0) scale(calc(1.002 * var(--custom-bg-zoom, 1))) scale(1.025);
+  will-change: transform
 }
 
 #album-bg,
@@ -1805,7 +1819,6 @@ body.simple-mode #search-results {
   max-height: min(420px, calc(100vh - 210px))
 }
 
-body.simple-mode #quality-control,
 body.simple-mode #controls-hide-btn,
 body.simple-mode .fullscreen-toggle-btn {
   display: none !important
@@ -7593,10 +7606,6 @@ body.diy-mode #controls {
 }
 
 @media (max-width:1180px) {
-  body.diy-mode #quality-control {
-    display: none !important
-  }
-
   body.diy-mode .control-cluster.modes {
     gap: 7px
   }
@@ -16589,6 +16598,7 @@ html.mineradio-public-release #qq-cookie-panel {
 .wallpaper-library-body{position:relative;display:grid;grid-template-columns:minmax(0,1fr);flex:1 1 auto;min-width:0;min-height:0;overflow:hidden}.wallpaper-library-body:has(.wallpaper-library-details-drawer.show){grid-template-columns:minmax(0,1fr) minmax(360px,42%);gap:16px}.wallpaper-library-list{min-width:0;height:100%;overflow:auto;overscroll-behavior:contain;contain:layout paint;will-change:scroll-position;transform:translateZ(0);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-flow:row;grid-auto-rows:minmax(128px,max-content);gap:13px;align-content:start;padding:1px 8px 4px 1px;scrollbar-width:thin;scrollbar-color:rgba(126,162,168,.54) rgba(4,13,15,.55)}.wallpaper-library-list::-webkit-scrollbar{width:7px}.wallpaper-library-list::-webkit-scrollbar-track{background:rgba(4,13,15,.55)}.wallpaper-library-list::-webkit-scrollbar-thumb{border:2px solid rgba(4,13,15,.55);border-radius:8px;background:rgba(126,162,168,.54)}
 .wallpaper-library-card{position:relative;width:100%;min-width:0;min-height:128px;box-sizing:border-box;justify-self:stretch;align-self:stretch;aspect-ratio:16/9;overflow:hidden;padding:0;border:1px solid rgba(192,219,221,.14);border-radius:8px;background:#101c21;color:#fff;text-align:left;font-family:inherit;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.wallpaper-library-card:hover{transform:translateY(-2px);border-color:rgba(114,209,224,.58);box-shadow:0 12px 28px rgba(0,0,0,.33)}.wallpaper-library-list.is-scrolling .wallpaper-library-card{transition:none}.wallpaper-library-list.is-scrolling .wallpaper-library-card:hover{transform:none;box-shadow:0 0 0 1px rgba(129,221,232,.16)}.wallpaper-library-card.active{border-color:rgba(129,221,232,.88);box-shadow:0 0 0 1px rgba(129,221,232,.2),0 14px 30px rgba(0,0,0,.34)}.wallpaper-library-card.is-batch-selected{border-color:rgba(111,231,189,.84)}.wallpaper-library-card-select-wrap{position:absolute;top:8px;left:8px;z-index:4;display:grid;place-items:center;width:22px;height:22px;border:1px solid rgba(224,242,243,.26);border-radius:5px;background:rgba(3,11,13,.76);cursor:pointer}.wallpaper-library-card-select{width:14px;height:14px;margin:0;accent-color:#76e7bd;cursor:pointer}.wallpaper-library-card .wallpaper-thumb,.wallpaper-library-card .wallpaper-thumb-media{position:absolute;inset:0;display:block;width:100%;height:100%;border:0;border-radius:0;object-fit:cover;background:#142328}.wallpaper-library-card .wallpaper-thumb-empty{display:grid;place-items:center;color:rgba(223,239,240,.56);font-size:11px;background:#16272d}.wallpaper-library-card-meta{position:absolute;z-index:1;inset:auto 0 0;padding:30px 10px 9px;background:linear-gradient(transparent,rgba(1,6,8,.94));pointer-events:none}.wallpaper-library-card-title{display:block;overflow:hidden;color:rgba(255,255,255,.96);font-size:11px;font-weight:700;white-space:nowrap;text-overflow:ellipsis}.wallpaper-library-card-meta small{display:block;margin-top:3px;color:rgba(231,243,243,.66);font-size:9px}.wallpaper-library-card-type{position:absolute;top:8px;right:8px;z-index:2;padding:3px 6px;border:1px solid rgba(224,242,243,.18);border-radius:5px;background:rgba(3,11,13,.74);color:rgba(238,249,249,.78);font-size:9px;line-height:1;pointer-events:none}.wallpaper-library-empty{grid-column:1/-1;align-self:center;padding:30px 8px;color:rgba(224,240,241,.48);font-size:12px;text-align:center}
 .wallpaper-library-details-drawer{grid-column:2;min-width:0;min-height:0;display:none;overflow:hidden}.wallpaper-library-details-drawer.show{display:block}.wallpaper-library-detail{width:100%;height:100%;min-width:0;min-height:0;box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain;padding:18px;display:flex;flex-direction:column;gap:12px;border:1px solid rgba(176,221,225,.16);border-radius:12px;background:#0a191c;box-shadow:-16px 0 36px rgba(0,0,0,.22);scrollbar-width:thin;scrollbar-color:rgba(126,162,168,.54) rgba(4,13,15,.55)}.wallpaper-library-detail::-webkit-scrollbar{width:7px}.wallpaper-library-detail::-webkit-scrollbar-track{background:rgba(4,13,15,.55)}.wallpaper-library-detail::-webkit-scrollbar-thumb{border:2px solid rgba(4,13,15,.55);border-radius:8px;background:rgba(126,162,168,.54)}.wallpaper-library-detail-head{display:flex;justify-content:space-between;gap:12px}.wallpaper-library-preview-meta{min-height:18px;margin-top:4px;color:rgba(235,247,247,.82);font-size:12px;line-height:1.4}.wallpaper-library-preview{position:relative;display:flex;align-items:center;justify-content:center;min-height:0;aspect-ratio:16/9;overflow:hidden;border:1px solid rgba(182,216,219,.15);border-radius:8px;background:#02090b}.wallpaper-library-preview img,.wallpaper-library-preview video{display:block;width:100%;height:100%;object-fit:contain}.wallpaper-library-preview-empty{padding:20px;color:rgba(228,242,242,.44);font-size:12px;text-align:center}.wallpaper-live-preview{object-fit:contain;background:#02090b}.wallpaper-live-label{position:absolute;left:10px;bottom:10px;padding:4px 7px;border-radius:5px;background:rgba(2,9,11,.76);color:rgba(231,247,248,.72);font-size:10px}.wallpaper-export-controls{display:flex;align-items:center;gap:8px}.wallpaper-export-controls label{display:flex;align-items:center;gap:5px;color:rgba(219,235,237,.65);font-size:11px}.wallpaper-export-controls input{width:60px;height:28px;padding:0 6px;border:1px solid rgba(180,205,208,.16);border-radius:6px;background:#0c2023;color:#fff}.wallpaper-export-state{min-height:18px;color:rgba(218,235,236,.58);font-size:10.5px;line-height:1.45}.wallpaper-export-state[data-state="failed"]{color:#ffaaa8}.wallpaper-export-state[data-state="completed"]{color:#8de7cc}
+.wallpaper-scene-fallback,.wallpaper-live-preview{object-fit:contain;background:#02090b}.wallpaper-live-preview{position:absolute;inset:0}.wallpaper-live-label{z-index:2}.wallpaper-live-retry{position:absolute;right:10px;bottom:9px;z-index:3}.wallpaper-export-controls{flex-wrap:wrap}.wallpaper-export-controls button:disabled{cursor:wait;opacity:.56}
 @media (max-width:1040px){.wallpaper-library-source-row{grid-template-columns:auto minmax(160px,1fr) auto auto}.wallpaper-library-list{grid-template-columns:repeat(3,minmax(0,1fr))}}@media (max-width:920px){.wallpaper-library-body:has(.wallpaper-library-details-drawer.show){grid-template-columns:minmax(0,1fr)}.wallpaper-library-body:has(.wallpaper-library-details-drawer.show) .wallpaper-library-list{display:none}.wallpaper-library-details-drawer{grid-column:1}.wallpaper-library-detail{box-shadow:none}}@media (max-width:720px){.wallpaper-library-modal{width:calc(100vw - 24px);height:calc(100vh - 24px);padding:16px;border-radius:12px}.wallpaper-library-head p{font-size:11px}.wallpaper-library-search-row{grid-template-columns:minmax(0,1fr) 92px 92px}.wallpaper-library-source-row{grid-template-columns:1fr 1fr}.wallpaper-library-address{grid-column:1/-1}.wallpaper-library-batch-row{flex-wrap:wrap}.wallpaper-library-batch-state{flex-basis:100%;white-space:normal}.wallpaper-library-connection{align-items:flex-start;flex-direction:column;gap:2px}.wallpaper-library-discovered-ip{text-align:left}.wallpaper-library-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.wallpaper-library-detail{padding:15px}}@media (max-width:440px){.wallpaper-library-search-row{grid-template-columns:1fr 1fr}.wallpaper-library-search-row input[type="search"]{grid-column:1/-1}.wallpaper-library-list{grid-template-columns:1fr}}
 
 /* Windows 登录彩蛋门控同步：Mac 保留现有登录卡片，只接入门控状态和解锁动效。 */

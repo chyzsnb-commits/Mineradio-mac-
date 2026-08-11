@@ -117,6 +117,57 @@ function customBackgroundActiveMedia() {
   }
   return media;
 }
+
+var wallpaperMouseParallaxState = {
+  targetX: 0,
+  targetY: 0,
+  currentX: 0,
+  currentY: 0,
+  frame: 0
+};
+
+function wallpaperMouseParallaxSupported() {
+  var media = typeof customBackgroundActiveMedia === 'function' ? customBackgroundActiveMedia() : null;
+  return !!(media && !media.album && (media.type === 'image' || media.type === 'video'));
+}
+
+function writeWallpaperMouseParallaxVars(x, y) {
+  var layer = document.getElementById('custom-bg');
+  if (!layer) return;
+  layer.style.setProperty('--wallpaper-bg-parallax-x', (Number(x) || 0).toFixed(3) + '%');
+  layer.style.setProperty('--wallpaper-bg-parallax-y', (Number(y) || 0).toFixed(3) + '%');
+}
+
+function updateCustomBackgroundMouseParallax(ndcX, ndcY) {
+  if (Number.isFinite(Number(ndcX))) wallpaperMouseParallaxState.targetX = Math.max(-1, Math.min(1, Number(ndcX)));
+  if (Number.isFinite(Number(ndcY))) wallpaperMouseParallaxState.targetY = Math.max(-1, Math.min(1, Number(ndcY)));
+  var enabled = !!(typeof fx !== 'undefined' && fx && fx.wallpaperMouseParallax === true && wallpaperMouseParallaxSupported());
+  if (!enabled) {
+    if (wallpaperMouseParallaxState.frame) cancelAnimationFrame(wallpaperMouseParallaxState.frame);
+    wallpaperMouseParallaxState.frame = 0;
+    wallpaperMouseParallaxState.targetX = wallpaperMouseParallaxState.targetY = 0;
+    wallpaperMouseParallaxState.currentX = wallpaperMouseParallaxState.currentY = 0;
+    writeWallpaperMouseParallaxVars(0, 0);
+    return;
+  }
+  if (!wallpaperMouseParallaxState.frame) wallpaperMouseParallaxState.frame = requestAnimationFrame(stepCustomBackgroundMouseParallax);
+}
+
+function stepCustomBackgroundMouseParallax() {
+  wallpaperMouseParallaxState.frame = 0;
+  var state = wallpaperMouseParallaxState;
+  state.currentX += (state.targetX - state.currentX) * 0.18;
+  state.currentY += (state.targetY - state.currentY) * 0.18;
+  writeWallpaperMouseParallaxVars(state.currentX * -1.55, state.currentY * 1.25);
+  if (Math.abs(state.targetX - state.currentX) > 0.002 || Math.abs(state.targetY - state.currentY) > 0.002) {
+    state.frame = requestAnimationFrame(stepCustomBackgroundMouseParallax);
+  } else {
+    state.currentX = state.targetX;
+    state.currentY = state.targetY;
+    writeWallpaperMouseParallaxVars(state.currentX * -1.55, state.currentY * 1.25);
+  }
+}
+
 function applyCustomBackgroundCropVars(root, layer) {
   var cropX = customBackgroundCropNumber('backgroundMediaCropX', fxDefaults.backgroundMediaCropX == null ? 50 : fxDefaults.backgroundMediaCropX, 0, 100);
   var cropY = customBackgroundCropNumber('backgroundMediaCropY', fxDefaults.backgroundMediaCropY == null ? 50 : fxDefaults.backgroundMediaCropY, 0, 100);
@@ -137,6 +188,7 @@ function applyCustomBackground() {
   var albumMode = typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover();
   var media = customBackgroundActiveMedia();
   if (!albumMode && media && fx.albumBackgroundMouseBind === true) fx.albumBackgroundMouseBind = false;
+  var wallpaperParallax = !!(media && !media.album && (media.type === 'image' || media.type === 'video') && fx.wallpaperMouseParallax === true);
   var image = media && media.type === 'image' ? media.src : '';
   var hasVideo = !!(media && media.type === 'video');
   var opacity = clampRange(fx.backgroundOpacity == null ? 1 : Number(fx.backgroundOpacity), 0, 1);
@@ -164,6 +216,7 @@ function applyCustomBackground() {
   document.body.classList.toggle('custom-background-flat', override && !media);
   document.body.classList.toggle('custom-background-album-cover', albumMode);
   document.body.classList.toggle('custom-background-video', hasVideo);
+  document.body.classList.toggle('custom-background-parallax', wallpaperParallax);
   document.body.classList.toggle('custom-window-transparent', windowOpacity < 0.999);
   document.body.classList.toggle('custom-bg-glass-active', glassActive);
   var token = ++customBgApplyToken;
@@ -289,6 +342,7 @@ function updateAlbumBackgroundMouseBindControl(activeMedia, albumMode) {
 function updateCustomBackgroundControls() {
   applyCustomBackground();
   if (typeof updateAlbumBackgroundMouseView === 'function') updateAlbumBackgroundMouseView();
+  updateCustomBackgroundMouseParallax();
   var activeMedia = customBackgroundActiveMedia();
   var albumMode = typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover();
   var color = normalizeHexColor(fx.backgroundColor || '#000000', '#000000');

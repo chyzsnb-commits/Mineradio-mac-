@@ -96,6 +96,7 @@ var fxDefaults = {
   backgroundMedia: null,
   backgroundAlbumCover: false,
   albumBackgroundMouseBind: false,
+  wallpaperMouseParallax: false,
   backgroundMediaCropX: 50,
   backgroundMediaCropY: 50,
   backgroundMediaZoom: 1,

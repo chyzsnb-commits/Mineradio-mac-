@@ -11,6 +11,7 @@ const qualitySource = fs.readFileSync(path.join(root, 'public/js/modules/05-play
 const playbackSource = fs.readFileSync(path.join(root, 'public/js/modules/05-playback/13-playback-start-audio.js'), 'utf8');
 const fallbackSource = fs.readFileSync(path.join(root, 'public/js/modules/05-playback/11-provider-fallback.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/css/index.css'), 'utf8');
+const index = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 
 function createDeferred() {
   let resolve;
@@ -191,4 +192,10 @@ test('音质通知使用单卡替换，控制栏给音质和点赞留出间距',
   assert.match(css, /\.control-cluster\.actions #quality-control\s*\{[^}]*margin-left:\s*0;[^}]*margin-right:\s*2px/s);
   assert.match(css, /\.control-cluster\.actions #quality-btn\s*\{[^}]*min-width:\s*64px/s);
   assert.match(css, /desktop-fullscreen \.quality-control[^}]*\{[^}]*width:\s*66px/s);
+});
+
+test('音质选择在简约和窄窗口 DIY 播放器中始终保留可见入口', () => {
+  assert.match(index, /id="quality-control"[\s\S]*?id="quality-btn"/, '底栏必须保留可操作的音质按钮');
+  assert.doesNotMatch(css, /body\.simple-mode #quality-control,[\s\S]*?display:\s*none\s*!important/, '简约模式不能把音质入口直接隐藏');
+  assert.doesNotMatch(css, /@media \(max-width:1180px\)\s*\{[\s\S]*?body\.diy-mode #quality-control\s*\{\s*display:\s*none\s*!important/, '窄窗口 DIY 模式也必须保留音质入口');
 });

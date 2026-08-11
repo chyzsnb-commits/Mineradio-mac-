@@ -46,6 +46,7 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('bg-media-state', '背景状态', '当前背景 封面 图片 视频 固定视角', false),
         fxConsoleItem('video-bg-grid', '已保存背景', '历史 图片 视频 背景', false),
         fxConsoleItem('t-albumBackgroundMouseBind', '封面鼠标视角', '封面 背景 鼠标 视差'),
+        fxConsoleItem('t-wallpaperMouseParallax', '壁纸鼠标视差', '上传 图片 视频 壁纸 鼠标 视差'),
         fxConsoleItem('fx-bgglassopacity', '毛玻璃透明', '玻璃 背景模糊'),
         fxConsoleItem('fx-windowbgopacity', '窗口背景透明', '窗口透明度'),
         fxConsoleItem('fx-bgcropx', '裁切左右', '背景水平 位置'),

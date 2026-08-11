@@ -340,3 +340,63 @@ test('Windows 壁纸库入口接通发现、实时预览、导出与用户选定
   assert.match(css, /\.wallpaper-library-body:has\(\.wallpaper-library-details-drawer\.show\)\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(360px,42%\)/, '桌面端打开详情时必须为右侧详情预留独立列，不能覆盖并挤压网格');
   assert.match(css, /@media \(max-width:920px\)\{[\s\S]*?\.wallpaper-library-body:has\(\.wallpaper-library-details-drawer\.show\) \.wallpaper-library-list\{display:none\}/, '窗口空间不足时详情必须完整全宽显示，不能保留被裁切的侧栏');
 });
+
+test('本地壁纸鼠标视差有独立的可见开关并进入设置持久化与 DIY 存档', () => {
+  const defaults = read('public/js/modules/00-state/04-fx-defaults.js');
+  const persistence = read('public/js/modules/02-visual/04-visual-settings-persistence.js');
+  const archive = read('public/js/modules/07-fx/00-preset-archive-data.js');
+  const bindings = read('public/js/modules/07-fx/07-bindings-shelf-immersive.js');
+  const controls = read('public/js/modules/07-fx/02-accent-background-controls.js');
+  const pointer = read('public/js/modules/02-visual/00-pointer-cover-particles.js');
+  const html = read('public/index.html');
+  const workspace = read('public/js/modules/07-fx/09-console-workspace.js');
+  const css = read('public/css/index.css');
+
+  assert.match(defaults, /wallpaperMouseParallax:\s*false/, '壁纸视差默认必须关闭');
+  assert.match(persistence, /wallpaperMouseParallax:\s*raw\.wallpaperMouseParallax === true/, '重启加载必须读取壁纸视差');
+  assert.match(persistence, /wallpaperMouseParallax:\s*fx\.wallpaperMouseParallax === true/, '设置保存必须写入壁纸视差');
+  assert.match(archive, /'wallpaperMouseParallax'/, 'DIY 存档字段必须包含壁纸视差');
+  assert.match(archive, /wallpaperMouseParallax:\s*raw\.wallpaperMouseParallax === true/, 'DIY 导入必须恢复壁纸视差');
+  assert.ok(html.includes('id="t-wallpaperMouseParallax"'), '用户必须能找到壁纸鼠标视差开关');
+  assert.match(html, /t-wallpaperMouseParallax[\s\S]*?壁纸鼠标视差/, '开关文案必须明确告诉用户改的是壁纸视差');
+  assert.match(workspace, /t-wallpaperMouseParallax.*壁纸鼠标视差/, '视觉控制台搜索必须能找到壁纸视差');
+  assert.match(bindings, /key === 'wallpaperMouseParallax'/, '开关必须走统一设置绑定');
+  assert.match(controls, /function updateCustomBackgroundMouseParallax\(/, '背景控制必须提供独立的壁纸视差更新函数');
+  assert.match(controls, /requestAnimationFrame\(/, '壁纸视差必须采用临时帧循环平滑跟随');
+  assert.match(controls, /function updateCustomBackgroundControls\(\) \{[\s\S]*?updateCustomBackgroundMouseParallax\(\)/, '切换或清除背景媒体时必须立即复位壁纸视差');
+  assert.match(pointer, /updateCustomBackgroundMouseParallax\(/, '全局指针必须驱动本地壁纸视差');
+  assert.match(css, /--wallpaper-bg-parallax-x/, '图片和视频必须使用独立的壁纸视差变量');
+  assert.match(css, /#custom-bg-video\s*\{[\s\S]*?--wallpaper-bg-parallax-x/, '视频背景也必须参与壁纸视差');
+  assert.match(css, /body\.custom-background-parallax #custom-bg::before/, '启用时必须取消图片变换的额外过渡拖滞');
+  const parallaxBody = controls.match(/function updateCustomBackgroundMouseParallax\([^)]*\) \{([\s\S]*?)\n\}/);
+  assert.ok(parallaxBody, '壁纸视差更新函数必须存在');
+  assert.doesNotMatch(parallaxBody[1], /albumBackgroundMouseBind/, '本地壁纸视差不能复用或关闭封面鼠标视角');
+});
+
+test('Scene 详情先保留真实静态缩略图，再延迟挂载有限重试的 MJPEG', () => {
+  const panel = read('public/js/modules/07-fx/10-wallpaper-library-panel.js');
+  const css = read('public/css/index.css');
+
+  assert.match(panel, /livePreviewToken/, 'Scene 预览必须有选择令牌，防止旧请求覆盖新选择');
+  assert.match(panel, /function wallpaperLibraryRenderSceneFallback\(/, 'Scene 必须有静态缩略图兜底渲染');
+  assert.match(panel, /record\.previewUrl/, 'Scene 兜底必须使用真实 previewUrl');
+  assert.match(panel, /setTimeout\([\s\S]*?wallpaperLibraryAttachLivePreview/, '旧流释放后才能延迟接入新实时流');
+  assert.match(panel, /MAX_LIVE_PREVIEW_ATTEMPTS|livePreviewAttempts/, '实时预览失败必须有有限重试上限');
+  assert.match(panel, /重试实时预览/, '实时流被占用时必须给用户手动重试入口');
+  assert.match(panel, /onerror\s*=\s*function/, 'MJPEG 失败时必须保留静态图而不是显示破图');
+  assert.match(panel, /removeAttribute\('src'\)/, '切换详情前必须先释放旧 MJPEG 连接');
+  assert.match(panel, /wallpaperLibraryRetryLivePreview\(/, '手动重试必须启动新的一轮连接');
+  assert.match(css, /\.wallpaper-live-preview\{[^}]*position:absolute[^}]*inset:0/, '实时流加载时必须覆盖静态图，不能在 flex 容器里把缩略图挤成半宽');
+});
+
+test('Scene 导出完成态把保存和应用 MP4 放在同一操作行', () => {
+  const panel = read('public/js/modules/07-fx/10-wallpaper-library-panel.js');
+  const renderExport = panel.match(/function wallpaperLibraryRenderExport\(record\) \{([\s\S]*?)\n\}/);
+  assert.ok(renderExport, '导出渲染函数必须存在');
+  assert.match(renderExport[1], /保存 MP4 到文件夹/, '完成态必须有保存 MP4 按钮');
+  assert.match(renderExport[1], /应用 MP4 到 Mineradio/, '完成态必须有应用 MP4 按钮');
+  assert.match(renderExport[1], /state\.state === 'completed'[\s\S]*?应用 MP4 到 Mineradio/, '应用按钮必须属于完成态操作行');
+  assert.match(renderExport[1], /applyState\.state === 'downloading'[\s\S]*?正在应用/, '应用中必须在同一操作行显示禁用态，不能只靠底层静默拦截重复点击');
+  assert.match(renderExport[1], /正在下载并保存到 Mineradio 本地背景库/, '应用中状态必须继续显示在操作行下方');
+  assert.doesNotMatch(renderExport[1], /\+\s*wallpaperLibraryRenderApply\(record, state\.output/, '完成态不能把应用动作拆到第二个操作行');
+});

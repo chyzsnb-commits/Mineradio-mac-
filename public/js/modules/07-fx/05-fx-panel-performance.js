@@ -553,6 +553,9 @@ function updateFxInputs() {
   if (typeof refreshSonicAudioMonitorUi === 'function') refreshSonicAudioMonitorUi();
   var albumBackgroundMouseBindToggle = document.getElementById('t-albumBackgroundMouseBind');
   if (albumBackgroundMouseBindToggle) albumBackgroundMouseBindToggle.classList.toggle('on', fx.albumBackgroundMouseBind === true);
+  var wallpaperMouseParallaxToggle = document.getElementById('t-wallpaperMouseParallax');
+  if (wallpaperMouseParallaxToggle) wallpaperMouseParallaxToggle.classList.toggle('on', fx.wallpaperMouseParallax === true);
+  if (typeof updateCustomBackgroundMouseParallax === 'function') updateCustomBackgroundMouseParallax();
   updateLyricGlowControls();
   applyPlaylistPanelFxSettings();
   // 同步开关

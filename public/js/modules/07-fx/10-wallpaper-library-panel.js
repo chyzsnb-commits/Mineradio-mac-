@@ -15,6 +15,9 @@ var wallpaperLibraryState = {
   exportTask: null,
   exportPoller: 0,
   applyTask: null,
+  livePreviewToken: 0,
+  livePreviewTimer: 0,
+  livePreviewAttempts: 0,
 };
 
 function wallpaperLibraryPanelEl(id) { return document.getElementById(id); }
@@ -167,12 +170,82 @@ function wallpaperLibraryRenderRecords() {
   wallpaperLibraryUpdateCardSelection();
 }
 function wallpaperLibraryStopLivePreview() {
+  wallpaperLibraryState.livePreviewToken += 1;
+  if (wallpaperLibraryState.livePreviewTimer) clearTimeout(wallpaperLibraryState.livePreviewTimer);
+  wallpaperLibraryState.livePreviewTimer = 0;
+  wallpaperLibraryState.livePreviewAttempts = 0;
   var preview = wallpaperLibraryPanelEl('wallpaper-library-preview');
-  if (!preview) return;
+  if (!preview) return wallpaperLibraryState.livePreviewToken;
   Array.prototype.forEach.call(preview.querySelectorAll('img.wallpaper-live-preview'), function (image) {
     image.removeAttribute('src');
     image.remove();
   });
+  return wallpaperLibraryState.livePreviewToken;
+}
+
+function wallpaperLibraryRenderSceneFallback(record, message, allowRetry) {
+  var preview = wallpaperLibraryPanelEl('wallpaper-library-preview');
+  if (!preview || !record) return;
+  var fallback = record.previewUrl
+    ? '<img class="wallpaper-scene-fallback" src="' + wallpaperLibraryEsc(record.previewUrl) + '" alt="' + wallpaperLibraryEsc(record.title) + '">'
+    : '<div class="wallpaper-library-preview-empty">此 Scene 没有静态缩略图</div>';
+  var retry = allowRetry ? '<button type="button" class="modal-btn small secondary wallpaper-live-retry" onclick="wallpaperLibraryRetryLivePreview()">重试实时预览</button>' : '';
+  preview.innerHTML = fallback + '<div class="wallpaper-live-label">' + wallpaperLibraryEsc(message || '正在准备 Windows 实时预览...') + '</div>' + retry;
+  var image = preview.querySelector('.wallpaper-scene-fallback');
+  if (image) image.addEventListener('error', function () {
+    image.replaceWith(Object.assign(document.createElement('div'), { className: 'wallpaper-library-preview-empty', textContent: '静态缩略图暂不可用' }));
+  }, { once: true });
+}
+
+function wallpaperLibraryScheduleLivePreview(record, token, delay, attempt) {
+  if (!record || record.type !== 'scene' || !record.liveUrl) return;
+  wallpaperLibraryState.livePreviewTimer = setTimeout(function () {
+    wallpaperLibraryState.livePreviewTimer = 0;
+    wallpaperLibraryAttachLivePreview(record, token, attempt || 1);
+  }, Math.max(0, Number(delay) || 0));
+}
+
+function wallpaperLibraryAttachLivePreview(record, token, attempt) {
+  var preview = wallpaperLibraryPanelEl('wallpaper-library-preview');
+  if (!preview || token !== wallpaperLibraryState.livePreviewToken || wallpaperLibraryState.selectedId !== record.id) return;
+  var image = document.createElement('img');
+  image.className = 'wallpaper-live-preview';
+  image.alt = 'Windows 实时预览';
+  image.onload = function () {
+    if (token !== wallpaperLibraryState.livePreviewToken || wallpaperLibraryState.selectedId !== record.id) {
+      image.removeAttribute('src');
+      image.remove();
+      return;
+    }
+    var label = preview.querySelector('.wallpaper-live-label');
+    if (label) label.textContent = 'Windows 实时预览';
+    var retry = preview.querySelector('.wallpaper-live-retry');
+    if (retry) retry.remove();
+    var fallback = preview.querySelector('.wallpaper-scene-fallback');
+    if (fallback) fallback.remove();
+  };
+  image.onerror = function () {
+    image.removeAttribute('src');
+    image.remove();
+    if (token !== wallpaperLibraryState.livePreviewToken || wallpaperLibraryState.selectedId !== record.id) return;
+    wallpaperLibraryState.livePreviewAttempts = attempt;
+    if (attempt < 2) {
+      wallpaperLibraryRenderSceneFallback(record, '实时预览被占用，正在稍后重试...', false);
+      wallpaperLibraryScheduleLivePreview(record, token, 420, attempt + 1);
+    } else {
+      wallpaperLibraryRenderSceneFallback(record, '实时预览被占用或暂不可用', true);
+    }
+  };
+  preview.appendChild(image);
+  image.src = record.liveUrl;
+}
+
+function wallpaperLibraryRetryLivePreview() {
+  var record = wallpaperLibrarySelectedRecord();
+  if (!record || record.type !== 'scene') return;
+  var token = wallpaperLibraryStopLivePreview();
+  wallpaperLibraryRenderSceneFallback(record, '正在重新连接 Windows 实时预览...', false);
+  wallpaperLibraryScheduleLivePreview(record, token, 180, 1);
 }
 function wallpaperLibrarySavedMediaKey(record, output) {
   if (!record) return '';
@@ -209,19 +282,24 @@ function wallpaperLibraryRenderExport(record) {
   if (record.type !== 'scene') { exportEl.innerHTML = wallpaperLibraryRenderApply(record, ''); return; }
   var state = task && task.sceneId === record.sceneId ? task : null;
   var detail = !state ? 'Windows 将离屏渲染并生成 MP4。' : state.message;
+  var applyState = state && state.state === 'completed' ? wallpaperLibraryApplyTaskFor(record, state.output || '') : null;
+  var applyBusy = applyState && applyState.state === 'downloading';
+  var applyLabel = applyBusy ? '正在应用...' : applyState && applyState.state === 'completed' ? '再次应用' : '应用 MP4 到 Mineradio';
+  var applyAction = '<button type="button" class="modal-btn small"' + (applyBusy ? ' disabled' : '') + ' onclick="applyWindowsWallpaperToMineradio()">' + applyLabel + '</button>';
   var action = !state || state.state === 'failed' || state.state === 'stopped'
     ? '<button type="button" class="modal-btn small" onclick="startWindowsSceneExport()">' + (state ? '重试导出 MP4' : '导出 MP4') + '</button>'
     : state.state === 'completed'
-      ? '<button type="button" class="modal-btn small secondary" onclick="downloadWindowsSceneExport()">保存 MP4 到文件夹</button>'
+      ? '<button type="button" class="modal-btn small secondary" onclick="downloadWindowsSceneExport()">保存 MP4 到文件夹</button>' + applyAction
       : '<button type="button" class="modal-btn small secondary" onclick="stopWindowsSceneExportPolling()">停止等待</button>';
-  exportEl.innerHTML = '<div class="wallpaper-export-controls"><label>时长 <input id="wallpaper-library-export-seconds" type="number" min="1" max="300" value="' + (state && state.seconds || 30) + '"> 秒</label>' + action + '</div><div class="wallpaper-export-state" data-state="' + wallpaperLibraryEsc(state && state.state || 'ready') + '">' + wallpaperLibraryEsc(detail) + '</div>' + (state && state.state === 'completed' ? wallpaperLibraryRenderApply(record, state.output || '') : '');
+  var applyDetail = applyBusy ? '<div class="wallpaper-export-state" data-state="running">正在下载并保存到 Mineradio 本地背景库...</div>' : applyState && applyState.state === 'completed' ? '<div class="wallpaper-export-state" data-state="completed">已保存到 Mineradio 本地背景库并应用，之后无需重新下载。</div>' : applyState && applyState.state === 'failed' ? '<div class="wallpaper-export-state" data-state="failed">' + wallpaperLibraryEsc(applyState.message || '应用失败，可重试。') + '</div>' : '';
+  exportEl.innerHTML = '<div class="wallpaper-export-controls"><label>时长 <input id="wallpaper-library-export-seconds" type="number" min="1" max="300" value="' + (state && state.seconds || 30) + '"> 秒</label>' + action + '</div><div class="wallpaper-export-state" data-state="' + wallpaperLibraryEsc(state && state.state || 'ready') + '">' + wallpaperLibraryEsc(detail) + '</div>' + applyDetail;
 }
 function wallpaperLibraryRenderDetail() {
   var preview = wallpaperLibraryPanelEl('wallpaper-library-preview');
   var meta = wallpaperLibraryPanelEl('wallpaper-library-preview-meta');
   var drawer = wallpaperLibraryPanelEl('wallpaper-library-details-drawer');
   if (!preview || !meta || !drawer) return;
-  wallpaperLibraryStopLivePreview();
+  var livePreviewToken = wallpaperLibraryStopLivePreview();
   var record = wallpaperLibrarySelectedRecord();
   if (!record) {
     drawer.classList.remove('show');
@@ -235,7 +313,8 @@ function wallpaperLibraryRenderDetail() {
   drawer.setAttribute('aria-hidden', 'false');
   meta.textContent = record.title + ' · ' + (record.type === 'scene' ? 'Scene · ' + wallpaperLibraryState.host : record.type === 'video' ? '视频' : '图片');
   if (record.type === 'scene') {
-    preview.innerHTML = '<img class="wallpaper-live-preview" src="' + wallpaperLibraryEsc(record.liveUrl) + '" alt="Windows 实时预览"><div class="wallpaper-live-label">Windows 实时预览</div>';
+    wallpaperLibraryRenderSceneFallback(record, '正在准备 Windows 实时预览...', false);
+    wallpaperLibraryScheduleLivePreview(record, livePreviewToken, 220, 1);
     wallpaperLibraryCheckLiveStatus();
   } else if (!record.fileUrl) {
     preview.innerHTML = '<div class="wallpaper-library-preview-empty">此壁纸没有可用预览文件</div>';

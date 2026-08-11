@@ -51,6 +51,7 @@ function queueParticlePointerFrame(clientX, clientY) {
   var my = -(clientY / innerHeight) * 2 + 1;
   pointerTarget.x = mx; pointerTarget.y = my;
   if (typeof updateAlbumBackgroundMouseView === 'function') updateAlbumBackgroundMouseView(mx, my);
+  if (typeof updateCustomBackgroundMouseParallax === 'function') updateCustomBackgroundMouseParallax(mx, my);
   particlePointerFrame.ndcX = mx;
   particlePointerFrame.ndcY = my;
   particlePointerFrame.dirty = true;
@@ -100,6 +101,9 @@ window.addEventListener('mousemove', function (e) {
   // 专辑背景视角是全局指针效果，不能被控制台、歌词或歌单 UI 的早退分支截断。
   if (typeof updateAlbumBackgroundMouseView === 'function') {
     updateAlbumBackgroundMouseView((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  }
+  if (typeof updateCustomBackgroundMouseParallax === 'function') {
+    updateCustomBackgroundMouseParallax((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   }
   updateControlsAutoHideFromPointer(e.clientX, e.clientY);
   idleGuidePointerMove(e);

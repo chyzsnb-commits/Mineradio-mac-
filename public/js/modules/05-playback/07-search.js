@@ -379,13 +379,18 @@ function songSourceTagHtml(song, opts) {
   return '<span class="tag-source ' + key + '">' + label + '</span>';
 }
 var controlSourceSwitcherState = { open: false, loading: false, requestId: 0, anchor: null };
-function controlSourceProviders() {
-  return [
+function controlSourceProviders(song) {
+  var providers = [
     { key: 'netease', label: 'NE', title: '网易云' },
     { key: 'qq', label: 'QQ', title: 'QQ音乐' },
     { key: 'kugou', label: 'KG', title: '酷狗' },
+    { key: 'qishui', label: 'QS', title: '汽水音乐' },
     { key: 'spotify', label: 'SP', title: 'Spotify' }
   ];
+  var current = songProviderKey(song);
+  var currentIndex = providers.findIndex(function (provider) { return provider.key === current; });
+  if (currentIndex > 0) providers.unshift(providers.splice(currentIndex, 1)[0]);
+  return providers;
 }
 function controlSourceProviderTitle(provider) {
   var item = controlSourceProviders().filter(function (p) { return p.key === provider; })[0];
@@ -394,6 +399,7 @@ function controlSourceProviderTitle(provider) {
 function controlSourceSearchUrl(provider, query) {
   if (provider === 'qq') return '/api/qq/search?keywords=' + encodeURIComponent(query) + '&limit=8';
   if (provider === 'kugou') return '/api/kugou/search?keywords=' + encodeURIComponent(query) + '&limit=8';
+  if (provider === 'qishui') return '/api/qishui/search?keywords=' + encodeURIComponent(query) + '&limit=8';
   if (provider === 'spotify') return '/api/spotify/search?keywords=' + encodeURIComponent(query) + '&limit=8';
   return '/api/search?keywords=' + encodeURIComponent(query) + '&limit=10';
 }
@@ -451,16 +457,18 @@ function renderControlSourceSwitcher(matches) {
   el.innerHTML =
     '<div class="control-source-switcher-head"><span>切换音源</span><small>' + (controlSourceSwitcherState.loading ? '正在匹配' : '保留当前进度') + '</small></div>' +
     '<div class="control-source-options">' +
-    controlSourceProviders().map(function (provider) {
+    controlSourceProviders(song).map(function (provider) {
       var entry = matches[provider.key];
       var match = controlSourceMatchSong(entry);
       var issue = controlSourceMatchIssue(entry);
       var active = provider.key === current;
-      var ready = active || !!match;
       var providerLimited = !!(match && provider.key === 'spotify' && match.playable === false);
-      var cleanStatus = active ? '当前' : (providerLimited ? '匹配源' : (match ? '可切换' : (controlSourceSwitcherState.loading ? '检测中' : controlSourceIssueLabel(issue))));
-      var title = active ? '当前音源' : (providerLimited ? (provider.title + ': 播放将自动换源') : (match ? ('切换到 ' + provider.title) : (provider.title + ': ' + controlSourceIssueLabel(issue))));
-      var status = active ? '当前' : (providerLimited ? '匹配源' : (match ? '可切换' : (controlSourceSwitcherState.loading ? '检测中' : '无匹配')));
+      var providerDisabled = provider.key === 'qishui' && typeof MINERADIO_QISHUI_ENABLED !== 'undefined' && !MINERADIO_QISHUI_ENABLED;
+      var ready = active || (!!match && !providerLimited && !providerDisabled);
+      var unavailable = providerLimited || providerDisabled;
+      var cleanStatus = active ? '当前' : (unavailable ? '不可用' : (match ? '可切换' : (controlSourceSwitcherState.loading ? '检测中' : controlSourceIssueLabel(issue))));
+      var title = active ? '当前音源' : (providerLimited ? 'Spotify 没有官方可播源' : (providerDisabled ? '汽水音乐当前不可用' : (match ? ('切换到 ' + provider.title) : (provider.title + ': ' + controlSourceIssueLabel(issue)))));
+      var status = active ? '当前' : (unavailable ? '不可用' : (match ? '可切换' : (controlSourceSwitcherState.loading ? '检测中' : '无匹配')));
       return '<button type="button" class="control-source-option' + (active ? ' active' : '') + (!ready ? ' disabled' : '') + '" data-source-provider="' + provider.key + '" title="' + escHtml(title) + '" ' + (!ready ? 'disabled ' : '') + 'onclick="switchCurrentSongSource(\'' + provider.key + '\')">' +
         '<span class="tag-source ' + provider.key + '">' + provider.label + '</span>' +
         '<span class="control-source-option-title">' + provider.title + '</span>' +
@@ -502,7 +510,7 @@ async function findControlSourceMatch(song, provider) {
 }
 async function loadControlSourceMatches(song, requestId) {
   var matches = {};
-  var providers = controlSourceProviders();
+  var providers = controlSourceProviders(song);
   await Promise.all(providers.map(async function (provider) {
     if (songProviderKey(song) === provider.key) {
       matches[provider.key] = { song: song, issue: '' };

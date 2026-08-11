@@ -89,3 +89,15 @@ test('Qishui login uses the macOS official-client bridge rather than server QR p
   assert.doesNotMatch(server, /\/api\/qishui\/login\/qr\//);
   assert.doesNotMatch(flows, /\/api\/qishui\/login\/qr\//);
 });
+
+test('底栏音源切换把汽水作为真实选项，并保留当前进度与 Spotify 可播性边界', () => {
+  const search = read('public/js/modules/05-playback/07-search.js');
+
+  assert.match(search, /\{ key: 'qishui', label: 'QS', title: '汽水音乐'/, '汽水必须出现在底栏音源选择中');
+  assert.match(search, /provider === 'qishui'\) return '\/api\/qishui\/search\?keywords='/, '底栏换源必须查询汽水本地服务，不能落到网易云');
+  assert.match(search, /var ready = active \|\| \(!!match && !providerLimited && !providerDisabled\)/, 'Spotify 无官方可播源不得被当作可切换');
+  assert.match(search, /\(!ready \? 'disabled ' : ''\)/, '不可用音源必须输出原生 disabled 属性');
+  const sourceSwitch = search.slice(search.indexOf('async function switchCurrentSongSource('), search.indexOf("document.addEventListener('click'", search.indexOf('async function switchCurrentSongSource(')));
+  assert.match(sourceSwitch, /resumeAt:\s*currentResumeSeconds\(0\)/, '切换音源必须将当前播放位置传给播放链路');
+  assert.match(sourceSwitch, /sourceSwitch:\s*true/, '切换音源必须走保留进度的专用分支');
+});
