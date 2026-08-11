@@ -256,22 +256,36 @@ function updatePlaybackQualityUi() {
   var label = document.getElementById('quality-btn-label');
   var btn = document.getElementById('quality-btn');
   var list = document.getElementById('quality-option-list');
+  var wrap = document.getElementById('quality-control');
+  var isSwitching = typeof playbackQualitySwitchState !== 'undefined' && !!playbackQualitySwitchState.running;
   var canUseSvip = provider === 'netease' && hasProviderSvip('netease', loginStatus);
   var displayQuality = provider === 'netease' && effectiveQuality === 'jymaster' && !canUseSvip ? 'hires' : effectiveQuality;
   // 胶囊显示"实际下发"的音质:选 Hi-Res 但只给了 320 时不再假装 Hi-Res
   var resolvedLevel = window.__playbackResolvedLevel ? normalizePlaybackQualityForProvider(window.__playbackResolvedLevel, provider) : '';
   var actualQuality = (resolvedLevel && playing && resolvedLevel !== displayQuality) ? resolvedLevel : displayQuality;
-  if (label) label.textContent = playbackQualityShortLabel(actualQuality, provider);
+  if (label) label.textContent = currentSong ? playbackQualityShortLabel(actualQuality, provider) : '音质';
+  if (wrap) {
+    wrap.classList.toggle('is-loading', isSwitching);
+    wrap.classList.toggle('is-unavailable', !currentSong);
+  }
+  if (btn) {
+    btn.disabled = !currentSong;
+    btn.setAttribute('aria-busy', isSwitching ? 'true' : 'false');
+    btn.setAttribute('aria-expanded', wrap && wrap.classList.contains('open') ? 'true' : 'false');
+  }
   var qualityProviderTitle = provider === 'spotify' ? 'Spotify 匹配源: ' : (provider === 'qishui' ? '汽水音质: ' : (provider === 'qq' ? 'QQ 音质: ' : (provider === 'kugou' ? '酷狗音质: ' : '网易云音质: ')));
-  if (btn) btn.title = qualityProviderTitle + playbackQualityLabel(displayQuality, provider) +
+  if (btn) btn.title = !currentSong ? '播放歌曲后可选择音质' : qualityProviderTitle + playbackQualityLabel(displayQuality, provider) +
     (actualQuality !== displayQuality ? ' · 实际播放 ' + playbackQualityLabel(actualQuality, provider) : '') +
     (provider === 'netease' && currentQuality === 'jymaster' && !canUseSvip ? ' · 超清母带需网易云 SVIP' : '');
   if (btn && runtimeCapQuality) btn.title += ' | 当前歌曲最高: ' + playbackQualityLabel(runtimeCapQuality, provider);
   if (list) {
-    list.innerHTML = playbackQualityOptions(provider).map(function (item) {
+    list.innerHTML = !currentSong
+      ? '<span class="quality-unavailable-note">播放歌曲后可选择可用音质</span>'
+      : playbackQualityOptions(provider).map(function (item) {
       var capLocked = playbackQualityAboveCap(item.key, provider, runtimeCapQuality);
       var locked = !!(item.svip && !canUseSvip) || capLocked;
-      return '<button class="quality-option' + (item.svip ? ' svip-only' : '') + (capLocked ? ' cap-locked' : '') + (locked ? ' locked' : '') + '" data-quality="' + item.key + '" data-svip="' + (item.svip ? '1' : '0') + '" ' + (locked ? 'disabled ' : '') + 'onclick="setPlaybackQuality(\'' + item.key + '\')"><span>' + escHtml(item.title) + '</span><small>' + escHtml(capLocked ? ('当前最高 ' + playbackQualityLabel(runtimeCapQuality, provider)) : item.sub) + '</small></button>';
+      var selected = normalizePlaybackQualityForProvider(item.key, provider) === displayQuality;
+      return '<button class="quality-option' + (selected ? ' active' : '') + (item.svip ? ' svip-only' : '') + (capLocked ? ' cap-locked' : '') + (locked ? ' locked' : '') + '" data-quality="' + item.key + '" data-svip="' + (item.svip ? '1' : '0') + '" aria-current="' + (selected ? 'true' : 'false') + '" ' + (locked ? 'disabled ' : '') + 'onclick="setPlaybackQuality(\'' + item.key + '\')"><span>' + escHtml(item.title) + '</span><small>' + escHtml(capLocked ? ('当前最高 ' + playbackQualityLabel(runtimeCapQuality, provider)) : item.sub) + '</small></button>';
     }).join('');
   }
   document.querySelectorAll('.quality-option').forEach(function (option) {
@@ -281,6 +295,7 @@ function updatePlaybackQualityUi() {
     option.classList.toggle('active', q === displayQuality);
     option.classList.toggle('locked', locked);
     option.classList.toggle('cap-locked', capLocked);
+    option.setAttribute('aria-current', q === displayQuality ? 'true' : 'false');
     option.disabled = locked;
     // 锁因分开:曲目上限显示真实原因;只有网易云 SVIP 档(jymaster)才提网易云,别的平台不背这口锅
     option.title = capLocked
@@ -532,11 +547,13 @@ function applyPlaybackQualityToCurrentTrack(nextQuality, provider) {
   };
   if (playbackQualitySwitchState.running) return playbackQualitySwitchState.promise;
   playbackQualitySwitchState.running = true;
+  updatePlaybackQualityUi();
   playbackQualitySwitchState.promise = Promise.resolve(drainPlaybackQualitySwitches()).finally(function () {
     playbackQualitySwitchState.running = false;
     playbackQualitySwitchState.pending = null;
     playbackQualitySwitchState.active = null;
     playbackQualitySwitchState.promise = null;
+    updatePlaybackQualityUi();
     forcePlaybackControlsInteractive();
   });
   return playbackQualitySwitchState.promise;
@@ -546,6 +563,8 @@ function toggleQualityPanel(e) {
   var wrap = document.getElementById('quality-control');
   if (wrap) {
     wrap.classList.toggle('open');
+    var btn = document.getElementById('quality-btn');
+    if (btn) btn.setAttribute('aria-expanded', wrap.classList.contains('open') ? 'true' : 'false');
   }
 }
 function bindQualityControl() {

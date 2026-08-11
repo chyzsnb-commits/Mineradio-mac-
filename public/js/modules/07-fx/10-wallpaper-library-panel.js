@@ -11,6 +11,7 @@ var wallpaperLibraryState = {
   sort: 'title',
   selectedIds: new Set(),
   connectionPromise: null,
+  connectionSource: '',
   batchTask: null,
   exportTask: null,
   exportPoller: 0,
@@ -35,11 +36,49 @@ function wallpaperLibraryRenderStatus(text, kind) {
   el.textContent = text || '';
   el.dataset.kind = kind || '';
 }
-function wallpaperLibraryRenderDiscoveredIp(baseUrl, host) {
+function wallpaperLibraryRenderDiscoveredIp(baseUrl, host, source) {
   var el = wallpaperLibraryPanelEl('wallpaper-library-discovered-ip');
   if (!el) return;
   if (!baseUrl) { el.textContent = '未读取到在线 Windows 内网地址'; return; }
-  el.textContent = '自动读取 Windows IP：' + baseUrl.replace(/^https?:\/\//, '') + (host ? ' · ' + host : '');
+  var label = source === 'manual' ? '已连接 Windows：' : '自动读取 Windows IP：';
+  el.textContent = label + baseUrl.replace(/^https?:\/\//, '') + (host ? ' · ' + host : '');
+}
+function wallpaperLibraryDiscoveryDiagnosticText(diagnostics) {
+  var info = diagnostics && typeof diagnostics === 'object' ? diagnostics : {};
+  var udp = info.udp && typeof info.udp === 'object' ? info.udp : {};
+  var subnet = info.subnetScan && typeof info.subnetScan === 'object' ? info.subnetScan : {};
+  var probes = Array.isArray(info.probes) ? info.probes : [];
+  var outcomes = probes.map(function (probe) { return probe && probe.outcome; });
+  var networkText = subnet.candidates ? '已扫描 ' + subnet.candidates + ' 个同网段候选。' : '';
+  if (info.reason === 'NO_UDP_ANNOUNCEMENT') {
+    var probeText = outcomes.indexOf('PING_TIMEOUT') >= 0 ? ' 部分候选 /api/ping 超时。'
+      : outcomes.indexOf('PING_REJECTED') >= 0 ? ' 部分候选 /api/ping 未返回 ok: true。'
+        : outcomes.indexOf('PING_FAILED') >= 0 ? ' 部分候选 /api/ping 连接失败。' : '';
+    return '未收到 UDP 45678 广播。' + networkText + probeText + ' Windows 服务应监听 0.0.0.0:端口，Windows 防火墙需放行 UDP 45678 与 TCP 服务端口；也可输入 http://Windows-IP:端口号立即验证。';
+  }
+  if (udp.parseError === 'PARSE_FAILED') {
+    return '已收到 UDP 45678 数据，但不是有效的 MINERADIO_WALLPAPER IP:端口广播。' + networkText;
+  }
+  if (outcomes.indexOf('PING_TIMEOUT') >= 0) {
+    return '已读取到 Windows 地址，但 /api/ping 超时。' + networkText + ' 请确认 Windows 服务监听 0.0.0.0、TCP 服务端口未被防火墙拦截。';
+  }
+  if (outcomes.indexOf('PING_REJECTED') >= 0) {
+    return '已读取到地址，但 /api/ping 没有返回 ok: true。' + networkText;
+  }
+  if (outcomes.indexOf('PING_FAILED') >= 0) {
+    return '已读取到地址，但 /api/ping 连接失败。' + networkText + ' 请检查 Windows 防火墙的 TCP 服务端口。';
+  }
+  if (info.reason === 'UDP_LISTEN_FAILED') {
+    return 'Mac 无法监听 UDP 45678，已改为扫描 ' + (subnet.candidates || 0) + ' 个同网段候选。请检查本机网络权限。';
+  }
+  return '正在扫描 ' + (subnet.candidates || 0) + ' 个本机私网候选并验证 /api/ping。';
+}
+function wallpaperLibraryConnectionErrorText(result) {
+  var error = result && result.error;
+  if (error === 'HTTP_TIMEOUT') return '连接失败：/api/ping 超时，请检查 Windows 服务监听 0.0.0.0 和 TCP 防火墙规则。';
+  if (error === 'PING_REJECTED') return '连接失败：/api/ping 未返回 ok: true。';
+  if (error === 'HTTP_FAILED' || error === 'PING_FAILED') return '连接失败：无法访问 Windows 服务，请检查地址和 TCP 服务端口。';
+  return '连接失败：服务离线或 /api/ping 未确认。';
 }
 function wallpaperLibrarySelectedRecord() {
   return (wallpaperLibraryState.records || []).find(function (record) { return record.id === wallpaperLibraryState.selectedId; }) || null;
@@ -331,43 +370,74 @@ async function wallpaperLibraryCheckLiveStatus() {
   var result = await getStatus(wallpaperLibraryState.baseUrl).catch(function () { return null; });
   if (!result || !result.ok) wallpaperLibraryRenderStatus('实时预览服务暂不可用，正在尝试连接。', 'warning');
 }
-function wallpaperLibraryUseConnection(result, sourceLabel) {
+function wallpaperLibraryUseConnection(result, sourceLabel, source) {
   if (!result || !result.ok) return false;
+  source = source || result.source || 'manual';
   wallpaperLibraryState.baseUrl = result.baseUrl;
   wallpaperLibraryState.host = result.host || result.baseUrl;
+  wallpaperLibraryState.connectionSource = source;
   wallpaperLibraryState.records = Array.isArray(result.records) ? result.records : [];
   wallpaperLibraryState.selectedId = '';
   wallpaperLibraryState.selectedIds.clear();
   try { localStorage.setItem('mineradio.windows-wallpaper.base-url', result.baseUrl); } catch (_) {}
   var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
   if (input) input.value = result.baseUrl;
-  wallpaperLibraryRenderDiscoveredIp(result.baseUrl, wallpaperLibraryState.host);
+  wallpaperLibraryRenderDiscoveredIp(result.baseUrl, wallpaperLibraryState.host, source);
   wallpaperLibraryRenderRecords();
   wallpaperLibraryRenderDetail();
-  wallpaperLibraryRenderStatus(sourceLabel + '：' + wallpaperLibraryState.host + ' · ' + wallpaperLibraryState.records.length + ' 个壁纸', 'ok');
+  wallpaperLibraryRenderStatus(sourceLabel + '：' + result.baseUrl + (wallpaperLibraryState.host ? ' · ' + wallpaperLibraryState.host : '') + ' · ' + wallpaperLibraryState.records.length + ' 个壁纸', 'ok');
   return true;
 }
-async function connectWindowsWallpaperSource() {
+async function connectWindowsWallpaperSource(options) {
+  var opts = options || {};
   var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
   var connect = wallpaperLibraryApi('wallpaperWindowsConnect');
-  var baseUrl = input && input.value.trim();
-  if (!baseUrl) { wallpaperLibraryRenderStatus('请输入 Windows 地址，例如 http://192.168.1.20:8123', 'warning'); return; }
+  var baseUrl = opts.baseUrl || (input && input.value.trim());
+  if (!baseUrl) { wallpaperLibraryRenderStatus('请输入 Windows 地址，例如 http://Windows-IP:端口号（1024-65535）', 'warning'); return; }
   if (!connect) { wallpaperLibraryRenderStatus('仅桌面版支持 Windows 壁纸库', 'error'); return; }
-  wallpaperLibraryRenderStatus('正在验证 Windows Mineradio 服务...', 'loading');
+  wallpaperLibraryRenderStatus(opts.source === 'cache' ? '正在验证保存的 Windows 地址...' : '正在验证 Windows Mineradio 服务...', 'loading');
   var result = await connect(baseUrl).catch(function () { return null; });
-  var connected = wallpaperLibraryUseConnection(result, '已连接');
-  if (!connected) wallpaperLibraryRenderStatus('连接失败：服务离线或 /api/ping 未确认。', 'error');
+  var connected = wallpaperLibraryUseConnection(result, opts.source === 'cache' ? '已自动连接' : '已连接', opts.source || 'manual');
+  if (!connected && !opts.silentFailure) wallpaperLibraryRenderStatus(wallpaperLibraryConnectionErrorText(result), 'error');
   return connected;
 }
-async function discoverWindowsWallpaperSources() {
+async function wallpaperLibraryRunDiscovery() {
   var discover = wallpaperLibraryApi('wallpaperWindowsDiscover');
   if (!discover) return;
-  wallpaperLibraryRenderStatus('正在扫描局域网 Windows Mineradio 服务...', 'loading');
+  wallpaperLibraryRenderStatus('正在等待 UDP 广播并扫描同网段候选...', 'loading');
   var result = await discover().catch(function () { return null; });
   var service = result && result.ok && Array.isArray(result.services) ? result.services[0] : null;
-  if (service && wallpaperLibraryUseConnection(service, '自动发现')) return;
+  var source = service && service.source || (result && result.diagnostics && result.diagnostics.udp && result.diagnostics.udp.received ? 'udp' : 'subnet');
+  if (service && wallpaperLibraryUseConnection(service, '自动发现', source)) return true;
   wallpaperLibraryRenderDiscoveredIp('', '');
-  if (!wallpaperLibraryState.baseUrl) wallpaperLibraryRenderStatus('未发现在线 Windows 服务。可输入 http://Windows-IP:8123 手动连接。', 'warning');
+  wallpaperLibraryRenderStatus(wallpaperLibraryDiscoveryDiagnosticText(result && result.diagnostics), 'warning');
+  return false;
+}
+function wallpaperLibrarySavedBaseUrl() {
+  var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
+  var saved = input && input.value.trim();
+  if (!saved) {
+    try { saved = localStorage.getItem('mineradio.windows-wallpaper.base-url') || ''; } catch (_) {}
+    if (input && saved) input.value = saved;
+  }
+  return saved;
+}
+function wallpaperLibraryDiscoverAndConnect(options) {
+  if (wallpaperLibraryState.connectionPromise) return wallpaperLibraryState.connectionPromise;
+  var opts = options || {};
+  wallpaperLibraryState.connectionPromise = (async function () {
+    var connected = false;
+    if (!opts.forceDiscovery) {
+      var saved = wallpaperLibrarySavedBaseUrl();
+      if (saved) connected = await connectWindowsWallpaperSource({ baseUrl: saved, source: 'cache', silentFailure: true });
+    }
+    if (!connected) connected = await wallpaperLibraryRunDiscovery();
+    return connected;
+  })().finally(function () { wallpaperLibraryState.connectionPromise = null; });
+  return wallpaperLibraryState.connectionPromise;
+}
+function discoverWindowsWallpaperSources() {
+  return wallpaperLibraryDiscoverAndConnect({ forceDiscovery: true });
 }
 function selectWallpaperLibraryRecord(id) {
   if (!id || id === wallpaperLibraryState.selectedId) return;
@@ -551,24 +621,13 @@ function wallpaperLibraryBindControls() {
   if (batchImport) batchImport.addEventListener('click', importSelectedWindowsWallpapers);
 }
 async function wallpaperLibraryOpenSavedOrDiscover() {
-  var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
-  var saved = input && input.value.trim();
-  if (!saved) {
-    try { saved = localStorage.getItem('mineradio.windows-wallpaper.base-url') || ''; } catch (_) {}
-    if (input && saved) input.value = saved;
-  }
-  var connected = false;
-  if (saved) connected = await connectWindowsWallpaperSource();
-  if (!connected) await discoverWindowsWallpaperSources();
+  return wallpaperLibraryDiscoverAndConnect();
 }
 function openWallpaperLibraryPanel() {
   var mask = wallpaperLibraryPanelEl('wallpaper-library-modal');
   if (!mask) return;
   mask.classList.add('show'); mask.setAttribute('aria-hidden', 'false');
-  var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
-  if (input && !input.value) { try { input.value = localStorage.getItem('mineradio.windows-wallpaper.base-url') || ''; } catch (_) {} }
-  if (wallpaperLibraryState.connectionPromise) return;
-  wallpaperLibraryState.connectionPromise = wallpaperLibraryOpenSavedOrDiscover().finally(function () { wallpaperLibraryState.connectionPromise = null; });
+  wallpaperLibraryDiscoverAndConnect();
 }
 function closeWallpaperLibraryPanel() {
   var mask = wallpaperLibraryPanelEl('wallpaper-library-modal');

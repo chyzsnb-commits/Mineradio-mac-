@@ -185,17 +185,26 @@ test('音质切换不再走整首切歌或重建歌词舞台', () => {
   assert.match(playbackSource, /if \(!qualitySwitch\) beginListenSession/);
 });
 
-test('音质通知使用单卡替换，控制栏给音质和点赞留出间距', () => {
+test('音质通知使用单卡替换，音质入口收进歌曲信息行', () => {
   assert.match(fallbackSource, /opts\.kind && opts\.replace/);
   assert.match(fallbackSource, /existing\.dataset\.noticeKind === opts\.kind/);
   assert.match(css, /\.control-cluster\.actions\s*\{[^}]*column-gap:\s*16px/s);
-  assert.match(css, /\.control-cluster\.actions #quality-control\s*\{[^}]*margin-left:\s*0;[^}]*margin-right:\s*2px/s);
-  assert.match(css, /\.control-cluster\.actions #quality-btn\s*\{[^}]*min-width:\s*64px/s);
-  assert.match(css, /desktop-fullscreen \.quality-control[^}]*\{[^}]*width:\s*66px/s);
+  assert.match(index, /id="control-title"[\s\S]*?id="control-title-badges"[\s\S]*?id="quality-control"[\s\S]*?id="quality-btn"/, '音质胶囊必须位于歌曲标题的内联徽标容器');
+  assert.doesNotMatch(index, /<\/div>\s*<div id="quality-control"/, '歌曲信息外不得保留第二个独立音质面板');
+  assert.doesNotMatch(css, /\.control-cluster\.actions #quality-control\s*\{/, '音质入口不再参与底栏操作按钮的横向排列');
+  assert.match(css, /\.control-title-badges #quality-control\s*\{[\s\S]*?flex:\s*0 0 auto/s, '内联音质胶囊必须保持紧凑尺寸');
+  assert.match(css, /desktop-fullscreen \.control-title-badges #quality-control[\s\S]*?width:\s*auto/, '全屏规则不能把内联音质胶囊还原为底栏大按钮');
+  assert.match(css, /\.quality-control\.is-loading[\s\S]*?#quality-btn/, '切换期间必须有可见的加载状态');
+  assert.match(css, /\.quality-control\.is-unavailable[\s\S]*?#quality-btn/, '无可用歌曲时必须有不可用状态');
 });
 
-test('音质选择在简约和窄窗口 DIY 播放器中始终保留可见入口', () => {
-  assert.match(index, /id="quality-control"[\s\S]*?id="quality-btn"/, '底栏必须保留可操作的音质按钮');
+test('内联音质选择保留可用、选中和 VIP/曲目上限状态', () => {
+  assert.match(qualitySource, /btn\.disabled\s*=\s*!currentSong/, '未播放歌曲时音质胶囊必须不可操作');
+  assert.match(qualitySource, /wrap\.classList\.toggle\('is-loading'/, '切换流时必须同步加载状态');
+  assert.match(qualitySource, /wrap\.classList\.toggle\('is-unavailable'/, '无歌曲时必须同步不可用状态');
+  assert.match(qualitySource, /aria-current=.*selected/, '当前实际选中档位必须标记给辅助功能和样式');
+  assert.match(qualitySource, /svip-only[\s\S]*?locked/, 'SVIP 档位必须继续显示但不可选');
+  assert.match(qualitySource, /cap-locked[\s\S]*?locked/, '歌曲实际最高音质低于偏好时必须继续显示上限锁定');
   assert.doesNotMatch(css, /body\.simple-mode #quality-control,[\s\S]*?display:\s*none\s*!important/, '简约模式不能把音质入口直接隐藏');
   assert.doesNotMatch(css, /@media \(max-width:1180px\)\s*\{[\s\S]*?body\.diy-mode #quality-control\s*\{\s*display:\s*none\s*!important/, '窄窗口 DIY 模式也必须保留音质入口');
 });

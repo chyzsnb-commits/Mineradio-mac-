@@ -557,7 +557,7 @@ function updateControlTrackInfo(song) {
     var titleText = document.getElementById('control-title-text');
     var titleBadges = document.getElementById('control-title-badges');
     if (!titleText) {
-      title.innerHTML = '<span id="control-title-text" class="control-title-text"></span><span id="control-title-badges" class="control-title-badges"></span>';
+      title.innerHTML = '<span id="control-title-text" class="control-title-text"></span><span id="control-title-badges" class="control-title-badges"><span id="control-source-badges" class="control-source-badges"></span></span>';
       titleText = document.getElementById('control-title-text');
       titleBadges = document.getElementById('control-title-badges');
     }
@@ -566,7 +566,8 @@ function updateControlTrackInfo(song) {
     if (titleBadges) {
       var sourceTag = typeof songSourceTagHtml === 'function' ? songSourceTagHtml(song, { switcher: true }) : '';
       var vipTag = typeof songVipTagHtml === 'function' ? songVipTagHtml(song) : '';
-      titleBadges.innerHTML = (song && song.name) ? (sourceTag + vipTag) : '';
+      var sourceBadges = document.getElementById('control-source-badges');
+      if (sourceBadges) sourceBadges.innerHTML = (song && song.name) ? (sourceTag + vipTag) : '';
     }
   }
   if (artist) artist.textContent = song.artist || '';

@@ -5,6 +5,9 @@
 const path = require('path');
 const fs = require('fs');
 const dgram = require('dgram');
+const os = require('os');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 const { WallpaperEngineLibrary, registerWallpaperEngineScheme } = require('./wallpaper-engine-library');
@@ -21,7 +24,12 @@ const WINDOWS_PORT_PROBE_MIN = 8123;
 const WINDOWS_PORT_PROBE_MAX = 8155;
 const WINDOWS_PORT_PROBE_TIMEOUT_MS = 900;
 const WINDOWS_PORT_PROBE_CONCURRENCY = 4;
+const WINDOWS_ACTIVE_PROBE_CONCURRENCY = 32;
+const WINDOWS_ACTIVE_FALLBACK_DELAY_MS = 900;
+const WINDOWS_ACTIVE_SUBNET_MAX_HOSTS = 512;
 const WINDOWS_MEDIA_MAX_BYTES = 256 * 1024 * 1024;
+let windowsDiscoveryJobSequence = 0;
+const execFileAsync = promisify(execFile);
 
 let library = null;
 let refs = {};
@@ -84,6 +92,90 @@ function parseWindowsDiscoveryAnnouncement(message) {
   };
 }
 
+function ipv4Parts(value) {
+  const parts = String(value || '').trim().split('.').map(Number);
+  return parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) ? parts : null;
+}
+
+function ipv4ToInt(value) {
+  const parts = ipv4Parts(value);
+  return parts ? ((((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3]) >>> 0) : null;
+}
+
+function intToIpv4(value) {
+  const input = Number(value) >>> 0;
+  return [input >>> 24, (input >>> 16) & 255, (input >>> 8) & 255, input & 255].join('.');
+}
+
+function isPrivateIpv4(value) {
+  const parts = ipv4Parts(value);
+  if (!parts) return false;
+  return parts[0] === 10
+    || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+    || (parts[0] === 192 && parts[1] === 168);
+}
+
+function subnetForInterface(entry) {
+  const address = String(entry && entry.address || '');
+  const addressInt = ipv4ToInt(address);
+  const maskInt = ipv4ToInt(entry && entry.netmask);
+  if (addressInt === null || maskInt === null || !isPrivateIpv4(address)) return null;
+  const networkInt = (addressInt & maskInt) >>> 0;
+  const broadcastInt = (networkInt | (~maskInt >>> 0)) >>> 0;
+  const hostCount = Math.max(0, broadcastInt - networkInt - 1);
+  return { address, netmask: String(entry.netmask), networkInt, broadcastInt, hostCount };
+}
+
+function privateNetworkInterfaces(networkInterfaces) {
+  const source = typeof networkInterfaces === 'function' ? networkInterfaces() : {};
+  const seen = new Set();
+  return Object.values(source || {}).flatMap((entries) => Array.isArray(entries) ? entries : [])
+    .filter((entry) => entry && !entry.internal && (entry.family === 'IPv4' || entry.family === 4))
+    .map(subnetForInterface)
+    .filter((network) => network && !seen.has(network.address) && seen.add(network.address));
+}
+
+function hostBelongsToNetwork(host, network) {
+  const value = ipv4ToInt(host);
+  return value !== null && value > network.networkInt && value < network.broadcastInt;
+}
+
+function progressiveHostsForNetwork(network) {
+  if (!network || network.hostCount <= 0) return [];
+  // /16、/8 等大网段先依赖 ARP；后台只从本机所在的 /24 开始渐进探测，避免一次铺满数万主机。
+  const start = network.hostCount > WINDOWS_ACTIVE_SUBNET_MAX_HOSTS
+    ? Math.max(network.networkInt + 1, (ipv4ToInt(network.address) & 0xffffff00) + 1)
+    : network.networkInt + 1;
+  const end = network.hostCount > WINDOWS_ACTIVE_SUBNET_MAX_HOSTS
+    ? Math.min(network.broadcastInt, start + 255)
+    : network.broadcastInt;
+  const hosts = [];
+  for (let value = start; value < end; value += 1) {
+    const host = intToIpv4(value);
+    if (host !== network.address) hosts.push(host);
+  }
+  return hosts;
+}
+
+function parseNeighborHosts(output) {
+  return Array.from(new Set(String(output || '').split(/\r?\n/)
+    .filter((line) => !/\b(?:incomplete|failed)\b/i.test(line))
+    .flatMap((line) => (line.match(/(?:\(|\b)(\d{1,3}(?:\.\d{1,3}){3})(?:\)|\b)/g) || [])
+      .map((match) => match.replace(/[^\d.]/g, '')))
+    .filter(isPrivateIpv4)));
+}
+
+async function defaultNeighborHosts() {
+  const command = process.platform === 'win32' ? 'arp' : (process.platform === 'darwin' ? 'arp' : 'ip');
+  const args = process.platform === 'win32' ? ['-a'] : (process.platform === 'darwin' ? ['-an'] : ['neigh', 'show']);
+  try {
+    const result = await execFileAsync(command, args, { timeout: 1200, maxBuffer: 256 * 1024 });
+    return parseNeighborHosts(result.stdout);
+  } catch (_) {
+    return [];
+  }
+}
+
 function normalizeWindowsWallpaperRecord(rawRecord, baseUrl, index) {
   const raw = rawRecord && typeof rawRecord === 'object' ? rawRecord : {};
   const id = String(raw.id || raw.projectId || raw.sceneId || raw.scene || 'wallpaper-' + Number(index || 0)).trim();
@@ -144,6 +236,8 @@ class WindowsWallpaperClient {
     const opts = options || {};
     this.fetchImpl = opts.fetchImpl || global.fetch;
     this.dgramImpl = opts.dgramImpl || dgram;
+    this.networkInterfaces = opts.networkInterfaces || os.networkInterfaces;
+    this.neighborHosts = opts.neighborHosts || defaultNeighborHosts;
     this.trustedBases = new Set();
   }
 
@@ -182,28 +276,91 @@ class WindowsWallpaperClient {
     };
   }
 
-  async probeWindowsService(baseUrl) {
+  async probeWindowsService(baseUrl, diagnostics, timeoutMs) {
     const base = normalizeWindowsBaseUrl(baseUrl);
-    if (!base) return false;
-    const ping = await this.requestJson(serviceUrl(base, '/api/ping'), undefined, WINDOWS_PORT_PROBE_TIMEOUT_MS);
-    return !!(ping.ok && ping.data && ping.data.ok === true);
+    if (!base) return { ok: false, outcome: 'INVALID_URL' };
+    const ping = await this.requestJson(serviceUrl(base, '/api/ping'), undefined, timeoutMs || WINDOWS_PORT_PROBE_TIMEOUT_MS);
+    const outcome = ping.ok && ping.data && ping.data.ok === true
+      ? 'PING_OK'
+      : (!ping.ok ? (ping.error === 'HTTP_TIMEOUT' ? 'PING_TIMEOUT' : 'PING_FAILED') : 'PING_REJECTED');
+    if (diagnostics && Array.isArray(diagnostics.probes)) diagnostics.probes.push({ baseUrl: base, outcome });
+    return { ok: outcome === 'PING_OK', outcome };
   }
 
-  async scanDiscoveredWindowsHost(host) {
-    const candidates = Array.from({ length: WINDOWS_PORT_PROBE_MAX - WINDOWS_PORT_PROBE_MIN + 1 }, (_, index) => {
-      return 'http://' + host + ':' + (WINDOWS_PORT_PROBE_MIN + index);
-    });
+  async scanDiscoveredWindowsHost(host, diagnostics, options) {
+    const opts = options || {};
+    const ports = Array.from({ length: WINDOWS_PORT_PROBE_MAX - WINDOWS_PORT_PROBE_MIN + 1 }, (_, index) => WINDOWS_PORT_PROBE_MIN + index);
+    const preferredPort = Number(opts.preferredPort) || 8130;
+    const orderedPorts = ports.includes(preferredPort) ? [preferredPort].concat(ports.filter((port) => port !== preferredPort)) : ports;
+    const candidates = orderedPorts.map((port) => 'http://' + host + ':' + port);
     let service = null;
     let next = 0;
     const worker = async () => {
       while (next < candidates.length && !service) {
         const candidate = candidates[next++];
-        if (!await this.probeWindowsService(candidate)) continue;
+        const probe = await this.probeWindowsService(candidate, diagnostics, opts.timeoutMs);
+        if (!probe.ok) continue;
         const result = await this.connect(candidate);
         if (result.ok && !service) service = result;
       }
     };
-    await Promise.all(Array.from({ length: Math.min(WINDOWS_PORT_PROBE_CONCURRENCY, candidates.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(opts.concurrency || WINDOWS_PORT_PROBE_CONCURRENCY, candidates.length) }, worker));
+    return service;
+  }
+
+  async scanActivePrivateNetworks(diagnostics, deadline) {
+    let networks = [];
+    try { networks = privateNetworkInterfaces(this.networkInterfaces); } catch (error) {
+      diagnostics.subnetScan.error = 'NETWORK_INTERFACES_FAILED';
+      diagnostics.subnetScan.errorDetail = String(error && error.message || '');
+      return null;
+    }
+    diagnostics.subnetScan.networks = networks.map((network) => ({
+      address: network.address,
+      netmask: network.netmask,
+      hostCount: network.hostCount,
+      progressive: network.hostCount <= WINDOWS_ACTIVE_SUBNET_MAX_HOSTS,
+    }));
+    let neighbors = [];
+    try { neighbors = await this.neighborHosts(); } catch (error) {
+      diagnostics.subnetScan.neighborError = String(error && error.message || 'NEIGHBOR_LOOKUP_FAILED');
+    }
+    const neighborHosts = Array.from(new Set((Array.isArray(neighbors) ? neighbors : []).map((value) => String(value || '').trim())
+      .filter((host) => isPrivateIpv4(host) && networks.some((network) => hostBelongsToNetwork(host, network)))));
+    diagnostics.subnetScan.neighborHosts = neighborHosts;
+    const progressiveHosts = networks.flatMap(progressiveHostsForNetwork);
+    const progressiveOnlyHosts = progressiveHosts.filter((host) => !neighborHosts.includes(host));
+    diagnostics.subnetScan.candidates = neighborHosts.length + progressiveOnlyHosts.length;
+    if (!diagnostics.subnetScan.candidates) return null;
+    const ports = Array.from({ length: WINDOWS_PORT_PROBE_MAX - WINDOWS_PORT_PROBE_MIN + 1 }, (_, index) => WINDOWS_PORT_PROBE_MIN + index);
+    const orderedPorts = [8130].concat(ports.filter((port) => port !== 8130));
+    const probeCandidates = async (candidates) => {
+      let service = null;
+      let next = 0;
+      const worker = async () => {
+        while (next < candidates.length && !service && (!deadline || Date.now() < deadline)) {
+          const candidate = candidates[next++];
+          const probe = await this.probeWindowsService(candidate, diagnostics, WINDOWS_PORT_PROBE_TIMEOUT_MS);
+          if (!probe.ok) continue;
+          const result = await this.connect(candidate);
+          if (result && result.ok && !service) service = result;
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(WINDOWS_ACTIVE_PROBE_CONCURRENCY, candidates.length) }, worker));
+      return service;
+    };
+    // 先只验证 ARP 邻居的 8130；可用时不再请求整段 /24 或同一主机的其余端口。
+    let service = await probeCandidates(neighborHosts.map((host) => 'http://' + host + ':8130'));
+    if (!service && (!deadline || Date.now() < deadline)) {
+      const neighborFallbackCandidates = orderedPorts.slice(1).flatMap((port) => neighborHosts.map((host) => 'http://' + host + ':' + port));
+      service = await probeCandidates(neighborFallbackCandidates);
+    }
+    if (!service && (!deadline || Date.now() < deadline)) {
+      // 无 ARP 命中才展开渐进扫描，且全体主机始终先探测最常见的 8130。
+      const progressiveCandidates = orderedPorts.flatMap((port) => progressiveOnlyHosts.map((host) => 'http://' + host + ':' + port));
+      service = await probeCandidates(progressiveCandidates);
+    }
+    diagnostics.subnetScan.completed = !!service || (!deadline || Date.now() < deadline);
     return service;
   }
 
@@ -214,30 +371,93 @@ class WindowsWallpaperClient {
     return new Promise((resolve) => {
       let finished = false;
       let timeout = 0;
-      const finish = async () => {
+      let fallbackTimer = 0;
+      let fallbackPromise = null;
+      let announcementProbeStarted = false;
+      const diagnostics = {
+        jobId: 'wallpaper-discovery-' + (++windowsDiscoveryJobSequence),
+        udp: { port: WINDOWS_DISCOVERY_PORT, address: '0.0.0.0', startedAt: Date.now(), received: 0, lastReceivedAt: 0, lastRaw: '', parseError: '' },
+        announcements: [],
+        probes: [],
+        subnetScan: { networks: [], neighborHosts: [], candidates: 0 },
+        reason: '',
+        userHint: '',
+      };
+      const complete = (services) => {
         if (finished) return;
         finished = true;
         if (timeout) clearTimeout(timeout);
+        if (fallbackTimer) clearTimeout(fallbackTimer);
         try { socket.close(); } catch (_) {}
+        if (!diagnostics.reason) diagnostics.reason = services.length ? 'SERVICE_FOUND' : (diagnostics.udp.received ? 'NO_VALID_WINDOWS_SERVICE' : 'NO_UDP_ANNOUNCEMENT');
+        diagnostics.userHint = services.length
+          ? '已验证 Windows Mineradio 服务。'
+          : 'Windows Mineradio 应监听 0.0.0.0:服务端口；Windows 防火墙需允许 UDP 45678 广播和 TCP 服务端口。也可输入 http://Windows-IP:端口号 立即验证。';
+        resolve({ ok: true, services, diagnostics });
+      };
+      const inspectAnnouncements = async () => {
         const services = [];
         for (const announcement of announcements.values()) {
           let result = null;
-          if (announcement.baseUrl && await this.probeWindowsService(announcement.baseUrl)) result = await this.connect(announcement.baseUrl);
-          else result = await this.scanDiscoveredWindowsHost(announcement.host);
-          if (result && result.ok) services.push(result);
+          if (announcement.baseUrl && (await this.probeWindowsService(announcement.baseUrl, diagnostics)).ok) result = await this.connect(announcement.baseUrl);
+          else result = await this.scanDiscoveredWindowsHost(announcement.host, diagnostics);
+          if (result && result.ok) {
+            result.source = 'udp';
+            services.push(result);
+          }
         }
-        resolve({ ok: true, services });
+        return services;
+      };
+      const startFallback = () => {
+        if (fallbackPromise) return fallbackPromise;
+        if (finished) return Promise.resolve(null);
+        fallbackPromise = this.scanActivePrivateNetworks(diagnostics, diagnostics.udp.startedAt + wait).then((service) => {
+          if (service && service.ok) {
+            service.source = 'subnet';
+            complete([service]);
+          }
+          return service;
+        });
+        return fallbackPromise;
+      };
+      const finish = async () => {
+        if (finished) return;
+        const services = await inspectAnnouncements();
+        if (services.length) return complete(services);
+        if (!fallbackPromise) await startFallback();
+        if (!finished) complete([]);
       };
       socket.on('message', (message) => {
+        diagnostics.udp.received += 1;
+        diagnostics.udp.lastReceivedAt = Date.now();
+        diagnostics.udp.lastRaw = String(message || '').slice(0, 300);
         const announcement = parseWindowsDiscoveryAnnouncement(message);
-        if (announcement) announcements.set(announcement.host, announcement);
+        if (!announcement) {
+          diagnostics.udp.parseError = 'PARSE_FAILED';
+          return;
+        }
+        announcements.set(announcement.host, announcement);
+        diagnostics.announcements = Array.from(announcements.values());
+        if (!announcementProbeStarted) {
+          announcementProbeStarted = true;
+          inspectAnnouncements().then((services) => { if (services.length) complete(services); });
+        }
       });
-      socket.on('error', finish);
+      socket.on('error', (error) => {
+        diagnostics.udp.error = String(error && error.message || 'UDP_LISTEN_FAILED');
+        diagnostics.reason = 'UDP_LISTEN_FAILED';
+        startFallback();
+      });
       try {
         socket.bind(WINDOWS_DISCOVERY_PORT, () => {
+          fallbackTimer = setTimeout(startFallback, Math.min(WINDOWS_ACTIVE_FALLBACK_DELAY_MS, Math.max(120, Math.floor(wait / 2))));
           timeout = setTimeout(finish, wait);
         });
-      } catch (_) { finish(); }
+      } catch (error) {
+        diagnostics.udp.error = String(error && error.message || 'UDP_LISTEN_FAILED');
+        diagnostics.reason = 'UDP_LISTEN_FAILED';
+        startFallback().then(() => { if (!finished) complete([]); });
+      }
     });
   }
 
@@ -408,4 +628,4 @@ async function scanHttpSource(baseUrl) {
   return windowsClient.connect(baseUrl);
 }
 
-module.exports = { init, WindowsWallpaperClient, normalizeWindowsWallpaperRecord, normalizeWindowsWallpaperRecords, normalizeWindowsBaseUrl, parseWindowsDiscoveryAnnouncement };
+module.exports = { init, WindowsWallpaperClient, normalizeWindowsWallpaperRecord, normalizeWindowsWallpaperRecords, normalizeWindowsBaseUrl, parseWindowsDiscoveryAnnouncement, parseNeighborHosts };

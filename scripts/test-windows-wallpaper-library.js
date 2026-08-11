@@ -4,10 +4,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 
 const {
   init,
   WindowsWallpaperClient,
+  parseNeighborHosts,
   normalizeWindowsWallpaperRecord,
   normalizeWindowsWallpaperRecords,
 } = require('../desktop/wallpaper-library-bridge');
@@ -40,10 +42,70 @@ function binaryResponse(status, mime, bytes, headers) {
   };
 }
 
+function createWallpaperPanelPortHarness(savedBaseUrl, options) {
+  const opts = options || {};
+  const calls = [];
+  const storage = new Map();
+  if (savedBaseUrl) storage.set('mineradio.windows-wallpaper.base-url', savedBaseUrl);
+  const input = { value: '', dataset: {}, addEventListener() {} };
+  const status = { textContent: '', dataset: {} };
+  const discovered = { textContent: '', dataset: {} };
+  const modal = { classList: { add() {}, remove() {}, contains() { return false; } }, setAttribute() {}, addEventListener() {} };
+  const elements = {
+    'wallpaper-library-http-input': input,
+    'wallpaper-library-status': status,
+    'wallpaper-library-discovered-ip': discovered,
+    'wallpaper-library-modal': modal,
+  };
+  const service = opts.service || { ok: true, baseUrl: 'http://192.168.1.107:8130', host: 'Windows Mineradio', records: [] };
+  const context = {
+    console,
+    Promise,
+    Set,
+    Map,
+    setTimeout,
+    clearTimeout,
+    localStorage: {
+      getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+      setItem(key, value) { storage.set(key, String(value)); },
+    },
+    document: {
+      getElementById(id) { return elements[id] || null; },
+      addEventListener() {},
+    },
+    window: {
+      desktopWindow: {
+        wallpaperWindowsConnect: async (baseUrl) => {
+          calls.push({ kind: 'connect', baseUrl });
+          return opts.connect ? opts.connect(baseUrl) : service;
+        },
+        wallpaperWindowsDiscover: async () => {
+          calls.push({ kind: 'discover' });
+          return opts.discover ? opts.discover() : { ok: true, services: [service] };
+        },
+      },
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(read('public/js/modules/07-fx/10-wallpaper-library-panel.js'), context, { filename: '10-wallpaper-library-panel.js' });
+  context.wallpaperLibraryRenderRecords = function () {};
+  context.wallpaperLibraryRenderDetail = function () {};
+  return { context, calls, input, status, discovered, storage, service };
+}
+
 test('壁纸桥初始化后必须暴露可用的 Windows 发现与连接入口', () => {
   const bridge = init({ userDataPath: path.join(root, '.tmp-wallpaper-library-test') });
   assert.equal(typeof bridge.discoverWindowsSources, 'function');
   assert.equal(typeof bridge.connectWindowsSource, 'function');
+});
+
+test('macOS ARP 解析只保留真实邻居，不能把 incomplete 条目扩大为全网段候选', () => {
+  const hosts = parseNeighborHosts([
+    '? (192.168.1.107) at 30:c5:99:84:f0:9b on en0 ifscope [ethernet]',
+    '? (192.168.1.108) at (incomplete) on en0 ifscope [ethernet]',
+    '192.168.1.109 dev en0 FAILED',
+  ].join('\n'));
+  assert.deepEqual(hosts, ['192.168.1.107']);
 });
 
 test('Windows 服务必须先通过 ping，之后才读取壁纸列表', async () => {
@@ -100,6 +162,60 @@ test('UDP 广播携带的动态端口优先通过 ping 验证', async () => {
   assert.equal(result.ok, true);
   assert.equal(result.services.length, 1);
   assert.equal(result.services[0].baseUrl, 'http://192.168.1.20:8144');
+});
+
+test('动态端口发现和缓存连接在界面中回填完整实际地址', async () => {
+  const html = read('public/index.html');
+  const panel = read('public/js/modules/07-fx/10-wallpaper-library-panel.js');
+  assert.doesNotMatch(html, /placeholder="[^"]*:8123"/, '输入框不得把 8123 伪装为固定连接地址');
+  assert.match(html, /http:\/\/Windows-IP:端口号.*1024-65535/, '手动连接提示必须要求用户输入实际端口');
+  assert.doesNotMatch(panel, /Windows-IP:8123/, '未发现状态不得推荐固定端口');
+
+  const discovered = createWallpaperPanelPortHarness();
+  await discovered.context.discoverWindowsWallpaperSources();
+  assert.equal(discovered.input.value, 'http://192.168.1.107:8130');
+  assert.match(discovered.discovered.textContent, /192\.168\.1\.107:8130/);
+  assert.match(discovered.status.textContent, /Windows Mineradio/);
+  assert.equal(discovered.storage.get('mineradio.windows-wallpaper.base-url'), 'http://192.168.1.107:8130');
+
+  const cached = createWallpaperPanelPortHarness('http://192.168.1.107:8130');
+  await cached.context.wallpaperLibraryOpenSavedOrDiscover();
+  assert.equal(cached.input.value, 'http://192.168.1.107:8130');
+  assert.deepEqual(cached.calls, [{ kind: 'connect', baseUrl: 'http://192.168.1.107:8130' }], '缓存地址必须原样优先请求，不能回落为 8123');
+});
+
+test('打开壁纸库与读取按钮必须共用单飞发现流程，并自动连接扫描到的动态端口 8128', async () => {
+  const service = { ok: true, source: 'subnet', baseUrl: 'http://192.168.1.107:8128', host: 'mineradio-wallpaper', records: [] };
+  const harness = createWallpaperPanelPortHarness('', { service, discover: async () => ({
+    ok: true,
+    services: [service],
+    diagnostics: { jobId: 'scan-8128', udp: { received: 0 }, subnetScan: { candidates: 254, completed: true }, probes: [{ baseUrl: 'http://192.168.1.107:8128', outcome: 'PING_OK' }] },
+  }) });
+  harness.context.openWallpaperLibraryPanel();
+  await harness.context.wallpaperLibraryState.connectionPromise;
+  assert.equal(harness.input.value, 'http://192.168.1.107:8128');
+  assert.match(harness.discovered.textContent, /192\.168\.1\.107:8128/);
+  assert.equal(harness.calls.filter((call) => call.kind === 'discover').length, 1, '打开页面必须自动调用发现');
+
+  const before = harness.calls.length;
+  await harness.context.discoverWindowsWallpaperSources();
+  assert.equal(harness.calls.length, before + 1, '读取按钮必须复用同一发现入口，不维护第二套流程');
+  assert.equal(harness.calls.at(-1).kind, 'discover');
+
+  const html = read('public/index.html');
+  const panel = read('public/js/modules/07-fx/10-wallpaper-library-panel.js');
+  assert.match(html, /onclick="wallpaperLibraryDiscoverAndConnect\(\{ forceDiscovery: true \}\)"/, '读取按钮必须直接走统一单飞函数');
+  assert.match(panel, /function wallpaperLibraryDiscoverAndConnect\([\s\S]*?connectionPromise/, '统一函数必须管理单飞状态');
+  assert.match(panel, /openWallpaperLibraryPanel\(\)[\s\S]*?wallpaperLibraryDiscoverAndConnect\(\)/, '打开弹窗必须自动触发同一函数');
+});
+
+test('手动连接成功不能伪装成自动读取 Windows IP', async () => {
+  const service = { ok: true, baseUrl: 'http://192.168.1.107:8128', host: 'mineradio-wallpaper', records: [] };
+  const harness = createWallpaperPanelPortHarness('', { service });
+  harness.input.value = service.baseUrl;
+  await harness.context.connectWindowsWallpaperSource();
+  assert.doesNotMatch(harness.discovered.textContent, /自动读取 Windows IP/, '手动成功只能显示手动来源');
+  assert.match(harness.status.textContent, /已连接/);
 });
 
 test('广播端口失效时只扫描已发现 IP 的 8123 到 8155，且并发不超过 4', async () => {
@@ -163,7 +279,7 @@ test('广播只有 Windows IP 时只在该主机的受限端口范围内回退',
   assert.ok(calls.every((url) => url.startsWith('http://10.0.0.9:')));
 });
 
-test('没有广播或 UDP 监听失败时不扫描整个私有子网', async () => {
+test('没有广播时不会扫描公网或完整端口空间', async () => {
   class SilentSocket {
     on() {}
     bind(_port, callback) { callback(); }
@@ -172,7 +288,8 @@ test('没有广播或 UDP 监听失败时不扫描整个私有子网', async () 
   const calls = [];
   const client = new WindowsWallpaperClient({
     dgramImpl: { createSocket: () => new SilentSocket() },
-    networkInterfaces: () => { throw new Error('不得读取网段后全网扫描'); },
+    networkInterfaces: () => ({ en0: [{ address: '203.0.113.4', netmask: '255.255.255.0', family: 'IPv4', internal: false }] }),
+    neighborHosts: async () => ['203.0.113.9'],
     fetchImpl: async (url) => {
       calls.push(url);
       return jsonResponse(404, { ok: false });
@@ -181,6 +298,135 @@ test('没有广播或 UDP 监听失败时不扫描整个私有子网', async () 
   const result = await client.discover(500);
   assert.deepEqual(result.services, []);
   assert.deepEqual(calls, []);
+});
+
+test('无 UDP 时会从同网段邻居表发现 8130，且只回填已验证的完整地址', async () => {
+  class SilentSocket {
+    on() {}
+    bind(_port, callback) { callback(); }
+    close() {}
+  }
+  const calls = [];
+  const client = new WindowsWallpaperClient({
+    dgramImpl: { createSocket: () => new SilentSocket() },
+    networkInterfaces: () => ({ en0: [{ address: '192.168.1.120', netmask: '255.255.255.0', family: 'IPv4', internal: false }] }),
+    neighborHosts: async () => ['192.168.1.107'],
+    fetchImpl: async (url) => {
+      calls.push(url);
+      if (url === 'http://192.168.1.107:8130/api/ping') return jsonResponse(200, { ok: true, host: 'Windows Mineradio' });
+      if (url === 'http://192.168.1.107:8130/api/wallpapers') return jsonResponse(200, { ok: true, records: [] });
+      return jsonResponse(404, { ok: false });
+    },
+  });
+  const result = await client.discover(500);
+  assert.equal(result.services[0].baseUrl, 'http://192.168.1.107:8130');
+  assert.deepEqual(result.diagnostics.subnetScan.neighborHosts, ['192.168.1.107']);
+  assert.ok(result.diagnostics.probes.some((probe) => probe.baseUrl === 'http://192.168.1.107:8130' && probe.outcome === 'PING_OK'));
+  assert.ok(calls.includes('http://192.168.1.107:8130/api/ping'));
+});
+
+test('无 UDP 自动发现必须实际探测 8128 并把其作为 subnet 来源返回', async () => {
+  class SilentSocket {
+    on() {}
+    bind(_port, callback) { callback(); }
+    close() {}
+  }
+  const calls = [];
+  const client = new WindowsWallpaperClient({
+    dgramImpl: { createSocket: () => new SilentSocket() },
+    networkInterfaces: () => ({ en0: [{ address: '192.168.1.120', netmask: '255.255.255.0', family: 'IPv4', internal: false }] }),
+    neighborHosts: async () => ['192.168.1.107'],
+    fetchImpl: async (url) => {
+      calls.push(url);
+      if (url === 'http://192.168.1.107:8128/api/ping') return jsonResponse(200, { ok: true, host: 'mineradio-wallpaper' });
+      if (url === 'http://192.168.1.107:8128/api/wallpapers') return jsonResponse(200, { ok: true, records: [] });
+      return jsonResponse(404, { ok: false });
+    },
+  });
+  const result = await client.discover(500);
+  assert.equal(result.services[0].baseUrl, 'http://192.168.1.107:8128');
+  assert.equal(result.services[0].source, 'subnet');
+  assert.match(result.diagnostics.jobId, /^wallpaper-discovery-\d+$/);
+  assert.ok(calls.includes('http://192.168.1.107:8128/api/ping'), '必须留下 8128 /api/ping 的实际请求证据');
+  assert.ok(result.diagnostics.probes.some((probe) => probe.baseUrl === 'http://192.168.1.107:8128' && probe.outcome === 'PING_OK'));
+});
+
+test('无 UDP 的主动扫描只枚举活跃私网网段并受全局并发限制', async () => {
+  class SilentSocket {
+    on() {}
+    bind(_port, callback) { callback(); }
+    close() {}
+  }
+  let active = 0;
+  let peak = 0;
+  const client = new WindowsWallpaperClient({
+    dgramImpl: { createSocket: () => new SilentSocket() },
+    networkInterfaces: () => ({
+      en0: [{ address: '192.168.1.120', netmask: '255.255.255.0', family: 'IPv4', internal: false }],
+      en1: [{ address: '10.0.0.8', netmask: '255.0.0.0', family: 'IPv4', internal: false }],
+      lo0: [{ address: '127.0.0.1', netmask: '255.0.0.0', family: 'IPv4', internal: true }],
+    }),
+    neighborHosts: async () => ['192.168.1.107', '10.0.0.9', '8.8.8.8'],
+    fetchImpl: async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      active -= 1;
+      return jsonResponse(404, { ok: false });
+    },
+  });
+  const result = await client.discover(500);
+  assert.deepEqual(result.diagnostics.subnetScan.neighborHosts, ['192.168.1.107', '10.0.0.9']);
+  assert.ok(result.diagnostics.subnetScan.networks.every((network) => /^(?:10|192\.168)\./.test(network.address)));
+  assert.ok(peak <= 48, '主动扫描的全局并发必须受限');
+});
+
+test('未收到 UDP 广播时返回主进程监听诊断和 Windows 网络修复提示', async () => {
+  class SilentSocket {
+    on() {}
+    bind(_port, callback) { callback(); }
+    close() {}
+  }
+  const client = new WindowsWallpaperClient({
+    dgramImpl: { createSocket: () => new SilentSocket() },
+    networkInterfaces: () => ({}),
+    fetchImpl: async () => jsonResponse(404, { ok: false }),
+  });
+  const result = await client.discover(500);
+  assert.equal(result.diagnostics.udp.port, 45678);
+  assert.equal(result.diagnostics.udp.received, 0);
+  assert.equal(result.diagnostics.reason, 'NO_UDP_ANNOUNCEMENT');
+  assert.match(result.diagnostics.userHint, /0\.0\.0\.0.*UDP 45678.*TCP/, '诊断必须说明 Windows 监听地址和防火墙端口');
+});
+
+test('8130 广播必须记录候选 /api/ping 探测，并把完整 baseUrl 返回给 UI', async () => {
+  class FakeSocket {
+    constructor() { this.handlers = {}; }
+    on(name, handler) { this.handlers[name] = handler; }
+    bind(_port, callback) {
+      callback();
+      queueMicrotask(() => this.handlers.message(Buffer.from('MINERADIO_WALLPAPER 192.168.1.107:8130')));
+    }
+    close() {}
+  }
+  const client = new WindowsWallpaperClient({
+    dgramImpl: { createSocket: () => new FakeSocket() },
+    fetchImpl: async (url) => url.endsWith('/api/ping')
+      ? jsonResponse(200, { ok: true, host: 'Windows Mineradio' })
+      : jsonResponse(200, { ok: true, records: [] }),
+  });
+  const result = await client.discover(500);
+  assert.equal(result.services[0].baseUrl, 'http://192.168.1.107:8130');
+  assert.deepEqual(result.diagnostics.announcements, [{ host: '192.168.1.107', baseUrl: 'http://192.168.1.107:8130' }]);
+  assert.deepEqual(result.diagnostics.probes, [{ baseUrl: 'http://192.168.1.107:8130', outcome: 'PING_OK' }]);
+});
+
+test('壁纸库 UI 将无广播和 ping 失败显示为可操作的网络诊断', () => {
+  const panel = read('public/js/modules/07-fx/10-wallpaper-library-panel.js');
+  assert.match(panel, /NO_UDP_ANNOUNCEMENT/, '渲染层必须读取主进程无广播诊断');
+  assert.match(panel, /0\.0\.0\.0/, 'UI 必须说明 Windows 服务不能只监听 localhost');
+  assert.match(panel, /UDP 45678.*TCP/, 'UI 必须说明 Windows 防火墙需要放行的端口');
+  assert.match(panel, /PING_TIMEOUT|PING_FAILED|PING_REJECTED/, 'UI 必须区分 ping 失败，不得只显示未发现');
 });
 
 test('手动地址只接受明确的 1024 到 65535 端口', async () => {
@@ -318,7 +564,7 @@ test('壁纸库滚动时延迟挂载媒体并停用重绘成本高的卡片效�
 test('已保存 Windows 地址优先直连，详情选中不应重建整个远程网格', () => {
   const panel = read('public/js/modules/07-fx/10-wallpaper-library-panel.js');
 
-  assert.match(panel, /async function wallpaperLibraryOpenSavedOrDiscover\(\)[\s\S]*?await connectWindowsWallpaperSource\(\)[\s\S]*?if \(!connected\) await discoverWindowsWallpaperSources\(\)/, '已有地址时应先直连，失败后才发现局域网服务');
+  assert.match(panel, /function wallpaperLibraryDiscoverAndConnect\(options\)[\s\S]*?connectWindowsWallpaperSource\([\s\S]*?wallpaperLibraryRunDiscovery\(/, '已有地址必须先直连，失败后进入同一个发现事务');
   assert.match(panel, /function wallpaperLibraryUpdateCardSelection\([\s\S]*?classList\.toggle\('active'/, '选择变化应局部更新已有卡片');
   assert.match(panel, /function selectWallpaperLibraryRecord\(id\) \{[\s\S]*?wallpaperLibraryUpdateCardSelection\(\)[\s\S]*?wallpaperLibraryRenderDetail\(\)/, '点击卡片不能重建整个网格');
   const selectBody = panel.match(/function selectWallpaperLibraryRecord\(id\) \{([\s\S]*?)\n\}/);

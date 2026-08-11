@@ -1380,16 +1380,21 @@
           <div class="control-track">
             <div id="control-cover" class="control-cover cover-empty" aria-hidden="true"></div>
             <div class="control-meta">
-              <div id="control-title" class="control-title" onclick="openTrackDetailModal('song')" title="歌曲详情"></div>
+              <div id="control-title" class="control-title" onclick="openTrackDetailModal('song')" title="歌曲详情">
+                <span id="control-title-text" class="control-title-text"></span>
+                <span id="control-title-badges" class="control-title-badges">
+                  <span id="control-source-badges" class="control-source-badges"></span>
+                  <span id="quality-control" class="quality-control">
+                    <button id="quality-btn" class="ctrl-btn quality-pill" onclick="toggleQualityPanel(event)" title="音质"
+                      data-control-tip="切换当前歌曲的播放音质" aria-expanded="false"><span id="quality-btn-label">音质</span></button>
+                    <span class="quality-popover" onclick="event.stopPropagation()">
+                      <span id="quality-option-list" class="quality-option-list"></span>
+                    </span>
+                  </span>
+                </span>
+              </div>
               <div id="control-artist" class="control-artist" onclick="openTrackDetailModal('artist')" title="歌手详情">
               </div>
-            </div>
-          </div>
-          <div id="quality-control" class="quality-control">
-            <button id="quality-btn" class="ctrl-btn quality-pill" onclick="toggleQualityPanel(event)" title="音质" data-control-tip="切换当前歌曲的播放音质"><span
-                id="quality-btn-label">臻音</span></button>
-            <div class="quality-popover" onclick="event.stopPropagation()">
-              <div id="quality-option-list" class="quality-option-list"></div>
             </div>
           </div>
           <button id="heart-btn" class="ctrl-btn" onclick="toggleLikeCurrent()" title="红心喜欢" data-control-tip="喜欢或取消喜欢当前歌曲"><svg class="heart-svg"
@@ -1860,10 +1865,10 @@
             <span id="wallpaper-library-batch-state" class="wallpaper-library-batch-state" aria-live="polite"></span>
           </div>
           <div class="wallpaper-library-source-row">
-            <button id="wallpaper-library-read-ip" class="modal-btn small primary" type="button" onclick="discoverWindowsWallpaperSources()">读取 Windows IP</button>
-            <input id="wallpaper-library-http-input" class="wallpaper-library-address" type="url" placeholder="Windows 地址，例如 http://192.168.1.20:8123">
+            <button id="wallpaper-library-read-ip" class="modal-btn small primary" type="button" onclick="wallpaperLibraryDiscoverAndConnect({ forceDiscovery: true })">读取 Windows IP</button>
+            <input id="wallpaper-library-http-input" class="wallpaper-library-address" type="url" placeholder="可输入 http://Windows-IP:端口号 手动连接（1024-65535）">
             <button class="modal-btn small" type="button" onclick="connectWindowsWallpaperSource()">连接</button>
-            <button class="modal-btn small secondary" type="button" onclick="discoverWindowsWallpaperSources()">刷新</button>
+            <button class="modal-btn small secondary" type="button" onclick="wallpaperLibraryDiscoverAndConnect({ forceDiscovery: true })">刷新</button>
           </div>
         </div>
         <div class="wallpaper-library-connection" aria-live="polite">
