@@ -438,6 +438,11 @@ async function startGestureControl() {
     showToast(gestureStartFailureMessage(e));
     fx.cam = 'off';
     document.querySelectorAll('#cam-seg button').forEach(function (b) { b.classList.toggle('active', b.dataset.cam === 'off'); });
+    // 启动前 setCamMode 已写入 gesture；失败时必须同步纠正磁盘状态，
+    // 否则下次启动会显示手势已选中但没有实际摄像头管线。
+    if (typeof saveLyricLayout === 'function') {
+      saveLyricLayout({ user: false, reason: 'gesture-start-failed' });
+    }
   }
   gestureStarting = false;
 }

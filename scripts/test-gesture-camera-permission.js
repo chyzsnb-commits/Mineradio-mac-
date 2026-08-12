@@ -107,4 +107,9 @@ test('渲染层先走原生权限 gate，且不会把所有启动错误误报成
   assert.match(gesture, /系统设置[^'\n]*隐私与安全性[^'\n]*摄像头/);
   assert.match(gesture, /GESTURE_CAMERA_FRAME_TIMEOUT[\s\S]*摄像头没有画面或正被其他应用占用/);
   assert.doesNotMatch(gesture, /showToast\('手势启动失败 \(需要摄像头权限\)'\)/);
+  assert.match(
+    gesture,
+    /fx\.cam = 'off';[\s\S]{0,420}saveLyricLayout\(\{\s*user:\s*false,\s*reason:\s*'gesture-start-failed'\s*\}\)/,
+    '手势启动失败后必须把 off 状态写回，避免重启后误显示已开启',
+  );
 });
