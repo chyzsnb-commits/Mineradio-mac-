@@ -1,5 +1,7 @@
 # Mineradio AI Handoff
 
+> **稳定版回滚与后续融合边界（2026-08-11 23:21 PDT）：** 用户明确要求“以原稳定 App 为底，按清单选择性融合”，禁止再把 PR #111 或其后续整条代码线直接覆盖安装。`/Applications/Mineradio.app` 已恢复为回滚前原包，`app.asar` SHA-256 为 `8a10e8b75a7a05b93f16a6cafb578808566fd0772511e9c7316075f24262c986`，Apple 原签名、普通启动和 `127.0.0.1:3000` 均验证通过；用户资料未删除。该 App 精确对应源码提交 `e3b77b9aafcf16e07a2b5687329d061ab6fce054`：147 个生产文件全部等价匹配（146 个字节一致，打包后的 `package.json` 仅按 electron-builder 规则移除构建字段）。后续只能从此提交派生，等用户逐项确认后迁移；不得以当前 `codex/mineradio-2.0-unified` head、PR #111 或 `de4790f` 为新基线，因为其间已有 76 个生产文件变化，歌词、歌单架、CSS 与入口均受影响。整版安装暴露的已知回归是歌词不显示、P10 歌单架构图错误；PR #112/#113 已关闭，PR #111 保留但未合并。问题版 App 保存在 `/Users/allenli/Desktop/Mineradio-2.0-backups.noindex/rejected-pr111-full-install-20260811-232151.app.backup`，仅供逐项对照，禁止直接恢复。当前工作分支 `codex/stable-selective-fusion` 从 `e3b77b9` 创建，尚未加入任何新功能。
+
 > 这个文件是给后续接手的 AI agent（Codex / ZCode / 其他）看的。**每次完成任务后更新「工作日志」和「下一步」，让下一位能快速接上。**
 
 ## 当前权威入口（2026-07-24）
