@@ -993,6 +993,11 @@ var VOX_FB_MAX = Math.max(VOX_FB_MIN + 0.05, 0.45 + (3.2 - 0.45) * (26 / 100)); 
 var VOX_FB_SPEED_RATE = 3.0 + (36.0 - 3.0) * (77 / 100);            // speed 77 → 28.41(MapScene.tsx:470)
 var _voxFbMesh = null, _voxFbUniforms = null, _voxFbBlocks = null, _voxFbPulse = 0;
 var _voxFbEuler = null, _voxFbQuat = null;
+function voxFloatBlockScaleValue(value) {
+  var scale = Number(value);
+  if (!isFinite(scale)) scale = 1;
+  return Math.max(1, Math.min(2, scale));
+}
 
 // ── 流星 + 拖尾粒子(原作 MapScene.tsx 的 meteor/particle 系统逐行移植)──
 var MAX_VOX_METEORS = 20, MAX_VOX_PARTICLES = 200;
@@ -1015,8 +1020,29 @@ var VOX_CAM_DEF_HEIGHT = VOX_CAM_DEF_Y;
 // 默认视角封面完整居中于地形后方(用户指定);radius/height 仍是原版低掠视,海浪条纹不会回来
 var VOX_CAM_DEF_AZIMUTH = -Math.PI / 4;
 var _voxCam = { radius: VOX_CAM_DEF_RADIUS, height: VOX_CAM_DEF_HEIGHT, azimuth: VOX_CAM_DEF_AZIMUTH, autoRotate: false, rotateSpeed: 0.5 };
+var _voxCamDisplay = { radius: VOX_CAM_DEF_RADIUS, height: VOX_CAM_DEF_HEIGHT, azimuth: VOX_CAM_DEF_AZIMUTH };
+function shortestVoxelAzimuthDelta(from, to) {
+  var delta = (to - from) % (Math.PI * 2);
+  if (delta > Math.PI) delta -= Math.PI * 2;
+  if (delta < -Math.PI) delta += Math.PI * 2;
+  return delta;
+}
+function voxSnapCameraDisplayState() {
+  _voxCamDisplay.radius = _voxCam.radius;
+  _voxCamDisplay.height = _voxCam.height;
+  _voxCamDisplay.azimuth = _voxCam.azimuth;
+}
+function tickVoxelCameraDisplayState(display, target, dt) {
+  if (!display || !target) return;
+  var frames = Math.max(0, Math.min(6, (Number(dt) || 0) * 60));
+  var follow = 1 - Math.pow(1 - 0.055, frames);
+  display.radius += (target.radius - display.radius) * follow;
+  display.height += (target.height - display.height) * follow;
+  display.azimuth += shortestVoxelAzimuthDelta(display.azimuth, target.azimuth) * follow;
+}
 function voxRecenterCamera() {   // 回正/K:_voxCam 归位到原作默认机位
   _voxCam.radius = VOX_CAM_DEF_RADIUS; _voxCam.height = VOX_CAM_DEF_HEIGHT; _voxCam.azimuth = VOX_CAM_DEF_AZIMUTH;
+  voxSnapCameraDisplayState();
 }
 var _voxWhite = null, _voxTmpColorA = null;
 var _voxDummyMat = null, _voxDummyPos = null, _voxDummyQuat = null, _voxDummyScale = null;
@@ -1113,6 +1139,7 @@ function voxSyncCamFromCurrentCamera() {
   _voxCam.radius = clampRange(r, 5, 120);   // 对齐原作 OrbitControls minDistance5/maxDistance120(MapScene.tsx:639-640)
   _voxCam.height = clampRange(y, 0.10 * _voxCam.radius, 0.995 * _voxCam.radius);
   _voxCam.azimuth = Math.atan2(x, z);
+  voxSnapCameraDisplayState();
   return true;
 }
 function _voxUpdateCamera(dt) {                            // 原作机位:对准原点·fov45(相机永远手动,无自动公转——原作转的是转盘不是相机)
@@ -1121,10 +1148,11 @@ function _voxUpdateCamera(dt) {                            // 原作机位:对�
     return;   // 自由镜头激活或 R 固定时不覆盖相机(固定后保持当前机位,不弹回初始)
   }
   if (typeof requestStageLyricCameraSnap === 'function') requestStageLyricCameraSnap(2);  // 歌词吸附相机(防抖)
+  tickVoxelCameraDisplayState(_voxCamDisplay, _voxCam, dt);
   var _vsc = (voxelCity && voxelCity.scale) ? voxelCity.scale : 1.0;
-  var horiz = Math.sqrt(Math.max(0, _voxCam.radius * _voxCam.radius - _voxCam.height * _voxCam.height));
+  var horiz = Math.sqrt(Math.max(0, _voxCamDisplay.radius * _voxCamDisplay.radius - _voxCamDisplay.height * _voxCamDisplay.height));
   camera.up.set(0, 1, 0);
-  camera.position.set(horiz * Math.sin(_voxCam.azimuth) * _vsc, _voxCam.height * _vsc, horiz * Math.cos(_voxCam.azimuth) * _vsc);
+  camera.position.set(horiz * Math.sin(_voxCamDisplay.azimuth) * _vsc, _voxCamDisplay.height * _vsc, horiz * Math.cos(_voxCamDisplay.azimuth) * _vsc);
   camera.lookAt(0, VOX_CAM_DEF_LOOKY * _vsc, 0);   // 看向中心上方(用户机位构图:地形居下、封面居中)
   camera.fov = clampRange(45 + pinchFovDelta, 20, 75);
   camera.updateProjectionMatrix();
@@ -1362,8 +1390,33 @@ var VOX_BG_STORE_KEY = 'mineradio-app-bg-v1';
 function saveVoxBg() { try { localStorage.setItem(VOX_BG_STORE_KEY, JSON.stringify({ image: fx.voxBgImage || '', color: fx.voxBgColor || '', playlist: fx.voxPlaylistColor || '' })); } catch (e) {} }
 var VOX_TOGGLE_STORE_KEY = 'mineradio-vox-toggles-v1';
 // 体素/侧边歌词布尔开关独立持久化(fx 自动存档是字段白名单制,这些键不在其中;镜像 saveVoxBg 模式)
-function saveVoxToggles() { try { localStorage.setItem(VOX_TOGGLE_STORE_KEY, JSON.stringify({ autoRotate: fx.voxAutoRotate !== false, coverColor: fx.voxCoverColor !== false, meteors: fx.voxMeteors !== false, ghostCover: fx.voxGhostCover !== false, floatBlocks: fx.voxFloatBlocks !== false, shimmer: fx.voxShimmer !== false, res: fx.voxRes || 'mid' })); } catch (e) {} }
-function loadVoxToggles() { try { var raw = JSON.parse(localStorage.getItem(VOX_TOGGLE_STORE_KEY) || '{}') || {}; if ('autoRotate' in raw) fx.voxAutoRotate = !!raw.autoRotate; if ('coverColor' in raw) fx.voxCoverColor = !!raw.coverColor; if ('meteors' in raw) fx.voxMeteors = !!raw.meteors; if ('ghostCover' in raw) fx.voxGhostCover = !!raw.ghostCover; if ('floatBlocks' in raw) fx.voxFloatBlocks = !!raw.floatBlocks; if ('shimmer' in raw) fx.voxShimmer = !!raw.shimmer; if (raw.res && /^(low|mid|high)$/.test(raw.res)) fx.voxRes = raw.res; } catch (e) {} }
+function saveVoxToggles() {
+  try {
+    localStorage.setItem(VOX_TOGGLE_STORE_KEY, JSON.stringify({
+      autoRotate: fx.voxAutoRotate !== false,
+      coverColor: fx.voxCoverColor !== false,
+      meteors: fx.voxMeteors !== false,
+      ghostCover: fx.voxGhostCover !== false,
+      floatBlocks: fx.voxFloatBlocks !== false,
+      floatBlockScale: voxFloatBlockScaleValue(fx.voxFloatBlockScale),
+      shimmer: fx.voxShimmer !== false,
+      res: fx.voxRes || 'mid'
+    }));
+  } catch (e) {}
+}
+function loadVoxToggles() {
+  try {
+    var raw = JSON.parse(localStorage.getItem(VOX_TOGGLE_STORE_KEY) || '{}') || {};
+    if ('autoRotate' in raw) fx.voxAutoRotate = !!raw.autoRotate;
+    if ('coverColor' in raw) fx.voxCoverColor = !!raw.coverColor;
+    if ('meteors' in raw) fx.voxMeteors = !!raw.meteors;
+    if ('ghostCover' in raw) fx.voxGhostCover = !!raw.ghostCover;
+    if ('floatBlocks' in raw) fx.voxFloatBlocks = !!raw.floatBlocks;
+    if ('floatBlockScale' in raw) fx.voxFloatBlockScale = voxFloatBlockScaleValue(raw.floatBlockScale);
+    if ('shimmer' in raw) fx.voxShimmer = !!raw.shimmer;
+    if (raw.res && /^(low|mid|high)$/.test(raw.res)) fx.voxRes = raw.res;
+  } catch (e) {}
+}
 function loadVoxBg() { try { var raw = JSON.parse(localStorage.getItem(VOX_BG_STORE_KEY) || '{}') || {}; if (raw.image) fx.voxBgImage = raw.image; if (raw.color) fx.voxBgColor = raw.color; if (raw.playlist) fx.voxPlaylistColor = raw.playlist; } catch (e) {} }
 
 // 体素城市:把歌单面板整个 DOM 迁进视觉控制台(#fx-panel),退出体素再移回原位(只体素生效)
@@ -1779,6 +1832,7 @@ function updateVoxelCity(dt) {
     fu.uWarmCore.value.copy(u.uWarmCore.value); fu.uWarmEdge.value.copy(u.uWarmEdge.value);
     fu.uRippleColor.value.copy(u.uRippleColor.value);
     if (fu.uRippleColorHot && u.uRippleColorHot) fu.uRippleColorHot.value.copy(u.uRippleColorHot.value);
+    var _floatBlockScale = voxFloatBlockScaleValue(fx && fx.voxFloatBlockScale);               // 一帧只归一化一次，80 个实例复用
     if (_voxFbMesh.visible) for (var _bi = 0; _bi < VOX_FB_COUNT; _bi++) {
       var _blk = _voxFbBlocks[_bi];
       var _bob = Math.sin(_voxClock * (0.55 + _blk.rotationSpeed) + _blk.phase) * 0.45;    // 原作 506
@@ -1789,7 +1843,7 @@ function updateVoxelCity(dt) {
         _voxClock * _blk.rotationSpeed * 0.45
       );                                                                                   // 原作 508-512
       _voxFbQuat.setFromEuler(_voxFbEuler);
-      var _scl = _blk.baseScale * _pulseScale;                                             // 原作 514
+      var _scl = _blk.baseScale * _pulseScale * _floatBlockScale;                             // 100%=原版，200%=移植版大方块观感
       _voxDummyScale.set(_scl, _scl, _scl);
       _voxDummyMat.compose(_voxDummyPos, _voxFbQuat, _voxDummyScale);
       _voxFbMesh.setMatrixAt(_bi, _voxDummyMat);

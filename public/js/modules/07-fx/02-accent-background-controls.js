@@ -69,9 +69,6 @@ function customBackgroundCropNumber(key, fallback, min, max) {
   if (!isFinite(n)) n = min;
   return clampRange(n, min, max);
 }
-var customBackgroundCropModalState = null;
-var customBackgroundCropModalBound = false;
-var customBackgroundCropModalObjectUrl = '';
 function customBackgroundAlbumCoverSource() {
   var src = '';
   try {
@@ -252,8 +249,6 @@ function updateCustomBackgroundControls() {
   var picker = document.getElementById('bg-color-picker');
   var value = document.getElementById('bg-color-value');
   var imageValue = document.getElementById('bg-image-value');
-  var albumBtn = document.getElementById('bg-album-toggle-btn');
-  var cropBtn = document.getElementById('bg-media-crop-btn');
   var customColor = fx.backgroundColorMode === 'custom' || !!fx.backgroundColorCustom;
   if (picker) picker.value = color;
   if (value) value.textContent = customColor ? color.toUpperCase() : '\u5c01\u9762\u6e10\u53d8';
@@ -268,14 +263,6 @@ function updateCustomBackgroundControls() {
   setRange('fx-bgcropy', customBackgroundCropNumber('backgroundMediaCropY', fxDefaults.backgroundMediaCropY == null ? 50 : fxDefaults.backgroundMediaCropY, 0, 100));
   setRange('fx-bgzoom', customBackgroundCropNumber('backgroundMediaZoom', fxDefaults.backgroundMediaZoom == null ? 1 : fxDefaults.backgroundMediaZoom, 1, 2.8));
   if (imageValue) imageValue.textContent = customBackgroundMediaLabel(fx.backgroundMedia || fx.backgroundImage);
-  if (albumBtn) {
-    albumBtn.classList.toggle('active', typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover());
-    albumBtn.setAttribute('aria-pressed', albumBtn.classList.contains('active') ? 'true' : 'false');
-  }
-  if (cropBtn) {
-    cropBtn.disabled = !activeMedia;
-    cropBtn.title = activeMedia ? '\u91cd\u65b0\u88c1\u5207\u5df2\u8bbe\u7f6e\u7684\u80cc\u666f\u5a92\u4f53' : '\u5148\u9009\u62e9\u5c01\u9762\u3001\u56fe\u7247\u6216\u89c6\u9891';
-  }
   updateCustomBackgroundMediaPreview(activeMedia);
   applyBackgroundMediaHint();
 }
@@ -328,9 +315,6 @@ function setCustomBackgroundAlbumCover(enabled, silent) {
   saveLyricLayout({ user: true, reason: 'backgroundAlbumCover' });
   if (!silent) showToast(fx.backgroundAlbumCover ? '\u80cc\u666f\u5a92\u4f53: \u5c01\u9762\u539f\u56fe' : '\u80cc\u666f\u5a92\u4f53: \u5df2\u5173\u95ed\u5c01\u9762');
 }
-function toggleCustomBackgroundAlbumCover() {
-  setCustomBackgroundAlbumCover(!(typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover()));
-}
 function setCustomBackgroundCrop(key, value, silent) {
   var allowed = {
     backgroundMediaCropX: [0, 100, 50],
@@ -353,199 +337,6 @@ function resetCustomBackgroundCrop() {
   saveLyricLayout({ user: true, reason: 'backgroundMediaCrop' });
   showToast('\u80cc\u666f\u88c1\u5207\u5df2\u590d\u4f4d');
 }
-function customBackgroundCropSnapshot() {
-  return {
-    x: customBackgroundCropNumber('backgroundMediaCropX', fxDefaults.backgroundMediaCropX == null ? 50 : fxDefaults.backgroundMediaCropX, 0, 100),
-    y: customBackgroundCropNumber('backgroundMediaCropY', fxDefaults.backgroundMediaCropY == null ? 50 : fxDefaults.backgroundMediaCropY, 0, 100),
-    zoom: customBackgroundCropNumber('backgroundMediaZoom', fxDefaults.backgroundMediaZoom == null ? 1 : fxDefaults.backgroundMediaZoom, 1, 2.8)
-  };
-}
-function applyCustomBackgroundCropSnapshot(snapshot) {
-  if (!snapshot) return;
-  fx.backgroundMediaCropX = clampRange(Number(snapshot.x), 0, 100);
-  fx.backgroundMediaCropY = clampRange(Number(snapshot.y), 0, 100);
-  fx.backgroundMediaZoom = clampRange(Number(snapshot.zoom), 1, 2.8);
-  updateCustomBackgroundControls();
-  updateCustomBackgroundCropModalView();
-}
-function customBackgroundCropMediaSrc(media) {
-  if (!media) return '';
-  if (media.type === 'image') return media.src || '';
-  if (media.type === 'video') {
-    var activeVideo = document.getElementById('custom-bg-video');
-    var activeSrc = activeVideo && (activeVideo.currentSrc || activeVideo.getAttribute('src')) || '';
-    return activeSrc || media.src || '';
-  }
-  return '';
-}
-function bindCustomBackgroundCropModal() {
-  if (customBackgroundCropModalBound) return;
-  customBackgroundCropModalBound = true;
-  var stage = document.getElementById('background-crop-stage');
-  var zoom = document.getElementById('background-crop-zoom');
-  if (!stage || !zoom) return;
-  stage.addEventListener('pointerdown', function (e) {
-    if (!customBackgroundCropModalState) return;
-    e.preventDefault();
-    customBackgroundCropModalState.dragging = true;
-    customBackgroundCropModalState.lastX = e.clientX;
-    customBackgroundCropModalState.lastY = e.clientY;
-    stage.classList.add('dragging');
-    if (stage.setPointerCapture) {
-      try { stage.setPointerCapture(e.pointerId); } catch (err) { }
-    }
-  });
-  stage.addEventListener('pointermove', function (e) {
-    if (!customBackgroundCropModalState || !customBackgroundCropModalState.dragging) return;
-    e.preventDefault();
-    var rect = stage.getBoundingClientRect();
-    var dx = e.clientX - customBackgroundCropModalState.lastX;
-    var dy = e.clientY - customBackgroundCropModalState.lastY;
-    customBackgroundCropModalState.lastX = e.clientX;
-    customBackgroundCropModalState.lastY = e.clientY;
-    var zoomFactor = Math.max(1, Number(fx.backgroundMediaZoom) || 1);
-    var nextX = (Number(fx.backgroundMediaCropX) || 50) - (dx / Math.max(1, rect.width)) * 100 / zoomFactor;
-    var nextY = (Number(fx.backgroundMediaCropY) || 50) - (dy / Math.max(1, rect.height)) * 100 / zoomFactor;
-    applyCustomBackgroundCropSnapshot({ x: nextX, y: nextY, zoom: zoomFactor });
-  });
-  function stopDrag() {
-    if (!customBackgroundCropModalState) return;
-    customBackgroundCropModalState.dragging = false;
-    stage.classList.remove('dragging');
-  }
-  stage.addEventListener('pointerup', stopDrag);
-  stage.addEventListener('pointercancel', stopDrag);
-  stage.addEventListener('wheel', function (e) {
-    if (!customBackgroundCropModalState) return;
-    e.preventDefault();
-    var current = customBackgroundCropSnapshot();
-    current.zoom = clampRange(current.zoom + (e.deltaY < 0 ? 0.08 : -0.08), 1, 2.8);
-    applyCustomBackgroundCropSnapshot(current);
-  }, { passive: false });
-  zoom.addEventListener('input', function () {
-    if (!customBackgroundCropModalState) return;
-    var current = customBackgroundCropSnapshot();
-    current.zoom = clampRange(Number(zoom.value) || 1, 1, 2.8);
-    applyCustomBackgroundCropSnapshot(current);
-  });
-}
-function updateCustomBackgroundCropModalView() {
-  var snapshot = customBackgroundCropSnapshot();
-  var zoom = document.getElementById('background-crop-zoom');
-  if (zoom) zoom.value = snapshot.zoom;
-  ['background-crop-stage', 'background-crop-preview'].forEach(function (id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.style.setProperty('--bg-crop-modal-x', snapshot.x.toFixed(1) + '%');
-    el.style.setProperty('--bg-crop-modal-y', snapshot.y.toFixed(1) + '%');
-    el.style.setProperty('--bg-crop-modal-zoom', snapshot.zoom.toFixed(3));
-  });
-}
-function releaseCustomBackgroundCropModalObjectUrl() {
-  if (customBackgroundCropModalObjectUrl) {
-    URL.revokeObjectURL(customBackgroundCropModalObjectUrl);
-    customBackgroundCropModalObjectUrl = '';
-  }
-}
-function setCustomBackgroundCropModalSource(media, src) {
-  var stage = document.getElementById('background-crop-stage');
-  var preview = document.getElementById('background-crop-preview');
-  var img = document.getElementById('background-crop-img');
-  var video = document.getElementById('background-crop-video');
-  var previewImg = document.getElementById('background-crop-preview-img');
-  var previewVideo = document.getElementById('background-crop-preview-video');
-  [stage, preview].forEach(function (el) {
-    if (!el) return;
-    el.classList.toggle('media-image', media && media.type === 'image');
-    el.classList.toggle('media-video', media && media.type === 'video');
-  });
-  if (img) img.removeAttribute('src');
-  if (previewImg) previewImg.removeAttribute('src');
-  [video, previewVideo].forEach(function (el) {
-    if (!el) return;
-    el.pause();
-    el.removeAttribute('src');
-    el.load();
-  });
-  if (!src) return;
-  if (media.type === 'image') {
-    if (img) img.src = src;
-    if (previewImg) previewImg.src = src;
-  } else if (media.type === 'video') {
-    [video, previewVideo].forEach(function (el) {
-      if (!el) return;
-      el.src = src;
-      el.muted = true;
-      el.loop = true;
-      el.playsInline = true;
-      var p = el.play();
-      if (p && p.catch) p.catch(function () { });
-    });
-  }
-}
-function openCustomBackgroundCropModal() {
-  var media = customBackgroundActiveMedia();
-  if (!media) {
-    showToast('\u5148\u9009\u62e9\u5c01\u9762\u3001\u56fe\u7247\u6216\u89c6\u9891');
-    return;
-  }
-  bindCustomBackgroundCropModal();
-  var modal = document.getElementById('background-crop-modal');
-  if (!modal) return;
-  releaseCustomBackgroundCropModalObjectUrl();
-  customBackgroundCropModalState = {
-    media: media,
-    original: customBackgroundCropSnapshot(),
-    dragging: false,
-    lastX: 0,
-    lastY: 0
-  };
-  var src = customBackgroundCropMediaSrc(media);
-  if (media.type === 'video' && !src && media.id) {
-    getCustomBackgroundBlob(media.id).then(function (blob) {
-      if (!customBackgroundCropModalState || customBackgroundCropModalState.media !== media || !blob) return;
-      releaseCustomBackgroundCropModalObjectUrl();
-      customBackgroundCropModalObjectUrl = URL.createObjectURL(blob);
-      setCustomBackgroundCropModalSource(media, customBackgroundCropModalObjectUrl);
-    }).catch(function () { showToast('\u80cc\u666f\u89c6\u9891\u8bfb\u53d6\u5931\u8d25'); });
-  } else {
-    setCustomBackgroundCropModalSource(media, src);
-  }
-  updateCustomBackgroundCropModalView();
-  openGsapModal(modal);
-  var stage = document.getElementById('background-crop-stage');
-  if (stage && window.gsap) window.gsap.fromTo(stage, { scale: 0.985 }, { scale: 1, duration: 0.72, ease: 'expo.out', overwrite: true });
-}
-function closeCustomBackgroundCropModal(restoreOriginal) {
-  var modal = document.getElementById('background-crop-modal');
-  var original = customBackgroundCropModalState && customBackgroundCropModalState.original;
-  if (restoreOriginal && original) applyCustomBackgroundCropSnapshot(original);
-  closeGsapModal(modal, function () {
-    setCustomBackgroundCropModalSource({ type: 'image' }, '');
-    releaseCustomBackgroundCropModalObjectUrl();
-    customBackgroundCropModalState = null;
-  });
-}
-function cancelCustomBackgroundCropModal() {
-  closeCustomBackgroundCropModal(true);
-}
-function resetCustomBackgroundCropInModal() {
-  applyCustomBackgroundCropSnapshot({
-    x: fxDefaults.backgroundMediaCropX == null ? 50 : fxDefaults.backgroundMediaCropX,
-    y: fxDefaults.backgroundMediaCropY == null ? 50 : fxDefaults.backgroundMediaCropY,
-    zoom: fxDefaults.backgroundMediaZoom == null ? 1 : fxDefaults.backgroundMediaZoom
-  });
-}
-function commitCustomBackgroundCropModal() {
-  saveLyricLayout({ user: true, reason: 'backgroundMediaCrop' });
-  showToast('\u80cc\u666f\u88c1\u5207\u5df2\u66f4\u65b0');
-  closeCustomBackgroundCropModal(false);
-}
-function openCustomBackgroundCropModalSoon() {
-  setTimeout(function () {
-    if (customBackgroundActiveMedia()) openCustomBackgroundCropModal();
-  }, 80);
-}
 function setCustomBackgroundImage(src, silent) {
   var image = normalizeCustomBackgroundImage(src);
   fx.backgroundImage = image;
@@ -554,9 +345,6 @@ function setCustomBackgroundImage(src, silent) {
   updateCustomBackgroundControls();
   saveLyricLayout({ user: true, reason: 'backgroundImage' });
   if (!silent) showToast(fx.backgroundImage ? '背景图片已应用' : '背景图片已清除');
-}
-function clearCustomBackgroundImage() {
-  setCustomBackgroundImage('');
 }
 function setCustomBackgroundMedia(media, silent) {
   media = normalizeCustomBackgroundMedia(media);
@@ -606,7 +394,6 @@ function readBackgroundImageFile(file) {
         try { out = cv.toDataURL('image/jpeg', 0.86); } catch (err2) { out = String(e.target.result || ''); }
       }
       setCustomBackgroundImage(out);
-      openCustomBackgroundCropModalSoon();
     };
     img.onerror = function () { showToast('背景图片读取失败'); };
     img.src = e.target.result;
@@ -622,7 +409,6 @@ function readBackgroundVideoFile(file) {
   var id = 'bg-video-' + Date.now() + '-' + Math.random().toString(16).slice(2);
   putCustomBackgroundBlob(id, file, { name: file.name || '', mime: file.type || '', size: file.size || 0 }).then(function () {
     setCustomBackgroundMedia({ type: 'video', id: id, name: file.name || '', mime: file.type || '', size: file.size || 0 });
-    openCustomBackgroundCropModalSoon();
   }).catch(function (err) {
     console.warn('background video store failed:', err);
     if ((file.size || 0) > 18 * 1024 * 1024) {
@@ -632,7 +418,6 @@ function readBackgroundVideoFile(file) {
     var reader = new FileReader();
     reader.onload = function (e) {
       setCustomBackgroundMedia({ type: 'video', src: String(e.target.result || ''), name: file.name || '', mime: file.type || '', size: file.size || 0 });
-      openCustomBackgroundCropModalSoon();
     };
     reader.onerror = function () { showToast('背景视频读取失败'); };
     reader.readAsDataURL(file);

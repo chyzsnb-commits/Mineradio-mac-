@@ -29,6 +29,7 @@ function bindFxPanel() {
     ['fx-color', 'color'], ['fx-bloom', 'bloomStrength'], ['fx-scatter', 'scatter'], ['fx-bgfade', 'bgFade'],
     ['fx-voxsens', 'voxSensitivity'],
     ['fx-voxrotspeed', 'voxRotateSpeed'],
+    ['fx-voxfloatblockscale', 'voxFloatBlockScale'],
   ];
   ids.forEach(function (pair) {
     var el = document.getElementById(pair[0]);
@@ -123,10 +124,14 @@ function bindFxPanel() {
       if (pair[1] === 'lyricTranslationScale') fx.lyricTranslationScale = clampRange(fx.lyricTranslationScale, 0.46, 1.12);
       if (pair[1] === 'lyricTranslationOpacity') fx.lyricTranslationOpacity = clampRange(fx.lyricTranslationOpacity, 0.20, 1);
       if (pair[1] === 'lyricGlitchJitter') fx.lyricGlitchJitter = clampRange(fx.lyricGlitchJitter, 0, 1.8);
+      if (pair[1] === 'voxFloatBlockScale') fx.voxFloatBlockScale = clampRange(fx.voxFloatBlockScale, 1, 2);
       if (out) out.textContent = pair[1] === 'coverResolution'
         ? coverParticleCountLabel(fx.coverResolution)
+        : pair[1] === 'voxFloatBlockScale'
+          ? Math.round(fx.voxFloatBlockScale * 100) + '%'
         : (pair[1] === 'lyricWeight' || pair[1] === 'controlGlassChromaticOffset' || pair[1] === 'playlistPanelGlassBlur' || pair[1] === 'backgroundMediaCropX' || pair[1] === 'backgroundMediaCropY' || pair[1] === 'lyricTiltX' || pair[1] === 'lyricTiltY' || pair[1] === 'shelfAngleY' || pair[1] === 'shelfDetailAngleX' || pair[1] === 'shelfDetailAngleY' ? String(Math.round(fx[pair[1]])) : Number(el.value).toFixed(pair[1] === 'lyricLetterSpacing' ? 3 : 2));
       syncFxUniforms();
+      if (pair[1] === 'voxFloatBlockScale' && typeof saveVoxToggles === 'function') saveVoxToggles();
       if (/^playlistPanel/.test(pair[1])) applyPlaylistPanelFxSettings();
       if (/^shelf(Size|OffsetX|OffsetY|OffsetZ|AngleY|Opacity|BgOpacity|Detail|Summon|Camera)/.test(pair[1]) && shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
       syncLyricRealtimeFxChange(pair[1], { deferred: true });
@@ -326,6 +331,7 @@ function toggleFx(key) {
   }
   fx[key] = !fx[key];
   if (/^vox/.test(key) && typeof saveVoxToggles === 'function') saveVoxToggles();   // 体素开关独立持久化
+  if (key === 'voxFloatBlocks' && typeof updateVoxFloatBlockScaleControl === 'function') updateVoxFloatBlockScaleControl();
   var toggleId = 't-' + (key === 'floatLayer' ? 'float' : key === 'aiDepth' ? 'aidepth' : key);
   var toggle = document.getElementById(toggleId);
   if (toggle) toggle.classList.toggle('on', fx[key]);
@@ -432,6 +438,7 @@ function resetFx() {
   if (fx.floatLayer) createFloatLayer(); else destroyFloatLayer();
   if (shelfManager && shelfManager.rebuild) shelfManager.rebuild(true);
   if (shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
+  if (typeof saveVoxToggles === 'function') saveVoxToggles();
   saveLyricLayout({ user: true, reason: 'resetFx' });
   showToast('已恢复默认参数');
 }

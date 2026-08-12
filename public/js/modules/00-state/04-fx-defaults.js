@@ -137,6 +137,7 @@ var fxDefaults = {
   voxMeteors: true,
   voxGhostCover: true,   // 音域回响:上方封面图层
   voxFloatBlocks: true,  // 音域回响:悬浮方块(蓝方块+白线框)
+  voxFloatBlockScale: 1, // 1=原版大小，2=移植版大方块观感；只缩放现有实例，不增加数量
   voxShimmer: true,      // 音域回响:地形散落发光小方块的顶面闪烁/棱边火花/微光(关=uShimmer 0)
   voxSensitivity: 1.0,
   voxRotateSpeed: 0.5,

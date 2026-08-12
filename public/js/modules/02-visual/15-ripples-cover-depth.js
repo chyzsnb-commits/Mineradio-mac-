@@ -551,8 +551,10 @@ function syncTouchBarTrack(song, isPlayingOverride) {
 function updateControlTrackInfo(song) {
   song = song || {};
   var title = document.getElementById('control-title');
+  var titleText = document.getElementById('control-title-text');
   var artist = document.getElementById('control-artist');
-  if (title) title.textContent = song.name || '';
+  if (titleText) titleText.textContent = song.name || '';
+  else if (title) title.textContent = song.name || '';
   if (artist) artist.textContent = song.artist || '';
   syncTouchBarTrack(song);
   updatePlaybackQualityUi();

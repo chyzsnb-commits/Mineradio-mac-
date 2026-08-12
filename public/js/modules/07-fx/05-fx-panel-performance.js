@@ -46,6 +46,8 @@ function setRange(id, value) {
   var out = el.parentElement.querySelector('output');
   if (out) out.textContent = id === 'fx-coverres'
     ? coverParticleCountLabel(value)
+    : id === 'fx-voxfloatblockscale'
+      ? Math.round(Number(value || 1) * 100) + '%'
     : (id === 'fx-lyricweight' || id === 'fx-lyriccustomlines' || id === 'fx-glassaberration' || id === 'fx-playlistblur' || id === 'fx-lyrictiltx' || id === 'fx-lyrictilty' || id === 'fx-shelfangle' || id === 'fx-shelfdetailanglex' || id === 'fx-shelfdetailangley' || id === 'fx-memory-interval' || id === 'fx-memory-threshold' ? String(Math.round(Number(value) || 0)) : Number(value).toFixed(id === 'fx-lyricspacing' ? 3 : 2));
 }
 function updateDevelopmentFxControls() {
@@ -370,6 +372,16 @@ function updatePerfHud() {
     '<div class="ph-tip ph-tip-btn' + (memorySaverActive() ? ' on' : '') + '" onclick="toggleMemorySaver()" title="一键把渲染分辨率降到75%,更凉更省内存;再点恢复">' +
     (memorySaverActive() ? '✓ 省内存档 开(渲染 75%)· 点这里恢复' : '卡顿 / 发烫 → 点这里一键省内存') + '</div>';
 }
+function updateVoxFloatBlockScaleControl() {
+  var input = document.getElementById('fx-voxfloatblockscale');
+  var row = document.getElementById('vox-float-block-scale-row');
+  var disabled = fx.voxFloatBlocks === false;
+  if (input) input.disabled = disabled;
+  if (row) {
+    row.classList.toggle('disabled', disabled);
+    row.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+  }
+}
 function updateFxInputs() {
   normalizeDevelopmentLockedFxState();
   applyShelfCameraDefaultAngle(false);
@@ -495,6 +507,7 @@ function updateFxInputs() {
   if (voxResSeg) voxResSeg.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b.dataset.voxres === ((fx && fx.voxRes) || 'mid')); });
   if (typeof setRange === 'function') setRange('fx-voxsens', fx.voxSensitivity == null ? 1 : fx.voxSensitivity);
   if (typeof setRange === 'function') setRange('fx-voxrotspeed', fx.voxRotateSpeed == null ? 0.5 : fx.voxRotateSpeed);
+  if (typeof setRange === 'function') setRange('fx-voxfloatblockscale', fx.voxFloatBlockScale == null ? 1 : fx.voxFloatBlockScale);
   var voxCoverColorToggle = document.getElementById('t-voxCoverColor');
   if (voxCoverColorToggle) voxCoverColorToggle.classList.toggle('on', fx.voxCoverColor !== false);
   var voxMeteorsToggle = document.getElementById('t-voxMeteors');
@@ -503,6 +516,7 @@ function updateFxInputs() {
   if (voxGhostCoverToggle) voxGhostCoverToggle.classList.toggle('on', fx.voxGhostCover !== false);
   var voxFloatBlocksToggle = document.getElementById('t-voxFloatBlocks');
   if (voxFloatBlocksToggle) voxFloatBlocksToggle.classList.toggle('on', fx.voxFloatBlocks !== false);
+  updateVoxFloatBlockScaleControl();
   var voxShimmerToggle = document.getElementById('t-voxShimmer');
   if (voxShimmerToggle) voxShimmerToggle.classList.toggle('on', fx.voxShimmer !== false);
   refreshPresetGrid();
@@ -590,6 +604,7 @@ function resetFxSliderValue(id, key, btn) {
   if (key === 'controlGlassChromaticOffset') applyControlGlassChromaticOffset();
   if (/^playlistPanel/.test(key)) applyPlaylistPanelFxSettings();
   syncFxUniforms();
+  if (key === 'voxFloatBlockScale' && typeof saveVoxToggles === 'function') saveVoxToggles();
   if (/^shelf/.test(key) && shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
   syncLyricRealtimeFxChange(key);
   saveLyricLayout({ syncDisk: key === 'controlGlassChromaticOffset', user: true, reason: 'reset:' + key });
