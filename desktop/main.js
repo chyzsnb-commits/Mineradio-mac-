@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, crashReporter, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, crashReporter, powerMonitor, systemPreferences } = require('electron');
 const net = require('net');
 const http = require('http');
 const path = require('path');
@@ -16,7 +16,13 @@ const { readSystemGpuUsage } = require('./gpu-usage');
 const { createAiStemService } = require('./ai-stem-separator');
 const { createCrashDiagnostics } = require('./crash-diagnostics');
 const { applyOfficialProviderLogin } = require('./official-login-bridge');
+const { createCameraPermissionController } = require('./camera-permission');
 const RELEASE_POLICY = require('./release-policy');
+const cameraPermissionController = createCameraPermissionController({
+  platform: process.platform,
+  systemPreferences,
+  shell,
+});
 // macOS Touch Bar 播放控制（2016-2019 Intel MBP）。无 Touch Bar 的机器安全 no-op。
 const touchbar = require('./touchbar');
 const { extractKugouAuth } = require('../kugou-api');
@@ -2100,6 +2106,18 @@ ipcMain.handle('mineradio-get-gpu-diagnostics', () => {
 
 ipcMain.handle('mineradio-get-crash-diagnostics', () => {
   return crashDiagnostics.snapshot();
+});
+
+ipcMain.handle('mineradio-camera-permission-request', async (event) => {
+  const senderUrl = event && event.sender && !event.sender.isDestroyed() ? event.sender.getURL() : '';
+  if (!isLocalAppUrl(senderUrl)) return { ok: false, status: 'unknown', requested: false, settingsRequired: false, error: 'UNTRUSTED_SENDER' };
+  return cameraPermissionController.requestCameraAccess();
+});
+
+ipcMain.handle('mineradio-camera-permission-open-settings', async (event) => {
+  const senderUrl = event && event.sender && !event.sender.isDestroyed() ? event.sender.getURL() : '';
+  if (!isLocalAppUrl(senderUrl)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  return cameraPermissionController.openCameraPrivacySettings();
 });
 
 // 负载 HUD 设备指标:CPU + macOS 系统 GPU + 内存(HUD 可见时渲染层每 2s 拉一次)

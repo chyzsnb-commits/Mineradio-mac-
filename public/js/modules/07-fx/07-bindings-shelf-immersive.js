@@ -595,6 +595,7 @@ function setParticleLyricsSilently(on) {
     if (typeof scheduleStageLyricFullTrackWarmup === 'function') scheduleStageLyricFullTrackWarmup('track-ready', 220);
   } else clearStageLyrics();
   lyricsVisible = fx.particleLyrics;
+  if (typeof syncLyricsToggleButton === 'function') syncLyricsToggleButton();
 }
 
 function updateImmersiveButton() {

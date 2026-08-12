@@ -601,6 +601,14 @@ function renderLyrics(options) {
   if (!fallbackTitleOnly && typeof scheduleStageLyricFullTrackWarmup === 'function') scheduleStageLyricFullTrackWarmup(restoreWarmup ? 'track-ready-fast' : 'track-ready', restoreWarmup ? 120 : 180);
   // v8: 歌词渲染由 stageLyrics 在每帧 tickLyricsParticles 里推动
 }
+function syncLyricsToggleButton() {
+  var btn = document.getElementById('lyrics-toggle-btn');
+  if (!btn) return;
+  var enabled = !!(fx && fx.particleLyrics);
+  btn.classList.toggle('active', !!fx.particleLyrics);
+  btn.setAttribute('aria-pressed', fx.particleLyrics ? 'true' : 'false');
+  btn.title = enabled ? '关闭歌词' : '显示歌词';
+}
 function toggleLyricsPanel(force) {
   if (force === false) fx.particleLyrics = false;
   else if (force === true) fx.particleLyrics = true;
@@ -616,6 +624,8 @@ function toggleLyricsPanel(force) {
     showToast('歌词已关闭');
   }
   lyricsVisible = fx.particleLyrics;
+  syncLyricsToggleButton();
+  if (force == null && typeof saveLyricLayout === 'function') saveLyricLayout({ user: true, reason: 'particleLyrics' });
 }
 function updateLyricsHighlight() { /* v8: 由 tickLyricsParticles 接管 */ }
 

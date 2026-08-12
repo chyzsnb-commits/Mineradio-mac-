@@ -351,12 +351,41 @@ async function ensureGestureEngine() {
   gestureStats.delegate = (typeof gestureDelegate !== 'undefined' && gestureDelegate) || 'GPU'; gestureStats.transport = 'main';
 }
 
+async function requestGestureCameraAccess() {
+  if (!_hpBridge || typeof _hpBridge.requestCameraAccess !== 'function') {
+    return { ok: true, status: 'browser', requested: false, settingsRequired: false };
+  }
+  var result = await _hpBridge.requestCameraAccess();
+  if (result && result.ok) return result;
+  var status = result && result.status || 'unknown';
+  var error = new Error('GESTURE_CAMERA_PERMISSION_' + String(status).toUpperCase());
+  error.name = status === 'denied' ? 'NotAllowedError' : 'GestureCameraPermissionError';
+  error.gestureCameraPermissionStatus = status;
+  error.gestureCameraSettingsRequired = !!(result && result.settingsRequired);
+  throw error;
+}
+
+function gestureStartFailureMessage(error) {
+  var code = String(error && (error.code || error.message) || '');
+  var name = String(error && error.name || '');
+  var permissionStatus = String(error && error.gestureCameraPermissionStatus || '');
+  if (code.indexOf('GESTURE_CAMERA_FRAME_TIMEOUT') >= 0) return '摄像头没有画面或正被其他应用占用';
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return '没有检测到可用摄像头';
+  if (name === 'NotReadableError' || name === 'TrackStartError') return '摄像头正被其他应用占用';
+  if (permissionStatus === 'restricted') return '摄像头受系统限制，无法用于手势识别';
+  if (permissionStatus === 'denied' || name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    return '摄像头权限未开启，请在系统设置 > 隐私与安全性 > 摄像头中允许 Mineradio，重启后再试';
+  }
+  return '手势识别组件启动失败，请重试';
+}
+
 async function startGestureControl() {
   if (gestureActive || gestureStarting) return;
   gestureStarting = true;
   var gen = ++gestureStartGen;
   showToast('正在加载手势识别…');
   try {
+    await requestGestureCameraAccess();
     gestureStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30, max: 30 } },   // Worker 保持 30fps 低负载；双手跟手性由捏合中点与滤波参数改善
       audio: false,
@@ -403,7 +432,10 @@ async function startGestureControl() {
     stopGestureWorker();
     if (_hpBridge) { try { _hpBridge.handposeStop(); } catch (e2) { } }
     _hpInFlight = false; gestureEngineMode = '';
-    showToast('手势启动失败 (需要摄像头权限)');
+    if (e && e.gestureCameraSettingsRequired && _hpBridge && typeof _hpBridge.openCameraPrivacySettings === 'function') {
+      try { await _hpBridge.openCameraPrivacySettings(); } catch (e3) { }
+    }
+    showToast(gestureStartFailureMessage(e));
     fx.cam = 'off';
     document.querySelectorAll('#cam-seg button').forEach(function (b) { b.classList.toggle('active', b.dataset.cam === 'off'); });
   }
