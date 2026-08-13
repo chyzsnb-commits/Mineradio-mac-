@@ -86,6 +86,7 @@ function setPreset(p, opts) {
     else if (p === 8) { orbit.userRadius = 8.4; orbit.userPhi = 0.08; orbit.userTheta = 0.0; orbit.baselineRadius = 8.4; orbit.baselinePhi = 0.08; }
     else if (p === 9) { orbit.userRadius = 7.6; orbit.userPhi = 0.55; orbit.userTheta = 0.0; orbit.baselineRadius = 7.6; orbit.baselinePhi = 0.55; }
     else if (p === 10){ orbit.userRadius = 50.0; orbit.userPhi = 0.20; orbit.userTheta = 0.0; orbit.baselineRadius = 50.0; orbit.baselinePhi = 0.20; }   // 音域回响：远处低角度横扫整片地形
+    else if (p === 11){ orbit.userRadius = 7.2; orbit.userPhi = 0.04; orbit.userTheta = 0.0; orbit.baselineRadius = 7.2; orbit.baselinePhi = 0.04; }   // 词境穿行：镜头内独立景深舞台
     else { orbit.userRadius = 6.6; orbit.userPhi = 0.08; orbit.userTheta = 0.0; orbit.baselineRadius = 6.6; orbit.baselinePhi = 0.08; }
     // 音域回响体素地形场景很大,放开半径夹紧;其它预设保持原值
     if (p === 10) { orbit.minRadius = 10.0; orbit.maxRadius = 180.0; }

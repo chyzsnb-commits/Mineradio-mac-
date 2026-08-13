@@ -1410,8 +1410,47 @@ function loadVoxToggles() {
 }
 function loadVoxBg() { try { var raw = JSON.parse(localStorage.getItem(VOX_BG_STORE_KEY) || '{}') || {}; if (raw.image) fx.voxBgImage = raw.image; if (raw.color) fx.voxBgColor = raw.color; if (raw.playlist) fx.voxPlaylistColor = raw.playlist; } catch (e) {} }
 
+// P10/P11 共用同一张普通 DOM 歌单。原宿主和当前接管者只能有一份状态，
+// 避免预设直接切换时把另一个视觉预设的临时 host 误记为“原位置”。
+var _visualPlaylistDockState = { owner: '', home: null };
+function _visualPlaylistDesiredOwner() {
+  if (voxelCityActive()) return 'voxel';
+  if (typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive()) return 'lyric-depth';
+  return '';
+}
+function _dockVisualPlaylist(owner, host, dock) {
+  var panel = document.getElementById('playlist-panel');
+  if (!panel) return false;
+
+  if (dock) {
+    if (!host) return false;
+    if (!_visualPlaylistDockState.home) {
+      _visualPlaylistDockState.home = { parent: panel.parentElement, next: panel.nextSibling };
+    }
+    _visualPlaylistDockState.owner = owner;
+    if (panel.parentElement !== host) host.appendChild(panel);
+    panel.classList.add('show');
+    return true;
+  }
+
+  // 同一帧里新预设可能已经接管；旧预设随后退出时不能再把面板拉走。
+  if (_visualPlaylistDockState.owner !== owner) return false;
+  // 旧预设也可能先执行退出；若目标仍是另一个共用歌单的预设，保留原宿主记录与当前页签，
+  // 等新预设在同一帧接管，避免中途回原位并误切回「预设」页。
+  var pendingOwner = _visualPlaylistDesiredOwner();
+  if (pendingOwner && pendingOwner !== owner) return false;
+  var home = _visualPlaylistDockState.home;
+  _visualPlaylistDockState.owner = '';
+  _visualPlaylistDockState.home = null;
+  if (!home || !home.parent) return false;
+  if (typeof fxPanelTab !== 'undefined' && fxPanelTab === 'playlist' && typeof setFxPanelTab === 'function') setFxPanelTab('presets');
+  panel.classList.remove('show');
+  if (home.next && home.next.parentElement === home.parent) home.parent.insertBefore(panel, home.next);
+  else home.parent.appendChild(panel);
+  return true;
+}
+
 // 体素城市:把歌单面板整个 DOM 迁进视觉控制台(#fx-panel),退出体素再移回原位(只体素生效)
-var _voxPlaylistHome = null;
 // 粒子高级参数滑块在体素下隐藏(JS 兜底:巨型样式表里 :has 规则实测有失效情况)
 function _voxToggleParticleSliders(hide) {
   ['fx-point','fx-speed','fx-twist','fx-color','fx-bloom','fx-bgfade','fx-scatter','fx-cineshake'].forEach(function (id) {
@@ -1425,9 +1464,8 @@ function _voxToggleParticleSliders(hide) {
   if (label && label.classList && label.classList.contains('fx-section-label')) label.style.display = hide ? 'none' : '';
 }
 function _voxDockPlaylist(dock) {
-  var pl = document.getElementById('playlist-panel');
   var fxp = document.getElementById('fx-panel');
-  if (!pl || !fxp) return;
+  if (!fxp) return;
   if (dock) {
     if (typeof organizeFxPanel === 'function') organizeFxPanel();
     var host = document.getElementById('vox-playlist-host');
@@ -1437,21 +1475,10 @@ function _voxDockPlaylist(dock) {
       var firstPage = fxp.querySelector('[data-fx-page="playlist"]');
       if (firstPage) firstPage.appendChild(host); else fxp.appendChild(host);
     }
-    if (pl.parentElement !== host) {
-      _voxPlaylistHome = { parent: pl.parentElement, next: pl.nextSibling };
-      host.appendChild(pl);
+    if (_dockVisualPlaylist('voxel', host, true)) {
       _voxApplyPlaylistColor();   // 应用自定义歌单颜色(若设)
-      pl.classList.add('show');   // 触发面板内容渲染 + 配合 docked CSS 常显
     }
-  } else if (_voxPlaylistHome) {
-    var home = _voxPlaylistHome; _voxPlaylistHome = null;
-    if (typeof fxPanelTab !== 'undefined' && fxPanelTab === 'playlist' && typeof setFxPanelTab === 'function') setFxPanelTab('presets');
-    if (pl.parentElement && pl.parentElement.id === 'vox-playlist-host') {
-      pl.classList.remove('show');
-      if (home.next && home.next.parentElement === home.parent) home.parent.insertBefore(pl, home.next);
-      else home.parent.appendChild(pl);
-    }
-  }
+  } else _dockVisualPlaylist('voxel', null, false);
 }
 
 function voxResDims() {

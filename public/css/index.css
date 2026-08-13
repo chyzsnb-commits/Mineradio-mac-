@@ -23,6 +23,11 @@ body.cursor-hidden * {
   cursor: none !important
 }
 
+/* 参考视频唯一可确认的鼠标反馈是浏览器手形光标；场景本身不做臆造的 hover 动画。 */
+body.lyric-depth-on:not(.cursor-hidden) #canvas-container canvas {
+  cursor: pointer
+}
+
 html.desktop-shell-root,
 html.desktop-shell-root body {
   background: transparent
@@ -14467,7 +14472,7 @@ body.vox-on #appearance-default-wrap{display:none}
 #vox-color-pick,#vox-bg-pick,#vox-pl-pick{pointer-events:auto!important}
 #vox-playlist-host{overscroll-behavior:contain}
 #vox-playlist-host #playlist-panel{overflow-y:auto!important;overscroll-behavior:contain!important;max-height:60vh!important}
-body:not(.vox-on) [data-fx-tab="playlist"],body:not(.vox-on) [data-fx-page="playlist"]{display:none!important}
+body:not(.vox-on):not(.lyric-depth-on) [data-fx-tab="playlist"],body:not(.vox-on):not(.lyric-depth-on) [data-fx-page="playlist"]{display:none!important}
 body.vox-on #vox-bg{display:block}
 /* 体素城市:控制台隐藏粒子相关 + 歌单架控件;摄像头交互(#cam-block)豁免(用户要求体素里可用) */
 body.vox-on #fx-stage-fold{display:block!important}
@@ -14481,6 +14486,10 @@ body.vox-on [data-fx-page="motion"] > *:not(#vox-fx-section):not(#fx-stage-fold)
 /* 体素城市:歌单迁进视觉控制台后,改成在控制台内"在流"显示(去掉固定定位/位移,常显) */
 #vox-playlist-host{margin:6px 0 10px}
 #vox-playlist-host #playlist-panel{position:static!important;left:auto!important;right:auto!important;top:auto!important;width:100%!important;max-height:60vh!important;opacity:1!important;transform:none!important;pointer-events:auto!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;background:transparent!important;border:none!important;padding:0!important}
+/* 词境穿行复用音域回响的歌单行为:歌单只在视觉控制台的普通列表中展示，不叠加 3D 歌单卡。
+   页面的显示仍交给 .fx-tab-page.active，不能与其它控制台页面同时强制展开。 */
+#lyric-depth-playlist-host{margin:6px 0 10px;overscroll-behavior:contain}
+#lyric-depth-playlist-host #playlist-panel{position:static!important;left:auto!important;right:auto!important;top:auto!important;width:100%!important;max-height:60vh!important;overflow-y:auto!important;overscroll-behavior:contain!important;opacity:1!important;transform:none!important;pointer-events:auto!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;background:transparent!important;border:none!important;padding:0!important}
 /* 总刷新率上限:屏幕达不到的档位灰显禁用 */
 #max-fps-seg button.seg-disabled,#max-fps-seg button:disabled{opacity:.3;cursor:not-allowed;filter:grayscale(.5)}
 /* 壁纸模式:整窗降桌面层后隐藏全部 UI 外壳(移植自 1.1.2 zip index.html:153-154,之前漏了这条→开壁纸满屏群魔乱舞) */

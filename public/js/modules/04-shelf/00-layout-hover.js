@@ -96,6 +96,7 @@ function canUseSideShelfWithoutPinnedOpen() {
   return !!shelfAlwaysVisible();
 }
 function shelfPreviewIsVisible() {
+  if (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf()) return false;
   if (shelfPlaybackSwitchGuardActive()) return false;
   return shelfHoverCue.guide || shelfHoverCue.zoneActive || shelfHoverCue.target > 0 || shelfHoverCue.value > 0.10 || shelfVisibility > 0.12;
 }
@@ -106,6 +107,7 @@ function shelfAutoHiddenInputReady() {
   return !!(shelfHoverCue.guide || shelfHoverCue.zoneActive || shelfHoverCue.value > 0.18 || shelfVisibility > 0.16);
 }
 function canShowShelfHoverCueAt(e) {
+  if (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf()) return false;
   if (!e) return false;
   if (shelfPlaybackSwitchGuardActive()) return false;
   if (!shelfHoverCue.guide) return false;

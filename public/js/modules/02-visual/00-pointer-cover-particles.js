@@ -1146,6 +1146,7 @@ function backgroundStarRiverTargetAlpha() {
   if (!fx || fx.backgroundStarRiver === false) return 0;
   if (Number(fx.preset) === 5) return 0;
   if (Number(fx.preset) === 10) return 0;   // 音域回响(我方体素预设,上游不识):有自己的暗底盘/封底体系,星河叠上去是杂色
+  if (Number(fx.preset) === 11) return 0;   // 词境穿行自带低密度景深星尘，避免叠成普通星河
   if (typeof voxelCityActive === 'function' && voxelCityActive()) return 0;
   if (typeof SKULL_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SKULL_PRESET_INDEX) return 0.38;
   return 0.34;

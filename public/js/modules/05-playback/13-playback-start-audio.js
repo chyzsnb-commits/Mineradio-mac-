@@ -840,6 +840,7 @@ async function playQueueAt(idx, opts) {
       var customCover = getCustomCoverForSong(song);
       var coverOpts = {
         trackToken: token,
+        clearWhenMissing: !(customCover || song.cover),
         deferHeavy: true,
         delay: firstVisualPlay ? 320 : (sameAlbumCoverSwitch ? 80 : 520),
         timeout: firstVisualPlay ? 1300 : 1700,

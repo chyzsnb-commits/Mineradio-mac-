@@ -1001,6 +1001,11 @@ function stageLyricUsesSingleLineSwap(mesh) {
 
 function updateStageLyrics3D(dt) {
   if (!stageLyrics.group) return;
+  if (typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive()) {
+    stageLyrics.group.visible = false;
+    return;
+  }
+  stageLyrics.group.visible = true;
   if (!fx.particleLyrics && !stageLyrics.current && (!stageLyrics.outgoing || !stageLyrics.outgoing.length)) return;
   if (!isFinite(stageLyrics.highBloom)) stageLyrics.highBloom = 0;
   if (!isFinite(stageLyrics.beatGlow)) stageLyrics.beatGlow = 0;
@@ -1993,6 +1998,7 @@ function markStageLyricsPlaybackResume(reason) {
 }
 
 function tickLyricsParticles() {
+  if (typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive()) return;
   if (!fx.particleLyrics) {
     if (stageLyrics.current || stageLyrics.currentText || (stageLyrics.outgoing && stageLyrics.outgoing.length)) clearStageLyrics();
     return;

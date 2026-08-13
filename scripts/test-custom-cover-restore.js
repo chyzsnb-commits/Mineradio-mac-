@@ -18,6 +18,34 @@ function extractFunction(source, name) {
   return match[0];
 }
 
+test('无封面歌曲不会在无缝切歌窗口残留上一首封面', () => {
+  const source = read('public/js/modules/03-beat/05-cover-loading-crop.js');
+  const sandbox = {
+    uniforms: { uHasCover: { value: 1 } },
+    currentCoverSource: { kind: 'url', src: 'old-cover' },
+    coverProcessToken: 0,
+    document: {
+      getElementById(id) {
+        if (id === 'thumb-cover') return { removeAttribute() {} };
+        return {};
+      },
+    },
+    coverApplyStillCurrent() { return true; },
+    setCoverDepthState() {},
+    resetFloatColorsToIdle() {},
+    setAlbumBackground() {},
+    setControlCoverSrc() {},
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(extractFunction(source, 'loadCoverFromUrl'), sandbox);
+
+  sandbox.loadCoverFromUrl('', { seamlessTrackSwitch: true, clearWhenMissing: true });
+
+  assert.equal(sandbox.uniforms.uHasCover.value, 0);
+  assert.equal(sandbox.currentCoverSource, null);
+  assert.equal(sandbox.coverProcessToken, 1);
+});
+
 test('QQ 专辑 MID 始终生成官方 T002 封面地址', () => {
   const server = read('server.js');
   const sandbox = {};

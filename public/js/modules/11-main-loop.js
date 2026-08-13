@@ -709,9 +709,10 @@ function animate() {
   tickGestureRotation(dt);
   var skullPresetActive = fx && fx.preset === SKULL_PRESET_INDEX;
   var voxelActive = typeof voxelCityActive === 'function' && voxelCityActive();
+  var lyricDepthPresetActive = typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive();
   var presetUsesStarRiverParticles = fx && Number(fx.preset) === 5;
   var presetStarRiverMuted = presetUsesStarRiverParticles && fx.backgroundStarRiver === false;
-  var hidePoints = skullPresetActive || voxelActive;
+  var hidePoints = skullPresetActive || voxelActive || lyricDepthPresetActive;
   particles.visible = !hidePoints && !presetStarRiverMuted;
   if (bloomParticles) bloomParticles.visible = !hidePoints && !presetStarRiverMuted && fx.bloom && fx.bloomStrength > 0.01;
   if (floatGroup) floatGroup.visible = !hidePoints;
@@ -742,6 +743,7 @@ function animate() {
   var stageLyricsPerfStart = performance.now();
   var stageLyricsStepDt = consumeFrameGate(mainFrameGates.stageLyrics, now, dt, targetMainStageLyricsFps(now), false, 'stage-lyrics');
   if (stageLyricsStepDt > 0) updateStageLyrics3D(stageLyricsStepDt);
+  if (typeof updateLyricDepthFlight === 'function') updateLyricDepthFlight(dt);
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.stage-lyrics', stageLyricsPerfStart);
   var desktopOverlayPerfStart = performance.now();
   var desktopOverlayStepDt = consumeFrameGate(mainFrameGates.desktopOverlay, now, dt, targetMainDesktopOverlayFps(now), false, 'desktop-overlay');
