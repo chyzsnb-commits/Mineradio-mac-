@@ -38,7 +38,8 @@ function defaultFreeCameraState() {
     fov: BASE_FOV,
     velocity: new THREE.Vector3(),
     keys: {},
-    resetTween: null
+    resetTween: null,
+    ownerPreset: null
   };
 }
 function readFreeCameraState() {
@@ -58,6 +59,7 @@ function readFreeCameraState() {
     state.fov = clampRange(Number(raw.fov) || BASE_FOV, 26, 72);
     state.locked = !!(raw.locked || raw.active);
     state.active = false;
+    state.ownerPreset = Number.isFinite(Number(raw.ownerPreset)) ? Number(raw.ownerPreset) : null;
   } catch (e) { }
   return state;
 }
@@ -136,6 +138,23 @@ function releaseFreeCameraPointerLock() {
   } catch (e) { }
 }
 
+function reconcileFreeCameraPresetOwnership(nextPreset) {
+  if (!freeCamera || !(freeCamera.active || freeCamera.locked || freeCamera.resetTween)) return false;
+  if (freeCamera.ownerPreset != null && Number(freeCamera.ownerPreset) === Number(nextPreset)) return false;
+  // 自由镜头只属于用户按 R 时所在的预设。切到另一个预设时结束旧会话，
+  // 避免旧预设仍锁着指针/移动相机，导致新预设看似“按钮无效”。
+  freeCamera.active = false;
+  freeCamera.locked = false;
+  freeCamera.resetTween = null;
+  freeCamera.ownerPreset = null;
+  freeCamera.keys = {};
+  if (freeCamera.velocity) freeCamera.velocity.set(0, 0, 0);
+  releaseFreeCameraPointerLock();
+  saveFreeCameraState();
+  updateFreeCameraHint();
+  return true;
+}
+
 document.addEventListener('pointerlockchange', function () {
   freeCameraPointer.seen = false;
   if (freeCamera && freeCamera.active && freeCameraPointerLock.desired && !freeCameraPointerLockActive()) {
@@ -154,6 +173,7 @@ function saveFreeCameraState() {
     localStorage.setItem(FREE_CAMERA_STORE_KEY, JSON.stringify({
       locked: !!freeCamera.locked,
       active: !!freeCamera.active,
+      ownerPreset: freeCamera.ownerPreset,
       position: { x: freeCamera.position.x, y: freeCamera.position.y, z: freeCamera.position.z },
       yaw: freeCamera.yaw,
       pitch: freeCamera.pitch,
@@ -299,6 +319,10 @@ function captureFreeCameraFromCurrent() {
 }
 function applyFreeCameraToCamera() {
   if (!freeCamera || !(freeCamera.active || freeCamera.locked)) return false;
+  var currentPreset = fx && Number.isFinite(Number(fx.preset)) ? Number(fx.preset) : null;
+  // 旧版本没有保存 ownerPreset。不能让这类历史锁定姿态污染当前预设；
+  // 用户在当前预设重新按 R 后会记录 ownerPreset，并立即恢复正常控制。
+  if (!freeCamera.active && (freeCamera.ownerPreset == null || Number(freeCamera.ownerPreset) !== currentPreset)) return false;
   var cameraShake = clampRange(Number(fx.cinemaShake) || 0, 0, 1.8);
   camera.position.copy(freeCamera.position);
   camera.rotation.order = 'YXZ';
@@ -372,6 +396,7 @@ function toggleFreeCamera() {
   captureFreeCameraFromCurrent();
   freeCamera.active = true;
   freeCamera.locked = true;
+  freeCamera.ownerPreset = fx && Number.isFinite(Number(fx.preset)) ? Number(fx.preset) : null;
   freeCamera.resetTween = null;
   freeCamera.keys = {};
   freeCameraPointer.seen = false;
@@ -410,9 +435,12 @@ function updateFreeCamera(dt) {
     }
     return;
   }
-  // 音域回响:R 固定(locked 非 active)后仍允许 WASD 平移——固定只表示退出鼠标飞行,机位仍可调
-  var voxLockedMove = !freeCamera.active && freeCamera.locked && typeof voxelCityActive === 'function' && voxelCityActive();
-  if (!freeCamera.active && !voxLockedMove) return;
+  // 音域回响 / 词境穿行：R 固定后仍允许 WASD 平移，固定只退出鼠标飞行，机位仍可微调。
+  var immersiveLockedMove = !freeCamera.active && freeCamera.locked && (
+    (typeof voxelCityActive === 'function' && voxelCityActive() && Number(freeCamera.ownerPreset) === 10) ||
+    (typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive() && Number(freeCamera.ownerPreset) === 11)
+  );
+  if (!freeCamera.active && !immersiveLockedMove) return;
   var keys = freeCamera.keys || {};
   FREE_CAMERA_MOVE.set(0, 0, 0);
   if (keys.KeyW) FREE_CAMERA_MOVE.z -= 1;
@@ -427,7 +455,7 @@ function updateFreeCamera(dt) {
     FREE_CAMERA_MOVE.normalize();
     FREE_CAMERA_EULER.set(freeCamera.pitch, freeCamera.yaw, 0, 'YXZ');
     FREE_CAMERA_MOVE.applyEuler(FREE_CAMERA_EULER);
-    // 音域回响场景庞大(半径~62·带缩放),平移速度 ×4 才跟得上;其它预设保持原速
+    // 音域回响场景庞大(半径~62·带缩放),平移速度 ×4 才跟得上;词境穿行保持精细原速。
     var speed = (keys.ShiftLeft || keys.ShiftRight ? 6.2 : 2.35) * ((typeof voxelCityActive === 'function' && voxelCityActive()) ? 4 : 1);
     targetVel.copy(FREE_CAMERA_MOVE).multiplyScalar(speed);
   }

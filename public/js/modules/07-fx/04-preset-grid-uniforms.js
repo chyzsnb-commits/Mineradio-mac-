@@ -68,6 +68,9 @@ function setPreset(p, opts) {
   p = Math.max(0, Math.min(presetMeta.length - 1, Number(p) || 0));
   var prev = fx.preset;
   var changed = prev !== p;
+  if (changed && typeof reconcileFreeCameraPresetOwnership === 'function') {
+    reconcileFreeCameraPresetOwnership(p);
+  }
   fx.preset = p;
   if (changed && prev === SKULL_PRESET_INDEX && p !== SKULL_PRESET_INDEX) clearSkullPresetResidue();
   if (p === SKULL_PRESET_INDEX) loadSkullParticleAsset();

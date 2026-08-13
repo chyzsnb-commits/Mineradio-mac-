@@ -285,11 +285,11 @@ function updateLyricDepthSettingsControls() {
     var state = interactionButton.querySelector('.lyric-depth-orbit-state');
     if (state) state.textContent = interaction ? '已开启' : '开启';
   }
-  var karaoke = !fx || fx.lyricDepthKaraokeHighlight !== false;
-  var karaokeToggle = document.getElementById('t-lyricDepthKaraokeHighlight');
-  if (karaokeToggle) {
-    karaokeToggle.classList.toggle('on', karaoke);
-    karaokeToggle.setAttribute('aria-pressed', karaoke ? 'true' : 'false');
+  var wordSweep = !fx || fx.lyricDepthWordSweep !== false;
+  var wordSweepToggle = document.getElementById('t-lyricDepthWordSweep');
+  if (wordSweepToggle) {
+    wordSweepToggle.classList.toggle('on', wordSweep);
+    wordSweepToggle.setAttribute('aria-pressed', wordSweep ? 'true' : 'false');
   }
 }
 function updateLyricDepthControlAvailability() {
@@ -320,12 +320,12 @@ function toggleLyricDepthInteraction() {
   if (typeof markRenderInteraction === 'function') markRenderInteraction('lyric-depth-interaction', 900);
   showToast(fx.lyricDepthInteraction ? '360° 词境漫游已开启' : '360° 词境漫游已关闭');
 }
-function toggleLyricDepthKaraokeHighlight() {
-  fx.lyricDepthKaraokeHighlight = fx.lyricDepthKaraokeHighlight === false;
+function toggleLyricDepthWordSweep() {
+  fx.lyricDepthWordSweep = fx.lyricDepthWordSweep === false;
   updateLyricDepthSettingsControls();
-  saveLyricLayout({ user: true, reason: 'lyricDepthKaraokeHighlight' });
-  if (typeof markRenderInteraction === 'function') markRenderInteraction('lyric-depth-karaoke', 500);
-  showToast(fx.lyricDepthKaraokeHighlight ? '跟唱明暗已开启' : '跟唱明暗已关闭');
+  saveLyricLayout({ user: true, reason: 'lyricDepthWordSweep' });
+  if (typeof markRenderInteraction === 'function') markRenderInteraction('lyric-depth-word-sweep', 500);
+  showToast(fx.lyricDepthWordSweep ? '逐字流光已开启' : '逐字流光已关闭');
 }
 function updateFxInputs() {
   normalizeDevelopmentLockedFxState();

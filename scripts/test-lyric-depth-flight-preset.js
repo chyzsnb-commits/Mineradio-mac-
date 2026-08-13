@@ -156,11 +156,13 @@ test('consumes live lyric font size translation and karaoke controls', () => {
   assert.match(module, /lyricTranslationOpacityValue\(\)/);
   assert.match(module, /fx\.lyricScale/);
   assert.match(module, /uProgress/);
-  assert.match(module, /uKaraokeEnabled/);
+  assert.match(module, /uWordSweepEnabled/);
   assert.match(module, /primaryMask/);
   assert.match(module, /rgba\(255,0,0,/);
   assert.match(module, /rgba\(0,255,0,/);
-  assert.match(module, /fx\.lyricDepthKaraokeHighlight !== false/);
+  assert.match(module, /fx\.lyricDepthWordSweep !== false/);
+  assert.match(module, /lyricDepthResolveWordRanges/);
+  assert.doesNotMatch(module, /uUnsungBrightness|karaokeLight/);
   assert.match(controls, /词境穿行固定使用五层景深/);
   assert.match(panel, /button\.disabled = locked/);
   assert.match(panel, /lineInput\.disabled = locked/);
@@ -193,7 +195,7 @@ test('uses one Emily-derived 360 transform for mouse and two-hand scaling', () =
   assert.match(module, /THREE\.DoubleSide/);
   assert.match(gesture, /return 'lyric-depth'/);
   assert.match(html, /360° 词境漫游/);
-  assert.match(html, /跟唱明暗/);
+  assert.match(html, /逐字流光/);
 });
 
 test('keeps cover and lyrics readable after the 360 stage turns to its back face', () => {
@@ -204,4 +206,125 @@ test('keeps cover and lyrics readable after the 360 stage turns to its back face
   assert.match(module, /texture2D\(uMap, faceUv\)/);
   assert.match(module, /texture2D\(uPrevMap, faceUv\)/);
   assert.match(module, /float textX = clamp\(\(faceUv\.x - uTextMin\)/);
+});
+
+test('lets global wallpapers show through the P11 atmospheric backdrop', () => {
+  const module = read('public/js/modules/02-visual/18-lyric-depth-flight.js');
+
+  assert.match(module, /uOpacity: \{ value: 1 \}/);
+  assert.match(module, /customBackgroundActiveMedia/);
+  assert.match(module, /hasCustomBackground \? 0\.16 : 1/);
+  assert.match(module, /scene\.background = null/);
+  assert.match(module, /lyricDepthCaptureSceneBackground/);
+  assert.match(module, /lyricDepthRestoreSceneBackground/);
+  assert.match(module, /var voxelOwnsBackground = typeof voxelCityActive === 'function' && voxelCityActive\(\)/);
+  assert.match(module, /if \(!voxelOwnsBackground && typeof _voxApplyBg === 'function'\) _voxApplyBg\(\)/);
+  assert.match(module, /screenRoot\.position\.copy\(camera\.position\)/);
+  assert.match(module, /screenRoot\.quaternion\.copy\(camera\.quaternion\)/);
+  assert.doesNotMatch(module, /gl_FragColor = vec4\(max\(base, vec3\(0\.0\)\), 1\.0\)/);
+});
+
+test('anchors the P11 world stage while the real free camera moves', () => {
+  const module = read('public/js/modules/02-visual/18-lyric-depth-flight.js');
+  const freeCamera = read('public/js/modules/01-scene/01-orbit-free-camera.js');
+  const keyboard = read('public/js/modules/04-shelf/06-keyboard-camera-events.js');
+  const preset = read('public/js/modules/07-fx/04-preset-grid-uniforms.js');
+
+  assert.match(module, /function lyricDepthFreeCameraOwnsView\(\)/);
+  assert.match(module, /Number\(freeCamera\.ownerPreset\) === LYRIC_DEPTH_PRESET_INDEX/);
+  assert.match(module, /freeCamera\.active \|\| freeCamera\.locked \|\| freeCamera\.resetTween/);
+  assert.match(module, /if \(lyricDepthFreeCameraOwnsView\(\)\)/);
+  assert.match(module, /freeCameraWorldAnchored = true/);
+  assert.match(module, /root\.position\.lerp\(camera\.position, ease\)/);
+  assert.match(module, /root\.quaternion\.slerp\(camera\.quaternion, ease\)/);
+  assert.match(module, /Number\(freeCamera\.ownerPreset\) === LYRIC_DEPTH_PRESET_INDEX && freeCamera\.resetTween[\s\S]*root\.position\.copy\(camera\.position\)/);
+  assert.match(freeCamera, /typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive\(\)/);
+  assert.match(freeCamera, /freeCamera\.ownerPreset = fx && Number\.isFinite\(Number\(fx\.preset\)\)/);
+  assert.match(freeCamera, /!freeCamera\.active && \(freeCamera\.ownerPreset == null \|\| Number\(freeCamera\.ownerPreset\) !== currentPreset\)/);
+  assert.match(freeCamera, /function reconcileFreeCameraPresetOwnership\(nextPreset\)/);
+  assert.match(freeCamera, /freeCamera\.active = false;[\s\S]*freeCamera\.locked = false;[\s\S]*releaseFreeCameraPointerLock\(\)/);
+  assert.match(preset, /changed && typeof reconcileFreeCameraPresetOwnership === 'function'/);
+  assert.match(freeCamera, /lyricDepthFlightActive\(\) && Number\(freeCamera\.ownerPreset\) === 11/);
+  assert.match(keyboard, /typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive\(\)/);
+  assert.match(keyboard, /lyricDepthFlightActive\(\) && Number\(freeCamera\.ownerPreset\) === 11/);
+});
+
+test('keeps chunk gaps outside native word ranges and preserves grapheme clusters', () => {
+  const source = read('public/js/modules/02-visual/18-lyric-depth-flight.js');
+  const graphemeStart = source.indexOf('function lyricDepthGraphemeUnits');
+  const graphemeEnd = source.indexOf('\nfunction lyricDepthChunkText', graphemeStart);
+  const boundaryStart = source.indexOf('function lyricDepthFillBoundaryCoordinates');
+  const boundaryEnd = source.indexOf('\nfunction lyricDepthRasterStyleSignature', boundaryStart);
+  const helpers = `${source.slice(graphemeStart, graphemeEnd)}\n${source.slice(boundaryStart, boundaryEnd)}`;
+  const api = Function(`${helpers}; return { lyricDepthGraphemeUnits, lyricDepthBuildSourceBoundaryMaps, lyricDepthResolveWordRanges };`)();
+
+  assert.deepEqual(api.lyricDepthGraphemeUnits('你👨‍👩‍👧‍👦好'), ['你', '👨‍👩‍👧‍👦', '好']);
+  assert.match(source, /var glyphCount = Math\.max\(1, lyricDepthGraphemeUnits\(text\)\.length\)/);
+  const text = '你好吗';
+  const maps = api.lyricDepthBuildSourceBoundaryMaps(text, [
+    { c0: 0, c1: 1, x0: 10, x1: 30, letterSpacing: 6 },
+    { c0: 1, c1: 3, x0: 70, x1: 116, letterSpacing: 6 }
+  ], (segment, prefix) => prefix.length * 20);
+  const ranges = api.lyricDepthResolveWordRanges(text, [
+    { text: '你', c0: 0, c1: 1 },
+    { text: '好', c0: 1, c1: 2 },
+    { text: '吗', c0: 2, c1: 3 }
+  ], maps.starts, maps.ends, 10, 106);
+
+  assert.ok(Math.abs(ranges[0].p1 - (20 / 106)) < 1e-9, 'the first glyph must end before the visual chunk gap');
+  assert.ok(Math.abs(ranges[1].p0 - (60 / 106)) < 1e-9, 'the next glyph must start after the visual chunk gap');
+  assert.ok(Math.abs(ranges[1].p1 - (80 / 106)) < 1e-9);
+  assert.ok(Math.abs(ranges[2].p0 - (86 / 106)) < 1e-9, 'the following glyph starts after its actual letter spacing');
+  assert.equal(ranges[2].p1, 1);
+});
+
+test('maps native word timing to the actual mixed-size P11 text layout and never dims the base', () => {
+  const moduleSource = read('public/js/modules/02-visual/18-lyric-depth-flight.js');
+  const start = moduleSource.indexOf('function lyricDepthWordSweepProgress');
+  const end = moduleSource.indexOf('\nfunction lyricDepthChunkText', start);
+  const helperSource = moduleSource.slice(start, end);
+  const progress = Function('lyricsLines', 'stageLyricPlaybackSeconds', 'getAdjustedLyricPlaybackTime', 'audio', `${helperSource}; return lyricDepthWordSweepProgress;`)(
+    [{ text: 'ABC', words: [
+      { text: 'A', t: 1.0, d: 0.2, c0: 0, c1: 1 },
+      { text: 'B', t: 1.6, d: 0.1, c0: 1, c1: 2 },
+      { text: 'C', t: 2.0, d: 0.2, c0: 2, c1: 3 }
+    ] }],
+    () => 0,
+    (value) => value,
+    null
+  );
+  const texture = { userData: { wordRanges: [
+    { p0: 0, p1: 0.18 },
+    { p0: 0.18, p1: 0.72 },
+    { p0: 0.72, p1: 1 }
+  ] } };
+
+  assert.ok(Math.abs(progress(0, texture, 0, 1.1) - 0.09) < 1e-9);
+  assert.equal(progress(0, texture, 0, 1.4), 0.18, 'word gap must hold on the previous glyph boundary');
+  assert.ok(Math.abs(progress(0, texture, 0, 1.65) - 0.45) < 1e-9);
+  assert.equal(progress(0, texture, 0, 2.3), 1);
+  assert.match(moduleSource, /alphas\[i\] = 1/);
+  assert.match(moduleSource, /vec3 lyricColor = mix\(uBaseColor, liftedColor, filled \* sweepMix\)/);
+  assert.doesNotMatch(moduleSource, /liftedColor = max\(/);
+  assert.doesNotMatch(moduleSource, /uUnsungBrightness|karaokeLight/);
+});
+
+test('rebuilds a card when the same lyric line upgrades from LRC to native word timing', () => {
+  const source = read('public/js/modules/02-visual/18-lyric-depth-flight.js');
+
+  assert.match(source, /var wordLayout = line && Array\.isArray\(line\.words\) && line\.words\.length/);
+  assert.match(source, /word\.text \|\| '', Number\(word\.c0\) \|\| 0, Number\(word\.c1\) \|\| 0/);
+  assert.match(source, /: 'line-only'/);
+  assert.match(source, /payload\.translation \|\| '', wordLayout, lyricDepthRasterStyleSignature\(\)/);
+});
+
+test('new word sweep defaults on even when a legacy dimming switch was saved off', () => {
+  const defaults = read('public/js/modules/00-state/04-fx-defaults.js');
+  const persistence = read('public/js/modules/02-visual/04-visual-settings-persistence.js');
+  const html = read('public/index.html');
+
+  assert.match(defaults, /lyricDepthWordSweep: true/);
+  assert.match(persistence, /lyricDepthWordSweep: raw\.lyricDepthWordSweep !== false/);
+  assert.doesNotMatch(persistence, /lyricDepthWordSweep: raw\.lyricDepthKaraokeHighlight/);
+  assert.match(html, /底色常亮 · 亮光随演唱平滑扫过/);
 });

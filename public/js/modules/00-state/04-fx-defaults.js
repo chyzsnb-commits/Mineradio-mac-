@@ -42,7 +42,7 @@ var fxDefaults = {
   lyricLetterSpacing: 0,
   lyricLineHeight: 1.0,
   lyricWeight: 900,
-  lyricDepthKaraokeHighlight: true, // 词境穿行：已唱部分高亮、未唱部分压暗
+  lyricDepthWordSweep: true,        // 词境穿行：底色常亮，逐字流光随演唱进度覆盖
   lyricDepthInteraction: false,     // 词境穿行：360° 词境漫游（用户主动开启）
   visualTintMode: 'auto',
   visualTintColor: '#9db8cf',

@@ -28,6 +28,7 @@ var LYRIC_DEPTH_LAYOUTS = [
 
 var lyricDepthState = {
   root: null,
+  screenRoot: null,
   interactionPivot: null,
   contentGroup: null,
   backdrop: null,
@@ -47,6 +48,10 @@ var lyricDepthState = {
   seekPreviewIndex: null,
   seekPreviewKey: '',
   lastSeekTextureAt: 0,
+  previousSceneBackground: null,
+  sceneBackgroundCaptured: false,
+  freeCameraWorldAnchored: false,
+  returningToCamera: false,
   transitionProgress: 1,
   transitionDuration: 0.82,
   pointerRaycaster: null,
@@ -141,7 +146,7 @@ function lyricDepthHandlePointerLeave() {
 
 function lyricDepthHandlePointerMove(event) {
   var cover = lyricDepthState.cover;
-  if (!event || !lyricDepthFlightActive() || !cover || !cover.visible || !camera || !cover.material || cover.material.uniforms.uOpacity.value < 0.04) {
+  if (!event || (typeof freeCamera !== 'undefined' && freeCamera && freeCamera.active) || !lyricDepthFlightActive() || !cover || !cover.visible || !camera || !cover.material || cover.material.uniforms.uOpacity.value < 0.04) {
     lyricDepthHandlePointerLeave();
     return false;
   }
@@ -372,9 +377,53 @@ function lyricDepthLineProgress(index) {
   return Math.max(0, Math.min(1, (seconds - start) / Math.max(0.8, end - start)));
 }
 
+function lyricDepthWordSweepProgress(index, texture, fallbackProgress, playbackSeconds) {
+  var line = lyricsLines && lyricsLines[index];
+  var ranges = texture && texture.userData && texture.userData.wordRanges;
+  if (!line || !Array.isArray(line.words) || !line.words.length || !Array.isArray(ranges) || !ranges.length) {
+    return Math.max(0, Math.min(1, Number(fallbackProgress) || 0));
+  }
+  var seconds = Number(playbackSeconds);
+  if (!isFinite(seconds)) {
+    seconds = typeof stageLyricPlaybackSeconds === 'function'
+      ? stageLyricPlaybackSeconds()
+      : (audio && isFinite(audio.currentTime) ? audio.currentTime : 0);
+    if (typeof getAdjustedLyricPlaybackTime === 'function') seconds = getAdjustedLyricPlaybackTime(seconds);
+  }
+  var lastProgress = 0;
+  for (var i = 0; i < line.words.length; i++) {
+    var word = line.words[i];
+    var range = ranges[i];
+    if (!range) continue;
+    var start = Number(word.t) || 0;
+    var duration = Number(word.d);
+    if (!(duration > 0)) duration = 0.24;
+    var end = start + Math.max(0.012, duration);
+    if (seconds < start) return lastProgress;
+    var local = seconds >= end ? 1 : (seconds - start) / Math.max(0.012, end - start);
+    local = Math.max(0, Math.min(1, local));
+    lastProgress = Math.max(lastProgress, range.p0 + (range.p1 - range.p0) * local);
+    if (seconds < end) return lastProgress;
+  }
+  return 1;
+}
+
+function lyricDepthGraphemeUnits(text) {
+  text = String(text || '');
+  if (!text) return [];
+  if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
+    try {
+      return Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text), function (part) {
+        return part.segment;
+      });
+    } catch (e) { }
+  }
+  return Array.from(text);
+}
+
 function lyricDepthChunkText(text) {
   var spaced = /\s/.test(text);
-  var units = spaced ? text.split(/\s+/).filter(Boolean) : Array.from(text);
+  var units = spaced ? text.split(/\s+/).filter(Boolean) : lyricDepthGraphemeUnits(text);
   if (!units.length) return [''];
   var groupCount = units.length <= 4 ? Math.min(2, units.length) : (units.length <= 9 ? 3 : 4);
   var chunks = [];
@@ -386,18 +435,132 @@ function lyricDepthChunkText(text) {
   return chunks.filter(Boolean);
 }
 
+function lyricDepthChunkRanges(text) {
+  var chunks = lyricDepthChunkText(text);
+  var cursor = 0;
+  return chunks.map(function (chunk) {
+    var start = text.indexOf(chunk, cursor);
+    if (start < 0) start = cursor;
+    var end = Math.min(text.length, start + chunk.length);
+    cursor = end;
+    return { text: chunk, c0: start, c1: end };
+  });
+}
+
 function lyricDepthTextFont(size, weight) {
   if (typeof lyricFontCss === 'function') return lyricFontCss(Math.max(24, Math.round(size)), weight);
   return String(Math.round(weight || 700)) + ' ' + String(Math.max(24, Math.round(size))) + 'px sans-serif';
 }
 
 function lyricDepthMeasureText(ctx, text, size) {
-  return typeof lyricMeasureText === 'function' ? lyricMeasureText(ctx, text, size) : ctx.measureText(text).width;
+  var graphemes = lyricDepthGraphemeUnits(text);
+  var codePoints = Array.from(String(text || ''));
+  if (graphemes.length === codePoints.length && typeof lyricMeasureText === 'function') return lyricMeasureText(ctx, text, size);
+  var spacing = typeof lyricLetterSpacingPx === 'function' ? lyricLetterSpacingPx(size) : 0;
+  if (!spacing || graphemes.length < 2) return ctx.measureText(text).width;
+  var width = 0;
+  for (var i = 0; i < graphemes.length; i++) {
+    width += ctx.measureText(graphemes[i]).width;
+    if (i < graphemes.length - 1) width += spacing;
+  }
+  return Math.max(1, width);
 }
 
 function lyricDepthFillText(ctx, text, x, y, size) {
-  if (typeof lyricFillText === 'function') lyricFillText(ctx, text, x, y, size);
-  else ctx.fillText(text, x, y);
+  var graphemes = lyricDepthGraphemeUnits(text);
+  var codePoints = Array.from(String(text || ''));
+  if (graphemes.length === codePoints.length && typeof lyricFillText === 'function') {
+    lyricFillText(ctx, text, x, y, size);
+    return;
+  }
+  var spacing = typeof lyricLetterSpacingPx === 'function' ? lyricLetterSpacingPx(size) : 0;
+  if (!spacing || graphemes.length < 2) {
+    ctx.fillText(text, x, y);
+    return;
+  }
+  var align = ctx.textAlign || 'left';
+  var width = lyricDepthMeasureText(ctx, text, size);
+  var cursor = align === 'center' ? x - width / 2 : ((align === 'right' || align === 'end') ? x - width : x);
+  ctx.textAlign = 'left';
+  for (var i = 0; i < graphemes.length; i++) {
+    ctx.fillText(graphemes[i], cursor, y);
+    cursor += ctx.measureText(graphemes[i]).width + (i < graphemes.length - 1 ? spacing : 0);
+  }
+  ctx.textAlign = align;
+}
+
+function lyricDepthFillBoundaryCoordinates(values) {
+  var result = values.slice();
+  var previousKnown = -1;
+  for (var cursor = 0; cursor < result.length; cursor++) {
+    if (result[cursor] == null) continue;
+    if (previousKnown < 0) {
+      for (var before = 0; before < cursor; before++) result[before] = result[cursor];
+    } else if (cursor - previousKnown > 1) {
+      var fromX = result[previousKnown];
+      var toX = result[cursor];
+      for (var between = previousKnown + 1; between < cursor; between++) {
+        result[between] = fromX + (toX - fromX) * ((between - previousKnown) / (cursor - previousKnown));
+      }
+    }
+    previousKnown = cursor;
+  }
+  if (previousKnown < 0) return result.map(function () { return 0; });
+  for (var after = previousKnown + 1; after < result.length; after++) result[after] = result[previousKnown];
+  return result;
+}
+
+function lyricDepthBuildSourceBoundaryMaps(text, sourceSegments, measurePrefix) {
+  var starts = new Array(text.length + 1);
+  var ends = new Array(text.length + 1);
+  sourceSegments.forEach(function (segment) {
+    var segmentText = text.slice(segment.c0, segment.c1);
+    var units = lyricDepthGraphemeUnits(segmentText);
+    var sourceIndex = segment.c0;
+    starts[sourceIndex] = segment.x0;
+    if (ends[sourceIndex] == null) ends[sourceIndex] = segment.x0;
+    for (var unitIndex = 0; unitIndex < units.length; unitIndex++) {
+      sourceIndex += units[unitIndex].length;
+      var boundaryX = segment.x0 + measurePrefix(segment, text.slice(segment.c0, sourceIndex));
+      var nextStartX = boundaryX;
+      if (sourceIndex < segment.c1 && typeof segment.letterSpacing === 'number') nextStartX += segment.letterSpacing;
+      // 同一 UTF-16 边界若恰好也是分块边界：起点偏向右侧块，终点保留左侧块。
+      // 这样单字的逐字流光不会把人为加入的块间距也扫亮。
+      ends[sourceIndex] = boundaryX;
+      if (sourceIndex < segment.c1 || starts[sourceIndex] == null) starts[sourceIndex] = nextStartX;
+    }
+    ends[segment.c1] = segment.x1;
+  });
+  return {
+    starts: lyricDepthFillBoundaryCoordinates(starts),
+    ends: lyricDepthFillBoundaryCoordinates(ends)
+  };
+}
+
+function lyricDepthResolveWordRanges(text, words, sourceStarts, sourceEnds, originX, sourceSpan) {
+  if (!Array.isArray(words) || !words.length || !Array.isArray(sourceStarts) || !sourceStarts.length || !Array.isArray(sourceEnds) || !sourceEnds.length) return null;
+  var wordCursor = 0;
+  return words.map(function (word) {
+    var c0 = Math.max(0, Math.min(text.length, Math.floor(Number(word.c0) || 0)));
+    var c1 = Math.max(c0, Math.min(text.length, Math.ceil(Number(word.c1) || c0)));
+    var wordText = String(word.text || '').replace(/\s+/g, ' ').trim();
+    if (wordText) {
+      var foundAt = text.indexOf(wordText, Math.max(0, wordCursor));
+      if (foundAt >= 0) {
+        c0 = foundAt;
+        c1 = Math.min(text.length, foundAt + wordText.length);
+      }
+    }
+    wordCursor = Math.max(wordCursor, c1);
+    var rawP0 = (sourceStarts[c0] - originX) / sourceSpan;
+    var rawP1 = (sourceEnds[c1] - originX) / sourceSpan;
+    var p0 = Math.max(0, Math.min(1, isFinite(rawP0) ? rawP0 : c0 / Math.max(1, text.length)));
+    var p1 = Math.max(0, Math.min(1, isFinite(rawP1) ? rawP1 : c1 / Math.max(1, text.length)));
+    return {
+      p0: p0,
+      p1: Math.max(p0, p1)
+    };
+  });
 }
 
 function lyricDepthRasterStyleSignature() {
@@ -425,11 +588,12 @@ function lyricDepthBuildTextCanvas(payload, lineIndex) {
   payload = payload && typeof payload === 'object' ? payload : { text: payload, translation: '' };
   var text = lyricDepthCleanText(payload.text);
   var translation = lyricDepthCleanText(payload.translation);
-  var chunks = lyricDepthChunkText(text);
+  var chunkRanges = lyricDepthChunkRanges(text);
+  var chunks = chunkRanges.map(function (chunk) { return chunk.text; });
   var hash = lyricDepthHashString(text + '|' + lineIndex);
   var accentIndex = chunks.length ? hash % chunks.length : 0;
   var secondaryIndex = chunks.length > 2 ? (accentIndex + 2) % chunks.length : -1;
-  var glyphCount = Math.max(1, Array.from(text).length);
+  var glyphCount = Math.max(1, lyricDepthGraphemeUnits(text).length);
   var baseSize = glyphCount > 20 ? 64 : (glyphCount > 13 ? 74 : (glyphCount > 8 ? 88 : 102));
   var sizes = [];
   var alphas = [];
@@ -441,7 +605,9 @@ function lyricDepthBuildTextCanvas(payload, lineIndex) {
   for (var i = 0; i < chunks.length; i++) {
     var size = i === accentIndex ? baseSize * (chunks.length <= 2 ? 1.62 : 1.48) : (i === secondaryIndex ? baseSize * 1.20 : baseSize);
     sizes[i] = size;
-    alphas[i] = i === accentIndex ? 1 : (i === secondaryIndex ? 0.88 : 0.76 + lyricDepthRandom(hash + i * 17) * 0.12);
+    // 当前句所有原文块都保持正常底色；景深层次由整张卡片的 opacity/blur 控制，
+    // 不再把同一句尚未唱到的块预先画灰。
+    alphas[i] = 1;
     ctx.font = lyricDepthTextFont(size, i === accentIndex ? selectedWeight : Math.max(500, selectedWeight - 120));
     widths[i] = Math.max(1, lyricDepthMeasureText(ctx, chunks[i], size));
     totalWidth += widths[i] + (i ? gap : 0);
@@ -463,12 +629,23 @@ function lyricDepthBuildTextCanvas(payload, lineIndex) {
   var primaryTextMin = x / canvas.width;
   var primaryTextMax = (x + totalWidth) / canvas.width;
   var baseline = canvas.height * 0.59;
+  var sourceSegments = [];
   for (var di = 0; di < chunks.length; di++) {
     var yShift = di === accentIndex ? -8 : ((di % 2 ? 1 : -1) * (8 + lyricDepthRandom(hash + di * 31) * 10));
-    ctx.font = lyricDepthTextFont(sizes[di], di === accentIndex ? selectedWeight : Math.max(500, selectedWeight - 120));
+    var chunkWeight = di === accentIndex ? selectedWeight : Math.max(500, selectedWeight - 120);
+    ctx.font = lyricDepthTextFont(sizes[di], chunkWeight);
     // RGB 仅作为 shader 内部的原文/译文遮罩；最终颜色仍由歌词配色 uniform 决定。
     ctx.fillStyle = 'rgba(255,0,0,' + alphas[di].toFixed(3) + ')';
     lyricDepthFillText(ctx, chunks[di], x, baseline + yShift, sizes[di]);
+    sourceSegments.push({
+      c0: chunkRanges[di].c0,
+      c1: chunkRanges[di].c1,
+      x0: x,
+      x1: x + widths[di],
+      size: sizes[di],
+      weight: chunkWeight,
+      letterSpacing: typeof lyricLetterSpacingPx === 'function' ? lyricLetterSpacingPx(sizes[di]) : 0
+    });
     x += widths[di] + gap;
   }
   if (translation) {
@@ -488,6 +665,20 @@ function lyricDepthBuildTextCanvas(payload, lineIndex) {
   }
   canvas.__lyricDepthTextMin = Math.max(0.02, Math.min(0.98, primaryTextMin));
   canvas.__lyricDepthTextMax = Math.max(canvas.__lyricDepthTextMin + 0.01, Math.min(0.98, primaryTextMax));
+  var sourceBoundaries = lyricDepthBuildSourceBoundaryMaps(text, sourceSegments, function (segment, prefix) {
+    ctx.font = lyricDepthTextFont(segment.size, segment.weight);
+    return lyricDepthMeasureText(ctx, prefix, segment.size);
+  });
+  var sourceSpan = Math.max(1, totalWidth);
+  var line = lyricsLines && lyricsLines[lineIndex];
+  canvas.__lyricDepthWordRanges = lyricDepthResolveWordRanges(
+    text,
+    line && line.words,
+    sourceBoundaries.starts,
+    sourceBoundaries.ends,
+    primaryTextMin * canvas.width,
+    sourceSpan
+  );
   return canvas;
 }
 
@@ -501,6 +692,7 @@ function lyricDepthCreateTextTexture(payload, lineIndex) {
   texture.userData = texture.userData || {};
   texture.userData.textMin = canvas.__lyricDepthTextMin == null ? 0.08 : canvas.__lyricDepthTextMin;
   texture.userData.textMax = canvas.__lyricDepthTextMax == null ? 0.92 : canvas.__lyricDepthTextMax;
+  texture.userData.wordRanges = canvas.__lyricDepthWordRanges || null;
   if (typeof THREE.SRGBColorSpace !== 'undefined') texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
@@ -516,8 +708,7 @@ function lyricDepthCreateTextMaterial() {
       uBlur: { value: 0 },
       uGlow: { value: 0.22 },
       uProgress: { value: 0 },
-      uKaraokeEnabled: { value: 0 },
-      uUnsungBrightness: { value: 0.34 },
+      uWordSweepEnabled: { value: 0 },
       uTextMin: { value: 0.08 },
       uTextMax: { value: 0.92 }
     },
@@ -538,8 +729,7 @@ function lyricDepthCreateTextMaterial() {
       'uniform float uBlur;',
       'uniform float uGlow;',
       'uniform float uProgress;',
-      'uniform float uKaraokeEnabled;',
-      'uniform float uUnsungBrightness;',
+      'uniform float uWordSweepEnabled;',
       'uniform float uTextMin;',
       'uniform float uTextMax;',
       'varying vec2 vUv;',
@@ -576,12 +766,15 @@ function lyricDepthCreateTextMaterial() {
       '  float alpha = (body + halo * 0.42) * uOpacity;',
       '  if (alpha < 0.004) discard;',
       '  float textX = clamp((faceUv.x - uTextMin) / max(0.001, uTextMax - uTextMin), 0.0, 1.0);',
-      '  float sung = 1.0 - smoothstep(uProgress - 0.018, uProgress + 0.018, textX);',
+      '  float filled = 1.0 - smoothstep(uProgress - 0.016, uProgress + 0.016, textX);',
       '  float primaryMask = smoothstep(0.015, 0.16, primaryBody / max(0.001, body));',
-      '  float karaokeMix = uKaraokeEnabled * primaryMask;',
-      '  float karaokeLight = mix(1.0, mix(uUnsungBrightness, 1.0, sung), karaokeMix);',
-      '  vec3 lyricColor = mix(uBaseColor, uHiColor, sung * karaokeMix);',
-      '  vec3 color = lyricColor * karaokeLight * (0.84 + core * 0.28 + halo * (0.54 + sung * 0.28));',
+      '  float sweepMix = uWordSweepEnabled * primaryMask;',
+      '  float sweepBand = exp(-pow((textX - uProgress) / 0.034, 2.0)) * sweepMix;',
+      '  float hiLift = max(0.0, 0.72 - dot(uHiColor, vec3(0.299, 0.587, 0.114)));',
+      '  vec3 liftedColor = mix(uHiColor, vec3(1.0), hiLift * 0.32);',
+      '  vec3 lyricColor = mix(uBaseColor, liftedColor, filled * sweepMix);',
+      '  vec3 color = lyricColor * (0.98 + core * 0.16 + halo * 0.34);',
+      '  color += liftedColor * sweepBand * (0.10 + primaryBody * 0.16);',
       '  gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));',
       '}'
     ].join('\n'),
@@ -597,7 +790,8 @@ function lyricDepthCreateBackdrop() {
   var material = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
-      uAudio: { value: 0 }
+      uAudio: { value: 0 },
+      uOpacity: { value: 1 }
     },
     vertexShader: [
       'varying vec2 vUv;',
@@ -610,6 +804,7 @@ function lyricDepthCreateBackdrop() {
       'precision highp float;',
       'uniform float uTime;',
       'uniform float uAudio;',
+      'uniform float uOpacity;',
       'varying vec2 vUv;',
       'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }',
       'void main(){',
@@ -623,12 +818,12 @@ function lyricDepthCreateBackdrop() {
       '  base += vec3(0.010, 0.022, 0.025) * fogB;',
       '  base *= 1.0 - smoothstep(0.25, 0.76, radius) * 0.58;',
       '  base += grain * 0.0022 + uAudio * vec3(0.0015, 0.0040, 0.0042);',
-      '  gl_FragColor = vec4(max(base, vec3(0.0)), 1.0);',
+      '  gl_FragColor = vec4(max(base, vec3(0.0)), uOpacity);',
       '}'
     ].join('\n'),
     depthTest: false,
     depthWrite: false,
-    transparent: false
+    transparent: true
   });
   var mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
   mesh.position.z = -24;
@@ -758,7 +953,13 @@ function lyricDepthEnsureScene() {
   root.frustumCulled = false;
   scene.add(root);
 
+  var screenRoot = new THREE.Group();
+  screenRoot.visible = false;
+  screenRoot.frustumCulled = false;
+  scene.add(screenRoot);
+
   lyricDepthState.root = root;
+  lyricDepthState.screenRoot = screenRoot;
   lyricDepthState.interactionPivot = new THREE.Group();
   lyricDepthState.contentGroup = new THREE.Group();
   lyricDepthState.interactionPivot.position.z = LYRIC_DEPTH_INTERACTION_PIVOT_Z;
@@ -768,7 +969,7 @@ function lyricDepthEnsureScene() {
   lyricDepthState.stars = lyricDepthCreateStars();
   lyricDepthState.cover = lyricDepthCreateCover();
   lyricDepthState.cardGeometry = new THREE.PlaneGeometry(1, 1);
-  root.add(lyricDepthState.backdrop);
+  screenRoot.add(lyricDepthState.backdrop);
   root.add(lyricDepthState.stars);
   root.add(lyricDepthState.interactionPivot);
   lyricDepthState.contentGroup.add(lyricDepthState.cover);
@@ -796,7 +997,13 @@ function lyricDepthEnsureScene() {
 
 function lyricDepthCardKey(lineIndex, payload) {
   payload = payload || { text: '', translation: '' };
-  return [lineIndex, payload.text || '', payload.translation || '', lyricDepthRasterStyleSignature()].join('|');
+  var line = lyricsLines && lineIndex >= 0 ? lyricsLines[lineIndex] : null;
+  var wordLayout = line && Array.isArray(line.words) && line.words.length
+    ? line.words.map(function (word) {
+      return [word.text || '', Number(word.c0) || 0, Number(word.c1) || 0].join(':');
+    }).join(',')
+    : 'line-only';
+  return [lineIndex, payload.text || '', payload.translation || '', wordLayout, lyricDepthRasterStyleSignature()].join('|');
 }
 
 function lyricDepthAssignCard(card, lineIndex, payload) {
@@ -1029,12 +1236,20 @@ function lyricDepthSetCardTarget(card, layout, progress, transitionProgress, she
   card.material.uniforms.uBlur.value = lyricDepthDamp(card.material.uniforms.uBlur.value, blur, 3.8, dt);
   card.material.uniforms.uGlow.value = lyricDepthDamp(card.material.uniforms.uGlow.value, glow, 3.2, dt);
   var palette = typeof effectiveLyricPalette === 'function' ? effectiveLyricPalette(stageLyrics && stageLyrics.palette) : null;
-  var baseColor = palette && palette.primary || '#b8c8c6';
+  var baseColor = relative === 0 ? (palette && palette.primary || '#b8c8c6') : (palette && palette.secondary || '#b8c8c6');
   var hiColor = palette && palette.highlight || '#f7f6ef';
-  card.material.uniforms.uBaseColor.value.set(relative === 0 ? baseColor : (palette && palette.secondary || '#b8c8c6'));
-  card.material.uniforms.uHiColor.value.set(hiColor);
-  card.material.uniforms.uProgress.value = relative < 0 ? 1 : (relative === 0 ? Math.max(0, Math.min(1, progress)) : 0);
-  card.material.uniforms.uKaraokeEnabled.value = relative === 0 && card.lineIndex >= 0 && fx && fx.lyricDepthKaraokeHighlight !== false ? 1 : 0;
+  if (typeof lyricThreeColor === 'function') {
+    card.material.uniforms.uBaseColor.value.copy(lyricThreeColor(baseColor, '#b8c8c6', relative === 0 ? 0.40 : 0.34));
+    card.material.uniforms.uHiColor.value.copy(lyricThreeColor(hiColor, '#f7f6ef', 0.58));
+  } else {
+    card.material.uniforms.uBaseColor.value.set(baseColor);
+    card.material.uniforms.uHiColor.value.set(hiColor);
+  }
+  var wordSweepProgress = relative === 0 && !(typeof lyricsTimingSource !== 'undefined' && lyricsTimingSource === 'pending')
+    ? lyricDepthWordSweepProgress(card.lineIndex, card.texture, progress)
+    : progress;
+  card.material.uniforms.uProgress.value = relative < 0 ? 1 : (relative === 0 ? Math.max(0, Math.min(1, wordSweepProgress)) : 0);
+  card.material.uniforms.uWordSweepEnabled.value = relative === 0 && card.lineIndex >= 0 && (!fx || fx.lyricDepthWordSweep !== false) ? 1 : 0;
   mesh.renderOrder = relative === 0 ? 258 : (246 - Math.abs(relative));
 }
 
@@ -1102,6 +1317,15 @@ function lyricDepthUpdateBackdropAndStars(time, shelfFactor, lyricsVisible, dt) 
   lyricDepthState.backdrop.scale.set(halfHeight * 2 * (camera.aspect || 1.78) * 1.08, halfHeight * 2 * 1.08, 1);
   lyricDepthState.backdrop.material.uniforms.uTime.value = time;
   lyricDepthState.backdrop.material.uniforms.uAudio.value = Math.min(1, Math.max(0, audioEnergy));
+  var hasCustomBackground = typeof customBackgroundActiveMedia === 'function'
+    ? !!customBackgroundActiveMedia()
+    : !!(fx && (fx.backgroundMedia || fx.backgroundImage || fx.backgroundAlbumCover));
+  lyricDepthState.backdrop.material.uniforms.uOpacity.value = lyricDepthDamp(
+    lyricDepthState.backdrop.material.uniforms.uOpacity.value,
+    hasCustomBackground ? 0.16 : 1,
+    hasCustomBackground ? 6.2 : 3.8,
+    dt
+  );
 
   var budget = typeof runtimePerfBudgetLevel === 'function' ? runtimePerfBudgetLevel() : 2;
   var starCount = budget <= 0 ? 90 : (budget === 1 ? 120 : (budget >= 3 ? LYRIC_DEPTH_STAR_MAX : 154));
@@ -1144,6 +1368,69 @@ function lyricDepthUpdateInteractionTransform(dt) {
   pivot.scale.setScalar(nextScale);
 }
 
+function lyricDepthFreeCameraOwnsView() {
+  return !!(
+    typeof freeCamera !== 'undefined' && freeCamera &&
+    Number(freeCamera.ownerPreset) === LYRIC_DEPTH_PRESET_INDEX &&
+    (freeCamera.active || freeCamera.locked || freeCamera.resetTween)
+  );
+}
+
+function lyricDepthSyncSceneRoots(dt) {
+  var root = lyricDepthState.root;
+  var screenRoot = lyricDepthState.screenRoot;
+  if (!root || !screenRoot || !camera) return;
+  screenRoot.position.copy(camera.position);
+  screenRoot.quaternion.copy(camera.quaternion);
+  if (typeof freeCamera !== 'undefined' && freeCamera && Number(freeCamera.ownerPreset) === LYRIC_DEPTH_PRESET_INDEX && freeCamera.resetTween) {
+    // K 回正期间让舞台与相机同走，结束时不会再发生第二段漂移。
+    root.position.copy(camera.position);
+    root.quaternion.copy(camera.quaternion);
+    lyricDepthState.freeCameraWorldAnchored = true;
+    lyricDepthState.returningToCamera = false;
+    return;
+  }
+  if (lyricDepthFreeCameraOwnsView()) {
+    if (!lyricDepthState.freeCameraWorldAnchored) {
+      root.position.copy(camera.position);
+      root.quaternion.copy(camera.quaternion);
+      lyricDepthState.freeCameraWorldAnchored = true;
+    }
+    lyricDepthState.returningToCamera = false;
+    return;
+  }
+  if (!lyricDepthState.freeCameraWorldAnchored) {
+    root.position.copy(camera.position);
+    root.quaternion.copy(camera.quaternion);
+    return;
+  }
+  lyricDepthState.returningToCamera = true;
+  var ease = 1 - Math.exp(-Math.max(0.001, Number(dt) || 1 / 60) * 11.5);
+  root.position.lerp(camera.position, ease);
+  root.quaternion.slerp(camera.quaternion, ease);
+  if (root.position.distanceToSquared(camera.position) < 0.000001 && 1 - Math.abs(root.quaternion.dot(camera.quaternion)) < 0.000001) {
+    root.position.copy(camera.position);
+    root.quaternion.copy(camera.quaternion);
+    lyricDepthState.freeCameraWorldAnchored = false;
+    lyricDepthState.returningToCamera = false;
+  }
+}
+
+function lyricDepthCaptureSceneBackground() {
+  if (lyricDepthState.sceneBackgroundCaptured || typeof scene === 'undefined' || !scene) return;
+  lyricDepthState.previousSceneBackground = scene.background || null;
+  lyricDepthState.sceneBackgroundCaptured = true;
+}
+
+function lyricDepthRestoreSceneBackground() {
+  if (!lyricDepthState.sceneBackgroundCaptured || typeof scene === 'undefined' || !scene) return;
+  var voxelOwnsBackground = typeof voxelCityActive === 'function' && voxelCityActive();
+  if (!voxelOwnsBackground) scene.background = lyricDepthState.previousSceneBackground || null;
+  lyricDepthState.previousSceneBackground = null;
+  lyricDepthState.sceneBackgroundCaptured = false;
+  if (!voxelOwnsBackground && typeof _voxApplyBg === 'function') _voxApplyBg();
+}
+
 function resetLyricDepthInteractionTransform(syncVisual) {
   if (!lyricDepthState.interactionPivot) return;
   if (syncVisual) {
@@ -1176,17 +1463,25 @@ function updateLyricDepthFlight(dt) {
   lyricDepthSyncPresetShell(active);
   if (!active) {
     if (lyricDepthState.root) lyricDepthState.root.visible = false;
+    if (lyricDepthState.screenRoot) lyricDepthState.screenRoot.visible = false;
     lyricDepthSetStageHidden(false);
-    if (lyricDepthState.active) cancelLyricDepthTrackTransition();
+    if (lyricDepthState.active) {
+      cancelLyricDepthTrackTransition();
+      lyricDepthRestoreSceneBackground();
+    }
     lyricDepthState.active = false;
+    lyricDepthState.freeCameraWorldAnchored = false;
+    lyricDepthState.returningToCamera = false;
     return;
   }
 
   lyricDepthEnsureScene();
+  if (!lyricDepthState.active) lyricDepthCaptureSceneBackground();
   lyricDepthState.root.visible = true;
+  lyricDepthState.screenRoot.visible = true;
   lyricDepthSetStageHidden(true);
-  lyricDepthState.root.position.copy(camera.position);
-  lyricDepthState.root.quaternion.copy(camera.quaternion);
+  scene.background = null;
+  lyricDepthSyncSceneRoots(dt);
   lyricDepthUpdateInteractionTransform(dt);
   var trackState = lyricDepthUpdateTrackTransition(dt);
 
@@ -1235,6 +1530,7 @@ function updateLyricDepthFlight(dt) {
 function disposeLyricDepthFlight() {
   lyricDepthSyncPresetShell(false);
   lyricDepthSetStageHidden(false);
+  lyricDepthRestoreSceneBackground();
   if (!lyricDepthState.root) return;
   for (var i = 0; i < lyricDepthState.cards.length; i++) {
     var card = lyricDepthState.cards[i];
@@ -1255,7 +1551,9 @@ function disposeLyricDepthFlight() {
     lyricDepthState.cover.material.dispose();
   }
   scene.remove(lyricDepthState.root);
+  if (lyricDepthState.screenRoot) scene.remove(lyricDepthState.screenRoot);
   lyricDepthState.root = null;
+  lyricDepthState.screenRoot = null;
   lyricDepthState.interactionPivot = null;
   lyricDepthState.contentGroup = null;
   lyricDepthState.backdrop = null;
@@ -1269,8 +1567,12 @@ function disposeLyricDepthFlight() {
   lyricDepthState.seekPreviewIndex = null;
   lyricDepthState.seekPreviewKey = '';
   lyricDepthState.lastSeekTextureAt = 0;
+  lyricDepthState.previousSceneBackground = null;
+  lyricDepthState.sceneBackgroundCaptured = false;
   lyricDepthState.transitionProgress = 1;
   lyricDepthState.transitionDuration = 0.82;
+  lyricDepthState.freeCameraWorldAnchored = false;
+  lyricDepthState.returningToCamera = false;
   lyricDepthState.hover.active = false;
   lyricDepthState.hover.targetScale = lyricDepthState.hover.scale = 1;
   lyricDepthState.hover.targetRotX = lyricDepthState.hover.rotX = 0;
@@ -1290,6 +1592,10 @@ window.__mineradioLyricDepthSnapshot = function () {
     coverVisible: !!(lyricDepthState.cover && lyricDepthState.cover.visible),
     coverHovered: !!lyricDepthState.hover.active,
     interactionEnabled: !!(fx && fx.lyricDepthInteraction === true),
+    wordSweepEnabled: !!(!fx || fx.lyricDepthWordSweep !== false),
+    freeCameraWorldAnchored: !!lyricDepthState.freeCameraWorldAnchored,
+    sceneBackgroundCaptured: !!lyricDepthState.sceneBackgroundCaptured,
+    backdropOpacity: lyricDepthState.backdrop ? Number(lyricDepthState.backdrop.material.uniforms.uOpacity.value.toFixed(3)) : 0,
     interactionScale: lyricDepthState.interactionPivot ? Number(lyricDepthState.interactionPivot.scale.x.toFixed(3)) : 1,
     trackTransitionPhase: lyricDepthState.trackTransition.phase,
     seekDeferredIndex: lyricDepthState.deferredCenterIndex,
@@ -1297,7 +1603,9 @@ window.__mineradioLyricDepthSnapshot = function () {
       return {
         lineIndex: card.lineIndex,
         relative: card.relative,
-        opacity: Number(card.material.uniforms.uOpacity.value.toFixed(3))
+        opacity: Number(card.material.uniforms.uOpacity.value.toFixed(3)),
+        progress: Number(card.material.uniforms.uProgress.value.toFixed(3)),
+        sweepEnabled: card.material.uniforms.uWordSweepEnabled.value > 0.5
       };
     })
   };
