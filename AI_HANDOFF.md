@@ -1,5 +1,7 @@
 # Mineradio AI Handoff
 
+> **下一发布版恢复匿名活跃统计（2026-08-13，用户明确确认）：** 从下一个对外发布版本开始，匿名统计是发布阻塞项，必须恢复同时在线、DAU、WAU、MAU、YAU、累计安装/下载、版本分布与活跃趋势；旧后端没有 YAU，发布前需要补齐并实测时间窗口。当前已安装的 2.0 继续保持不上报，禁止在版本周期中途远程开启。新版本首次启动必须明确 opt-in、默认“不，谢谢”且可在设置中撤回；只允许随机安装 ID、应用版本和有界前台活跃心跳，不得上传账号、歌曲、播放行为、Cookie、Token 或登录凭据。同时在线与周期活跃必须基于可靠的前台心跳和会话过期计算，不能只在启动时记一次。
+
 > **双手直缩、音频/登录/活跃统计核查（2026-08-12）：** 用户再次明确“双手缩放”必须是双手张开/收拢直接缩放音域内容，不能改滚轮相机，也不要长按左右拖动的惯性。当前实现因此撤回此前错误移植的全局目标/显示相机缓动：鼠标拖动与滚轮恢复稳定版即时镜头，双手距离只写 `contentRoot.scale`（55%–190%），并在输入期间唤醒渲染，避免空闲 2FPS 跳变；红灯测试分别落在 `996a992`、`666b419`，生产修复为 `8241641`，完整检查 177/177。音频核查确认：唱歌模式关闭时人声分离与变调 Worklet 均完全旁路，默认 EQ 为 0 dB；开启实时唱歌模式才会改变 PCM，其中 Worklet 未就绪时的粗糙降级分离可能明显劣化音质，后续若改应采用“原声直通至 Worklet 就绪后再交叉淡入”，不得把粗糙降级链当默认播放链。上一轮重新登录的直接原因是为解除卡死密码框删除了 `Mineradio Safe Storage`；本轮又实证本地 ad-hoc 构建每次改变 cdhash，同样会触发钥匙串授权并使加密登录暂时不可读。因此在取得稳定 Developer ID 前，本地整包更新必须由旧 App 在内存中解密会话、安装新包后用新身份重新加密，禁止把明文写盘或要求用户重复登录；本轮已按此迁移 `.qq-cookie`，QQ 登录与播放密钥均保持可用，未出现 `SecurityAgent`。旧匿名统计后端仍在 `/Users/allenli/Desktop/mineradio-stats`，支持同时在线、DAU、WAU、MAU、累计安装、下载、版本分布和 14 天趋势，从未实现 YAU；2.0 的 `internalBeta:false` / `publicRelease:true` 会在 `desktop/telemetry.js` 入口直接退出，因此当前 2.0 不上报。2026-08-12 实查后端为同时在线 0、DAU 0、WAU 0、MAU 1、累计安装 1、累计下载 1，唯一版本为 1.1.3；这些数不能代表 2.0 用户量。最终应用已整体构建、签名并同步到唯一 `/Applications/Mineradio.app`，`app.asar` SHA-256 为 `bd417749a046d3252ffab0d1d92d2d64b7bc2afee6c1db5573ba0a0443006b3f`，`codesign --verify --deep --strict` 通过，摄像头权限保持 `granted`。安装前 App、userData、旧加密登录文件和迁移前活动 App 均保存在 `/Users/allenli/Desktop/Mineradio-2.0-backups.noindex/before-direct-scale-20260812-233528`。实包运行态确认双手设为 150% 时 `contentRoot.scale=1.5` 且相机参数不变；歌词开关开启，并用上次 QQ 曲目《七里香》取得 38 行 YRC 逐字歌词（HTTP 200）。
 
 > **最终 App 已同步（2026-08-12 07:20 PDT）：** PR #114 分支 `codex/stable-voxel-gesture-player-fusion` 已推送到 commit `6c16524`，不是只改源码。`/Applications/Mineradio.app` 已用该 HEAD 重新完整构建并整体 ad-hoc 签名，`codesign --verify --deep --strict` 通过；主 App、Helper、Renderer 与 GPU Helper 均实包核验包含 camera/audio-input entitlement，禁止再替换包内 `app.asar`。最终 `app.asar` SHA-256 为 `02a921921113a36480f475697654c181a3f67120746e72020c884b84dc5a25de`，Spotlight 精确检索只剩该 App。真实 profile 已从失败移植残留的 `particleLyrics:false`、近黑自定义色、0 溢光定点恢复为歌词开启、自动配色 `#a9b8c8`、溢光 `0.28`，运行态读取一致；旧 profile、旧 hybrid App 和加密登录文件均保存在 `/Users/allenli/Desktop/Mineradio-2.0-backups.noindex/runtime-before-final-20260812-071141`。旧 `Mineradio Safe Storage` 已删除以解除卡死密码框，因此 QQ/酷狗需要重新登录。摄像头原生授权已经从真实 App 发出，但验收时 Mac 锁屏，系统对话框等待用户解锁后点击“允许”；用户授权后再完成真实双手动作主观验收。`npm run check` 176/176；手势启动失败会把 `cam=off` 写回，避免下次假开启。
@@ -113,6 +115,7 @@
 
 ## 待办清单
 
+- [ ] **下一发布版恢复匿名活跃统计（发布阻塞）**：补齐同时在线、DAU、WAU、MAU、YAU、累计安装/下载、版本分布与趋势；实现明确 opt-in、默认拒绝、可撤回的前台有界心跳，完成后端时间窗口与隐私字段验收。当前 2.0 不得中途开启。
 - [x] **重新接入崩溃记录**：本机 crashReporter 已在最新代码启用，真实测试生成 `.dmp`，上传关闭。
 - [ ] **渲染进程崩溃根因**：在用户真实资料复现后分析 `.dmp` 和 `crash-diagnostics.json`（上面详述）。
 - [ ] **真机对比三种显卡模式**：分别重启到自动/省电/高性能，播放同一首歌 10 分钟，对比温度、CPU 和流畅度。
