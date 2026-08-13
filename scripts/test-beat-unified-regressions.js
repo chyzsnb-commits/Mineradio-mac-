@@ -43,7 +43,7 @@ test('uses two-hand pinch midpoints without changing vertical shelf direction', 
   assert.match(gesture, /drawn\[0\]\.pinchPt\.x \* W/);
 });
 
-test('keeps custom-background voxel transparency without the deferred water preset', () => {
+test('keeps custom-background voxel transparency without restoring the deferred water preset', () => {
   const voxel = read('public/js/modules/02-visual/16-voxel-echo.js');
   const loader = read('public/js/index-loader.js');
   const state = read('public/js/modules/00-state/00-core-stores.js');
@@ -52,9 +52,9 @@ test('keeps custom-background voxel transparency without the deferred water pres
   assert.match(voxel, /uniform float uBgMedia/);
   assert.match(voxel, /material\.transparent !== !!_voxMedia/);
   assert.doesNotMatch(loader, /water-membrane/);
-  assert.match(state, /MAX_VISUAL_PRESET_INDEX = 10/);
+  assert.match(state, /MAX_VISUAL_PRESET_INDEX = 11/);
   assert.doesNotMatch(presets, /水膜共振/);
-  assert.doesNotMatch(presets, /presetDisplayOrder = \[[^\]]*11/);
+  assert.match(presets, /presetDisplayOrder = \[[^\]]*11/);
   assert.equal(fs.existsSync(path.join(root, 'public/js/modules/02-visual/18-water-membrane.js')), false);
 });
 
