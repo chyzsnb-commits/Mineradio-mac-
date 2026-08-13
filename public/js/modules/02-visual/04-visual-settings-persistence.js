@@ -184,6 +184,8 @@ function readSavedLyricLayoutCriticalFallback(raw, err) {
     lyricMotionStyle: normalizeSavedLyricMotionStyle(raw.lyricMotionStyle || fxDefaults.lyricMotionStyle),
     lyricCustomLineCount: layoutInteger(raw.lyricCustomLineCount, fxDefaults.lyricCustomLineCount, 1, 10),
     lyricScalePulse: layoutNumber(raw.lyricScalePulse, fxDefaults.lyricScalePulse, 0, 0.06),
+    lyricDepthKaraokeHighlight: raw.lyricDepthKaraokeHighlight !== false,
+    lyricDepthInteraction: raw.lyricDepthInteraction === true,
     controlGlassChromaticOffset: layoutNumber(raw.controlGlassChromaticOffset, fxDefaults.controlGlassChromaticOffset, 0, 140)   // 下限 0=关闭色散(mac 性能)
   };
 }
@@ -264,6 +266,8 @@ function readSavedLyricLayout() {
       lyricLetterSpacing: layoutNumber(raw.lyricLetterSpacing, 0, -0.04, 0.18),
       lyricLineHeight: layoutNumber(raw.lyricLineHeight, 1, 0.72, 1.80),
       lyricWeight: layoutInteger(raw.lyricWeight, 900, 500, 900),
+      lyricDepthKaraokeHighlight: raw.lyricDepthKaraokeHighlight !== false,
+      lyricDepthInteraction: raw.lyricDepthInteraction === true,
       lyricGlow: raw.lyricGlow !== false,
       lyricGlowBeat: raw.lyricGlowBeat !== false,
       lyricGlowParticles: !!raw.lyricGlowParticles,
@@ -576,6 +580,8 @@ function currentFxAutosaveCriticalPatch() {
     lyricLetterSpacing: layoutNumber(fx.lyricLetterSpacing, 0, -0.04, 0.18),
     lyricLineHeight: layoutNumber(fx.lyricLineHeight, 1, 0.72, 1.80),
     lyricWeight: layoutInteger(fx.lyricWeight, 900, 500, 900),
+    lyricDepthKaraokeHighlight: fx.lyricDepthKaraokeHighlight !== false,
+    lyricDepthInteraction: fx.lyricDepthInteraction === true,
     lyricGlow: !!fx.lyricGlow,
     lyricGlowBeat: !!fx.lyricGlowBeat,
     lyricGlowParticles: !!fx.lyricGlowParticles,
@@ -663,6 +669,8 @@ function saveLyricLayout(opts) {
       lyricLetterSpacing: layoutNumber(fx.lyricLetterSpacing, 0, -0.04, 0.18),
       lyricLineHeight: layoutNumber(fx.lyricLineHeight, 1, 0.72, 1.80),
       lyricWeight: layoutInteger(fx.lyricWeight, 900, 500, 900),
+      lyricDepthKaraokeHighlight: fx.lyricDepthKaraokeHighlight !== false,
+      lyricDepthInteraction: fx.lyricDepthInteraction === true,
       lyricGlow: !!fx.lyricGlow,
       lyricGlowBeat: !!fx.lyricGlowBeat,
       lyricGlowParticles: !!fx.lyricGlowParticles,

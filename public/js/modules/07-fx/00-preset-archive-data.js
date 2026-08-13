@@ -194,7 +194,10 @@ var USER_FX_SHARE_KEYS = [
   'shelfSummonParallax',
   'shelfCameraEnterSpeed',
   'shelfCameraExitSpeed',
-  'cam'
+  'cam',
+  // 新键只能追加，避免改变 v1 紧凑分享码的既有字段位置。
+  'lyricDepthKaraokeHighlight',
+  'lyricDepthInteraction'
 ];
 function defaultUserFxArchiveName(index) {
   return '存档 ' + (index + 1);
@@ -271,6 +274,8 @@ function normalizeFxArchiveSnapshot(raw) {
     lyricLetterSpacing: archiveNumber(raw, 'lyricLetterSpacing', fxDefaults.lyricLetterSpacing, -0.04, 0.18),
     lyricLineHeight: archiveNumber(raw, 'lyricLineHeight', fxDefaults.lyricLineHeight, 0.72, 1.80),
     lyricWeight: archiveNumber(raw, 'lyricWeight', fxDefaults.lyricWeight, 500, 900),
+    lyricDepthKaraokeHighlight: raw.lyricDepthKaraokeHighlight !== false,
+    lyricDepthInteraction: raw.lyricDepthInteraction === true,
     visualTintMode: raw.visualTintMode === 'custom' ? 'custom' : 'auto',
     visualTintColor: normalizeHexColor(raw.visualTintColor || fxDefaults.visualTintColor),
     uiAccentColor: normalizeHexColor(raw.uiAccentColor || fxDefaults.uiAccentColor, fxDefaults.uiAccentColor),

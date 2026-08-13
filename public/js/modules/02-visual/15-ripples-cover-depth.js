@@ -605,6 +605,9 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
   // 切歌只做干净的新旧封面 crossfade，不再插入加载雾团。
   var colorMixMs = opts.colorMixDuration || (opts.seamlessTrackSwitch ? (fx.preset === 0 ? 320 : 460) : (fx.preset === 0 ? 520 : 960));
   startColorMixTween(opts.fromResolutionChange ? (fx.preset === 0 ? 300 : 520) : colorMixMs);
+  if (opts.trackToken != null && typeof markLyricDepthCoverReady === 'function') {
+    try { markLyricDepthCoverReady(opts.trackToken); } catch (e) { }
+  }
 
   function refreshCoverDependentColors() {
     if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;

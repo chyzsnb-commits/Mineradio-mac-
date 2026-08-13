@@ -71,6 +71,7 @@ function updateParticlePointerFrame() {
 function beginParticlePointerDrag(e) {
   if (e.button === 2) return;
   if (isPointerOverUi(e)) return;
+  if (typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive() && !(fx && fx.lyricDepthInteraction === true)) return;
   markRenderInteraction('canvas-drag', 1200);
   idleGuidePointerDown(e);
   orbit.rotating = true; orbit.last.x = e.clientX; orbit.last.y = e.clientY;
@@ -98,6 +99,7 @@ window.addEventListener('mousedown', function (e) {
 window.addEventListener('mousemove', function (e) {
   updateControlsAutoHideFromPointer(e.clientX, e.clientY);
   idleGuidePointerMove(e);
+  if (typeof lyricDepthHandlePointerMove === 'function') lyricDepthHandlePointerMove(e);
   if (freeCamera && freeCamera.active) {
     markRenderInteraction('free-camera', 900);
     var pointerLocked = typeof freeCameraPointerLockActive === 'function' && freeCameraPointerLockActive();
@@ -145,6 +147,7 @@ renderer.domElement.addEventListener('mouseleave', function () {
   particlePointerFrame.dirty = false;
   mouseWorld.set(-999, -999, 0);
   mouseActive = false;
+  if (typeof lyricDepthHandlePointerLeave === 'function') lyricDepthHandlePointerLeave();
   idleGuidePointerLeave();
 });
 renderer.domElement.addEventListener('wheel', function (e) {
@@ -166,6 +169,10 @@ renderer.domElement.addEventListener('wheel', function (e) {
     _voxCam.radius = clampRange(_voxCam.radius * (1 + e.deltaY * 0.0022), 12, 140);
     _voxCam.height = _voxCam.radius * clampRange(voxPolarRatio, 0.10, 0.995);
     if (typeof requestStageLyricCameraSnap === 'function') requestStageLyricCameraSnap(4);   // 手动变焦:歌词吸附相机(防滞后抖动)
+    return;
+  }
+  if (typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive() && fx && fx.lyricDepthInteraction === true) {
+    if (typeof gestureZoom !== 'undefined') gestureZoom.target = clampRange(gestureZoom.target - e.deltaY * 0.0015, GESTURE_ZOOM_MIN, GESTURE_ZOOM_MAX);
     return;
   }
   if (fx && fx.preset === SKULL_PRESET_INDEX && typeof skullWheelZoomTarget !== 'undefined') {

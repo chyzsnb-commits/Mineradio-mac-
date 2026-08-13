@@ -73,6 +73,8 @@ function setPreset(p, opts) {
   if (p === SKULL_PRESET_INDEX) loadSkullParticleAsset();
   uniforms.uPreset.value = p;
   refreshPresetGrid();
+  if (typeof updateLyricDepthControlAvailability === 'function') updateLyricDepthControlAvailability();
+  if (typeof updateLyricDepthSettingsControls === 'function') updateLyricDepthSettingsControls();
   if (changed && !opts.skipTransition) triggerPresetParticleTransition(prev, p);
   // 每个预设对应的相机基线 (改 userOrbit)
   if (changed && !opts.preserveCamera) {

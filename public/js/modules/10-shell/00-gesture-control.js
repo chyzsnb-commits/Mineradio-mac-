@@ -76,6 +76,9 @@ function resetParticleRotationTarget(syncVisual) {
   gestureTwoHand.active = false;
   pinchState.active = false;
   if (typeof setVoxelGestureContentScale === 'function') setVoxelGestureContentScale(1);
+  if (typeof resetLyricDepthInteractionTransform === 'function') {
+    resetLyricDepthInteractionTransform(!!syncVisual);
+  }
   if (syncVisual && particles) {
     gestureZoom.value = 1;
     particles.rotation.set(0, 0, 0);
@@ -97,6 +100,9 @@ function rebaseParticleRotationAxis(axis) {
   if (backCoverGroup) backCoverGroup.rotation[axis] -= offset;
   if (skullParticleGroup) skullParticleGroup.rotation[axis] -= offset;
   if (stageLyrics.group) stageLyrics.group.rotation[axis] -= offset;
+  if (typeof rebaseLyricDepthInteractionAxis === 'function') {
+    rebaseLyricDepthInteractionAxis(axis, offset);
+  }
 }
 
 function rebaseParticleRotationIfNeeded() {
@@ -645,6 +651,10 @@ function filterSlotLandmarks(slot, rawLm, tNow) {
 function gesturePresetKind() {
   if (typeof voxelCityActive === 'function' && voxelCityActive()) return 'voxel';
   if (typeof SKULL_PRESET_INDEX !== 'undefined' && fx && fx.preset === SKULL_PRESET_INDEX) return 'skull';
+  var lyricDepthActive = typeof lyricDepthFlightActive === 'function'
+    ? lyricDepthFlightActive()
+    : !!(fx && Number(fx.preset) === 11);
+  if (lyricDepthActive && fx && fx.lyricDepthInteraction === true) return 'lyric-depth';
   return 'particles';
 }
 
@@ -730,7 +740,7 @@ function processGestureState(tNow) {
       gestureZoom.target = clampRange(gestureTwoHand.zoomBase * ratio, GESTURE_ZOOM_MIN, GESTURE_ZOOM_MAX);
       gestureRotation.z += da * 0.9;
       rebaseParticleRotationIfNeeded();
-      showGestureHUD('双手缩放 ' + Math.round(gestureZoom.target * 100) + '%', clampRange((gestureZoom.target - GESTURE_ZOOM_MIN) / (GESTURE_ZOOM_MAX - GESTURE_ZOOM_MIN), 0, 1), '拉伸=缩放 · 转动双手=旋转');
+      showGestureHUD((kind === 'lyric-depth' ? '词境穿行 · ' : '') + '双手缩放 ' + Math.round(gestureZoom.target * 100) + '%', clampRange((gestureZoom.target - GESTURE_ZOOM_MIN) / (GESTURE_ZOOM_MAX - GESTURE_ZOOM_MIN), 0, 1), '拉伸=缩放 · 转动双手=旋转');
     }
     gestureGrip.target = Math.min(0.2, gestureGrip.target);
     updateGesturePushTargets(present, kind);
@@ -768,7 +778,7 @@ function processGestureState(tNow) {
     pinchState.lastT = tNow;
     particleSpin.vx = particleSpin.vy = 0;
     gestureGrip.target = Math.min(0.34, gestureGrip.target);
-    showGestureHUD(kind === 'voxel' ? '捏合转镜' : '捏合拖动', 1, kind === 'voxel' ? '移动手掌 -> 环绕城市' : '移动手掌 -> 旋转封面');
+    showGestureHUD(kind === 'voxel' ? '捏合转镜' : (kind === 'lyric-depth' ? '词境穿行 · 捏合拖动' : '捏合拖动'), 1, kind === 'voxel' ? '移动手掌 -> 环绕城市' : '移动手掌 -> 旋转封面');
     hudDone = true;
   } else if (pincher && pinchState.active) {
     var dx = pincher.palm.x - pinchState.lastX;
@@ -789,7 +799,7 @@ function processGestureState(tNow) {
       gestureRotation.x += spinX;
       particleSpin.vy = clampParticleSpinVelocity(spinY / pinchDt * 0.48);
       particleSpin.vx = clampParticleSpinVelocity(spinX / pinchDt * 0.48);
-      showGestureHUD('拖动中', 1, '松手后保留惯性');
+      showGestureHUD(kind === 'lyric-depth' ? '词境穿行 · 拖动中' : '拖动中', 1, '松手后保留惯性');
     }
     pinchState.lastX = pincher.palm.x;
     pinchState.lastY = pincher.palm.y;
@@ -821,7 +831,8 @@ function processGestureState(tNow) {
     if (!pincher && !hudDone) {
       var legend = kind === 'voxel' ? '掌浪 / 捏合转镜 / 双捏推拉 / 握拳压城'
         : (kind === 'skull' ? '捏合旋转 / 双捏变焦 / 握拳闪光'
-          : '掌推 / 捏合旋转 / 握拳收束 / 双捏缩放');
+          : (kind === 'lyric-depth' ? '词境穿行 / 捏合旋转 / 双捏缩放'
+            : '掌推 / 捏合旋转 / 握拳收束 / 双捏缩放'));
       showGestureHUD(present.length === 2 ? '双手悬停' : (openest > 0.62 ? '张开恢复' : '悬停'), 0.30 + openest * 0.34, legend);
     }
   }

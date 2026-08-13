@@ -276,6 +276,57 @@ function updateVoxFloatBlockScaleControl() {
     row.setAttribute('aria-disabled', disabled ? 'true' : 'false');
   }
 }
+function updateLyricDepthSettingsControls() {
+  var interaction = fx && fx.lyricDepthInteraction === true;
+  var interactionButton = document.getElementById('t-lyricDepthInteraction');
+  if (interactionButton) {
+    interactionButton.classList.toggle('on', interaction);
+    interactionButton.setAttribute('aria-pressed', interaction ? 'true' : 'false');
+    var state = interactionButton.querySelector('.lyric-depth-orbit-state');
+    if (state) state.textContent = interaction ? '已开启' : '开启';
+  }
+  var karaoke = !fx || fx.lyricDepthKaraokeHighlight !== false;
+  var karaokeToggle = document.getElementById('t-lyricDepthKaraokeHighlight');
+  if (karaokeToggle) {
+    karaokeToggle.classList.toggle('on', karaoke);
+    karaokeToggle.setAttribute('aria-pressed', karaoke ? 'true' : 'false');
+  }
+}
+function updateLyricDepthControlAvailability() {
+  var locked = !!(fx && Number(fx.preset) === 11);
+  var seg = document.getElementById('lyric-display-mode-seg');
+  if (seg) {
+    seg.classList.toggle('lyric-depth-locked', locked);
+    seg.setAttribute('aria-disabled', locked ? 'true' : 'false');
+    seg.querySelectorAll('button').forEach(function (button) {
+      button.disabled = locked;
+      if (locked) button.title = '词境穿行固定使用五层景深';
+      else button.removeAttribute('title');
+    });
+  }
+  var lineInput = document.getElementById('fx-lyriccustomlines');
+  if (lineInput) lineInput.disabled = locked;
+  var lineRow = document.getElementById('lyric-custom-line-row');
+  if (lineRow) {
+    lineRow.classList.toggle('disabled', locked);
+    lineRow.setAttribute('aria-disabled', locked ? 'true' : 'false');
+  }
+}
+function toggleLyricDepthInteraction() {
+  if (typeof resetParticleRotationTarget === 'function') resetParticleRotationTarget(true);
+  fx.lyricDepthInteraction = fx.lyricDepthInteraction !== true;
+  updateLyricDepthSettingsControls();
+  saveLyricLayout({ user: true, reason: 'lyricDepthInteraction' });
+  if (typeof markRenderInteraction === 'function') markRenderInteraction('lyric-depth-interaction', 900);
+  showToast(fx.lyricDepthInteraction ? '360° 词境漫游已开启' : '360° 词境漫游已关闭');
+}
+function toggleLyricDepthKaraokeHighlight() {
+  fx.lyricDepthKaraokeHighlight = fx.lyricDepthKaraokeHighlight === false;
+  updateLyricDepthSettingsControls();
+  saveLyricLayout({ user: true, reason: 'lyricDepthKaraokeHighlight' });
+  if (typeof markRenderInteraction === 'function') markRenderInteraction('lyric-depth-karaoke', 500);
+  showToast(fx.lyricDepthKaraokeHighlight ? '跟唱明暗已开启' : '跟唱明暗已关闭');
+}
 function updateFxInputs() {
   normalizeDevelopmentLockedFxState();
   applyShelfCameraDefaultAngle(false);
@@ -413,6 +464,8 @@ function updateFxInputs() {
   updateVoxFloatBlockScaleControl();
   var voxShimmerToggle = document.getElementById('t-voxShimmer');
   if (voxShimmerToggle) voxShimmerToggle.classList.toggle('on', fx.voxShimmer !== false);
+  updateLyricDepthSettingsControls();
+  updateLyricDepthControlAvailability();
   refreshPresetGrid();
   updateLyricColorControls();
   updateLyricHighlightControls();
@@ -544,7 +597,7 @@ function fxPanelTargetForNode(node, current) {
   var id = node.id || '';
   var inputId = fxPanelInputId(node);
   if (id === 'preset-grid' || id === 'user-archive-grid') return 'presets';
-  if (id === 'vox-fx-section') return 'motion';   // 音域回响控件 → 动态 tab
+  if (id === 'vox-fx-section' || id === 'lyric-depth-fx-section') return 'motion';   // 预设专属控件 → 动态 tab
   if (id === 'app-bg-section') return 'appearance';   // 全局背景 → 外观 tab
   if (id === 'fx-lyric-fold') return 'lyrics';
   if (id === 'fx-overlay-fold' || id === 'fx-stage-fold') return 'motion';

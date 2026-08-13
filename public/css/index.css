@@ -23,9 +23,18 @@ body.cursor-hidden * {
   cursor: none !important
 }
 
-/* 参考视频唯一可确认的鼠标反馈是浏览器手形光标；场景本身不做臆造的 hover 动画。 */
+/* 词境穿行：只有命中封面才显示手形；360°开启后画布可拖动。 */
 body.lyric-depth-on:not(.cursor-hidden) #canvas-container canvas {
+  cursor: default
+}
+body.lyric-depth-on.lyric-depth-cover-hover:not(.cursor-hidden) #canvas-container canvas {
   cursor: pointer
+}
+body.lyric-depth-on.lyric-depth-interaction-on:not(.cursor-hidden) #canvas-container canvas {
+  cursor: grab
+}
+body.lyric-depth-on.lyric-depth-interaction-on:not(.cursor-hidden) #canvas-container canvas:active {
+  cursor: grabbing
 }
 
 html.desktop-shell-root,
@@ -14465,6 +14474,34 @@ body.vox-on #playlist-panel{width:280px;right:14px;max-height:calc(100vh - 220px
 body.vox-on .pl-detail-list{max-height:42vh;overflow:auto}
 /* 体素专属开关:只在体素预设的视觉控制台里显示,其它预设隐藏 */
 body:not(.vox-on) #vox-fx-section{display:none}
+body:not(.lyric-depth-on) #lyric-depth-fx-section{display:none}
+body.lyric-depth-on #lyric-depth-fx-section{display:block}
+#lyric-depth-fx-section{position:relative;margin:2px 0 10px;padding:16px;border:1px solid rgba(255,255,255,.105);border-radius:18px;background:rgba(7,10,13,.76);box-shadow:inset 0 1px 0 rgba(255,255,255,.075),0 18px 44px rgba(0,0,0,.22);overflow:hidden}
+#lyric-depth-fx-section::before{content:"";position:absolute;inset:-44% 38% 38% -18%;pointer-events:none;background:radial-gradient(circle,rgba(var(--fc-accent-rgb),.12),transparent 66%);opacity:.7}
+.lyric-depth-fx-kicker{position:relative;margin-bottom:3px;font:600 8.5px/1 var(--font-mono);letter-spacing:.2em;color:rgba(var(--fc-accent-rgb),.6)}
+#lyric-depth-fx-section>.fx-section-label{position:relative;margin:0 0 12px;font-size:15px;letter-spacing:.04em;color:rgba(255,255,255,.92)}
+.lyric-depth-orbit-button{position:relative;width:100%;min-height:82px;display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px;border:1px solid rgba(255,255,255,.13);border-radius:16px;color:rgba(255,255,255,.88);background:rgba(255,255,255,.045);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 12px 26px rgba(0,0,0,.2);cursor:pointer;text-align:left;transition:transform .22s cubic-bezier(.2,.8,.2,1),border-color .22s,background .22s,box-shadow .22s}
+.lyric-depth-orbit-button:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.23);background:rgba(255,255,255,.068)}
+.lyric-depth-orbit-button:focus-visible{outline:2px solid rgba(var(--fc-accent-rgb),.58);outline-offset:2px}
+.lyric-depth-orbit-button.on{border-color:rgba(var(--fc-accent-rgb),.38);background:rgba(var(--fc-accent-rgb),.075);box-shadow:inset 0 1px 0 rgba(255,255,255,.11),0 0 0 1px rgba(var(--fc-accent-rgb),.06),0 16px 36px rgba(0,0,0,.24)}
+.lyric-depth-orbit-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:14px;color:rgba(255,255,255,.7);background:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.lyric-depth-orbit-icon svg{width:32px;height:32px;stroke:currentColor;stroke-width:1.4}
+.lyric-depth-orbit-button.on .lyric-depth-orbit-icon{color:rgb(var(--fc-accent-rgb));background:rgba(var(--fc-accent-rgb),.1);box-shadow:inset 0 0 0 1px rgba(var(--fc-accent-rgb),.2),0 0 20px rgba(var(--fc-accent-rgb),.1)}
+.lyric-depth-orbit-copy{display:flex;min-width:0;flex-direction:column;gap:4px}
+.lyric-depth-orbit-copy strong{font-size:14px;font-weight:650;letter-spacing:.02em}
+.lyric-depth-orbit-copy small{font-size:10px;color:rgba(255,255,255,.43);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lyric-depth-orbit-state{min-width:43px;padding:5px 8px;border-radius:999px;font-size:10px;text-align:center;color:rgba(255,255,255,.46);background:rgba(255,255,255,.055)}
+.lyric-depth-orbit-button.on .lyric-depth-orbit-state{color:rgb(var(--fc-accent-rgb));background:rgba(var(--fc-accent-rgb),.11)}
+.lyric-depth-toggle-grid{position:relative;grid-template-columns:1fr;margin-top:10px}
+.lyric-depth-toggle-grid .fx-toggle{min-height:48px}
+.lyric-depth-toggle-grid .fx-toggle>span:first-child{display:flex;flex-direction:column;gap:2px}
+.lyric-depth-toggle-grid .fx-toggle strong{font-size:11.5px;font-weight:600}
+.lyric-depth-toggle-grid .fx-toggle small{font-size:9.5px;font-weight:400;color:rgba(255,255,255,.38)}
+.lyric-depth-fx-hint{position:relative;margin:10px 2px 0;font-size:9.5px;line-height:1.55;color:rgba(255,255,255,.34)}
+.lyric-depth-line-note{display:none;margin:6px 1px 10px;padding:8px 10px;border-left:2px solid rgba(var(--fc-accent-rgb),.38);border-radius:2px 9px 9px 2px;background:rgba(var(--fc-accent-rgb),.045);font-size:9.5px;line-height:1.45;color:rgba(255,255,255,.46)}
+body.lyric-depth-on .lyric-depth-line-note{display:block}
+body.lyric-depth-on #lyric-display-mode-seg,body.lyric-depth-on #lyric-custom-line-row{opacity:.36;filter:saturate(.35);cursor:not-allowed}
+body.lyric-depth-on #lyric-display-mode-seg button,body.lyric-depth-on #fx-lyriccustomlines{cursor:not-allowed}
 /* 外观 tab:体素城市预设下隐藏默认「界面与背景」控件(仅保留通用背景);音域回响控件已移至「动态」tab */
 body.vox-on #appearance-default-wrap{display:none}
 /* 体素城市:自定义背景层(色/图),只体素显示,在 canvas 透明处透出 */
@@ -14483,6 +14520,11 @@ body.vox-on .fx-slider:has(#fx-scatter),body.vox-on .fx-slider:has(#fx-cineshake
 body.vox-on .fx-slider:has(#fx-point),body.vox-on .fx-slider:has(#fx-speed),body.vox-on .fx-slider:has(#fx-twist),body.vox-on .fx-slider:has(#fx-color),body.vox-on .fx-slider:has(#fx-bloom),body.vox-on .fx-slider:has(#fx-bgfade),body.vox-on .fx-section-label:has(+ .fx-slider:has(#fx-point)){display:none!important}
 /* 体素城市:「动态」tab 只保留音域回响(#vox-fx-section)+ 摄像头交互(#fx-stage-fold 内 #cam-block),其余顶层块隐藏 */
 body.vox-on [data-fx-page="motion"] > *:not(#vox-fx-section):not(#fx-stage-fold){display:none}
+/* 词境穿行「动态」只保留专属交互和摄像头入口，避免展示不作用于该独立舞台的粒子参数。 */
+body.lyric-depth-on #fx-stage-fold{display:block!important}
+body.lyric-depth-on #fx-stage-fold .fx-fold-head{display:none}
+body.lyric-depth-on #fx-stage-fold .fx-fold-body > :not(#cam-block){display:none}
+body.lyric-depth-on [data-fx-page="motion"] > *:not(#lyric-depth-fx-section):not(#fx-stage-fold){display:none}
 /* 体素城市:歌单迁进视觉控制台后,改成在控制台内"在流"显示(去掉固定定位/位移,常显) */
 #vox-playlist-host{margin:6px 0 10px}
 #vox-playlist-host #playlist-panel{position:static!important;left:auto!important;right:auto!important;top:auto!important;width:100%!important;max-height:60vh!important;opacity:1!important;transform:none!important;pointer-events:auto!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;background:transparent!important;border:none!important;padding:0!important}

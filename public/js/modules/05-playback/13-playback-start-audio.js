@@ -640,10 +640,43 @@ function playAlbumGaplessNextOnEnded(token) {
   return true;
 }
 
+var lyricDepthLastActualPlayback = {
+  song: null,
+  key: '',
+  token: 0
+};
+
+function lyricDepthPlaybackTrackKey(song) {
+  if (!song) return '';
+  if (typeof queueItemKey === 'function') return String(queueItemKey(song) || '');
+  return [
+    song.source || song.provider || song.type || '',
+    song.id || song.songId || song.localKey || song.url || '',
+    song.name || '',
+    song.artist || song.artists || ''
+  ].join(':');
+}
+
+function rememberLyricDepthActualPlayback(song, token) {
+  if (!song || Number(token) !== Number(trackSwitchToken)) return false;
+  lyricDepthLastActualPlayback = {
+    song: Object.assign({}, song),
+    key: lyricDepthPlaybackTrackKey(song),
+    token: Number(token) || 0
+  };
+  return true;
+}
+
+function cancelLyricDepthPlaybackTransition(token) {
+  if (typeof cancelLyricDepthTrackTransition !== 'function') return false;
+  try { return cancelLyricDepthTrackTransition(token); } catch (e) { return false; }
+}
+
 async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resumeAt) {
   opts = opts || {};
   if (!song || !song.localUrl) {
     clearFailedPlaybackAudioSource(token);
+    cancelLyricDepthPlaybackTransition(token);
     showToast('本地文件已失效，请重新导入后继续');
     forcePlaybackControlsInteractive();
     return false;
@@ -702,6 +735,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
   if (token !== trackSwitchToken) return false;
   if (!playbackStarted) {
     clearFailedPlaybackAudioSource(token);
+    cancelLyricDepthPlaybackTransition(token);
     forcePlaybackControlsInteractive();
     if (opts.startupAutoplay) {
       return false;
@@ -712,7 +746,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
     }
     return false;
   }
-  confirmQueuePlaybackStarted(idx, token);
+  if (confirmQueuePlaybackStarted(idx, token)) rememberLyricDepthActualPlayback(song, token);
   forcePlaybackControlsInteractive();
   beginListenSession(song, null);
   if (typeof cancelPendingTrackFallbackLyrics === 'function') cancelPendingTrackFallbackLyrics();
@@ -735,7 +769,7 @@ async function playQueueAt(idx, opts) {
   var albumGaplessHandoff = !!(opts.albumGaplessHandoff && opts.preloadedAudio && opts.preloadedData);
   var albumGaplessMixed = !!(albumGaplessHandoff && opts.albumGaplessMixed);
   var albumGaplessPreviousAudio = albumGaplessHandoff ? audio : null;
-  var previousSongForTransition = currentIdx >= 0 && currentIdx < playQueue.length ? playQueue[currentIdx] : null;
+  var previousSongForTransition = lyricDepthLastActualPlayback.song;
   if (
     playMode === 'shuffle'
     && !opts.skipShuffleOrder
@@ -772,6 +806,34 @@ async function playQueueAt(idx, opts) {
     var song = safePlaybackStep('hydrate-song', function () { return hydrateCustomCover(playQueue[idx]); }) || playQueue[idx];
     playQueue[idx] = song;
     var sameAlbumCoverSwitch = albumGaplessSameAlbumCover(previousSongForTransition, song);
+    var previousLyricDepthKey = lyricDepthLastActualPlayback.key;
+    var nextLyricDepthKey = lyricDepthPlaybackTrackKey(song);
+    var sameLyricDepthTrack = !!(previousLyricDepthKey && nextLyricDepthKey && previousLyricDepthKey === nextLyricDepthKey);
+    if (!qualitySwitch && (opts.fallbackDepth || sameLyricDepthTrack) && typeof continueLyricDepthTrackTransition === 'function') {
+      safePlaybackStep('lyric-depth-track-transition-continue', function () {
+        continueLyricDepthTrackTransition(token, {
+          song: song,
+          previousSong: previousSongForTransition || null,
+          previousToken: lyricDepthLastActualPlayback.token,
+          fallbackDepth: Number(opts.fallbackDepth) || 0,
+          albumGaplessHandoff: albumGaplessHandoff,
+          albumGaplessMixed: albumGaplessMixed,
+          sameAlbumCover: sameAlbumCoverSwitch
+        });
+      });
+    } else if (!qualitySwitch && !opts.fallbackDepth && !sameLyricDepthTrack && typeof beginLyricDepthTrackTransition === 'function') {
+      safePlaybackStep('lyric-depth-track-transition', function () {
+        beginLyricDepthTrackTransition(song, token, {
+          previousSong: previousSongForTransition || null,
+          previousToken: lyricDepthLastActualPlayback.token,
+          albumGaplessHandoff: albumGaplessHandoff,
+          albumGaplessMixed: albumGaplessMixed,
+          sameAlbumCover: sameAlbumCoverSwitch,
+          startupAutoplay: !!opts.startupAutoplay,
+          manual: !!opts.manual
+        });
+      });
+    }
     var earlyLyricFetchStarted = false;
     function startTrackLyricFetch() {
       if (earlyLyricFetchStarted) return false;
@@ -882,9 +944,11 @@ async function playQueueAt(idx, opts) {
           : { url: '', playable: false, error: 'PROVIDER_DISABLED', message: '该音源已在公开版移除' };
         if (opts.startupAutoplay) {
           markQueueItemPlaybackFailed(idx);
+          cancelLyricDepthPlaybackTransition(token);
           return false;
         }
         if (await tryAutoPlaybackFallback(song, disabledPayload, idx, token, Object.assign({}, opts, { resumeAt: opts.resumeAt != null ? opts.resumeAt : restoreResumeAt }))) return;
+        cancelLyricDepthPlaybackTransition(token);
         handlePlaybackUnavailable(song, disabledPayload);
         return;
       }
@@ -959,8 +1023,10 @@ async function playQueueAt(idx, opts) {
         if (await tryAutoPlaybackFallback(song, data, idx, token, retryPlaybackOpts)) return;
         if (opts.startupAutoplay) {
           markQueueItemPlaybackFailed(idx);
+          cancelLyricDepthPlaybackTransition(token);
           return false;
         }
+        cancelLyricDepthPlaybackTransition(token);
         handlePlaybackUnavailable(song, data);
         return;
       }
@@ -1105,6 +1171,7 @@ async function playQueueAt(idx, opts) {
       if (!playbackStarted) {
         clearFailedPlaybackAudioSource(token);
         if (isQQPlayback && await retryQQPlaybackWithCompatibleQuality(song, idx, token, retryPlaybackOpts, data, requestedQuality)) return;
+        cancelLyricDepthPlaybackTransition(token);
         forcePlaybackControlsInteractive();
         if (opts.startupAutoplay) {
           return false;
@@ -1118,7 +1185,7 @@ async function playQueueAt(idx, opts) {
         }
         return;
       }
-      confirmQueuePlaybackStarted(idx, token);
+      if (confirmQueuePlaybackStarted(idx, token)) rememberLyricDepthActualPlayback(song, token);
       forcePlaybackControlsInteractive();
       if (albumGaplessHandoff && albumGaplessPreviousAudio && albumGaplessPreviousAudio !== audio) {
         setTimeout(function () {
@@ -1153,6 +1220,7 @@ async function playQueueAt(idx, opts) {
       if (!qualitySwitch) safePlaybackStep('shelf-preview-suppress-end', suppressShelfPreviewForPlaybackSwitch);
     } catch (err) {
       if (typeof token !== 'undefined') clearFailedPlaybackAudioSource(token);
+      if (typeof token !== 'undefined') cancelLyricDepthPlaybackTransition(token);
       console.error('Play failed:', { phase: playPhase, error: err }, err);
       hideLoading();
       forcePlaybackControlsInteractive();
@@ -1170,6 +1238,7 @@ async function playQueueAt(idx, opts) {
     }
   } catch (setupErr) {
     if (typeof token !== 'undefined') clearFailedPlaybackAudioSource(token);
+    if (typeof token !== 'undefined') cancelLyricDepthPlaybackTransition(token);
     console.error('Play setup failed:', { phase: playPhase, error: setupErr }, setupErr);
     hideLoading();
     forcePlaybackControlsInteractive();

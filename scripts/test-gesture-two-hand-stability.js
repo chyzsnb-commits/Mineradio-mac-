@@ -21,3 +21,17 @@ test('双手推拉允许短暂丢手并稳定左右手身份', () => {
   assert.match(source, /while \(da > Math\.PI \/ 2\) da -= Math\.PI/);
   assert.match(source, /tNow - gestureTwoHand\.lastPairAt <= GESTURE_TWO_HAND_GRACE_MS/);
 });
+
+test('词境穿行交互开启后复用 Emily 的旋转和双捏缩放链路', () => {
+  assert.match(source, /lyricDepthActive && fx && fx\.lyricDepthInteraction === true\) return 'lyric-depth'/);
+  assert.match(source, /gestureZoom\.target = clampRange\(gestureTwoHand\.zoomBase \* ratio, GESTURE_ZOOM_MIN, GESTURE_ZOOM_MAX\)/);
+  assert.match(source, /gestureRotation\.z \+= da \* 0\.9/);
+  assert.match(source, /gestureRotation\.y \+= spinY[\s\S]*gestureRotation\.x \+= spinX/);
+  assert.match(source, /particleSpin\.vy = clampParticleSpinVelocity\(spinY \/ pinchDt \* 0\.48\)/);
+  assert.match(source, /particleSpin\.vx = clampParticleSpinVelocity\(spinX \/ pinchDt \* 0\.48\)/);
+});
+
+test('全局回正和多圈旋转 rebase 通过可选 hook 同步词境穿行', () => {
+  assert.match(source, /typeof resetLyricDepthInteractionTransform === 'function'[\s\S]*resetLyricDepthInteractionTransform\(!!syncVisual\)/);
+  assert.match(source, /typeof rebaseLyricDepthInteractionAxis === 'function'[\s\S]*rebaseLyricDepthInteractionAxis\(axis, offset\)/);
+});

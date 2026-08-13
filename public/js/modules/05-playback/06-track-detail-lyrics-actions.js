@@ -706,6 +706,9 @@ function applyLyricsState(lines, hasNativeKaraoke, timingSource, translationLine
   var prepared = preparedLyricStateForApply(lines, hasNativeKaraoke, timingSource, translationLines, translationSource);
   if (skipSameLyricStateRender(prepared, renderOptions, 'applyLyricsState')) {
     updateCustomLyricControls();
+    if (prepared.timingSource !== 'pending' && typeof markLyricDepthLyricsReady === 'function') {
+      try { markLyricDepthLyricsReady(trackSwitchToken); } catch (e) { }
+    }
     return;
   }
   lyricsHasNativeKaraoke = prepared.hasNativeKaraoke;
@@ -715,6 +718,9 @@ function applyLyricsState(lines, hasNativeKaraoke, timingSource, translationLine
   lyricsLines = cloneLyricLines(prepared.lines);
   renderLyrics(renderOptions || {});
   updateCustomLyricControls();
+  if (prepared.timingSource !== 'pending' && typeof markLyricDepthLyricsReady === 'function') {
+    try { markLyricDepthLyricsReady(trackSwitchToken); } catch (e) { }
+  }
 }
 function applyOriginalLyricsState(renderOptions) {
   lyricSourceMode = 'original';
@@ -757,6 +763,9 @@ function applyCustomLyricState(song, silent, renderOptions) {
   var prepared = preparedLyricStateForApply(lines, false, lines[0] && lines[0].source === 'custom-lrc' ? 'custom-lrc' : 'custom-text', [], 'none');
   if (skipSameLyricStateRender(prepared, renderOptions, 'applyCustomLyricState')) {
     updateCustomLyricControls();
+    if (typeof markLyricDepthLyricsReady === 'function') {
+      try { markLyricDepthLyricsReady(trackSwitchToken); } catch (e) { }
+    }
     return true;
   }
   lyricsHasNativeKaraoke = prepared.hasNativeKaraoke;
@@ -766,6 +775,9 @@ function applyCustomLyricState(song, silent, renderOptions) {
   lyricsLines = cloneLyricLines(prepared.lines);
   renderLyrics(renderOptions || {});
   updateCustomLyricControls();
+  if (typeof markLyricDepthLyricsReady === 'function') {
+    try { markLyricDepthLyricsReady(trackSwitchToken); } catch (e) { }
+  }
   return true;
 }
 function preferredLyricSourceForSong(song) {
@@ -932,6 +944,10 @@ function refreshStageLyricVisualOptions() {
   pushDesktopLyricsState(true);
 }
 function setLyricDisplayMode(mode) {
+  if (fx && Number(fx.preset) === 11) {
+    showToast('词境穿行固定使用五层景深');
+    return;
+  }
   var nextMode = normalizeLyricDisplayMode(mode);
   if (normalizeLyricDisplayMode(fx && fx.lyricDisplayMode) === nextMode) return;
   fx.lyricDisplayMode = nextMode;
