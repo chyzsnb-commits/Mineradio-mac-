@@ -39,7 +39,7 @@ var gestureZoom = { value: 1, target: 1 };
 // 双手变换(双捏)状态。短暂丢手/捏合抖动时保留基准，避免误落入单手旋转并重置缩放。
 var GESTURE_TWO_HAND_GRACE_MS = 180;
 var GESTURE_SLOT_REACQUIRE_MS = 240;
-var gestureTwoHand = { active: false, kind: '', d0: 1, distSm: 1, lastPairAt: 0, lastAngle: 0, zoomBase: 1, voxOk: false, voxRadiusBase: 60, voxPolar: 0.5, skullZoomBase: 0 };
+var gestureTwoHand = { active: false, kind: '', d0: 1, distSm: 1, lastPairAt: 0, lastAngle: 0, zoomBase: 1, voxScaleBase: 1, skullZoomBase: 0 };
 var gesturePrevFistCount = 0;   // 上一帧拳头数(入拳脉冲按增量触发)
 // 安魂:握拳触发骷髅闪光(01-float-skull-backcover.js 的 flashTarget 会取用)
 var skullGestureFlash = 0;
@@ -75,6 +75,7 @@ function resetParticleRotationTarget(syncVisual) {
   gestureZoom.target = 1;
   gestureTwoHand.active = false;
   pinchState.active = false;
+  if (typeof setVoxelGestureContentScale === 'function') setVoxelGestureContentScale(1);
   if (syncVisual && particles) {
     gestureZoom.value = 1;
     particles.rotation.set(0, 0, 0);
@@ -464,6 +465,7 @@ function stopGestureControl() {
   pinchState.active = false;
   gestureTwoHand.active = false;
   gestureZoom.target = 1;
+  if (typeof setVoxelGestureContentScale === 'function') setVoxelGestureContentScale(1);
   gesturePrevFistCount = 0;
   gestureHandSlots.forEach(resetGestureSlot);
   uniforms.uHandActive.value = 0;
@@ -696,10 +698,8 @@ function processGestureState(tNow) {
       gestureTwoHand.distSm = dist;
       gestureTwoHand.lastAngle = ang;
       gestureTwoHand.zoomBase = gestureZoom.target;
-      if (kind === 'voxel' && typeof _voxCam !== 'undefined') {
-        gestureTwoHand.voxOk = voxGestureCamReady();   // 先把锁定机位折算回轨道参数再取基准, 否则基准是过期值、相机会跳
-        gestureTwoHand.voxRadiusBase = _voxCam.radius;
-        gestureTwoHand.voxPolar = _voxCam.height / Math.max(1e-6, _voxCam.radius);
+      if (kind === 'voxel' && typeof getVoxelGestureContentScale === 'function') {
+        gestureTwoHand.voxScaleBase = getVoxelGestureContentScale();
       }
       if (kind === 'skull' && typeof skullWheelZoomTarget !== 'undefined') gestureTwoHand.skullZoomBase = skullWheelZoomTarget;
       particleSpin.vx = particleSpin.vy = 0;
@@ -714,12 +714,12 @@ function processGestureState(tNow) {
     while (da < -Math.PI / 2) da += Math.PI;
     gestureTwoHand.lastAngle = ang;
     if (kind === 'voxel') {
-      if (gestureTwoHand.voxOk && voxGestureCamReady()) {
-        _voxCam.radius = clampRange(gestureTwoHand.voxRadiusBase / ratio, 12, 140);
-        _voxCam.height = _voxCam.radius * clampRange(gestureTwoHand.voxPolar, 0.10, 0.995);
-        if (typeof requestStageLyricCameraSnap === 'function') requestStageLyricCameraSnap(4);
+      var voxGestureScale = typeof getVoxelGestureContentScale === 'function' ? getVoxelGestureContentScale() : 1;
+      if (typeof setVoxelGestureContentScale === 'function') {
+        voxGestureScale = setVoxelGestureContentScale(gestureTwoHand.voxScaleBase * ratio);
+        if (typeof markRenderInteraction === 'function') markRenderInteraction('vox-gesture', 900);
       }
-      showGestureHUD('双手推拉', clampRange(ratio / 2, 0.05, 1), '拉开=拉近 · 收拢=推远');
+      showGestureHUD('双手缩放 ' + Math.round(voxGestureScale * 100) + '%', clampRange(ratio / 2, 0.05, 1), '拉开=放大 · 收拢=缩小');
     } else if (kind === 'skull') {
       if (typeof skullWheelZoomTarget !== 'undefined') {
         skullWheelZoomTarget = clampRange(gestureTwoHand.skullZoomBase - (ratio - 1) * 1.6, -0.95, 1.28);
@@ -914,7 +914,7 @@ function tickGestureRotation(dt) {
   gestureGrip.pulse *= Math.pow(0.84, dt * 60);
   if (uniforms.uGestureGrip) uniforms.uGestureGrip.value = clampRange(gestureGrip.value + gestureGrip.pulse * 0.16, 0, 1);
 
-  // 双捏缩放: 粒子组整体 scale(骷髅/体素走各自的相机变焦, 不缩放粒子组)
+  // 双捏缩放: 粒子组整体 scale；骷髅走自身变焦，体素在手势状态机里直接缩放内容根组。
   gestureZoom.value += (gestureZoom.target - gestureZoom.value) * Math.min(1, dt * 7);
   if (particles && Math.abs(particles.scale.x - gestureZoom.value) > 0.0004) {
     particles.scale.setScalar(gestureZoom.value);

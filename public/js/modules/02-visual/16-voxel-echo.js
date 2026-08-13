@@ -993,6 +993,20 @@ var VOX_FB_MAX = Math.max(VOX_FB_MIN + 0.05, 0.45 + (3.2 - 0.45) * (26 / 100)); 
 var VOX_FB_SPEED_RATE = 3.0 + (36.0 - 3.0) * (77 / 100);            // speed 77 → 28.41(MapScene.tsx:470)
 var _voxFbMesh = null, _voxFbUniforms = null, _voxFbBlocks = null, _voxFbPulse = 0;
 var _voxFbEuler = null, _voxFbQuat = null;
+// 双手张合只缩放音域内容，不改相机 radius；输入距离已在手势层去抖，这里立即应用，避免滚轮式推拉和二次惯性。
+var _voxGestureContentScale = 1;
+function getVoxelGestureContentScale() {
+  return _voxGestureContentScale;
+}
+function setVoxelGestureContentScale(value) {
+  var next = Number(value);
+  if (!isFinite(next)) next = 1;
+  _voxGestureContentScale = Math.max(0.55, Math.min(1.9, next));
+  if (voxelCity && voxelCity.contentRoot && voxelCity.contentRoot.scale) {
+    voxelCity.contentRoot.scale.setScalar(_voxGestureContentScale);
+  }
+  return _voxGestureContentScale;
+}
 function voxFloatBlockScaleValue(value) {
   var scale = Number(value);
   if (!isFinite(scale)) scale = 1;
@@ -1020,29 +1034,8 @@ var VOX_CAM_DEF_HEIGHT = VOX_CAM_DEF_Y;
 // 默认视角封面完整居中于地形后方(用户指定);radius/height 仍是原版低掠视,海浪条纹不会回来
 var VOX_CAM_DEF_AZIMUTH = -Math.PI / 4;
 var _voxCam = { radius: VOX_CAM_DEF_RADIUS, height: VOX_CAM_DEF_HEIGHT, azimuth: VOX_CAM_DEF_AZIMUTH, autoRotate: false, rotateSpeed: 0.5 };
-var _voxCamDisplay = { radius: VOX_CAM_DEF_RADIUS, height: VOX_CAM_DEF_HEIGHT, azimuth: VOX_CAM_DEF_AZIMUTH };
-function shortestVoxelAzimuthDelta(from, to) {
-  var delta = (to - from) % (Math.PI * 2);
-  if (delta > Math.PI) delta -= Math.PI * 2;
-  if (delta < -Math.PI) delta += Math.PI * 2;
-  return delta;
-}
-function voxSnapCameraDisplayState() {
-  _voxCamDisplay.radius = _voxCam.radius;
-  _voxCamDisplay.height = _voxCam.height;
-  _voxCamDisplay.azimuth = _voxCam.azimuth;
-}
-function tickVoxelCameraDisplayState(display, target, dt) {
-  if (!display || !target) return;
-  var frames = Math.max(0, Math.min(6, (Number(dt) || 0) * 60));
-  var follow = 1 - Math.pow(1 - 0.055, frames);
-  display.radius += (target.radius - display.radius) * follow;
-  display.height += (target.height - display.height) * follow;
-  display.azimuth += shortestVoxelAzimuthDelta(display.azimuth, target.azimuth) * follow;
-}
 function voxRecenterCamera() {   // 回正/K:_voxCam 归位到原作默认机位
   _voxCam.radius = VOX_CAM_DEF_RADIUS; _voxCam.height = VOX_CAM_DEF_HEIGHT; _voxCam.azimuth = VOX_CAM_DEF_AZIMUTH;
-  voxSnapCameraDisplayState();
 }
 var _voxWhite = null, _voxTmpColorA = null;
 var _voxDummyMat = null, _voxDummyPos = null, _voxDummyQuat = null, _voxDummyScale = null;
@@ -1139,7 +1132,6 @@ function voxSyncCamFromCurrentCamera() {
   _voxCam.radius = clampRange(r, 5, 120);   // 对齐原作 OrbitControls minDistance5/maxDistance120(MapScene.tsx:639-640)
   _voxCam.height = clampRange(y, 0.10 * _voxCam.radius, 0.995 * _voxCam.radius);
   _voxCam.azimuth = Math.atan2(x, z);
-  voxSnapCameraDisplayState();
   return true;
 }
 function _voxUpdateCamera(dt) {                            // 原作机位:对准原点·fov45(相机永远手动,无自动公转——原作转的是转盘不是相机)
@@ -1148,11 +1140,10 @@ function _voxUpdateCamera(dt) {                            // 原作机位:对�
     return;   // 自由镜头激活或 R 固定时不覆盖相机(固定后保持当前机位,不弹回初始)
   }
   if (typeof requestStageLyricCameraSnap === 'function') requestStageLyricCameraSnap(2);  // 歌词吸附相机(防抖)
-  tickVoxelCameraDisplayState(_voxCamDisplay, _voxCam, dt);
   var _vsc = (voxelCity && voxelCity.scale) ? voxelCity.scale : 1.0;
-  var horiz = Math.sqrt(Math.max(0, _voxCamDisplay.radius * _voxCamDisplay.radius - _voxCamDisplay.height * _voxCamDisplay.height));
+  var horiz = Math.sqrt(Math.max(0, _voxCam.radius * _voxCam.radius - _voxCam.height * _voxCam.height));
   camera.up.set(0, 1, 0);
-  camera.position.set(horiz * Math.sin(_voxCamDisplay.azimuth) * _vsc, _voxCamDisplay.height * _vsc, horiz * Math.cos(_voxCamDisplay.azimuth) * _vsc);
+  camera.position.set(horiz * Math.sin(_voxCam.azimuth) * _vsc, _voxCam.height * _vsc, horiz * Math.cos(_voxCam.azimuth) * _vsc);
   camera.lookAt(0, VOX_CAM_DEF_LOOKY * _vsc, 0);   // 看向中心上方(用户机位构图:地形居下、封面居中)
   camera.fov = clampRange(45 + pinchFovDelta, 20, 75);
   camera.updateProjectionMatrix();
@@ -1471,10 +1462,11 @@ function voxResDims() {
   return { grid: g, spacing: 1.05 };
 }
 function rebuildVoxelCity() {
+  if (voxelCity && voxelCity.contentRoot) scene.remove(voxelCity.contentRoot);
   [ (voxelCity && voxelCity.mesh), _voxFbMesh, _voxMeteorMesh, _voxParticleMesh, _voxBackdrop, _voxSeamFloor, (voxelCity && voxelCity.coverPlane) ].forEach(function(m){
     if (m) { if (m.parent) m.parent.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); }
   });
-  if (voxelCity && voxelCity.platter) scene.remove(voxelCity.platter);   // 转盘组一并移除
+  if (voxelCity && !voxelCity.contentRoot && voxelCity.platter) scene.remove(voxelCity.platter);   // 兼容旧结构:转盘组一并移除
   _voxMeteorMesh = null; _voxParticleMesh = null; _voxFbMesh = null; _voxBackdrop = null; _voxSeamFloor = null; voxelCity = null;   // 下帧按新数量重建
 }
 function ensureVoxelCity() {
@@ -1600,7 +1592,11 @@ function ensureVoxelCity() {
   _voxSeamFloor.frustumCulled = false; _voxSeamFloor.renderOrder = 1; _voxSeamFloor.visible = false;
   platter.add(_voxSeamFloor);
   platter.add(mesh); platter.add(_voxFbMesh); platter.add(_voxMeteorMesh); platter.add(_voxParticleMesh);
-  scene.add(platter);
+  // 内容根组只承接双手直接缩放；转盘仍在其内部独立自转，不让缩放复用相机滚轮参数。
+  var contentRoot = new THREE.Group();
+  contentRoot.scale.setScalar(_voxGestureContentScale);
+  contentRoot.add(platter);
+  scene.add(contentRoot);
 
   // 幽灵封面 3D 层(原作 MapScene.tsx:678-696):独立平面,挂 scene(不进转盘组 → 不随转盘自转)。
   //   位置/朝向 = 原作 COVER_SCREEN_POSITION[110,24,-110] / COVER_SCREEN_ROTATION[0,-π/4,0];尺寸 140×140。
@@ -1617,10 +1613,10 @@ function ensureVoxelCity() {
   _coverPlane.position.set(110, 24, -110);
   _coverPlane.rotation.set(0, -Math.PI / 4, 0);
   _coverPlane.frustumCulled = false; _coverPlane.renderOrder = 3; _coverPlane.visible = false;
-  scene.add(_coverPlane);
+  contentRoot.add(_coverPlane);
 
   // 原作无地板:柱体透明处直接露出 app 背景(voxBg 系统 / scene.background),行为等同原作叠 HTML 背景。
-  voxelCity = { mesh: mesh, uniforms: uniforms, scale: _vscale, grid: gridSize, platter: platter, coverPlane: _coverPlane, coverUniforms: _coverUniforms };
+  voxelCity = { mesh: mesh, uniforms: uniforms, scale: _vscale, grid: gridSize, contentRoot: contentRoot, platter: platter, coverPlane: _coverPlane, coverUniforms: _coverUniforms };
   return voxelCity;
 }
 
