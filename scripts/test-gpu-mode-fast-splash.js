@@ -30,11 +30,12 @@ test('WebGL 固定使用当前 Mac 的默认 Metal 设备，不保留下次启�
   assert.match(splash, /powerPreference:\s*'default'/);
 });
 
-test('性能面板四档是纯运行时设置，不再出现重启弹窗或重启 IPC', () => {
+test('性能面板四档是纯运行时设置，但通用更新重启能力仍保留', () => {
   const html = read('public/index.html');
   const controls = read('public/js/modules/07-fx/05-fx-panel-performance.js');
   const preload = read('desktop/preload.js');
   const main = read('desktop/main.js');
+  const updatePreview = read('public/js/modules/08-account/00-update-preview.js');
   const segment = html.match(/<div[^>]*id="performance-mode-seg"[^>]*>[\s\S]*?<\/div>/);
 
   assert.ok(segment, '缺少 performance-mode-seg');
@@ -51,8 +52,9 @@ test('性能面板四档是纯运行时设置，不再出现重启弹窗或重�
   assert.match(controls, /function setUnifiedPerformanceMode/);
   assert.doesNotMatch(html, /gpu-mode-restart-modal|重启后生效|立即重启|稍后重启/);
   assert.doesNotMatch(controls, /GpuModeRestart|restartForGpuMode|setGpuMode|currentGpuMode|MineradioGpuMode/);
-  assert.doesNotMatch(preload, /restartApp|mineradio-restart-app/);
-  assert.doesNotMatch(main, /mineradio-restart-app/);
+  assert.match(preload, /restartApp:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('mineradio-restart-app'\)/);
+  assert.match(main, /ipcMain\.handle\('mineradio-restart-app'/);
+  assert.match(updatePreview, /restartForAppliedPatch[\s\S]*desktopWindow\.restartApp/);
 });
 
 test('切换性能档后立即刷新当前运行态并唤醒渲染', () => {
