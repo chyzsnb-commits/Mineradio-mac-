@@ -15,6 +15,7 @@ const bindings = read('public/js/modules/07-fx/07-bindings-shelf-immersive.js');
 const panel = read('public/js/modules/07-fx/05-fx-panel-performance.js');
 const voxel = read('public/js/modules/02-visual/16-voxel-echo.js');
 const gesture = read('public/js/modules/10-shell/00-gesture-control.js');
+const pointer = read('public/js/modules/02-visual/00-pointer-cover-particles.js');
 const controls = read('public/js/modules/02-visual/15-ripples-cover-depth.js');
 const background = read('public/js/modules/07-fx/02-accent-background-controls.js');
 
@@ -41,12 +42,13 @@ test('音域回响双手张合直接缩放内容，不复用滚轮相机半径',
   assert.doesNotMatch(voxelPinch[1], /_voxCam\.(?:radius|height)\s*=/);
   assert.match(gesture, /gestureTwoHand\.voxScaleBase\s*=\s*getVoxelGestureContentScale\(\)/);
   assert.match(voxelPinch[1], /setVoxelGestureContentScale\(gestureTwoHand\.voxScaleBase \* ratio\)/);
+  assert.match(voxelPinch[1], /markRenderInteraction\('vox-gesture', 900\)/);
   assert.match(voxel, /var _voxGestureContentScale\s*=\s*1/);
   assert.match(voxel, /function setVoxelGestureContentScale\(value\)/);
   assert.match(voxel, /voxelCity\.contentRoot\.scale\.setScalar\(_voxGestureContentScale\)/);
   assert.match(voxel, /contentRoot\.add\(platter\)/);
   assert.match(voxel, /contentRoot\.add\(_coverPlane\)/);
-  assert.match(controls, /_voxCam\.radius\s*=\s*clampRange\(_voxCam\.radius \* \(1 \+ e\.deltaY \* 0\.0022\), 12, 140\)/);
+  assert.match(pointer, /_voxCam\.radius\s*=\s*clampRange\(_voxCam\.radius \* \(1 \+ e\.deltaY \* 0\.0022\), 12, 140\)/);
 
   const helperBlock = voxel.match(/var _voxGestureContentScale\s*=\s*1;[\s\S]*?function voxFloatBlockScaleValue\(value\)/);
   assert.ok(helperBlock, '体素内容缩放 helper');
