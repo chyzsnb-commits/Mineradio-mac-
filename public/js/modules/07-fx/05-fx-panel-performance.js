@@ -117,141 +117,35 @@ function setPerformanceBackgroundMode(mode, silent) {
     showToast(next === 'keep' ? '后台策略: 保持运行' : (next === 'release' ? '后台策略: 停止并释放' : '后台策略: 自动优化'));
   }
 }
-function performanceModeGpuMode(mode) {
-  mode = normalizePerformanceQuality(mode);
-  return mode === 'eco' ? 'low-power' : (mode === 'ultra' ? 'high-performance' : 'auto');
-}
-function unifiedPerformanceModeForSettings(performanceMode, gpuMode) {
-  var performance = normalizePerformanceQuality(performanceMode);
-  if (performance === 'eco' || performance === 'balanced' || performance === 'ultra') return performance;
-  gpuMode = window.MineradioGpuMode ? window.MineradioGpuMode.normalizeMode(gpuMode) : 'auto';
-  return gpuMode === 'low-power' ? 'eco' : (gpuMode === 'high-performance' ? 'ultra' : 'auto');
-}
 function unifiedPerformanceModeLabel(mode) {
   mode = normalizePerformanceQuality(mode);
   return mode === 'eco' ? '省电' : (mode === 'balanced' ? '均衡' : (mode === 'ultra' ? '高性能' : '自动'));
 }
-// 性能与显卡偏好只保留一个四档入口，避免两个设置互相打架。
+// 四档只治理当前运行态的帧率、分析频率和视觉预算；切换后立即生效。
 function syncUnifiedPerformanceModeSeg() {
   var seg = document.getElementById('performance-mode-seg');
   if (!seg) return;
-  var current = unifiedPerformanceModeForSettings(fx && fx.performanceQuality, currentGpuMode());
+  var current = normalizePerformanceQuality(fx && fx.performanceQuality);
   seg.querySelectorAll('[data-performance-mode]').forEach(function (btn) {
     btn.classList.toggle('active', btn.getAttribute('data-performance-mode') === current);
   });
 }
 function setUnifiedPerformanceMode(mode, silent) {
   var next = normalizePerformanceQuality(mode);
-  var previousGpuMode = currentGpuMode();
-  var nextGpuMode = performanceModeGpuMode(next);
   fx.performanceQuality = next;
-  if (window.MineradioGpuMode) window.MineradioGpuMode.saveMode(window.localStorage, nextGpuMode);
   updatePerformanceControls();
   applyRendererPowerMode();
+  if (typeof syncGlassLiteClass === 'function') syncGlassLiteClass();
+  if (typeof markRenderInteraction === 'function') markRenderInteraction('performance-mode', 900);
+  else if (typeof wakeMainLoopFromBackground === 'function') wakeMainLoopFromBackground();
   saveLyricLayout({ user: true, reason: 'performanceMode' });
-  if (window.MineradioGpuMode && currentGpuMode() !== nextGpuMode) {
-    showToast('性能模式保存失败');
-    return;
-  }
-  if (!silent) {
-    if (previousGpuMode !== nextGpuMode) openGpuModeRestartPrompt(nextGpuMode, next);
-    else showToast('性能模式: ' + unifiedPerformanceModeLabel(next));
-  }
+  if (!silent) showToast('性能模式: ' + unifiedPerformanceModeLabel(next) + ' · 已立即应用');
 }
 function syncPerformanceQualitySeg() {
   syncUnifiedPerformanceModeSeg();
 }
 function setPerformanceQualityMode(mode, silent) {
   setUnifiedPerformanceMode(mode, silent);
-}
-function currentGpuMode() {
-  return window.MineradioGpuMode
-    ? window.MineradioGpuMode.readMode(window.localStorage)
-    : 'auto';
-}
-function gpuModeLabel(mode) {
-  mode = window.MineradioGpuMode ? window.MineradioGpuMode.normalizeMode(mode) : 'auto';
-  return mode === 'low-power' ? '省电' : (mode === 'high-performance' ? '高性能' : '自动');
-}
-var gpuModeRestartPreviousFocus = null;
-function syncGpuModeSeg() {
-  syncUnifiedPerformanceModeSeg();
-}
-function bindGpuModeRestartPromptKeyboard(modal) {
-  if (!modal || modal._gpuModeKeyboardBound) return;
-  modal._gpuModeKeyboardBound = true;
-  modal.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      dismissGpuModeRestartPrompt();
-      return;
-    }
-    if (e.key !== 'Tab') return;
-    var buttons = Array.prototype.slice.call(modal.querySelectorAll('button:not([disabled])'));
-    if (!buttons.length) return;
-    var first = buttons[0];
-    var last = buttons[buttons.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  });
-}
-function openGpuModeRestartPrompt(mode, performanceMode) {
-  var modal = document.getElementById('gpu-mode-restart-modal');
-  var desc = document.getElementById('gpu-mode-restart-desc');
-  if (desc) {
-    var label = unifiedPerformanceModeLabel(performanceMode == null
-      ? (mode === 'low-power' ? 'eco' : (mode === 'high-performance' ? 'ultra' : 'auto'))
-      : performanceMode);
-    desc.textContent = '性能模式“' + label + '”已应用；显卡偏好将在重启后生效。';
-  }
-  if (!modal) return;
-  gpuModeRestartPreviousFocus = document.activeElement;
-  modal.setAttribute('aria-hidden', 'false');
-  bindGpuModeRestartPromptKeyboard(modal);
-  if (typeof openGsapModal === 'function') openGsapModal(modal);
-  else modal.classList.add('show');
-  requestAnimationFrame(function () {
-    var laterButton = document.getElementById('gpu-mode-later-btn');
-    if (laterButton) laterButton.focus({ preventScroll: true });
-  });
-}
-function dismissGpuModeRestartPrompt() {
-  var modal = document.getElementById('gpu-mode-restart-modal');
-  if (!modal) return;
-  modal.setAttribute('aria-hidden', 'true');
-  var previousFocus = gpuModeRestartPreviousFocus;
-  gpuModeRestartPreviousFocus = null;
-  function restoreGpuModeFocus() {
-    if (previousFocus && previousFocus.isConnected && typeof previousFocus.focus === 'function') previousFocus.focus({ preventScroll: true });
-  }
-  if (typeof closeGsapModal === 'function') closeGsapModal(modal, restoreGpuModeFocus);
-  else {
-    modal.classList.remove('show');
-    restoreGpuModeFocus();
-  }
-}
-async function restartForGpuMode() {
-  if (!(window.desktopWindow && typeof window.desktopWindow.restartApp === 'function')) {
-    dismissGpuModeRestartPrompt();
-    showToast('设置已保存，下次启动生效');
-    return;
-  }
-  try {
-    var result = await window.desktopWindow.restartApp();
-    if (result && result.ok === false) throw new Error(result.error || 'RESTART_FAILED');
-  } catch (e) {
-    dismissGpuModeRestartPrompt();
-    showToast('自动重启失败，请手动重启软件');
-  }
-}
-function setGpuMode(mode, silent) {
-  var next = window.MineradioGpuMode ? window.MineradioGpuMode.normalizeMode(mode) : 'auto';
-  setUnifiedPerformanceMode(next === 'low-power' ? 'eco' : (next === 'high-performance' ? 'ultra' : 'auto'), silent);
 }
 // 总刷新率上限:用户选的全局帧率上限(0=无上限随显示器)
 function syncMaxFpsSeg() {

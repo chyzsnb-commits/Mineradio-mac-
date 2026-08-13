@@ -11656,17 +11656,6 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   letter-spacing: 0
 }
 
-.gpu-mode-restart-modal .btn-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr))
-}
-
-.gpu-mode-restart-modal .modal-btn {
-  width: 100%;
-  min-width: 0;
-  letter-spacing: 0
-}
-
 /* --- 高级折叠 --- */
 .fx-advanced {
   margin-top: 16px;

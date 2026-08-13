@@ -50,7 +50,6 @@ const desktopWindowApi = {
   handposeStop: () => ipcRenderer.send('mineradio-handpose-stop'),
   onHandposeResult: (cb) => { ipcRenderer.removeAllListeners('mineradio-handpose-result'); ipcRenderer.on('mineradio-handpose-result', (_e, hands) => cb(hands)); },
   openUpdateInstaller: (filePath) => ipcRenderer.invoke('mineradio-open-update-installer', filePath),
-  restartApp: () => ipcRenderer.invoke('mineradio-restart-app'),
   configureGlobalHotkeys: (bindings) => ipcRenderer.invoke('mineradio-hotkeys-configure-global', bindings || []),
   copyText: (text) => {
     clipboard.writeText(String(text || ''));

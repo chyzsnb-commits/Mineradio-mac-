@@ -12,7 +12,6 @@
   <script src="vendor/three.r128.min.js"></script>
   <script src="vendor/music-tempo.min.js"></script>
   <script src="vendor/gsap.min.js"></script>
-  <script src="js/gpu-mode.js"></script>
   <script src="js/preload-mode.js"></script>
   <link rel="stylesheet" href="css/index.css">
 </head>
@@ -682,7 +681,7 @@
           </div>
           <div class="fx-section-label">性能模式</div>
           <div class="fx-seg performance-mode-seg" id="performance-mode-seg"
-            title="同时调整播放器负载和显卡功耗偏好；显卡偏好在重启后生效">
+            title="切换后立即调整当前播放器的帧率、分析频率和视觉负载">
             <button data-performance-mode="auto" onclick="setUnifiedPerformanceMode('auto')">自动</button>
             <button data-performance-mode="eco" onclick="setUnifiedPerformanceMode('eco')">省电</button>
             <button data-performance-mode="balanced" onclick="setUnifiedPerformanceMode('balanced')">均衡</button>
@@ -1425,20 +1424,6 @@
             <button class="update-secondary-btn" type="button" onclick="closeUpdatePanel()">取消</button>
           </div>
           <div id="update-footnote" class="update-footnote">预览版只演示更新手感，不会真的下载安装。</div>
-        </div>
-      </div>
-    </div>
-
-    <div id="gpu-mode-restart-modal" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true"
-      aria-labelledby="gpu-mode-restart-title">
-      <div class="modal gpu-mode-restart-modal">
-        <h2 id="gpu-mode-restart-title">性能模式已保存</h2>
-        <div id="gpu-mode-restart-desc" class="desc">性能参数已应用，显卡偏好将在重启后生效。</div>
-        <div class="btn-row">
-          <button id="gpu-mode-later-btn" class="modal-btn" type="button"
-            onclick="dismissGpuModeRestartPrompt()">稍后重启</button>
-          <button id="gpu-mode-restart-btn" class="modal-btn primary" type="button"
-            onclick="restartForGpuMode()">立即重启</button>
         </div>
       </div>
     </div>

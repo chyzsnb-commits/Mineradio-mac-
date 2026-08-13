@@ -550,12 +550,23 @@ function clearCustomCoverForCurrent() {
     for (var i = 0; i < playQueue.length; i++) {
       if (songCustomCoverKey(playQueue[i]) === key) delete playQueue[i].customCover;
     }
+    if (Array.isArray(playlist)) {
+      for (var j = 0; j < playlist.length; j++) {
+        if (songCustomCoverKey(playlist[j]) === key) delete playlist[j].customCover;
+      }
+    }
   }
   if (key && currentLocalSong && songCustomCoverKey(currentLocalSong) === key) delete currentLocalSong.customCover;
   if (currentIdx >= 0 && playQueue[currentIdx] && playQueue[currentIdx].cover) loadCoverFromUrl(coverUrlWithSize(playQueue[currentIdx].cover, 400));
   else loadCoverFromUrl('');
   safeRenderQueuePanel('custom-cover-clear', { scrollCurrent: miniQueueOpen });
   safeShelfRebuild('custom-cover-clear');
+  if (typeof renderSongSearchResults === 'function'
+      && typeof $results !== 'undefined' && $results
+      && $results.classList.contains('show')
+      && typeof isMusicSearchMode === 'function' && isMusicSearchMode(searchMode)) {
+    renderSongSearchResults(playlist);
+  }
   updateCustomCoverButton();
   showToast('已恢复默认封面');
 }

@@ -49,9 +49,6 @@ function releaseStartupFastSkipPreload() {
 function initMineradioSplashWebgl(canvas) {
   var gl = null;
   try {
-    var splashGpuPowerPreference = window.MineradioGpuMode
-      ? window.MineradioGpuMode.powerPreferenceForMode(window.MineradioGpuMode.readMode(window.localStorage))
-      : 'default';
     gl = canvas.getContext('webgl', {
       alpha: true,
       antialias: false,
@@ -59,7 +56,7 @@ function initMineradioSplashWebgl(canvas) {
       stencil: false,
       premultipliedAlpha: false,
       preserveDrawingBuffer: false,
-      powerPreference: splashGpuPowerPreference
+      powerPreference: 'default'
     }) || canvas.getContext('experimental-webgl');
   } catch (e) {
     gl = null;

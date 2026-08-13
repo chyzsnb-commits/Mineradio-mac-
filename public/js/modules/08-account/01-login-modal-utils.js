@@ -59,8 +59,7 @@ function bindModalBackdropClose() {
     ['user-modal', closeUserModal],
     ['audio-output-workflow-modal', closeAudioOutputWorkflowPanel],
     ['custom-lyric-modal', closeCustomLyricModal],
-    ['update-modal', closeUpdatePanel],
-    ['gpu-mode-restart-modal', dismissGpuModeRestartPrompt]
+    ['update-modal', closeUpdatePanel]
   ].forEach(function (pair) {
     var mask = document.getElementById(pair[0]);
     var close = pair[1];
