@@ -107,7 +107,7 @@ function tickPresetTransition() {
 function setPreset(p, opts) {
   opts = opts || {};
   p = Math.max(0, Math.min(presetMeta.length - 1, Number(p) || 0));
-  if (isPresetHidden(p)) p = HIDDEN_PRESET_FALLBACK;   // 云瀑共振(11)内测中，公开构建不可选
+  if (isPresetHidden(p)) p = HIDDEN_PRESET_FALLBACK;
   var prev = fx.preset;
   var changed = prev !== p;
   fx.preset = p;
@@ -135,7 +135,6 @@ function setPreset(p, opts) {
     else if (p === 8) { orbit.userRadius = 8.4; orbit.userPhi = 0.08; orbit.userTheta = 0.0; orbit.baselineRadius = 8.4; orbit.baselinePhi = 0.08; }
     else if (p === 9) { orbit.userRadius = 7.2; orbit.userPhi = 0.06; orbit.userTheta = 0.0; orbit.baselineRadius = 7.2; orbit.baselinePhi = 0.06; }   // 雨境：正视雨幕
     else if (p === 10){ orbit.userRadius = 50.0; orbit.userPhi = 0.20; orbit.userTheta = 0.0; orbit.baselineRadius = 50.0; orbit.baselinePhi = 0.20; }   // 音域回响：远处低角度横扫整片地形
-    else if (p === 11){ orbit.userRadius = 7.8; orbit.userPhi = 0.12; orbit.userTheta = 0.0; orbit.baselineRadius = 7.8; orbit.baselinePhi = 0.12; }   // 云瀑共振：正视透明雨瀑
     else if (p === 12){ orbit.userRadius = 10.0; orbit.userPhi = 0.18; orbit.userTheta = 0.0; orbit.baselineRadius = 10.0; orbit.baselinePhi = 0.18; }   // 声波地形：远处低角度横扫整片地形
     else if (p === 13){ orbit.userRadius = 10.0; orbit.userPhi = 0.18; orbit.userTheta = 0.0; orbit.baselineRadius = 10.0; orbit.baselinePhi = 0.18; }   // 声波工坊：同声波地形机位
     else { orbit.userRadius = 6.6; orbit.userPhi = 0.08; orbit.userTheta = 0.0; orbit.baselineRadius = 6.6; orbit.baselinePhi = 0.08; }

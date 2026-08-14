@@ -3,6 +3,15 @@
 var RAIN_GLASS_PRESET_INDEX = 9;
 var RAIN_GLASS_FIELD_SCALE = 1.0;
 var RAIN_GLASS_BLUR_SCALE = 0.55;
+var RAIN_GLASS_BLUR_FPS = 30;
+var RAIN_GLASS_BLUR_INTERVAL_MS = 1000 / RAIN_GLASS_BLUR_FPS;
+var RAIN_GLASS_GPU_PASS_LABELS = [
+  'rain-glass.scene',
+  'rain-glass.blur-horizontal',
+  'rain-glass.blur-vertical',
+  'rain-glass.field',
+  'rain-glass.composite'
+];
 var RAIN_GLASS_FIELD_MAX_WIDTH = 2048;
 var RAIN_GLASS_FIELD_MAX_HEIGHT = 1280;
 var RAIN_GLASS_MAX_DROPS = 180;
@@ -25,6 +34,7 @@ var rainGlassBufferHeight = 1;
 var rainGlassSessionDisabled = false;
 var rainGlassFailureLogged = false;
 var RAIN_GLASS_MOTION_REFERENCE_RADIUS = 14;
+var rainGlassGpuPassCursor = 0;
 
 // 主 renderer 发生上下文恢复时，后处理纹理必须随之重建。
 if (typeof window !== 'undefined') {
@@ -697,6 +707,8 @@ function rainGlassCreateResources(rendererRef) {
     renderer: rendererRef,
     width: 0,
     height: 0,
+    blurValid: false,
+    lastBlurAt: 0,
     blurWidth: 0,
     blurHeight: 0,
     fieldWidth: 0,
@@ -762,6 +774,8 @@ function rainGlassResizeTargets(width, height) {
   rainGlassState.blurATarget = rainGlassMakeTarget(blurWidth, blurHeight, false);
   rainGlassState.blurBTarget = rainGlassMakeTarget(blurWidth, blurHeight, false);
   rainGlassState.fieldTarget = rainGlassMakeTarget(fieldWidth, fieldHeight, false);
+  rainGlassState.blurValid = false;
+  rainGlassState.lastBlurAt = 0;
   rainGlassState.fieldMaterial.uniforms.uResolution.value.set(fieldWidth, fieldHeight);
   rainGlassState.compositeMaterial.uniforms.uFieldResolution.value.set(fieldWidth, fieldHeight);
 }
@@ -872,6 +886,17 @@ function rainGlassRestoreRenderer(rendererRef, previousTarget, previousAutoClear
   rendererRef.setClearColor(previousColor, previousAlpha);
 }
 
+function rainGlassRenderPass(label, gpuSampleLabel, renderFn) {
+  var perfProbe = (typeof window !== 'undefined' && window.__mineradioPerf) ? window.__mineradioPerf : null;
+  var startedAt = performance.now();
+  try {
+    if (label === gpuSampleLabel && typeof renderWithGpuSample === 'function') return renderWithGpuSample(label, renderFn);
+    return renderFn();
+  } finally {
+    if (perfProbe && perfProbe.markSince) perfProbe.markSince(label, startedAt);
+  }
+}
+
 function renderRainGlassScene(rendererRef, sceneRef, cameraRef) {
   if (!rainGlassActive() || rainGlassSessionDisabled) return false;
   var previousTarget = rendererRef.getRenderTarget();
@@ -883,30 +908,45 @@ function renderRainGlassScene(rendererRef, sceneRef, cameraRef) {
     var state = rainGlassEnsureResources(rendererRef);
     rainGlassSyncFieldGeometry(state);
     rendererRef.autoClear = false;
+    var gpuSampleLabel = RAIN_GLASS_GPU_PASS_LABELS[rainGlassGpuPassCursor];
+    rainGlassGpuPassCursor = (rainGlassGpuPassCursor + 1) % RAIN_GLASS_GPU_PASS_LABELS.length;
 
     rendererRef.setRenderTarget(state.sharpTarget);
     rendererRef.setClearColor(previousColor, previousAlpha);
     rendererRef.clear(true, true, true);
-    rendererRef.render(sceneRef, cameraRef);
+    rainGlassRenderPass('rain-glass.scene', gpuSampleLabel, function () {
+      rendererRef.render(sceneRef, cameraRef);
+    });
 
-    state.quad.material = state.blurMaterial;
-    state.blurMaterial.uniforms.uTex.value = state.sharpTarget.texture;
-    state.blurMaterial.uniforms.uDirection.value.set(1 / state.width, 0);
-    rendererRef.setRenderTarget(state.blurATarget);
-    rendererRef.setClearColor(0x000000, 0);
-    rendererRef.clear(true, false, false);
-    rendererRef.render(state.postScene, state.postCamera);
+    var now = performance.now();
+    if (!state.blurValid || now - state.lastBlurAt >= RAIN_GLASS_BLUR_INTERVAL_MS) {
+      state.quad.material = state.blurMaterial;
+      state.blurMaterial.uniforms.uTex.value = state.sharpTarget.texture;
+      state.blurMaterial.uniforms.uDirection.value.set(1 / state.width, 0);
+      rendererRef.setRenderTarget(state.blurATarget);
+      rendererRef.setClearColor(0x000000, 0);
+      rendererRef.clear(true, false, false);
+      rainGlassRenderPass('rain-glass.blur-horizontal', gpuSampleLabel, function () {
+        rendererRef.render(state.postScene, state.postCamera);
+      });
 
-    state.blurMaterial.uniforms.uTex.value = state.blurATarget.texture;
-    state.blurMaterial.uniforms.uDirection.value.set(0, 1 / state.blurHeight);
-    rendererRef.setRenderTarget(state.blurBTarget);
-    rendererRef.clear(true, false, false);
-    rendererRef.render(state.postScene, state.postCamera);
+      state.blurMaterial.uniforms.uTex.value = state.blurATarget.texture;
+      state.blurMaterial.uniforms.uDirection.value.set(0, 1 / state.blurHeight);
+      rendererRef.setRenderTarget(state.blurBTarget);
+      rendererRef.clear(true, false, false);
+      rainGlassRenderPass('rain-glass.blur-vertical', gpuSampleLabel, function () {
+        rendererRef.render(state.postScene, state.postCamera);
+      });
+      state.blurValid = true;
+      state.lastBlurAt = now;
+    }
 
     rendererRef.setRenderTarget(state.fieldTarget);
     rendererRef.setClearColor(0x000000, 0);
     rendererRef.clear(true, false, false);
-    rendererRef.render(state.fieldScene, state.postCamera);
+    rainGlassRenderPass('rain-glass.field', gpuSampleLabel, function () {
+      rendererRef.render(state.fieldScene, state.postCamera);
+    });
 
     state.compositeMaterial.uniforms.uSharp.value = state.sharpTarget.texture;
     state.compositeMaterial.uniforms.uBlur.value = state.blurBTarget.texture;
@@ -914,7 +954,9 @@ function renderRainGlassScene(rendererRef, sceneRef, cameraRef) {
     state.compositeMaterial.uniforms.uTime.value = performance.now() * 0.001;
     state.quad.material = state.compositeMaterial;
     rendererRef.setRenderTarget(previousTarget || null);
-    rendererRef.render(state.postScene, state.postCamera);
+    rainGlassRenderPass('rain-glass.composite', gpuSampleLabel, function () {
+      rendererRef.render(state.postScene, state.postCamera);
+    });
   } catch (error) {
     renderError = error;
   } finally {

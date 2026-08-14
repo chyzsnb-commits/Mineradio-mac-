@@ -375,6 +375,14 @@ function targetMainAudioFps(now) {
   }
   return mainLoopInteractionActive(now) ? 30 : 24;
 }
+function targetMainVoxelAudioFps(now) {
+  if (isDeepBackgroundMode()) return 1;
+  if (!fx || Number(fx.preset) !== 10) return 8;
+  if (!(playing && audio && !audio.paused)) return 12;
+  // P10 的专用 512-bin 分析与显示帧解耦：频谱带有自身 0.8 平滑，30Hz 足以维持节拍与涟漪，
+  // 但避免在 60/120Hz 显示器上重复跑同一套通量计算而挤占交互和热预算。
+  return 30;
+}
 function targetMainShelfFps(now) {
   if (isDeepBackgroundMode()) return 1;
   if (!fx || fx.shelf === 'off') return 12;
@@ -430,18 +438,13 @@ function animate() {
     tickDeepBackgroundFrame(now, deepDt);
     return;
   }
-  // 音域回响:音频/节拍满帧率泵(跳帧判断之前)——检测器语义按显示器帧率,与原作 useFrame 一致。
-  // 取舍(P3):满帧喂节拍检测最准(冷却/平滑/阈值自适应都按显示器帧率标定);但治理器把前台帧率降到 ≤45
-  // (含 eco 30)= 过热降载场景,发热优先,泵也门到 ~30Hz —— 30Hz 仍够触发涟漪/流星,只是精度略降。
+  // 音域回响的专用 512-bin 分析独立于画面帧率；城市和相机仍全帧更新，只复用最近一次频谱结果。
   if (typeof pumpVoxelAudioFrame === 'function') {
-    var voxPumpCap = (typeof foregroundFpsGovernorCap === 'function') ? foregroundFpsGovernorCap() : 0;
-    if (voxPumpCap > 0 && voxPumpCap <= 45) {
-      var _vg = mainFrameGates.voxelAudio, _vgRuns = _vg.runs;
-      consumeFrameGate(_vg, now, 0, 30, false, 'voxel-audio-pump');   // dt 传 0:泵不用 stepDt,只借 gate 计时;是否运行看 runs 是否递增
-      if (_vg.runs !== _vgRuns) pumpVoxelAudioFrame();
-    } else {
-      pumpVoxelAudioFrame();   // 正常负载:满帧喂,维持原作检测精度
-    }
+    var voxelAudioPerfStart = performance.now();
+    var _vg = mainFrameGates.voxelAudio, _vgRuns = _vg.runs;
+    consumeFrameGate(mainFrameGates.voxelAudio, now, 0, targetMainVoxelAudioFps(now), false, 'voxel-audio-pump');
+    if (_vg.runs !== _vgRuns) pumpVoxelAudioFrame();
+    if (perfProbe && perfProbe.markSince) perfProbe.markSince('audio.voxel-analysis', voxelAudioPerfStart);
   }
   if (shouldSkipAdaptiveRenderFrame(now)) return;
   var dt = Math.min((now - prevTime) / 1000, 0.05);
@@ -741,12 +744,11 @@ function animate() {
   var skullPresetActive = fx && fx.preset === SKULL_PRESET_INDEX;
   var voxelActive = typeof voxelCityActive === 'function' && voxelCityActive();
   var rainActive = typeof rainMoodActive === 'function' && rainMoodActive();
-  var resonanceActive = typeof rainResonanceActive === 'function' && rainResonanceActive();
   var sonicTopoActive = window.MineradioSonicTopography && MineradioSonicTopography.isActive(fx);
   var sonicWorkshopActive = window.MineradioSonicWorkshop && MineradioSonicWorkshop.isActive(fx);
   var presetUsesStarRiverParticles = fx && (Number(fx.preset) === 5 || (typeof SONIC_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SONIC_PRESET_INDEX));
   var presetStarRiverMuted = presetUsesStarRiverParticles && fx.backgroundStarRiver === false;
-  var hidePoints = skullPresetActive || voxelActive || rainActive || resonanceActive || sonicTopoActive || sonicWorkshopActive;
+  var hidePoints = skullPresetActive || voxelActive || rainActive || sonicTopoActive || sonicWorkshopActive;
   particles.visible = !hidePoints && !presetStarRiverMuted;
   if (bloomParticles) bloomParticles.visible = !hidePoints && !presetStarRiverMuted && fx.bloom && fx.bloomStrength > 0.01;
   if (floatGroup) floatGroup.visible = !hidePoints;
@@ -775,9 +777,6 @@ function animate() {
   var rainMoodPerfStart = performance.now();
   if (typeof updateRainMood === 'function') updateRainMood(dt);   // 雨境节奏雨丝(内部按预设显隐);跟随主 rAF / 空闲降帧
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.rain-mood', rainMoodPerfStart);
-  var rainResonancePerfStart = performance.now();
-  if (typeof updateRainResonance === 'function') updateRainResonance(dt);   // 云瀑共振:音乐频谱雨幕
-  if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.rain-resonance', rainResonancePerfStart);
   var rainGlassPerfStart = performance.now();
   if (typeof updateRainGlass === 'function') updateRainGlass(dt);
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.rain-glass-update', rainGlassPerfStart);

@@ -23,10 +23,10 @@ function createGroup(key) {
   };
 }
 
-test('14 个预设的动效 tab 只保留基础组和所属专属组', () => {
+test('可用预设的动效 tab 只保留基础组和所属专属组', () => {
   const source = read('public/js/modules/07-fx/05-fx-panel-performance.js');
   const visibilitySource = source.slice(0, source.indexOf('function ensureHomeWaveTrackBars()'));
-  const keys = ['base', 'particles', 'rain-mood', 'rain-resonance', 'vox-echo', 'audio-spectrum', 'sonic-terrain', 'sonic-audio', 'sonic-blocks', 'sonic-we'];
+  const keys = ['base', 'particles', 'rain-mood', 'vox-echo', 'audio-spectrum', 'sonic-terrain', 'sonic-audio', 'sonic-blocks', 'sonic-we'];
   const groups = keys.map(createGroup);
   const sandbox = {
     fx: { preset: 0 },
@@ -41,7 +41,7 @@ test('14 个预设的动效 tab 只保留基础组和所属专属组', () => {
     4: ['base', 'particles', 'audio-spectrum'], 5: ['base', 'particles', 'audio-spectrum'], 6: ['base', 'particles', 'audio-spectrum'], 7: ['base', 'particles', 'audio-spectrum'], 8: ['base', 'particles', 'audio-spectrum'],
     9: ['base', 'rain-mood', 'audio-spectrum'],
     10: ['base', 'vox-echo', 'audio-spectrum'],
-    11: ['base', 'rain-resonance', 'audio-spectrum'],
+    11: ['base', 'particles', 'audio-spectrum'],
     12: ['base', 'audio-spectrum', 'sonic-terrain', 'sonic-audio', 'sonic-blocks'],
     13: ['base', 'sonic-we', 'audio-spectrum']
   };

@@ -40,7 +40,6 @@
     'js/modules/02-visual/17-video-bg-store.js',
     'js/modules/02-visual/18-rain-mood.js',
     'js/modules/02-visual/19-rain-glass.js',
-    'js/modules/02-visual/20-rainfall-resonance.js',
     'sonic-topography-preset.js',
     'sonic-workshop-preset.js',
     'js/modules/03-beat/00-tempo-worker-cache-prefetch.js',

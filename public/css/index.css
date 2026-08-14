@@ -16137,7 +16137,6 @@ body:not(.vox-on) #vox-fx-section{display:none}
 /* 雨境专属开关:旧分页下只在雨境预设的「动态」tab 显示。
    FX 控制台(task-first-v2)接管后不隐藏:动效 tab 展示全部预设的设置,用户可随时查看。 */
 body:not(.rain-on) #fx-panel:not([data-console-layout="task-first-v2"]) #rain-fx-section{display:none}
-body:not(.rain-resonance-on) #fx-panel:not([data-console-layout="task-first-v2"]) #rain-resonance-fx-section{display:none}
 body:not(.vox-on) #fx-panel:not([data-console-layout="task-first-v2"]) #vox-fx-section{display:none}
 /* 旧分页时代的「预设专属过滤」规则已由 FX 控制台接管：
    organize 后 motion page 的直接子元素是 .fx-console-group 折叠块，

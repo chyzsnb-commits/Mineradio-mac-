@@ -178,6 +178,32 @@ function createRendererGpuTimer(gl, nowFn) {
   var previous = null;
   var previousStartedAt = 0;
   var usagePct = null;
+  var gpuMsByLabel = Object.create(null);
+
+  function recordGpuDuration(label, gpuMs) {
+    if (!label || !isFinite(gpuMs) || gpuMs < 0) return;
+    var key = String(label);
+    var metric = gpuMsByLabel[key] || (gpuMsByLabel[key] = { count: 0, totalMs: 0, avgMs: 0, maxMs: 0, lastMs: 0 });
+    metric.count += 1;
+    metric.totalMs += gpuMs;
+    metric.avgMs = metric.totalMs / metric.count;
+    metric.maxMs = Math.max(metric.maxMs, gpuMs);
+    metric.lastMs = gpuMs;
+  }
+
+  function gpuPassSnapshot() {
+    var snapshot = {};
+    Object.keys(gpuMsByLabel).forEach(function (key) {
+      var metric = gpuMsByLabel[key];
+      snapshot[key] = {
+        count: metric.count,
+        avgMs: roundRenderNumber(metric.avgMs, 3),
+        maxMs: roundRenderNumber(metric.maxMs, 3),
+        lastMs: roundRenderNumber(metric.lastMs, 3)
+      };
+    });
+    return snapshot;
+  }
 
   function deleteQuery(query) {
     try {
@@ -209,9 +235,13 @@ function createRendererGpuTimer(gl, nowFn) {
           : ext.getQueryObjectEXT(item.query, ext.QUERY_RESULT_EXT);
         pending.shift();
         deleteQuery(item.query);
-        if (item.periodMs > 0 && typeof nanoseconds === 'number' && isFinite(nanoseconds)) {
-          var next = Math.max(0, Math.min(100, nanoseconds / 1000000 / item.periodMs * 100));
-          usagePct = usagePct == null ? next : usagePct * 0.72 + next * 0.28;
+        if (typeof nanoseconds === 'number' && isFinite(nanoseconds)) {
+          var gpuMs = nanoseconds / 1000000;
+          recordGpuDuration(item.label, gpuMs);
+          if (item.periodMs > 0 && (!item.label || item.label === 'renderer.main')) {
+            var next = Math.max(0, Math.min(100, gpuMs / item.periodMs * 100));
+            usagePct = usagePct == null ? next : usagePct * 0.72 + next * 0.28;
+          }
         }
       }
     } catch (e) {
@@ -220,7 +250,7 @@ function createRendererGpuTimer(gl, nowFn) {
     }
   }
   return {
-    begin: function (periodMs) {
+    begin: function (periodMs, label) {
       if (active) return false;
       var now = nowFn();
       if (previous && !(previous.periodMs > 0)) previous.periodMs = Math.max(1, now - previousStartedAt);
@@ -228,7 +258,7 @@ function createRendererGpuTimer(gl, nowFn) {
       if (pending.length >= 4) return false;
       var query = webgl2 ? gl.createQuery() : ext.createQueryEXT();
       if (!query) return false;
-      var item = { query: query, periodMs: Number(periodMs) > 0 ? Number(periodMs) : 0 };
+      var item = { query: query, periodMs: Number(periodMs) > 0 ? Number(periodMs) : 0, label: label || '' };
       try {
         if (webgl2) gl.beginQuery(ext.TIME_ELAPSED_EXT, query);
         else ext.beginQueryEXT(ext.TIME_ELAPSED_EXT, query);
@@ -256,6 +286,7 @@ function createRendererGpuTimer(gl, nowFn) {
       return true;
     },
     value: function () { poll(); return usagePct; },
+    passSnapshot: function () { poll(); return gpuPassSnapshot(); },
     dispose: resetPending
   };
 }
@@ -273,21 +304,31 @@ document.getElementById('canvas-container').appendChild(renderer.domElement);
 
 var rendererGpuTimer = createRendererGpuTimer(renderer.getContext());
 var rendererGpuSampleLastAt = 0;
+var rendererGpuUsageLabel = '';
 function rendererGpuUsagePct() {
+  if (rendererGpuUsageLabel !== 'renderer.main') return null;
   return rendererGpuTimer ? rendererGpuTimer.value() : null;
 }
-function beginRendererGpuSample() {
+function rendererGpuPassSnapshot() {
+  return rendererGpuTimer && rendererGpuTimer.passSnapshot ? rendererGpuTimer.passSnapshot() : {};
+}
+function beginRendererGpuSample(label) {
   if (!rendererGpuTimer || typeof perfHudOn !== 'function' || !perfHudOn()) return false;
   var now = performance.now();
   if (now - rendererGpuSampleLastAt < 250) return false;
   rendererGpuSampleLastAt = now;
   var fps = (typeof renderPerfState !== 'undefined' && renderPerfState && renderPerfState.fps) || 0;
-  return rendererGpuTimer.begin(fps > 0 ? 1000 / fps : 0);
+  var sampled = rendererGpuTimer.begin(fps > 0 ? 1000 / fps : 0, label);
+  if (sampled) rendererGpuUsageLabel = label || '';
+  return sampled;
+}
+function renderWithGpuSample(label, renderFn) {
+  var sampled = beginRendererGpuSample(label);
+  try { return renderFn(); }
+  finally { if (sampled && rendererGpuTimer) rendererGpuTimer.end(); }
 }
 function renderMainSceneWithGpuSample(sceneRef, cameraRef) {
-  var sampled = beginRendererGpuSample();
-  try { renderer.render(sceneRef, cameraRef); }
-  finally { if (sampled && rendererGpuTimer) rendererGpuTimer.end(); }
+  return renderWithGpuSample('renderer.main', function () { renderer.render(sceneRef, cameraRef); });
 }
 
 // WebGL 上下文丢失处理（修复"窗口全黑"bug）。
@@ -298,6 +339,7 @@ renderer.domElement.addEventListener('webglcontextlost', function (event) {
   event.preventDefault();  // 阻止默认，允许后续恢复
   if (rendererGpuTimer) rendererGpuTimer.dispose();
   rendererGpuTimer = null;
+  rendererGpuUsageLabel = '';
   _webglContextLostAt = Date.now();
   console.error('[WebGL] 上下文丢失，画面将变黑。2 秒后尝试恢复...');
   if (typeof showToast === 'function') {
@@ -312,6 +354,7 @@ renderer.domElement.addEventListener('webglcontextrestored', function () {
     renderer.setSize(innerWidth, innerHeight);
     rendererGpuTimer = createRendererGpuTimer(renderer.getContext());
     rendererGpuSampleLastAt = 0;
+    rendererGpuUsageLabel = '';
   } catch (e) {}
 }, false);
 // 兜底：上下文丢失 5 秒还没恢复 → 刷新页面（最可靠的重置）

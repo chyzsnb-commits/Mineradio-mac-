@@ -325,7 +325,8 @@ function collectRuntimePerfSnapshot(now) {
       geometries: renderer.info.memory && renderer.info.memory.geometries,
       textures: renderer.info.memory && renderer.info.memory.textures,
       calls: renderer.info.render && renderer.info.render.calls,
-      triangles: renderer.info.render && renderer.info.render.triangles
+      triangles: renderer.info.render && renderer.info.render.triangles,
+      gpuPasses: (typeof rendererGpuPassSnapshot === 'function') ? rendererGpuPassSnapshot() : {}
     } : null,
     viewport: (typeof renderer !== 'undefined' && renderer && renderer.domElement) ? {
       width: innerWidth,

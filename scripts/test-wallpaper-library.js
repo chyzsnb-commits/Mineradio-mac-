@@ -41,13 +41,12 @@ test('壁纸库主进程扫描器已迁移且 Mac 安全', () => {
   assert.match(bridge, /\/api\/live\//);
   assert.doesNotMatch(bridge, /getDisplayMedia/);
 
-  // 雨境/云瀑/音域回响控件已进 FX 控制台动效 tab(修复用户反馈的动效设置消失)
+  // 雨境/音域回响控件已进 FX 控制台动效 tab(修复用户反馈的动效设置消失)
   const consoleWs = read('public/js/modules/07-fx/09-console-workspace.js');
   assert.match(consoleWs, /key: 'rain-mood', title: '雨境'/);
-  assert.match(consoleWs, /key: 'rain-resonance', title: '云瀑共振'/);
+  assert.doesNotMatch(consoleWs, /rain-resonance|云瀑共振/);
   assert.match(consoleWs, /key: 'vox-echo', title: '音域回响'/);
   assert.match(consoleWs, /fxConsoleItem\('fx-rainamount'/);
-  assert.match(consoleWs, /fxConsoleItem\('fx-rainresonanceintensity'/);
   assert.match(consoleWs, /fxConsoleItem\('fx-voxsens'/);
   // 新增动效设置:雨境风向偏移 + 雨幕浓度
   assert.match(consoleWs, /fxConsoleItem\('fx-rainwindoffset'/);
@@ -64,12 +63,12 @@ test('壁纸库主进程扫描器已迁移且 Mac 安全', () => {
   const panelPerf = read('public/js/modules/07-fx/05-fx-panel-performance.js');
   assert.match(panelPerf, /function updateMineradioMotionGroupVisibility\(\)/);
   assert.match(panelPerf, /'rain-mood': preset === 9/);
-  assert.match(panelPerf, /'rain-resonance': preset === 11/);
+  assert.doesNotMatch(panelPerf, /rain-resonance|云瀑共振/);
   assert.match(panelPerf, /'vox-echo': preset === 10/);
   assert.match(panelPerf, /'sonic-we': preset === SONIC_WORKSHOP_PRESET_INDEX/);
   assert.match(panelPerf, /visibleMap\[key\] !== false/);
-  // 粒子组仅粒子类预设(0-8)显示:非粒子预设(9-13)粒子层被 hidePoints 隐藏,粒子参数不生效
-  assert.match(panelPerf, /nonParticlePreset = preset === 9 \|\| preset === 10 \|\| preset === 11 \|\| preset === 12 \|\| preset === 13/);
+  // 粒子组仅粒子类预设(0-8)显示:退役 11 不可选，其余重预设会隐藏粒子参数。
+  assert.match(panelPerf, /nonParticlePreset = preset === 9 \|\| preset === 10 \|\| preset === 12 \|\| preset === 13/);
   assert.match(panelPerf, /'particles': !nonParticlePreset/);
   const gridUniforms = read('public/js/modules/07-fx/04-preset-grid-uniforms.js');
   assert.match(gridUniforms, /updateMineradioMotionGroupVisibility\(\)/);

@@ -35,7 +35,7 @@ test('声波地形预设(索引 12)与声波工坊预设(索引 13)已迁移且�
   const coreStores = read('public/js/modules/00-state/00-core-stores.js');
   const presets = read('public/js/modules/07-fx/00-preset-archive-data.js');
 
-  // Mac 预设索引:7=黑洞,8=极光,10=音域回响(体素),11=云瀑共振 —— sonic 用 12/13
+  // Mac 预设索引:7=黑洞,8=极光,10=音域回响(体素),11=退役迁移位 —— sonic 用 12/13
   assert.match(topo, /var INDEX = 12/);
   assert.match(workshop, /var INDEX = 13/);
   assert.doesNotMatch(topo, /var INDEX = 7;/);
@@ -52,7 +52,8 @@ test('声波地形预设(索引 12)与声波工坊预设(索引 13)已迁移且�
   assert.ok(presets.includes("name: '黑洞'"), 'Mac 既有黑洞预设必须保留');
   assert.ok(presets.includes("name: '极光'"), 'Mac 既有极光预设必须保留');
   assert.ok(presets.includes("name: '雨境'"), 'Mac 既有雨境预设必须保留');
-  assert.ok(presets.includes("name: '云瀑共振'"), 'Mac 既有云瀑共振预设必须保留');
+  assert.match(presets, /null, \/\/ 11: retired preset index/, '退役槽位必须保留，避免旧存档错误指向声波预设');
+  assert.doesNotMatch(presets, /云瀑共振/, '退役预设不得继续展示');
 });
 
 test('两个预设已挂到主循环与预设切换,粒子层在 sonic 激活时隐藏', () => {

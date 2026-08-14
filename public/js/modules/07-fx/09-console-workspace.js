@@ -224,11 +224,6 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-rainwindoffset', '风向偏移', '雨丝 水平飘移 左飘 右飘'),
         fxConsoleItem('fx-rainDensity', '雨幕浓度', '雨丝 稀疏 浓密')
       ] },
-      { key: 'rain-resonance', title: '云瀑共振', hint: '音乐喷泉 · 频谱雨瀑（预设 11）', items: [
-        fxConsoleItem('fx-rainresonanceintensity', '雨幕强度', '云瀑 整体强度 低频'),
-        fxConsoleItem('fx-rainresonancemelody', '旋律起伏', '云瀑 横向起伏 中频'),
-        fxConsoleItem('fx-rainresonancebeat', '拍点爆发', '云瀑 短促爆发 强拍')
-      ] },
       { key: 'vox-echo', title: '音域回响', hint: '频谱方块 · 反应堆核心（预设 10）', items: [
         fxConsoleItem('t-voxAutoRotate', '自转', '体素 镜头自转'),
         fxConsoleItem('t-voxCoverColor', '体素封面取色', '体素 配色 封面'),

@@ -34,9 +34,6 @@ function bindFxPanel() {
     ['fx-rainglassamount', 'rainGlassAmount'],
     ['fx-rainglassspeed', 'rainGlassSpeed'],
     ['fx-rainglasssize', 'rainGlassSize'],
-    ['fx-rainresonanceintensity', 'rainResonanceIntensity'],
-    ['fx-rainresonancemelody', 'rainResonanceMelody'],
-    ['fx-rainresonancebeat', 'rainResonanceBeat'],
   ];
   ids.forEach(function (pair) {
     var el = document.getElementById(pair[0]);
@@ -138,11 +135,7 @@ function bindFxPanel() {
       if (pair[1] === 'rainGlassAmount') fx.rainGlassAmount = clampRange(fx.rainGlassAmount, 0.15, 2.5);
       if (pair[1] === 'rainGlassSpeed') fx.rainGlassSpeed = clampRange(fx.rainGlassSpeed, 0.2, 16);
       if (pair[1] === 'rainGlassSize') fx.rainGlassSize = clampRange(fx.rainGlassSize, 0.6, 1.8);
-      if (pair[1] === 'rainResonanceIntensity') fx.rainResonanceIntensity = clampRange(fx.rainResonanceIntensity, 0, 1.6);
-      if (pair[1] === 'rainResonanceMelody') fx.rainResonanceMelody = clampRange(fx.rainResonanceMelody, 0, 1.8);
-      if (pair[1] === 'rainResonanceBeat') fx.rainResonanceBeat = clampRange(fx.rainResonanceBeat, 0, 1.8);
       if (/^rain(?!Resonance)/.test(pair[1]) && typeof saveRainToggles === 'function') saveRainToggles();
-      if (/^rainResonance/.test(pair[1]) && typeof saveRainResonanceSettings === 'function') saveRainResonanceSettings();
       if (pair[1] === 'lyricContextSpread') fx.lyricContextSpread = clampRange(fx.lyricContextSpread, 0.60, 2.40);
       if (pair[1] === 'lyricTranslationGap') fx.lyricTranslationGap = clampRange(fx.lyricTranslationGap, 0.28, 2.20);
       if (pair[1] === 'lyricTranslationScale') fx.lyricTranslationScale = clampRange(fx.lyricTranslationScale, 0.46, 1.12);

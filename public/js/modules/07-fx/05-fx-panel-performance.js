@@ -36,18 +36,17 @@ function updateSonicSeriesControlVisibility() {
 // 动效 tab 预设专属分组:每个预设只显示自己的动效组 + 通用组,不混杂其他预设。
 // 通用组: base(基础画面,所有预设) particles(粒子与光影,仅粒子类预设 0-8)
 //         audio-spectrum(频谱面板,所有预设)
-// 专属组: rain-mood(预设9雨境) rain-resonance(预设11云瀑) vox-echo(预设10音域回响)
+// 专属组: rain-mood(预设9雨境) vox-echo(预设10音域回响)
 //         sonic-terrain/sonic-audio/sonic-blocks(预设12声波地形) sonic-we(预设13声波工坊)
-// 粒子层在雨境/云瀑/音域回响/声波地形/声波工坊激活时隐藏(hidePoints),粒子参数不生效,故不显示。
+// 粒子层在雨境/音域回响/声波地形/声波工坊激活时隐藏(hidePoints),粒子参数不生效,故不显示。
 function updateMineradioMotionGroupVisibility() {
   var preset = Number(fx && fx.preset) || 0;
-  var nonParticlePreset = preset === 9 || preset === 10 || preset === 11 || preset === 12 || preset === 13;
+  var nonParticlePreset = preset === 9 || preset === 10 || preset === 12 || preset === 13;
   var groups = document.querySelectorAll('#fx-panel [data-fx-page="motion"] .fx-console-group');
   var visibleMap = {
     'particles': !nonParticlePreset,
     'audio-spectrum': true,
     'rain-mood': preset === 9,
-    'rain-resonance': preset === 11,
     'vox-echo': preset === 10,
     'sonic-terrain': preset === SONIC_PRESET_INDEX,
     'sonic-audio': preset === SONIC_PRESET_INDEX,
@@ -623,9 +622,6 @@ function updateFxInputs() {
   if (typeof setRange === 'function') setRange('fx-rainglasssize', fx.rainGlassSize == null ? 1.00 : fx.rainGlassSize);
   if (typeof setRange === 'function') setRange('fx-rainwindoffset', fx.rainWindOffset == null ? 0 : fx.rainWindOffset);
   if (typeof setRange === 'function') setRange('fx-rainDensity', fx.rainDensity == null ? 1 : fx.rainDensity);
-  if (typeof setRange === 'function') setRange('fx-rainresonanceintensity', fx.rainResonanceIntensity == null ? 0.90 : fx.rainResonanceIntensity);
-  if (typeof setRange === 'function') setRange('fx-rainresonancemelody', fx.rainResonanceMelody == null ? 0.80 : fx.rainResonanceMelody);
-  if (typeof setRange === 'function') setRange('fx-rainresonancebeat', fx.rainResonanceBeat == null ? 0.75 : fx.rainResonanceBeat);
   var voxCoverColorToggle = document.getElementById('t-voxCoverColor');
   if (voxCoverColorToggle) voxCoverColorToggle.classList.toggle('on', fx.voxCoverColor !== false);
   var voxMeteorsToggle = document.getElementById('t-voxMeteors');
@@ -799,7 +795,6 @@ function fxPanelTargetForNode(node, current) {
   if (id === 'preset-grid' || id === 'user-archive-grid') return 'presets';
   if (id === 'vox-fx-section') return 'motion';   // 音域回响控件 → 动态 tab
   if (id === 'rain-fx-section') return 'motion';  // 雨境控件 → 动态 tab
-  if (id === 'rain-resonance-fx-section') return 'motion';  // 云瀑共振控件 → 动态 tab
   if (id === 'app-bg-section') return 'appearance';   // 全局背景 → 外观 tab
   if (id === 'fx-lyric-fold') return 'lyrics';
   if (id === 'fx-overlay-fold' || id === 'fx-stage-fold') return 'motion';
@@ -875,12 +870,10 @@ function organizeFxPanel() {
   var motionPage = panel.querySelector('[data-fx-page="motion"]');
   if (motionPage) {
     var rainFxSection = document.getElementById('rain-fx-section');
-    var rainResonanceFxSection = document.getElementById('rain-resonance-fx-section');
     var voxFxSection = document.getElementById('vox-fx-section');
-    // 顺序:云瀑共振 → 雨境 → 音域回响 → 其余(摄像头/粒子等)
+    // 顺序:雨境 → 音域回响 → 其余(摄像头/粒子等)
     if (voxFxSection) motionPage.insertBefore(voxFxSection, motionPage.firstChild);
     if (rainFxSection) motionPage.insertBefore(rainFxSection, motionPage.firstChild);
-    if (rainResonanceFxSection) motionPage.insertBefore(rainResonanceFxSection, motionPage.firstChild);
   }
   // 外观 tab:默认「界面与背景」控件包进 wrap(体素预设时 CSS 隐藏);背景移出 wrap 置顶(体素/非体素通用)。音域回响(#vox-fx-section)已改由路由进「动态」tab
   var appearancePage = panel.querySelector('[data-fx-page="appearance"]');

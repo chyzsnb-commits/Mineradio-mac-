@@ -1177,7 +1177,6 @@ function backgroundStarRiverTargetAlpha() {
   if (Number(fx.preset) === 5) return 0;
   if (Number(fx.preset) === 9) return 0;    // 雨境:自有暗底与雨丝,星河叠上发脏
   if (Number(fx.preset) === 10) return 0;   // 音域回响(我方体素预设,上游不识):有自己的暗底盘/封底体系,星河叠上去是杂色
-  if (Number(fx.preset) === 11) return 0;   // 云瀑共振:透明音乐雨幕单独占前景
   if (typeof SONIC_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SONIC_PRESET_INDEX) return 0;
   if (typeof SONIC_WORKSHOP_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SONIC_WORKSHOP_PRESET_INDEX) return 0.28;
   if (typeof rainMoodActive === 'function' && rainMoodActive()) return 0;
