@@ -57,3 +57,4 @@
 - PR #113 不得整版覆盖稳定线。Wallpaper Engine 只选择性融合经过 ping/source 验证的局域网 Windows 素材库、图片/视频导入和 Scene 预览/导出；IPC 只允许可信 Mineradio 渲染页调用，列表/媒体必须流式限额且大视频不得经 IPC 复制，未验证来源、错误 MIME 与失败 partial 必须拒绝或清理；不恢复封面裁切、清除背景或其他已被用户删除的移植界面。
 - 汽水只允许作为无需登录的公开目录与歌词来源，搜索结果必须固定为不可直放，并通过严格匹配交给现有音源自动换源。无匹配时明确提示 provider limited，不能把目录 URL 当播放地址。
 - 公开发布边界长期保持：不得恢复汽水 Cookie/Token 粘贴、`safeStorage` 会话、官方客户端本地数据库读取、扫码/登录桥、受保护媒体接口、`track_v2` 或音频解密链路；“无需登录能听”只能表示目录命中后由其他已有音源匹配播放，不能宣传为匿名直放汽水会员歌曲。
+- 本轮正式实装基线是提交 `b9cd6ae` / PR #116；唯一 `/Applications/Mineradio.app` 的 `app.asar` SHA-256 为 `a88eb92933e2718ac3e2c3c7135f4ab2ef773d1458e2ac7996f217686b3f7761`。安装时必须继续复用内存解密→新 App 重加密流程，锁定 QQ `playbackKeyReady=true`、摄像头 `granted`、无 SecurityAgent；对应恢复点在 `/Users/allenli/Desktop/Mineradio-2.0-backups.noindex/before-performance-cover-20260814-003602-perspective-wallpaper-qishui`。
