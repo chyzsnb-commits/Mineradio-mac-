@@ -22,8 +22,13 @@ var LYRIC_DEPTH_LAYOUTS = [
   { motion: 'float', current: [-1.22, -0.36, -5.22, 0.96, 0.028, 0.088, -0.024], cover: [1.50, 0.54, -7.54, 2.16, -0.038, -0.074, 0.032] },
   { motion: 'diagonal', current: [0.38, 0.56, -4.86, 1.02, 0.034, -0.034, -0.026], cover: [-2.18, -0.38, -6.10, 2.72, 0.018, 0.132, 0.018] },
   { motion: 'orbit', current: [-0.38, 0.52, -5.00, 1.00, -0.030, 0.038, 0.024], cover: [2.24, -0.32, -7.92, 1.96, -0.018, -0.138, -0.020] },
-  { motion: 'burst', current: [0.04, -0.08, -4.64, 1.10, 0.000, -0.012, 0.000], cover: [-0.12, 0.10, -6.02, 2.82, 0.008, 0.028, -0.006] },
-  { motion: 'rise', current: [-0.94, 0.08, -5.12, 1.04, 0.016, 0.068, -0.018], cover: [1.92, 0.26, -6.74, 2.38, -0.026, -0.092, 0.014] }
+  { motion: 'burst', duration: 1.34, current: [0.04, -0.08, -4.64, 1.10, 0.000, -0.012, 0.000], cover: [-0.12, 0.10, -6.02, 2.82, 0.008, 0.028, -0.006] },
+  { motion: 'rise', current: [-0.94, 0.08, -5.12, 1.04, 0.016, 0.068, -0.018], cover: [1.92, 0.26, -6.74, 2.38, -0.026, -0.092, 0.014] },
+  // 新四组只改现有歌词平面的 transform / opacity，不增加纹理、draw call 或独立动画循环。
+  { motion: 'relay', duration: 1.02, current: [0.56, 0.18, -4.90, 1.03, -0.012, -0.036, 0.012], cover: [-2.04, -0.22, -6.74, 2.48, 0.024, 0.102, -0.018] },
+  { motion: 'pullback', duration: 1.08, current: [-0.48, -0.04, -4.78, 1.06, 0.014, 0.038, -0.010], cover: [2.12, 0.34, -7.30, 2.24, -0.028, -0.118, 0.024] },
+  { motion: 'hinge', duration: 0.96, current: [0.22, 0.32, -5.08, 1.00, -0.016, -0.018, 0.008], cover: [-1.84, 0.42, -6.18, 2.68, 0.034, 0.094, -0.026] },
+  { motion: 'drop', duration: 1.12, current: [-0.72, -0.16, -4.96, 1.04, 0.018, 0.052, -0.014], cover: [1.72, -0.36, -7.62, 2.12, -0.030, -0.082, 0.030] }
 ];
 
 var lyricDepthState = {
@@ -54,6 +59,7 @@ var lyricDepthState = {
   returningToCamera: false,
   transitionProgress: 1,
   transitionDuration: 0.82,
+  reducedMotion: false,
   pointerRaycaster: null,
   pointerNdc: null,
   hover: {
@@ -88,6 +94,16 @@ function lyricDepthFlightActive() {
 
 function lyricDepthFlightLyricsVisible() {
   return lyricDepthFlightActive() && !!(fx && fx.particleLyrics !== false);
+}
+
+function lyricDepthPrefersReducedMotion() {
+  return !!(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+function lyricDepthTransitionDurationForLayout(layout) {
+  if (lyricDepthState.reducedMotion) return 0.18;
+  var duration = Number(layout && layout.duration);
+  return duration > 0 ? Math.max(0.48, Math.min(1.5, duration)) : 0.82;
 }
 
 // 词境穿行和音域回响一样，视觉舞台不叠加右侧 3D 歌单卡；
@@ -1027,6 +1043,11 @@ function lyricDepthAssignCard(card, lineIndex, payload) {
 function lyricDepthSetCardRelative(card, relative) {
   var previousRelative = card.relative;
   card.relative = relative;
+  if (lyricDepthState.reducedMotion && relative === 0 && previousRelative !== 0 && previousRelative !== 1) {
+    // 反向换句或 seek 没有 +1 预备槽可复用；减少动态时允许直接落到静态焦面，
+    // 避免从旧句的近镜头退出位姿再做一次大幅景深运动。
+    card.fresh = true;
+  }
   if (relative === -1 && previousRelative === 0 && card.mesh) {
     card.exitOriginZ = card.mesh.position.z;
   } else if (relative !== -1) {
@@ -1113,8 +1134,10 @@ function lyricDepthSetCardTarget(card, layout, progress, transitionProgress, she
   var mesh = card.mesh;
   var side = current[0] >= 0 ? -1 : 1;
   var x, y, z, scale, rotX, rotY, rotZ, opacity, blur, glow;
+  var entryShapeScaleX = 1;
+  var entryShapeScaleY = 1;
   var lineNoise = Math.sin((card.lineIndex + 5) * 2.173) * 0.18;
-  var motion = layout.motion || 'side';
+  var motion = lyricDepthState.reducedMotion ? 'reduced' : (layout.motion || 'side');
 
   if (relative === 0) {
     x = current[0] + lineNoise * 0.16;
@@ -1126,7 +1149,61 @@ function lyricDepthSetCardTarget(card, layout, progress, transitionProgress, she
     var enter = Math.max(0, Math.min(1, transitionProgress));
     var enterEase = 1 - Math.pow(1 - enter, 3);
     var entering = 1 - enterEase;
-    if (motion === 'rise') {
+    var entryScale = 0.42 + 0.58 * enterEase;
+    var entryOpacity = 0.18 + 0.80 * enterEase;
+    var entryBlur = 0.78 * (1 - enterEase) + 0.015;
+    if (motion === 'reduced') {
+      z -= 0.72 * entering;
+      entryScale = 0.92 + 0.08 * enterEase;
+      entryOpacity = 0.62 + 0.36 * enterEase;
+      entryBlur = 0.10 * entering + 0.015;
+    } else if (motion === 'relay') {
+      // 下一句从原本的 +1 远景槽位沿一条 S 曲线接进焦面，五层景深连续换位。
+      var relayStartX = -side * 3.42 + lineNoise * 0.9;
+      var relayStartY = 0.82 + lineNoise * 0.48;
+      var relayBend = Math.sin(enter * Math.PI) * entering;
+      x += (relayStartX - x) * entering + side * 0.54 * relayBend;
+      y += (relayStartY - y) * entering - 0.30 * relayBend;
+      z += (-10.15 - z) * entering;
+      rotY += side * 0.16 * entering;
+      rotZ -= side * 0.055 * entering;
+      entryScale = 0.78 + 0.22 * enterEase;
+      entryOpacity = 0.16 + 0.82 * enterEase;
+      entryBlur = 0.70 * entering + 0.015;
+    } else if (motion === 'pullback') {
+      // 与其余“从深处推近”相反：先在镜头前放大失焦，再向后退回焦面。
+      x -= side * 0.72 * entering;
+      y -= 0.22 * entering;
+      z += 2.85 * entering;
+      rotX -= 0.075 * entering;
+      rotY -= side * 0.20 * entering;
+      entryScale = 1.48 - 0.48 * enterEase;
+      entryOpacity = 0.10 + 0.88 * enterEase;
+      entryBlur = 0.90 * entering + 0.015;
+    } else if (motion === 'hinge') {
+      // 从侧立的折页状态展开；DoubleSide 与背面 UV 修正保证翻转期间仍可读。
+      x += side * 0.86 * entering;
+      y += 0.20 * entering;
+      z -= 2.95 * entering;
+      rotY += side * 1.22 * entering;
+      rotZ += side * 0.10 * entering;
+      entryShapeScaleX = 0.20 + 0.80 * enterEase;
+      entryShapeScaleY = 1.08 - 0.08 * enterEase;
+      entryScale = 0.78 + 0.22 * enterEase;
+      entryOpacity = 0.12 + 0.86 * enterEase;
+      entryBlur = 0.62 * entering + 0.015;
+    } else if (motion === 'drop') {
+      // 从画面上方坠入，只做一次闭式衰减回弹，不建立逐帧弹簧状态。
+      var dropBounce = Math.sin(enter * Math.PI * 3) * Math.exp(-enter * 2.6);
+      x += side * (0.42 * entering + 0.18 * dropBounce);
+      y += 2.48 * entering + 0.48 * dropBounce;
+      z -= 3.65 * entering;
+      rotX += 0.10 * entering;
+      rotZ += side * (0.25 * entering + 0.12 * dropBounce);
+      entryScale = 0.86 + 0.14 * enterEase + Math.sin(enter * Math.PI) * 0.055;
+      entryOpacity = 0.20 + 0.78 * enterEase;
+      entryBlur = 0.48 * entering + 0.015;
+    } else if (motion === 'rise') {
       x += side * 0.42 * entering;
       y -= 1.62 * entering;
       z -= 4.25 * entering;
@@ -1165,9 +1242,9 @@ function lyricDepthSetCardTarget(card, layout, progress, transitionProgress, she
       y += 0.28 * entering;
       z -= 5.25 * entering;
     }
-    scale *= 0.42 + 0.58 * enterEase;
-    opacity = 0.18 + 0.80 * enterEase;
-    blur = 0.78 * (1 - enterEase) + 0.015;
+    scale *= entryScale;
+    opacity = entryOpacity;
+    blur = entryBlur;
     glow = 0.20 + 0.10 * enterEase;
   } else if (relative === -1) {
     // 旧句继续越过焦平面朝镜头滑行，放大并失焦；与新句重叠约 0.8 秒。
@@ -1194,12 +1271,57 @@ function lyricDepthSetCardTarget(card, layout, progress, transitionProgress, she
     rotX = 0.045; rotY = side * 0.18; rotZ = side * -0.045;
     opacity = 0.095; blur = 0.94; glow = 0.13;
   } else if (relative === 1) {
-    x = -side * 3.42 + lineNoise * 0.9;
-    y = 0.82 + lineNoise * 0.48;
-    z = -10.15;
-    scale = 0.80;
-    rotX = 0.028; rotY = side * 0.15; rotZ = side * -0.034;
-    opacity = 0.16; blur = 0.70; glow = 0.15;
+    // 让需要特殊起点的下一句提前停在它自己的入场原点。升为 current 时
+    // 位置连续，不用在换句边界把可见卡片瞬移到镜头前或画面上方。
+    var incomingLayout = LYRIC_DEPTH_LAYOUTS[Math.abs(card.lineIndex < 0 ? 0 : card.lineIndex) % LYRIC_DEPTH_LAYOUTS.length];
+    var incomingMotion = lyricDepthState.reducedMotion ? 'reduced' : (incomingLayout.motion || 'side');
+    var incomingCurrent = incomingLayout.current;
+    var incomingSide = incomingCurrent[0] >= 0 ? -1 : 1;
+    if (incomingMotion === 'reduced' || incomingMotion === 'pullback' || incomingMotion === 'hinge' || incomingMotion === 'drop') {
+      x = incomingCurrent[0] + lineNoise * 0.16;
+      y = incomingCurrent[1] + Math.sin((card.lineIndex + 2) * 1.37) * 0.055;
+      z = incomingCurrent[2];
+      scale = incomingCurrent[3];
+      rotX = incomingCurrent[4]; rotY = incomingCurrent[5]; rotZ = incomingCurrent[6];
+      if (incomingMotion === 'reduced') {
+        z -= 0.72;
+        scale *= 0.92;
+        opacity = 0.02; blur = 0.115; glow = 0.14;
+      } else if (incomingMotion === 'pullback') {
+        x -= incomingSide * 0.72;
+        y -= 0.22;
+        z += 2.85;
+        rotX -= 0.075;
+        rotY -= incomingSide * 0.20;
+        scale *= 1.48;
+        opacity = 0.025; blur = 0.915; glow = 0.12;
+      } else if (incomingMotion === 'hinge') {
+        x += incomingSide * 0.86;
+        y += 0.20;
+        z -= 2.95;
+        rotY += incomingSide * 1.22;
+        rotZ += incomingSide * 0.10;
+        scale *= 0.78;
+        entryShapeScaleX = 0.20;
+        entryShapeScaleY = 1.08;
+        opacity = 0.035; blur = 0.635; glow = 0.12;
+      } else {
+        x += incomingSide * 0.42;
+        y += 2.48;
+        z -= 3.65;
+        rotX += 0.10;
+        rotZ += incomingSide * 0.25;
+        scale *= 0.86;
+        opacity = 0.018; blur = 0.495; glow = 0.12;
+      }
+    } else {
+      x = -side * 3.42 + lineNoise * 0.9;
+      y = 0.82 + lineNoise * 0.48;
+      z = -10.15;
+      scale = 0.80;
+      rotX = 0.028; rotY = side * 0.15; rotZ = side * -0.034;
+      opacity = 0.16; blur = 0.70; glow = 0.15;
+    }
   } else {
     x = side * 4.72 + lineNoise;
     y = -1.18 + lineNoise * 0.42;
@@ -1213,14 +1335,15 @@ function lyricDepthSetCardTarget(card, layout, progress, transitionProgress, she
   // 参考片里歌词通常占画面约三至六成，只有个别强调字接近镜头。
   // 保留 Canvas 的 4:1 比例，但不要让整句长期铺满整屏。
   var liveLyricScale = Math.max(0.35, Math.min(1.65, Number(fx && fx.lyricScale) || 1));
-  var targetScaleX = 4.72 * scale * liveLyricScale;
-  var targetScaleY = 1.18 * scale * liveLyricScale;
+  var targetScaleX = 4.72 * scale * liveLyricScale * entryShapeScaleX;
+  var targetScaleY = 1.18 * scale * liveLyricScale * entryShapeScaleY;
   if (card.fresh) {
-    mesh.position.set(x * 1.06, y * 1.06, z - 1.65);
-    mesh.scale.set(targetScaleX * 0.76, targetScaleY * 0.76, 1);
+    var useExactFreshPose = motion === 'reduced' || motion === 'pullback' || motion === 'hinge' || motion === 'drop';
+    mesh.position.set(useExactFreshPose ? x : x * 1.06, useExactFreshPose ? y : y * 1.06, useExactFreshPose ? z : z - 1.65);
+    mesh.scale.set(useExactFreshPose ? targetScaleX : targetScaleX * 0.76, useExactFreshPose ? targetScaleY : targetScaleY * 0.76, 1);
     mesh.rotation.set(rotX, rotY, rotZ);
-    card.material.uniforms.uOpacity.value = 0;
-    card.material.uniforms.uBlur.value = Math.min(1, blur + 0.24);
+    card.material.uniforms.uOpacity.value = motion === 'reduced' ? opacity : 0;
+    card.material.uniforms.uBlur.value = motion === 'reduced' ? blur : Math.min(1, blur + 0.24);
     card.fresh = false;
   }
 
@@ -1232,7 +1355,8 @@ function lyricDepthSetCardTarget(card, layout, progress, transitionProgress, she
   mesh.rotation.x = lyricDepthDamp(mesh.rotation.x, rotX, 3.2, dt);
   mesh.rotation.y = lyricDepthDamp(mesh.rotation.y, rotY, 3.2, dt);
   mesh.rotation.z = lyricDepthDamp(mesh.rotation.z, rotZ, 3.0, dt);
-  card.material.uniforms.uOpacity.value = lyricDepthDamp(card.material.uniforms.uOpacity.value, opacity, opacity > card.material.uniforms.uOpacity.value ? 5.2 : 3.5, dt);
+  var opacityRate = motion === 'reduced' ? 24 : (opacity > card.material.uniforms.uOpacity.value ? 5.2 : 3.5);
+  card.material.uniforms.uOpacity.value = lyricDepthDamp(card.material.uniforms.uOpacity.value, opacity, opacityRate, dt);
   card.material.uniforms.uBlur.value = lyricDepthDamp(card.material.uniforms.uBlur.value, blur, 3.8, dt);
   card.material.uniforms.uGlow.value = lyricDepthDamp(card.material.uniforms.uGlow.value, glow, 3.2, dt);
   var palette = typeof effectiveLyricPalette === 'function' ? effectiveLyricPalette(stageLyrics && stageLyrics.palette) : null;
@@ -1499,7 +1623,8 @@ function updateLyricDepthFlight(dt) {
     lyricDepthState.patternIndex = Math.abs(index < 0 ? 0 : index) % LYRIC_DEPTH_LAYOUTS.length;
     lyricDepthState.lastLineChangeAt = uniforms.uTime.value;
     lyricDepthState.transitionProgress = lyricDepthState.active ? 0 : 0.72;
-    lyricDepthState.transitionDuration = LYRIC_DEPTH_LAYOUTS[lyricDepthState.patternIndex].motion === 'burst' ? 1.34 : 0.82;
+    lyricDepthState.reducedMotion = lyricDepthPrefersReducedMotion();
+    lyricDepthState.transitionDuration = lyricDepthTransitionDurationForLayout(LYRIC_DEPTH_LAYOUTS[lyricDepthState.patternIndex]);
     if (!pendingLyrics) {
       lyricDepthSyncDuringSeek(index);
       trackState.pendingAdopt = false;
@@ -1573,6 +1698,7 @@ function disposeLyricDepthFlight() {
   lyricDepthState.sceneBackgroundCaptured = false;
   lyricDepthState.transitionProgress = 1;
   lyricDepthState.transitionDuration = 0.82;
+  lyricDepthState.reducedMotion = false;
   lyricDepthState.freeCameraWorldAnchored = false;
   lyricDepthState.returningToCamera = false;
   lyricDepthState.hover.active = false;

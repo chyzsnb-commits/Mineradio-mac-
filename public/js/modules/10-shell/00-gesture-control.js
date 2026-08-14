@@ -4,14 +4,14 @@
 //  · requestVideoFrameCallback 帧泵:相机帧一到立即推理,不再经 rAF 转发
 //  · 捏合/握拳按手掌跨度归一(远近尺度不变)+ 迟滞 + 连续帧去抖
 //  · 单手:掌推 / 捏合拖动旋转 / 握拳收束
-//  · 双手:双捏 = 拉伸缩放 + 连线角旋转(roll);双拳 = 强收束爆发
+//  · 双手:张开/收拢直接缩放(无长按、无滚轮模拟、无惯性);双拳 = 强收束爆发
 //  · 全预设:粒子系(掌推/旋转/缩放)· 安魂(旋转/变焦/闪光)· 音域回响(掌浪/转镜/推拉/压城)
 // ============================================================
 function startHeadTracking() { }     // stub: 兼容旧调用
 function stopHeadTracking() { }      // stub
 
 var GESTURE_MP_LOCAL = 'vendor/mediapipe-tasks';
-var GESTURE_MP_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+var GESTURE_MP_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35';
 var GESTURE_MP_CDN_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
 
 var gestureVideo = null, gestureStream = null, gestureLandmarker = null, gestureVisionNS = null;
@@ -34,12 +34,14 @@ var particleSpin = { vx: 0, vy: 0, damping: 0.90 };
 // 手势驱动的总旋转 (累计角度), 输出到 particles / 骷髅
 var gestureRotation = { x: 0, y: 0, z: 0 };
 var gestureGrip = { value: 0, target: 0, openness: 1, lastState: 'open', pulse: 0 };
-// 双捏缩放(粒子系预设:作用到粒子组 scale)
+// 双手直接缩放(粒子系预设:作用到粒子组 scale)
 var gestureZoom = { value: 1, target: 1 };
-// 双手变换(双捏)状态。短暂丢手/捏合抖动时保留基准，避免误落入单手旋转并重置缩放。
+// 双手变换状态。短暂丢手时保留基准，避免误落入单手旋转并重置缩放。
 var GESTURE_TWO_HAND_GRACE_MS = 180;
 var GESTURE_SLOT_REACQUIRE_MS = 240;
-var gestureTwoHand = { active: false, kind: '', d0: 1, distSm: 1, lastPairAt: 0, lastAngle: 0, zoomBase: 1, voxScaleBase: 1, skullZoomBase: 0 };
+var GESTURE_TWO_HAND_ARM_MS = 140;
+var GESTURE_TWO_HAND_DEADZONE = 0.025;
+var gestureTwoHand = { active: false, kind: '', d0: 1, distSm: 1, pairSeenAt: 0, lastPairAt: 0, zoomBase: 1, voxScaleBase: 1, skullZoomBase: 0 };
 var gesturePrevFistCount = 0;   // 上一帧拳头数(入拳脉冲按增量触发)
 // 安魂:握拳触发骷髅闪光(01-float-skull-backcover.js 的 flashTarget 会取用)
 var skullGestureFlash = 0;
@@ -74,6 +76,7 @@ function resetParticleRotationTarget(syncVisual) {
   particleSpin.vy = 0;
   gestureZoom.target = 1;
   gestureTwoHand.active = false;
+  gestureTwoHand.pairSeenAt = 0;
   pinchState.active = false;
   if (typeof setVoxelGestureContentScale === 'function') setVoxelGestureContentScale(1);
   if (typeof resetLyricDepthInteractionTransform === 'function') {
@@ -153,6 +156,7 @@ function makeGestureHandSlot() {
   for (var j = 0; j < 21; j++) lm.push({ x: 0, y: 0, z: 0 });
   return {
     present: false, lastSeen: 0, filters: filters, lm: lm,
+    handedness: '', handednessScore: 0,
     palm: { x: 0.5, y: 0.5 }, pinchPt: { x: 0.5, y: 0.5 }, openness: 1, openSm: 1, pinchRatio: 2,
     pinch: false, pinchPend: 0, fist: false, fistPend: 0, fistArmed: false,
     voxAmt: 0, voxX: 0, voxZ: 0, voxOk: false,
@@ -162,6 +166,7 @@ var gestureHandSlots = [makeGestureHandSlot(), makeGestureHandSlot()];
 
 function resetGestureSlot(slot) {
   slot.present = false;
+  slot.handedness = ''; slot.handednessScore = 0;
   slot.pinch = false; slot.pinchPend = 0;
   slot.fist = false; slot.fistPend = 0; slot.fistArmed = false;
   slot.voxOk = false;
@@ -175,12 +180,16 @@ function palmCenter(lm) {
   return { x: px, y: py };
 }
 
-function handOpenness(lm, palm) {
-  var span = Math.hypot(lm[5].x - lm[17].x, lm[5].y - lm[17].y);
+function gestureMetricDistance(a, b, aspect) {
+  return Math.hypot((a.x - b.x) * Math.max(0.25, Number(aspect) || 1), a.y - b.y);
+}
+
+function handOpenness(lm, palm, aspect) {
+  var span = gestureMetricDistance(lm[5], lm[17], aspect);
   span = Math.max(0.055, span);
   var tips = [8, 12, 16, 20];
   var avg = 0;
-  for (var i = 0; i < tips.length; i++) avg += Math.hypot(lm[tips[i]].x - palm.x, lm[tips[i]].y - palm.y);
+  for (var i = 0; i < tips.length; i++) avg += gestureMetricDistance(lm[tips[i]], palm, aspect);
   avg /= tips.length;
   return clampRange((avg / span - 0.62) / 0.78, 0, 1);
 }
@@ -233,7 +242,26 @@ var _hpCanvas = null, _hpCtx = null, _hpInFlight = false, _hpSentAt = 0, _hpW = 
 var gestureLastInferAt = 0;
 var _hpBridge = (typeof window !== 'undefined' && window.desktopWindow && typeof window.desktopWindow.handposeStart === 'function') ? window.desktopWindow : null;
 var gestureWorker = null, gestureWorkerReady = false, gestureWorkerInFlight = false, gestureWorkerSentAt = 0;
-var GESTURE_WORKER_W = 256, GESTURE_WORKER_H = 192, GESTURE_INFER_INTERVAL = 32;
+var GESTURE_WORKER_LONG_SIDE = 320, GESTURE_INFER_INTERVAL = 32;
+
+// 保留摄像头原始宽高比：透视模式是 16:9，手势独占摄像头时通常是 4:3。
+// 旧实现无论输入都强压成 256×192，会把 16:9 中的手掌横向几何拉伸。
+function gestureWorkerFrameSize(video) {
+  var sourceW = Math.max(1, Number(video && video.videoWidth) || 320);
+  var sourceH = Math.max(1, Number(video && video.videoHeight) || 240);
+  var width, height;
+  if (sourceW >= sourceH) {
+    width = GESTURE_WORKER_LONG_SIDE;
+    height = Math.round(width * sourceH / sourceW);
+  } else {
+    height = GESTURE_WORKER_LONG_SIDE;
+    width = Math.round(height * sourceW / sourceH);
+  }
+  // WASM 纹理转换对偶数尺寸更稳定，同时避免极端输入生成过小图像。
+  width = Math.max(128, Math.round(width / 2) * 2);
+  height = Math.max(128, Math.round(height / 2) * 2);
+  return { width: width, height: height };
+}
 
 function updateGestureInferenceStats(elapsed, tNow) {
   gestureDetectAvgMs += (Math.min(250, elapsed) - gestureDetectAvgMs) * 0.08;
@@ -294,7 +322,7 @@ function ensureGestureWorker() {
         if (!gestureActive || gestureEngineMode !== 'worker') return;
         var tNow = performance.now();
         updateGestureInferenceStats(tNow - gestureWorkerSentAt, tNow);
-        handleGestureResults({ landmarks: msg.landmarks || [] }, tNow);
+        handleGestureResults({ landmarks: msg.landmarks || [], handedness: msg.handedness || [] }, tNow);
         return;
       }
       if (msg.type === 'detect-error') gestureWorkerInFlight = false;
@@ -404,6 +432,11 @@ async function startGestureControl() {
     gestureStats.ratePerSec = 0;
     gestureLastInferAt = 0;
     gestureActive = true;
+    if (window.handModelVisuals && typeof window.handModelVisuals.activate === 'function') {
+      Promise.resolve(window.handModelVisuals.activate()).catch(function (error) {
+        console.warn('[Gesture] hand model activation failed:', error);
+      });
+    }
     gestureLastVideoTs = 0;
     gesturePumpFrame();
     // 准备 hand canvas
@@ -411,7 +444,7 @@ async function startGestureControl() {
     handCanvasCtx = handCanvas.getContext('2d');
     resizeHandCanvas();
     handCanvas.classList.add('show');
-    showToast('手势已开启: 掌推 · 捏合旋转 · 握拳收束 · 双捏缩放');
+    showToast('手势已开启: 掌推 · 捏合旋转 · 握拳收束 · 双手张开/收拢缩放');
     showGestureHUD('待命', 0, '把手放进视野(支持双手)');
   } catch (e) {
     if (gen !== gestureStartGen || fx.cam !== 'gesture') {
@@ -447,7 +480,10 @@ async function startGestureControl() {
 
 function stopGestureControl() {
   gestureStartGen++;   // 使进行中的启动失效(其代次检查点会走 abortGestureStart 清理)
-  if (!gestureActive && !gestureStarting) return;
+  if (!gestureActive && !gestureStarting) {
+    if (window.handModelVisuals && typeof window.handModelVisuals.deactivate === 'function') window.handModelVisuals.deactivate();
+    return;
+  }
   gestureActive = false;
   if (_hpBridge) { try { _hpBridge.handposeStop(); } catch (e) { } }   // 停原生助手进程
   stopGestureWorker();
@@ -461,6 +497,7 @@ function stopGestureControl() {
   gestureVideo = null; gestureStream = null; gestureLandmarker = null;
   pinchState.active = false;
   gestureTwoHand.active = false;
+  gestureTwoHand.pairSeenAt = 0;
   gestureZoom.target = 1;
   if (typeof setVoxelGestureContentScale === 'function') setVoxelGestureContentScale(1);
   gesturePrevFistCount = 0;
@@ -478,6 +515,9 @@ function stopGestureControl() {
   if (handCanvas) {
     handCanvas.classList.remove('show');
     if (handCanvasCtx) handCanvasCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+  }
+  if (window.handModelVisuals && typeof window.handModelVisuals.deactivate === 'function') {
+    window.handModelVisuals.deactivate();
   }
 }
 
@@ -521,9 +561,10 @@ function gesturePumpFrame() {
     gestureWorkerSentAt = wNow;
     var wTs = Math.max(wNow, gestureLastVideoTs + 0.01);
     gestureLastVideoTs = wTs;
+    var workerSize = gestureWorkerFrameSize(gestureVideo);
     createImageBitmap(gestureVideo, {
-      resizeWidth: GESTURE_WORKER_W,
-      resizeHeight: GESTURE_WORKER_H,
+      resizeWidth: workerSize.width,
+      resizeHeight: workerSize.height,
       resizeQuality: 'low',
     }).then(function (bitmap) {
       if (!gestureActive || gestureEngineMode !== 'worker' || !gestureWorker) {
@@ -566,8 +607,18 @@ function gesturePumpFrame() {
 }
 
 // ------------------------------------------------------------
-//  结果分发: 槽位匹配(按掌心距离, 保持滤波连续性)
+//  结果分发: handedness + 掌心最近邻匹配，保持两手身份与滤波连续性
 // ------------------------------------------------------------
+function gestureResultHandedness(res, index) {
+  var groups = (res && (res.handedness || res.handednesses)) || [];
+  var group = groups[index];
+  var category = Array.isArray(group) ? group[0]
+    : (group && Array.isArray(group.categories) ? group.categories[0] : group);
+  var rawLabel = String(category && (category.label || category.categoryName || category.displayName) || '').toLowerCase();
+  var label = rawLabel.indexOf('left') >= 0 ? 'left' : (rawLabel.indexOf('right') >= 0 ? 'right' : '');
+  return { label: label, score: Number(category && category.score) || 0 };
+}
+
 function handleGestureResults(res, tNow) {
   if (!gestureActive) return;
   var lms = (res && res.landmarks) || [];
@@ -578,7 +629,8 @@ function handleGestureResults(res, tNow) {
     var raw = lms[i];
     var cx = 0, cy = 0, idxs = [0, 5, 9, 13, 17];
     for (var k = 0; k < idxs.length; k++) { cx += 1 - raw[idxs[k]].x; cy += raw[idxs[k]].y; }
-    cands.push({ lm: raw, x: cx / 5, y: cy / 5, slot: -1 });
+    var handedness = gestureResultHandedness(res, i);
+    cands.push({ lm: raw, x: cx / 5, y: cy / 5, handedness: handedness.label, handednessScore: handedness.score, slot: -1 });
   }
   // 把候选掌心匹配到最近的近期槽位。检测器偶发丢一帧时仍保留左右手身份。
   var taken = [false, false];
@@ -587,10 +639,15 @@ function handleGestureResults(res, tNow) {
     var recent = slot.present || (slot.lastSeen > 0 && tNow - slot.lastSeen < GESTURE_SLOT_REACQUIRE_MS);
     if (!recent) return;
     for (var ci = 0; ci < cands.length; ci++) {
-      pairs.push({ si: si, ci: ci, d: Math.hypot(cands[ci].x - slot.palm.x, cands[ci].y - slot.palm.y) });
+      var distance = gestureMetricDistance(cands[ci], slot.palm, gestureHandsAspect());
+      var identityCost = distance;
+      if (slot.handedness && cands[ci].handedness && slot.handednessScore >= 0.5 && cands[ci].handednessScore >= 0.5) {
+        identityCost += slot.handedness === cands[ci].handedness ? -0.16 : 0.28;
+      }
+      pairs.push({ si: si, ci: ci, d: distance, cost: identityCost });
     }
   });
-  pairs.sort(function (left, right) { return left.d - right.d; });
+  pairs.sort(function (left, right) { return left.cost - right.cost; });
   pairs.forEach(function (pair) {
     if (pair.d >= 0.42 || taken[pair.si] || cands[pair.ci].slot >= 0) return;
     cands[pair.ci].slot = pair.si;
@@ -599,6 +656,13 @@ function handleGestureResults(res, tNow) {
   // 剩余候选进空槽
   for (var c2 = 0; c2 < cands.length; c2++) {
     if (cands[c2].slot >= 0) continue;
+    var preferredSlot = cands[c2].handedness === 'left' ? 0 : (cands[c2].handedness === 'right' ? 1 : -1);
+    if (preferredSlot >= 0 && !taken[preferredSlot]) {
+      cands[c2].slot = preferredSlot;
+      taken[preferredSlot] = true;
+      resetGestureSlot(gestureHandSlots[preferredSlot]);
+      continue;
+    }
     for (var si2 = 0; si2 < 2; si2++) {
       if (!taken[si2]) { cands[c2].slot = si2; taken[si2] = true; resetGestureSlot(gestureHandSlots[si2]); break; }
     }
@@ -610,6 +674,10 @@ function handleGestureResults(res, tNow) {
     for (var c3 = 0; c3 < cands.length; c3++) if (cands[c3].slot === si3) { cand = cands[c3]; break; }
     if (!cand) { slot3.present = false; slot3.fistArmed = false; continue; }
     filterSlotLandmarks(slot3, cand.lm, tNow);
+    if (cand.handedness && cand.handednessScore >= 0.5) {
+      slot3.handedness = cand.handedness;
+      slot3.handednessScore = cand.handednessScore;
+    }
     slot3.present = true;
     slot3.lastSeen = tNow;
     handLmLastSeen = tNow;
@@ -629,10 +697,11 @@ function filterSlotLandmarks(slot, rawLm, tNow) {
   slot.palm.x = palm.x; slot.palm.y = palm.y;
   slot.pinchPt.x = (slot.lm[4].x + slot.lm[8].x) / 2;
   slot.pinchPt.y = (slot.lm[4].y + slot.lm[8].y) / 2;
-  slot.openness = handOpenness(slot.lm, palm);
+  var metricAspect = gestureHandsAspect();
+  slot.openness = handOpenness(slot.lm, palm, metricAspect);
   slot.openSm += (slot.openness - slot.openSm) * 0.34;
-  var span = Math.max(0.05, Math.hypot(slot.lm[5].x - slot.lm[17].x, slot.lm[5].y - slot.lm[17].y));
-  slot.pinchRatio = Math.hypot(slot.lm[8].x - slot.lm[4].x, slot.lm[8].y - slot.lm[4].y) / span;
+  var span = Math.max(0.05, gestureMetricDistance(slot.lm[5], slot.lm[17], metricAspect));
+  slot.pinchRatio = gestureMetricDistance(slot.lm[8], slot.lm[4], metricAspect) / span;
   // 捏合: 尺度不变 + 迟滞。退出需 3 帧，避免双捏中某只手单帧抖掉就中断缩放。
   var pinchWant = slot.pinch ? (slot.pinchRatio < 0.68) : (slot.pinchRatio < 0.46 && slot.openness > 0.16);
   slot.pinchPend = (pinchWant !== slot.pinch) ? slot.pinchPend + 1 : 0;
@@ -645,7 +714,7 @@ function filterSlotLandmarks(slot, rawLm, tNow) {
 }
 
 // ------------------------------------------------------------
-//  手势状态机(推理帧率): 双捏变换 / 单捏旋转 / 握拳收束
+//  手势状态机(推理帧率): 双手直接缩放 / 单捏旋转 / 握拳收束
 // ------------------------------------------------------------
 function gesturePresetKind() {
   if (typeof voxelCityActive === 'function' && voxelCityActive()) return 'voxel';
@@ -659,6 +728,13 @@ function gesturePresetKind() {
 
 function gestureHandsAspect() {
   return (gestureVideo && gestureVideo.videoHeight > 0) ? (gestureVideo.videoWidth / gestureVideo.videoHeight) : (4 / 3);
+}
+
+function gestureTwoHandScaleRatio(distance, baseline) {
+  var rawRatio = Math.max(0.34, Math.min(3.0, distance / Math.max(0.08, baseline)));
+  var ratioDelta = rawRatio - 1;
+  if (Math.abs(ratioDelta) <= GESTURE_TWO_HAND_DEADZONE) return 1;
+  return 1 + (ratioDelta > 0 ? 1 : -1) * (Math.abs(ratioDelta) - GESTURE_TWO_HAND_DEADZONE);
 }
 
 function voxGestureCamReady() {
@@ -686,26 +762,33 @@ function processGestureState(tNow) {
   if (!present.length) {
     if (pinchState.active) pinchState.active = false;
     gestureTwoHand.active = false;
+    gestureTwoHand.pairSeenAt = 0;
     gestureGrip.target = 0;
     gesturePrevFistCount = 0;
     return;
   }
 
   var aspect = gestureHandsAspect();
-  var twoPinch = present.length === 2 && present[0].pinch && present[1].pinch;
+  var twoHandsReady = present.length === 2
+    && !present[0].fist && !present[1].fist
+    && present[0].openSm > 0.42 && present[1].openSm > 0.42;
 
-  // ---- 双捏 = 拉伸缩放 + 连线角旋转 ----
-  if (twoPinch) {
-    var dxh = (present[1].pinchPt.x - present[0].pinchPt.x) * aspect;
-    var dyh = present[1].pinchPt.y - present[0].pinchPt.y;
-    var dist = Math.max(0.04, Math.hypot(dxh, dyh));
-    var ang = Math.atan2(dyh, dxh);
+  // ---- 双手掌心距离 = 直接缩放；不要求双捏，不模拟滚轮，不叠加旋转/惯性 ----
+  if (twoHandsReady) {
+    if (!gestureTwoHand.pairSeenAt) gestureTwoHand.pairSeenAt = tNow;
+    if (!gestureTwoHand.active && tNow - gestureTwoHand.pairSeenAt < GESTURE_TWO_HAND_ARM_MS) {
+      pinchState.active = false;
+      particleSpin.vx = particleSpin.vy = 0;
+      updateGesturePushTargets(present, kind);
+      showGestureHUD('双手识别中', 0.42, '张开双手，拉开=放大 · 收拢=缩小');
+      return;
+    }
+    var dist = Math.max(0.04, gestureMetricDistance(present[1].palm, present[0].palm, aspect));
     if (!gestureTwoHand.active || gestureTwoHand.kind !== kind) {
       gestureTwoHand.active = true;
       gestureTwoHand.kind = kind;
       gestureTwoHand.d0 = dist;
       gestureTwoHand.distSm = dist;
-      gestureTwoHand.lastAngle = ang;
       gestureTwoHand.zoomBase = gestureZoom.target;
       if (kind === 'voxel' && typeof getVoxelGestureContentScale === 'function') {
         gestureTwoHand.voxScaleBase = getVoxelGestureContentScale();
@@ -716,12 +799,7 @@ function processGestureState(tNow) {
     }
     gestureTwoHand.lastPairAt = tNow;
     gestureTwoHand.distSm += (dist - gestureTwoHand.distSm) * 0.34;
-    var ratio = clampRange(gestureTwoHand.distSm / Math.max(0.08, gestureTwoHand.d0), 0.34, 3.0);
-    // 双手连线是无向轴：检测器交换两手顺序时也不突然翻转 180°。
-    var da = ang - gestureTwoHand.lastAngle;
-    while (da > Math.PI / 2) da -= Math.PI;
-    while (da < -Math.PI / 2) da += Math.PI;
-    gestureTwoHand.lastAngle = ang;
+    var ratio = gestureTwoHandScaleRatio(gestureTwoHand.distSm, gestureTwoHand.d0);
     if (kind === 'voxel') {
       var voxGestureScale = typeof getVoxelGestureContentScale === 'function' ? getVoxelGestureContentScale() : 1;
       if (typeof setVoxelGestureContentScale === 'function') {
@@ -737,9 +815,7 @@ function processGestureState(tNow) {
     } else {
       unlockCenteredView();
       gestureZoom.target = clampRange(gestureTwoHand.zoomBase * ratio, GESTURE_ZOOM_MIN, GESTURE_ZOOM_MAX);
-      gestureRotation.z += da * 0.9;
-      rebaseParticleRotationIfNeeded();
-      showGestureHUD((kind === 'lyric-depth' ? '词境穿行 · ' : '') + '双手缩放 ' + Math.round(gestureZoom.target * 100) + '%', clampRange((gestureZoom.target - GESTURE_ZOOM_MIN) / (GESTURE_ZOOM_MAX - GESTURE_ZOOM_MIN), 0, 1), '拉伸=缩放 · 转动双手=旋转');
+      showGestureHUD((kind === 'lyric-depth' ? '词境穿行 · ' : '') + '双手缩放 ' + Math.round(gestureZoom.target * 100) + '%', clampRange((gestureZoom.target - GESTURE_ZOOM_MIN) / (GESTURE_ZOOM_MAX - GESTURE_ZOOM_MIN), 0, 1), '拉开=放大 · 收拢=缩小');
     }
     gestureGrip.target = Math.min(0.2, gestureGrip.target);
     updateGesturePushTargets(present, kind);
@@ -749,11 +825,12 @@ function processGestureState(tNow) {
     pinchState.active = false;
     gestureGrip.target = Math.min(0.2, gestureGrip.target);
     updateGesturePushTargets(present, kind);
-    showGestureHUD('双手保持', 0.5, '保持双手捏合即可继续推拉');
+    showGestureHUD('双手保持', 0.5, '把双手放回视野即可继续缩放');
     return;
   }
   gestureTwoHand.active = false;
   gestureTwoHand.kind = '';
+  gestureTwoHand.pairSeenAt = 0;
 
   // ---- 单捏 = 拖动旋转 / 体素转镜头(拖动绑定发起的那只手, 换手需重新捏合, 防瞬跳甩飞) ----
   var hudDone = false;
@@ -828,10 +905,10 @@ function processGestureState(tNow) {
     if (!pinchState.active) gestureGrip.target = 0;
     gestureGrip.lastState = openest > 0.62 ? 'open' : 'hover';
     if (!pincher && !hudDone) {
-      var legend = kind === 'voxel' ? '掌浪 / 捏合转镜 / 双捏推拉 / 握拳压城'
-        : (kind === 'skull' ? '捏合旋转 / 双捏变焦 / 握拳闪光'
-          : (kind === 'lyric-depth' ? '词境穿行 / 捏合旋转 / 双捏缩放'
-            : '掌推 / 捏合旋转 / 握拳收束 / 双捏缩放'));
+      var legend = kind === 'voxel' ? '掌浪 / 捏合转镜 / 双手缩放 / 握拳压城'
+        : (kind === 'skull' ? '捏合旋转 / 双手变焦 / 握拳闪光'
+          : (kind === 'lyric-depth' ? '词境穿行 / 捏合旋转 / 双手缩放'
+            : '掌推 / 捏合旋转 / 握拳收束 / 双手缩放'));
       showGestureHUD(present.length === 2 ? '双手悬停' : (openest > 0.62 ? '张开恢复' : '悬停'), 0.30 + openest * 0.34, legend);
     }
   }
@@ -924,7 +1001,7 @@ function tickGestureRotation(dt) {
   gestureGrip.pulse *= Math.pow(0.84, dt * 60);
   if (uniforms.uGestureGrip) uniforms.uGestureGrip.value = clampRange(gestureGrip.value + gestureGrip.pulse * 0.16, 0, 1);
 
-  // 双捏缩放: 粒子组整体 scale；骷髅走自身变焦，体素在手势状态机里直接缩放内容根组。
+  // 双手直接缩放: 粒子组整体 scale；骷髅走自身变焦，体素在手势状态机里直接缩放内容根组。
   gestureZoom.value += (gestureZoom.target - gestureZoom.value) * Math.min(1, dt * 7);
   if (particles && Math.abs(particles.scale.x - gestureZoom.value) > 0.0004) {
     particles.scale.setScalar(gestureZoom.value);
@@ -999,7 +1076,7 @@ function tickGestureRotation(dt) {
 }
 
 // ------------------------------------------------------------
-//  骨架/光效绘制(两只手 + 双捏连线)
+//  骨架/光效绘制(两只手 + 双手缩放连线)
 // ------------------------------------------------------------
 var HAND_BONES = [
   [0, 1], [1, 2], [2, 3], [3, 4],        // 拇指
@@ -1013,6 +1090,13 @@ function drawHandsOverlay() {
   if (!handCanvasCtx) return;
   var ctx = handCanvasCtx;
   ctx.clearRect(0, 0, innerWidth, innerHeight);
+  if (window.handModelVisuals && typeof window.handModelVisuals.renderFrame === 'function') {
+    try {
+      if (window.handModelVisuals.renderFrame(ctx, gestureHandSlots, gestureTwoHand, performance.now())) return;
+    } catch (error) {
+      console.warn('[Gesture] hand model renderer failed, using classic overlay:', error);
+    }
+  }
   var drawn = [];
   for (var i = 0; i < 2; i++) {
     var slot = gestureHandSlots[i];
@@ -1020,11 +1104,11 @@ function drawHandsOverlay() {
     drawOneHand(ctx, slot, i);
     drawn.push(slot);
   }
-  // 双捏: 两掌间连线 + 中点光斑
+  // 双手缩放: 两掌间连线 + 中点光斑
   if (gestureTwoHand.active && drawn.length === 2) {
     var W = innerWidth, H = innerHeight;
-    var x1 = drawn[0].pinchPt.x * W, y1 = drawn[0].pinchPt.y * H;
-    var x2 = drawn[1].pinchPt.x * W, y2 = drawn[1].pinchPt.y * H;
+    var x1 = drawn[0].palm.x * W, y1 = drawn[0].palm.y * H;
+    var x2 = drawn[1].palm.x * W, y2 = drawn[1].palm.y * H;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     var grad = ctx.createLinearGradient(x1, y1, x2, y2);

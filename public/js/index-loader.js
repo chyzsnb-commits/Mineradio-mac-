@@ -96,6 +96,7 @@
     'js/modules/08-account/05-startup-login-guide.js',
     'js/modules/09-idle-toast-libraries.js',
     'js/modules/10-shell/00-gesture-control.js',
+    'js/modules/10-shell/01-hand-model-visuals.js',
     'js/modules/10-shell/01-viewport-resize-shortcuts.js',
     'js/modules/10-shell/02-peek-panels-upload.js',
     'js/modules/10-shell/03-splash.js',

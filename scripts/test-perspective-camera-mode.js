@@ -98,6 +98,18 @@ test('透视只在真实视频可用后接管背景并让 WebGL 透明', () => {
   assert.match(css, /#perspective-bg-video/);
 });
 
+test('透视摄像头保留原始亮度与色彩，不再叠加暗幕', () => {
+  const css = read('public/css/index.css');
+  const videoStart = css.indexOf('#perspective-bg-video {');
+  const videoEnd = css.indexOf('}', videoStart);
+  const videoBlock = css.slice(videoStart, videoEnd + 1);
+
+  assert.ok(videoStart >= 0, '应存在透视摄像头视频样式');
+  assert.match(videoBlock, /filter:\s*none/);
+  assert.doesNotMatch(videoBlock, /(?:brightness|saturate|contrast)\s*\(/);
+  assert.doesNotMatch(css, /#perspective-bg::after\s*\{/);
+});
+
 test('透视模式持久化且打包说明明确覆盖该用途', () => {
   const defaults = read('public/js/modules/00-state/04-fx-defaults.js');
   const persistence = read('public/js/modules/02-visual/04-visual-settings-persistence.js');

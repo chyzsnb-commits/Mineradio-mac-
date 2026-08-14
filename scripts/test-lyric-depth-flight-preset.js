@@ -168,11 +168,37 @@ test('consumes live lyric font size translation and karaoke controls', () => {
   assert.match(panel, /lineInput\.disabled = locked/);
 });
 
-test('provides twelve choreography layouts and a non-blank cross-track bridge', () => {
+test('provides sixteen varied choreography layouts without adding another render loop', () => {
   const module = read('public/js/modules/02-visual/18-lyric-depth-flight.js');
-  const layoutEntries = module.match(/motion:\s*'(?:side|rise|diagonal|orbit|depth|burst|sweep|float)'/g) || [];
+  const layoutEntries = module.match(/motion:\s*'(?:side|rise|diagonal|orbit|depth|burst|sweep|float|relay|pullback|hinge|drop)'/g) || [];
 
-  assert.ok(layoutEntries.length >= 12, `expected at least 12 layouts, received ${layoutEntries.length}`);
+  assert.ok(layoutEntries.length >= 16, `expected at least 16 layouts, received ${layoutEntries.length}`);
+  for (const motion of ['relay', 'pullback', 'hinge', 'drop']) {
+    assert.match(module, new RegExp(`motion === '${motion}'`), `${motion} needs its own transform path`);
+  }
+  assert.match(module, /layout\.duration/);
+  assert.match(module, /prefers-reduced-motion: reduce/);
+  assert.equal((module.match(/new THREE\.CanvasTexture/g) || []).length, 1, 'new choreography must reuse the five lyric cards');
+  assert.doesNotMatch(module, /requestAnimationFrame|setInterval/);
+});
+
+test('keeps reduced-motion line changes spatially bounded without reviving hidden lyrics', () => {
+  const module = read('public/js/modules/02-visual/18-lyric-depth-flight.js');
+  const relativeStart = module.indexOf('function lyricDepthSetCardRelative');
+  const relativeEnd = module.indexOf('\nfunction lyricDepthSyncCards', relativeStart);
+  const relativeHelper = module.slice(relativeStart, relativeEnd);
+
+  assert.match(module, /incomingMotion === 'reduced'/);
+  assert.match(module, /z -= 0\.72/);
+  assert.match(relativeHelper, /previousRelative !== 0 && previousRelative !== 1/);
+  assert.match(relativeHelper, /card\.fresh = true/);
+  assert.doesNotMatch(relativeHelper, /uOpacity/, 'relative bookkeeping must not make hidden lyrics visible');
+  assert.match(module, /motion === 'reduced' \? 24/);
+});
+
+test('keeps the existing non-blank cross-track bridge', () => {
+  const module = read('public/js/modules/02-visual/18-lyric-depth-flight.js');
+
   assert.match(module, /function beginLyricDepthTrackTransition\(/);
   assert.match(module, /state\.phase = 'bridge'/);
   assert.match(module, /markLyricDepthAudioReady/);

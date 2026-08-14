@@ -1,6 +1,6 @@
 // ============================================================
 //  手势推理 Worker — HandLandmarker 的 detectForVideo 搬到 Worker 线程
-//  · 主线程零阻塞:主线程只送 ImageBitmap(transfer 所有权),Worker 回传 landmarks
+//  · 主线程零阻塞:主线程只送 ImageBitmap(transfer 所有权),Worker 回传 landmarks + handedness
 //  · module worker:vendor 是 ESM(vision_bundle.mjs 带 export),classic worker 的
 //    importScripts 会在 export 处抛 SyntaxError,只能走 { type:'module' } + 动态 import
 //  · delegate 顺序由主线程按平台传入(mac 优先 CPU 让出 GPU 给 three.js);首选失败自动降级到下一个
@@ -26,6 +26,19 @@ self.importScripts = function () {
 let FilesetResolver = null;
 let HandLandmarker = null;
 let landmarker = null;
+
+function compactHandedness(result) {
+  const groups = (result && (result.handedness || result.handednesses)) || [];
+  return groups.map((group) => {
+    const category = Array.isArray(group)
+      ? group[0]
+      : ((group && Array.isArray(group.categories)) ? group.categories[0] : group);
+    return {
+      label: String((category && (category.categoryName || category.displayName || category.label)) || ''),
+      score: Number((category && category.score) || 0),
+    };
+  });
+}
 
 self.onmessage = async function (ev) {
   const msg = ev.data;
@@ -72,8 +85,14 @@ self.onmessage = async function (ev) {
     try {
       const res = landmarker.detectForVideo(bmp, msg.ts);
       const inferMs = performance.now() - t0;
-      // 只回传 handleGestureResults 实际消费的字段(仅 landmarks;handedness 语义层未用)
-      self.postMessage({ type: 'result', landmarks: (res && res.landmarks) || [], ts: msg.ts, inferMs: inferMs });
+      // 左右手分类和关键点一起回传，主线程用它防止两手交叉/短暂遮挡时槽位互换。
+      self.postMessage({
+        type: 'result',
+        landmarks: (res && res.landmarks) || [],
+        handedness: compactHandedness(res),
+        ts: msg.ts,
+        inferMs: inferMs,
+      });
     } catch (e) {
       self.postMessage({ type: 'detect-error', message: String((e && e.message) || e) });
     } finally {

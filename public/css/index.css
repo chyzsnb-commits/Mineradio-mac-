@@ -630,16 +630,8 @@ body.custom-background-video #custom-bg::before {
   height: 100%;
   object-fit: cover;
   transform: scaleX(-1);
-  filter: saturate(.94) brightness(.82);
+  filter: none;
   background: #030607
-}
-
-#perspective-bg::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: rgba(2, 5, 7, .16);
-  pointer-events: none
 }
 
 body.perspective-mode #perspective-bg {
@@ -692,7 +684,8 @@ body:focus-visible {
 body.render-deep-sleep #canvas-container,
 body.render-deep-sleep #idle-guide-canvas,
 body.render-deep-sleep #splash-canvas,
-body.render-deep-sleep #hand-canvas {
+body.render-deep-sleep #hand-canvas,
+body.render-deep-sleep #hand-model-canvas {
   opacity: 0 !important;
   visibility: hidden !important
 }
@@ -6996,6 +6989,7 @@ body.immersive-mode #ai-depth-chip,
 body.immersive-mode #beat-chip,
 body.immersive-mode #gesture-hud,
 body.immersive-mode #hand-canvas,
+body.immersive-mode #hand-model-canvas,
 body.immersive-mode #hint,
 body.immersive-mode #upload-tip,
 body.immersive-mode #drop-overlay,
@@ -14549,6 +14543,216 @@ html.control-glass-svg-ok #visual-guide-btn:hover {
 
 #hand-canvas.show {
   opacity: 1
+}
+
+#hand-model-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 22;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .22s ease;
+  contain: strict
+}
+
+#hand-model-canvas.show {
+  opacity: 1;
+  visibility: visible
+}
+
+.hand-model-library {
+  margin: 10px 0 2px;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, .075);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .022)
+}
+
+.hand-model-library-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px
+}
+
+.hand-model-library-head>span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px
+}
+
+.hand-model-library-head strong {
+  color: rgba(255, 255, 255, .86);
+  font-size: 11.5px;
+  font-weight: 600
+}
+
+.hand-model-library-head small {
+  color: rgba(255, 255, 255, .42);
+  font-size: 9.5px
+}
+
+.hand-model-library-head .fx-mini-btn {
+  flex: none;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 10px
+}
+
+.hand-model-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px
+}
+
+.hand-model-card {
+  position: relative;
+  min-width: 0;
+  min-height: 50px;
+  padding: 6px 24px 6px 7px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, .065);
+  border-radius: 11px;
+  background: rgba(3, 5, 8, .28);
+  color: rgba(255, 255, 255, .68);
+  cursor: pointer;
+  outline: none;
+  transition: border-color .18s ease, background .18s ease, transform .18s ease
+}
+
+.hand-model-card:hover,
+.hand-model-card:focus-visible {
+  border-color: rgba(var(--fc-accent-rgb), .28);
+  background: rgba(var(--fc-accent-rgb), .055)
+}
+
+.hand-model-card:active {
+  transform: scale(.985)
+}
+
+.hand-model-card.active {
+  border-color: rgba(var(--fc-accent-rgb), .42);
+  background: rgba(var(--fc-accent-rgb), .09);
+  box-shadow: inset 0 0 0 1px rgba(var(--fc-accent-rgb), .08)
+}
+
+.hand-model-preview {
+  position: relative;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, rgba(174, 238, 255, .16), rgba(3, 5, 8, .74) 70%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .055)
+}
+
+.hand-model-preview i {
+  position: absolute;
+  left: 50%;
+  top: 55%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #dff8ff;
+  box-shadow: 0 0 8px rgba(136, 225, 255, .8);
+  transform-origin: 0 0
+}
+
+.hand-model-preview i:nth-child(1) { transform: translate(-2px, -1px) }
+.hand-model-preview i:nth-child(2) { transform: translate(-13px, -13px) }
+.hand-model-preview i:nth-child(3) { transform: translate(-6px, -17px) }
+.hand-model-preview i:nth-child(4) { transform: translate(3px, -17px) }
+.hand-model-preview i:nth-child(5) { transform: translate(10px, -12px) }
+
+.hand-model-card[data-preview="chrome"] .hand-model-preview {
+  background: linear-gradient(145deg, rgba(255, 255, 255, .30), rgba(74, 143, 166, .10) 46%, rgba(255, 210, 144, .18))
+}
+
+.hand-model-card[data-preview="stardust"] .hand-model-preview i:nth-child(even) {
+  width: 2px;
+  height: 2px;
+  box-shadow: 0 0 12px rgba(255, 220, 156, .94)
+}
+
+.hand-model-card[data-preview="none"] .hand-model-preview {
+  opacity: .32;
+  filter: grayscale(1)
+}
+
+.hand-model-card[data-preview="custom"] .hand-model-preview {
+  background: radial-gradient(circle at 35% 28%, rgba(var(--fc-accent-rgb), .28), rgba(5, 7, 11, .82) 68%);
+  transform: perspective(60px) rotateY(-13deg)
+}
+
+.hand-model-card-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px
+}
+
+.hand-model-card-copy strong,
+.hand-model-card-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.hand-model-card-copy strong {
+  color: rgba(255, 255, 255, .82);
+  font-size: 10.5px;
+  font-weight: 550
+}
+
+.hand-model-card-copy small {
+  color: rgba(255, 255, 255, .4);
+  font-size: 8.8px
+}
+
+.hand-model-delete {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .065);
+  color: rgba(255, 255, 255, .52);
+  cursor: pointer;
+  font: 14px/1 system-ui
+}
+
+.hand-model-delete:hover {
+  background: rgba(255, 112, 112, .16);
+  color: #ffd6d6
+}
+
+.hand-model-scale-row.fx-slider {
+  margin-top: 8px
+}
+
+.hand-model-note {
+  min-height: 14px;
+  margin-top: 6px;
+  color: rgba(255, 255, 255, .36);
+  font-size: 9px;
+  line-height: 1.5
+}
+
+.hand-model-note.error {
+  color: rgba(255, 174, 174, .78)
 }
 
 /* ============================================================ */
