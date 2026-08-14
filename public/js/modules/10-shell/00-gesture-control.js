@@ -220,11 +220,11 @@ async function ensureGestureLandmarker() {
 
 // 启动被中途取消(加载期间切关/再切开): 清掉半成品资源;若此刻仍想要手势, 重新走完整启动
 function abortGestureStart() {
-  try { if (gestureStream) gestureStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { }
+  try { if (typeof releaseSharedCameraStream === 'function') releaseSharedCameraStream('gesture'); } catch (e) { }
   try { if (gestureVideo) gestureVideo.remove(); } catch (e) { }
   gestureVideo = null; gestureStream = null;
   gestureStarting = false;
-  if (fx.cam === 'gesture' && !gestureActive) startGestureControl();
+  if (fx.cam === 'gesture' && !gestureActive) setTimeout(startGestureControl, 0);
 }
 
 // ── 引擎模式:'native'=Vision/ANE 原生(mac 优先,不碰 GPU)| 'mediapipe'=WASM 兜底 ──
@@ -358,20 +358,6 @@ async function ensureGestureEngine() {
   gestureStats.delegate = (typeof gestureDelegate !== 'undefined' && gestureDelegate) || 'GPU'; gestureStats.transport = 'main';
 }
 
-async function requestGestureCameraAccess() {
-  if (!_hpBridge || typeof _hpBridge.requestCameraAccess !== 'function') {
-    return { ok: true, status: 'browser', requested: false, settingsRequired: false };
-  }
-  var result = await _hpBridge.requestCameraAccess();
-  if (result && result.ok) return result;
-  var status = result && result.status || 'unknown';
-  var error = new Error('GESTURE_CAMERA_PERMISSION_' + String(status).toUpperCase());
-  error.name = status === 'denied' ? 'NotAllowedError' : 'GestureCameraPermissionError';
-  error.gestureCameraPermissionStatus = status;
-  error.gestureCameraSettingsRequired = !!(result && result.settingsRequired);
-  throw error;
-}
-
 function gestureStartFailureMessage(error) {
   var code = String(error && (error.code || error.message) || '');
   var name = String(error && error.name || '');
@@ -381,7 +367,7 @@ function gestureStartFailureMessage(error) {
   if (name === 'NotReadableError' || name === 'TrackStartError') return '摄像头正被其他应用占用';
   if (permissionStatus === 'restricted') return '摄像头受系统限制，无法用于手势识别';
   if (permissionStatus === 'denied' || name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-    return '摄像头权限未开启，请在系统设置 > 隐私与安全性 > 摄像头中允许 Mineradio，重启后再试';
+    return '摄像头权限未开启，请在系统设置 > 隐私与安全性 > 摄像头中允许 Mineradio 后再试';
   }
   return '手势识别组件启动失败，请重试';
 }
@@ -392,11 +378,8 @@ async function startGestureControl() {
   var gen = ++gestureStartGen;
   showToast('正在加载手势识别…');
   try {
-    await requestGestureCameraAccess();
-    gestureStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30, max: 30 } },   // Worker 保持 30fps 低负载；双手跟手性由捏合中点与滤波参数改善
-      audio: false,
-    });
+    if (typeof acquireSharedCameraStream !== 'function') throw new Error('SHARED_CAMERA_MANAGER_UNAVAILABLE');
+    gestureStream = await acquireSharedCameraStream('gesture');
     if (gen !== gestureStartGen || fx.cam !== 'gesture') { abortGestureStart(); return; }
     gestureVideo = document.createElement('video');
     gestureVideo.playsInline = true; gestureVideo.muted = true;
@@ -431,16 +414,24 @@ async function startGestureControl() {
     showToast('手势已开启: 掌推 · 捏合旋转 · 握拳收束 · 双捏缩放');
     showGestureHUD('待命', 0, '把手放进视野(支持双手)');
   } catch (e) {
+    if (gen !== gestureStartGen || fx.cam !== 'gesture') {
+      try { if (typeof releaseSharedCameraStream === 'function') releaseSharedCameraStream('gesture'); } catch (cancelError) { }
+      try { if (gestureVideo) gestureVideo.remove(); } catch (cancelError) { }
+      gestureVideo = null; gestureStream = null;
+      gestureStarting = false;
+      return;
+    }
     console.warn('Gesture failed:', e);
     gestureActive = false;
-    try { if (gestureStream) gestureStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e2) { }
+    try { if (typeof releaseSharedCameraStream === 'function') releaseSharedCameraStream('gesture'); } catch (e2) { }
     try { if (gestureVideo) gestureVideo.remove(); } catch (e2) { }
     gestureVideo = null; gestureStream = null;
     stopGestureWorker();
     if (_hpBridge) { try { _hpBridge.handposeStop(); } catch (e2) { } }
     _hpInFlight = false; gestureEngineMode = '';
-    if (e && e.gestureCameraSettingsRequired && _hpBridge && typeof _hpBridge.openCameraPrivacySettings === 'function') {
-      try { await _hpBridge.openCameraPrivacySettings(); } catch (e3) { }
+    var cameraSettingsBridge = (typeof window !== 'undefined' && window.desktopWindow) || _hpBridge;
+    if (e && e.gestureCameraSettingsRequired && cameraSettingsBridge && typeof cameraSettingsBridge.openCameraPrivacySettings === 'function') {
+      try { await cameraSettingsBridge.openCameraPrivacySettings(); } catch (e3) { }
     }
     showToast(gestureStartFailureMessage(e));
     fx.cam = 'off';
@@ -464,7 +455,7 @@ function stopGestureControl() {
   try { if (gestureVideo && gestureRvfcId && gestureVideo.cancelVideoFrameCallback) gestureVideo.cancelVideoFrameCallback(gestureRvfcId); } catch (e) { }
   if (gestureRafId) { cancelAnimationFrame(gestureRafId); gestureRafId = 0; }
   gestureRvfcId = 0;
-  try { if (gestureStream) gestureStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { }
+  try { if (typeof releaseSharedCameraStream === 'function') releaseSharedCameraStream('gesture'); } catch (e) { }
   try { if (gestureVideo) gestureVideo.remove(); } catch (e) { }
   try { if (gestureLandmarker && gestureLandmarker.close) gestureLandmarker.close(); } catch (e) { }
   gestureVideo = null; gestureStream = null; gestureLandmarker = null;
@@ -489,6 +480,14 @@ function stopGestureControl() {
     if (handCanvasCtx) handCanvasCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
   }
 }
+
+window.addEventListener('mineradio:camera-stream-ended', function (event) {
+  var owners = event && event.detail && event.detail.owners || [];
+  if (owners.indexOf('gesture') < 0 && !gestureActive && !gestureStarting) return;
+  var restart = fx && fx.cam === 'gesture';
+  stopGestureControl();
+  if (restart) setTimeout(startGestureControl, 420);
+});
 
 function resizeHandCanvas() {
   if (!handCanvas) return;

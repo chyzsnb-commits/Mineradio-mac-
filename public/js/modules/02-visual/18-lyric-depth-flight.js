@@ -1317,12 +1317,14 @@ function lyricDepthUpdateBackdropAndStars(time, shelfFactor, lyricsVisible, dt) 
   lyricDepthState.backdrop.scale.set(halfHeight * 2 * (camera.aspect || 1.78) * 1.08, halfHeight * 2 * 1.08, 1);
   lyricDepthState.backdrop.material.uniforms.uTime.value = time;
   lyricDepthState.backdrop.material.uniforms.uAudio.value = Math.min(1, Math.max(0, audioEnergy));
-  var hasCustomBackground = typeof customBackgroundActiveMedia === 'function'
+  var hasPerspectiveBackground = typeof perspectiveCameraBackgroundActive === 'function'
+    && perspectiveCameraBackgroundActive();
+  var hasCustomBackground = hasPerspectiveBackground || (typeof customBackgroundActiveMedia === 'function'
     ? !!customBackgroundActiveMedia()
-    : !!(fx && (fx.backgroundMedia || fx.backgroundImage || fx.backgroundAlbumCover));
+    : !!(fx && (fx.backgroundMedia || fx.backgroundImage || fx.backgroundAlbumCover)));
   lyricDepthState.backdrop.material.uniforms.uOpacity.value = lyricDepthDamp(
     lyricDepthState.backdrop.material.uniforms.uOpacity.value,
-    hasCustomBackground ? 0.16 : 1,
+    hasPerspectiveBackground ? 0.10 : (hasCustomBackground ? 0.16 : 1),
     hasCustomBackground ? 6.2 : 3.8,
     dt
   );

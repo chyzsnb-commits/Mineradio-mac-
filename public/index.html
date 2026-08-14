@@ -60,6 +60,9 @@
     <div id="album-bg"></div>
     <div id="album-bg-next" aria-hidden="true"></div>
     <div id="vox-bg"></div>
+    <div id="perspective-bg" aria-hidden="true">
+      <video id="perspective-bg-video" muted playsinline autoplay></video>
+    </div>
     <div id="canvas-container"></div>
     <canvas id="idle-guide-canvas" aria-hidden="true"></canvas>
 
@@ -102,6 +105,7 @@
             aria-selected="false">NE</button>
           <button id="search-mode-qq" type="button" onclick="setSearchMode('qq')" aria-selected="false">QQ</button>
           <button id="search-mode-kugou" type="button" onclick="setSearchMode('kugou')" aria-selected="false">KG</button>
+          <button id="search-mode-qishui" type="button" onclick="setSearchMode('qishui')" aria-selected="false">QS</button>
           <button id="search-mode-spotify" type="button" onclick="setSearchMode('spotify')" aria-selected="false">SP</button>
           <button id="search-mode-ytmusic" type="button" onclick="setSearchMode('ytmusic')" aria-selected="false">YT</button>
           <button id="search-mode-podcast" type="button" onclick="setSearchMode('podcast')"
@@ -623,15 +627,15 @@
         <span style="font-size:11px;color:rgba(255,255,255,.62)">纯色</span>
         <button class="fx-mini-btn ghost" onclick="voxClearBg()" style="height:24px;padding:0 9px;font-size:11px">默认</button>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px">
-        <span onclick="voxSetBg('#05080d')" title="深蓝" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#05080d;border:1px solid rgba(255,255,255,.2)"></span>
-        <span onclick="voxSetBg('#1a1030')" title="暗紫" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#1a1030;border:1px solid rgba(255,255,255,.2)"></span>
-        <span onclick="voxSetBg('#0d1f1a')" title="墨绿" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#0d1f1a;border:1px solid rgba(255,255,255,.2)"></span>
-        <span onclick="voxSetBg('#2a0e12')" title="暗红" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#2a0e12;border:1px solid rgba(255,255,255,.2)"></span>
-        <span onclick="voxSetBg('#000000')" title="纯黑" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#000000;border:1px solid rgba(255,255,255,.2)"></span>
-        <span onclick="voxSetBg('#f5f1e6')" title="米白" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#f5f1e6;border:1px solid rgba(255,255,255,.2)"></span>
+      <button class="perspective-mode-card" id="t-perspectiveMode" type="button" role="switch" aria-checked="false"
+        onclick="togglePerspectiveMode()" title="用摄像头实时画面替换背景，歌词、封面和视觉效果保留在前景">
+        <span class="perspective-mode-copy"><strong>透视模式</strong><small>摄像头背景 · 保留歌词、封面与视觉</small></span>
+        <span class="perspective-mode-state"><span id="perspective-mode-label">关闭</span><i></i></span>
+      </button>
+      <div class="fx-section-label fx-section-label-with-action">
+        <span>视频 / 图片背景</span>
+        <button class="fx-mini-btn ghost" type="button" onclick="openWallpaperLibraryPanel()" title="读取 Windows Wallpaper Engine 壁纸库">Wallpaper</button>
       </div>
-      <div class="fx-section-label">视频 / 图片背景</div>
       <div id="video-bg-grid" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px"></div>
       <input id="video-bg-file" type="file" accept="image/*,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.jpg,.jpeg,.png,.webp,.gif" style="display:none" onchange="videoBgOnFile(this)">
       <div class="fx-slider"><label>&#35009;&#20999;&#24038;&#21491;</label><input id="fx-bgcropx" type="range" min="0" max="100"
@@ -1390,6 +1394,60 @@
           <button id="local-beat-cancel-btn" class="modal-btn" onclick="cancelLocalBeatAnalysis()"
             style="display:none">取消</button>
           <button id="local-beat-start-btn" class="modal-btn primary" onclick="startLocalBeatAnalysis()">开始分析</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="wallpaper-library-modal" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true">
+      <div class="modal wallpaper-library-modal">
+        <div class="wallpaper-library-head">
+          <div>
+            <div class="wallpaper-library-kicker">WINDOWS WALLPAPER LIBRARY</div>
+            <h2 id="wallpaper-library-title">Wallpaper Engine 壁纸库</h2>
+            <p>从局域网 Windows Mineradio 读取真实库项目。图片和视频可直接预览；Scene 使用 Windows 实时画面并导出为 MP4。</p>
+          </div>
+          <button class="wallpaper-library-close" type="button" onclick="closeWallpaperLibraryPanel()" aria-label="关闭 Windows 壁纸库">×</button>
+        </div>
+        <div class="wallpaper-library-toolbar">
+          <div class="wallpaper-library-search-row">
+            <input id="wallpaper-library-search" type="search" placeholder="搜索壁纸名称" autocomplete="off">
+            <select id="wallpaper-library-type" aria-label="壁纸类型"><option value="all">全部类型</option><option value="image">图片</option><option value="video">视频</option><option value="scene">Scene</option></select>
+            <select id="wallpaper-library-sort" aria-label="排序"><option value="title">按名称</option><option value="type">按类型</option></select>
+          </div>
+          <div class="wallpaper-library-batch-row">
+            <button id="wallpaper-library-select-all" class="modal-btn small secondary" type="button">全选当前结果</button>
+            <span id="wallpaper-library-selected-count" class="wallpaper-library-selected-count">未选择壁纸</span>
+            <button id="wallpaper-library-batch-import" class="modal-btn small primary" type="button">导入选中到 Mineradio</button>
+            <span id="wallpaper-library-batch-state" class="wallpaper-library-batch-state" aria-live="polite"></span>
+          </div>
+          <div class="wallpaper-library-source-row">
+            <button id="wallpaper-library-read-ip" class="modal-btn small primary" type="button" onclick="wallpaperLibraryDiscoverAndConnect({ forceDiscovery: true })">读取 Windows IP</button>
+            <input id="wallpaper-library-http-input" class="wallpaper-library-address" type="url" placeholder="可输入 http://Windows-IP:端口号 手动连接（1024-65535）">
+            <button class="modal-btn small" type="button" onclick="connectWindowsWallpaperSource()">连接</button>
+            <button class="modal-btn small secondary" type="button" onclick="wallpaperLibraryDiscoverAndConnect({ forceDiscovery: true })">刷新</button>
+          </div>
+        </div>
+        <div class="wallpaper-library-connection" aria-live="polite">
+          <span id="wallpaper-library-status">正在读取 Windows 壁纸库...</span>
+          <span id="wallpaper-library-discovered-ip" class="wallpaper-library-discovered-ip">等待读取 Windows 内网地址</span>
+        </div>
+        <div class="wallpaper-library-body">
+          <div class="wallpaper-library-list" id="wallpaper-library-list">
+            <div class="wallpaper-library-empty">正在扫描局域网 Windows Mineradio 服务。</div>
+          </div>
+          <div id="wallpaper-library-details-drawer" class="wallpaper-library-details-drawer" aria-hidden="true" onclick="if(event.target===this)closeWallpaperLibraryDetail()">
+            <section class="wallpaper-library-detail" aria-label="壁纸详情">
+              <div class="wallpaper-library-detail-head">
+                <div>
+                  <div class="wallpaper-library-kicker">WINDOWS PREVIEW</div>
+                  <div class="wallpaper-library-preview-meta" id="wallpaper-library-preview-meta"></div>
+                </div>
+                <button class="wallpaper-library-close" type="button" onclick="closeWallpaperLibraryDetail()" aria-label="关闭壁纸详情">×</button>
+              </div>
+              <div class="wallpaper-library-preview" id="wallpaper-library-preview"><div class="wallpaper-library-preview-empty">选择一张壁纸预览</div></div>
+              <div id="wallpaper-library-export"></div>
+            </section>
+          </div>
         </div>
       </div>
     </div>

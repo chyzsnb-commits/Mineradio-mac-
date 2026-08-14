@@ -1231,11 +1231,14 @@ function _voxResolveRipple(t) {
 
 // 体素城市:背景(色/图)+ 自定义颜色 的应用(供控制台 UI 内联调用)
 var _appBgTexLoader = null, _appBgToken = 0;
+function _voxPerspectiveBackgroundActive() {
+  return typeof perspectiveCameraBackgroundActive === 'function' && perspectiveCameraBackgroundActive();
+}
 function _voxApplyBg() {
   if (typeof scene === 'undefined' || !scene) return;
   // app 级「背景媒体」(mp4/图片,DOM 层)优先级最高:scene.background 必须为 null 让 canvas 透明,
   // 否则体素纯色/退出体素时把黑色糊回 scene,其它预设的视频背景全被挡死(用户实测)
-  if (fx.backgroundMedia || fx.backgroundImage) { scene.background = null; _appBgToken++; return; }
+  if (_voxPerspectiveBackgroundActive() || fx.backgroundMedia || fx.backgroundImage) { scene.background = null; _appBgToken++; return; }
   var tok = ++_appBgToken;
   if (fx.voxBgImage) {
     var _bgImg = new Image();
@@ -1273,6 +1276,7 @@ var _voxGlobalBgKey = '', _voxGlobalBgTex = null;
 function _voxIsGlobalMirrorTex(bg) { return !!(bg && bg.isTexture && bg.userData && bg.userData.voxGlobalMirror); }
 function _voxApplyGlobalImageBg() {
   if (typeof scene === 'undefined' || !scene) return;
+  if (_voxPerspectiveBackgroundActive()) return;
   if (!fx.backgroundImage || fx.backgroundMedia) return;
   if (_voxGlobalBgKey === fx.backgroundImage) {
     // 同一张图: 加载中或已就绪, 绝不重启(每帧重启会不停作废上一次加载, 镜像永远挂不上);
@@ -1718,7 +1722,8 @@ function updateVoxelCity(dt) {
   var s = _voxSmooth, u = vc.uniforms;
   u.uTime.value = _voxClock;
   // 是否自定义亮背景:体素专属背景(voxBg*)或全局背景系统(纯色/图片/视频)——此前漏了全局路径, 亮图当底时城区糊成大黑块
-  var _voxBg = !!(fx && (fx.voxBgColor || fx.voxBgImage || fx.backgroundColorCustom || fx.backgroundImage || fx.backgroundMedia));
+  var _voxPerspective = _voxPerspectiveBackgroundActive();
+  var _voxBg = !!(fx && (fx.voxBgColor || fx.voxBgImage || fx.backgroundColorCustom || fx.backgroundImage || fx.backgroundMedia)) || _voxPerspective;
   if (u.uBgLight) u.uBgLight.value = _voxBg ? 1 : 0;   // 地形:亮背景时远端雾染黑改融向透明,消除右侧竖向暗噪
   var _voxMedia = _voxBg ? 1 : 0;
   if (u.uBgMedia) u.uBgMedia.value = _voxMedia;
@@ -1731,13 +1736,13 @@ function updateVoxelCity(dt) {
       _voxSeamFloor.visible = _voxBg;
       var _sfu = _voxSeamFloor.material && _voxSeamFloor.material.uniforms;
       if (_sfu && _sfu.uBgLight) {
-        _sfu.uBgLight.value = (fx && (fx.backgroundMedia || fx.backgroundImage || fx.voxBgImage)) ? 1 : 0;
+        _sfu.uBgLight.value = (_voxPerspective || (fx && (fx.backgroundMedia || fx.backgroundImage || fx.voxBgImage))) ? 1 : 0;
       }
     }
     var _bdu = _voxBackdrop.material && _voxBackdrop.material.uniforms;
     if (_bdu && _bdu.uBgLight) {
       _bdu.uBgLight.value = _voxBg ? 1 : 0;   // 亮背景时暗盘不再是黑块(避免在亮底现成大黑碗)
-      if (fx && (fx.backgroundMedia || fx.backgroundImage || fx.voxBgImage)) { _bdu.uBgColor.value.setRGB(0.6, 0.66, 0.74); }
+      if (_voxPerspective || (fx && (fx.backgroundMedia || fx.backgroundImage || fx.voxBgImage))) { _bdu.uBgColor.value.setRGB(0.6, 0.66, 0.74); }
       else if (fx && fx.voxBgColor) { _bdu.uBgColor.value.set(fx.voxBgColor); }
       else { _bdu.uBgColor.value.setRGB(0.6, 0.66, 0.74); }
     }
@@ -1888,21 +1893,32 @@ function updateVoxelCity(dt) {
     var _b2 = u.uBaseColor2.value;
     // app 级「背景媒体」(mp4视频/图片,DOM 层)也算自定义背景:scene.background 必须留 null 让 canvas 透明,
     // 否则进体素预设时大气色把视频盖死(用户实测:开机视频显示几秒→预设恢复→被顶下去)
-    if (fx.voxBgColor || fx.voxBgImage) { _voxApplyBg(); }  // 体素专属自定义背景优先,体素让位
+    if (_voxPerspectiveBackgroundActive()) { scene.background = null; } // 透视摄像头在 DOM 底层，canvas 必须透明
+    else if (fx.voxBgColor || fx.voxBgImage) { _voxApplyBg(); }  // 体素专属自定义背景优先,体素让位
     else if (fx.backgroundMedia) { scene.background = null; }      // 视频背景让位:canvas 透明透出 DOM 视频层
     else if (fx.backgroundImage) { scene.background = null; _voxApplyGlobalImageBg(); }   // 全局图片背景:镜像进场景, 柱缝露图不漏光(加载完成前保持透明)
+    else if (fx.backgroundColorCustom) { scene.background = null; } // 纯色也是 DOM 背景，体素 canvas 让位
     else scene.background = new THREE.Color(bc.r * 0.6 + _b2.r * 0.4, bc.g * 0.6 + _b2.g * 0.4, bc.b * 0.6 + _b2.b * 0.4);
     _voxFogSet = true;
   } else if (scene.fog && scene.fog.color) {
     scene.fog.color.lerp(u.uBaseColor1.value, 3.0 * fdt);   // 原作 fog.color lerp uBaseColor1
-    if (fx.backgroundMedia && scene.background) { scene.background = null; }   // 运行中途设了视频背景:立即让位
-    else if (!fx.voxBgColor && !fx.voxBgImage && fx.backgroundImage) { _voxApplyGlobalImageBg(); _voxSyncGlobalBgAspect(); }   // 全局图片:确保已镜像 + 跟随窗口宽高比(中途设图也生效)
+    var _voxPerspectiveRuntime = _voxPerspectiveBackgroundActive();
+    if ((_voxPerspectiveRuntime || fx.backgroundMedia || fx.backgroundColorCustom) && scene.background) { scene.background = null; }   // DOM 背景:运行中立即让位
+    else if (!_voxPerspectiveRuntime && !fx.voxBgColor && !fx.voxBgImage && fx.backgroundImage) { _voxApplyGlobalImageBg(); _voxSyncGlobalBgAspect(); }   // 全局图片:确保已镜像 + 跟随窗口宽高比(中途设图也生效)
     else if (!fx.voxBgColor && !fx.voxBgImage && !fx.backgroundImage && _voxIsGlobalMirrorTex(scene.background)) {
       var _bbr1 = u.uBaseColor1.value, _bbr2 = u.uBaseColor2.value;   // 中途删了全局图片:镜像退场, 恢复大气色
       _voxGlobalBgKey = '';
       scene.background = new THREE.Color(_bbr1.r * 0.6 + _bbr2.r * 0.4, _bbr1.g * 0.6 + _bbr2.g * 0.4, _bbr1.b * 0.6 + _bbr2.b * 0.4);
     }
-    if (!fx.voxBgColor && !fx.voxBgImage && scene.background && scene.background.isColor) {      // 无自定义背景时:大气色跟随 base1/base2
+    if (!_voxPerspectiveRuntime && !fx.backgroundMedia && !fx.backgroundImage && !fx.backgroundColorCustom && !fx.voxBgColor && !fx.voxBgImage && !scene.background) {
+      var _restoreBg1 = u.uBaseColor1.value, _restoreBg2 = u.uBaseColor2.value;
+      scene.background = new THREE.Color(
+        _restoreBg1.r * 0.6 + _restoreBg2.r * 0.4,
+        _restoreBg1.g * 0.6 + _restoreBg2.g * 0.4,
+        _restoreBg1.b * 0.6 + _restoreBg2.b * 0.4
+      );
+    }
+    if (!fx.backgroundColorCustom && !fx.voxBgColor && !fx.voxBgImage && scene.background && scene.background.isColor) {      // 无自定义背景时:大气色跟随 base1/base2
       var _bb1 = u.uBaseColor1.value, _bb2 = u.uBaseColor2.value;
       scene.background.setRGB(_bb1.r * 0.6 + _bb2.r * 0.4, _bb1.g * 0.6 + _bb2.g * 0.4, _bb1.b * 0.6 + _bb2.b * 0.4);
     }

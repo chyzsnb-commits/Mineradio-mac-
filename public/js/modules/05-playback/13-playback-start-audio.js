@@ -451,6 +451,9 @@ async function resolveAlbumGaplessPlaybackData(song) {
       '&fee=' + encodeURIComponent(song.fee || song.Fee || '') +
       qualityParam, { timeoutMs: 9000 });
   }
+  if (playbackProvider === 'qishui') {
+    return apiJson('/api/qishui/song/url?id=' + encodeURIComponent(song.id || song.providerSongId || '') + qualityParam, { timeoutMs: 9000 });
+  }
   if (playbackProvider === 'spotify') {
     return apiJson('/api/spotify/song/url?id=' + encodeURIComponent(song.id || song.providerSongId || song.spotifyId || '') +
       '&spotifyId=' + encodeURIComponent(song.spotifyId || '') +
@@ -937,12 +940,14 @@ async function playQueueAt(idx, opts) {
       var playbackProvider = normalizePlaybackProvider(providerKey);
       var isQQPlayback = playbackProvider === 'qq';
       var isKugouPlayback = playbackProvider === 'kugou';
+      var isQishuiPlayback = playbackProvider === 'qishui';
       var isSpotifyPlayback = playbackProvider === 'spotify';
       if (typeof isPlaybackProviderDisabled === 'function' && isPlaybackProviderDisabled(playbackProvider)) {
         var disabledPayload = typeof playbackProviderUnavailablePayload === 'function'
           ? playbackProviderUnavailablePayload(playbackProvider)
           : { url: '', playable: false, error: 'PROVIDER_DISABLED', message: '该音源已在公开版移除' };
-        if (opts.startupAutoplay) {
+        var catalogOnlyFallback = playbackProvider === 'qishui' && typeof MINERADIO_QISHUI_CATALOG_ENABLED !== 'undefined' && MINERADIO_QISHUI_CATALOG_ENABLED;
+        if (opts.startupAutoplay && !catalogOnlyFallback) {
           markQueueItemPlaybackFailed(idx);
           cancelLyricDepthPlaybackTransition(token);
           return false;
@@ -984,6 +989,8 @@ async function playQueueAt(idx, opts) {
           '&privilege=' + encodeURIComponent(song.privilege || song.Privilege || song.mediaPrivilege || song.media_privilege || '') +
           '&fee=' + encodeURIComponent(song.fee || song.Fee || '') +
           qualityParam);
+      } else if (isQishuiPlayback) {
+        data = await apiJson('/api/qishui/song/url?id=' + encodeURIComponent(song.id || song.providerSongId || '') + qualityParam);
       } else if (isSpotifyPlayback) {
         data = await apiJson('/api/spotify/song/url?id=' + encodeURIComponent(song.id || song.providerSongId || song.spotifyId || '') +
           '&spotifyId=' + encodeURIComponent(song.spotifyId || '') +

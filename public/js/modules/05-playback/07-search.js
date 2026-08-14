@@ -138,7 +138,7 @@ function updateSearchModeTabs() {
   requestAnimationFrame(updateSearchPillGlassDisplacementMap);
 }
 function setSearchMode(mode) {
-  if (mode === 'qishui' && !MINERADIO_QISHUI_ENABLED) mode = 'song';
+  if (mode === 'qishui' && !MINERADIO_QISHUI_CATALOG_ENABLED) mode = 'song';
   mode = (mode === 'podcast' || mode === 'netease' || mode === 'qq' || mode === 'kugou' || mode === 'qishui' || mode === 'spotify' || mode === 'ytmusic') ? mode : 'song';
   if (searchMode === mode) return;
   searchMode = mode;
@@ -377,12 +377,16 @@ function songSourceTagHtml(song, opts) {
 }
 var controlSourceSwitcherState = { open: false, loading: false, requestId: 0, anchor: null };
 function controlSourceProviders() {
-  return [
+  var providers = [
     { key: 'netease', label: 'NE', title: '网易云' },
     { key: 'qq', label: 'QQ', title: 'QQ音乐' },
     { key: 'kugou', label: 'KG', title: '酷狗' },
     { key: 'spotify', label: 'SP', title: 'Spotify' }
   ];
+  if (MINERADIO_QISHUI_CATALOG_ENABLED) {
+    providers.splice(3, 0, { key: 'qishui', label: 'QS', title: '汽水音乐' });
+  }
+  return providers;
 }
 function controlSourceProviderTitle(provider) {
   var item = controlSourceProviders().filter(function (p) { return p.key === provider; })[0];
@@ -391,6 +395,7 @@ function controlSourceProviderTitle(provider) {
 function controlSourceSearchUrl(provider, query) {
   if (provider === 'qq') return '/api/qq/search?keywords=' + encodeURIComponent(query) + '&limit=8';
   if (provider === 'kugou') return '/api/kugou/search?keywords=' + encodeURIComponent(query) + '&limit=8';
+  if (provider === 'qishui') return '/api/qishui/search?keywords=' + encodeURIComponent(query) + '&limit=8';
   if (provider === 'spotify') return '/api/spotify/search?keywords=' + encodeURIComponent(query) + '&limit=8';
   return '/api/search?keywords=' + encodeURIComponent(query) + '&limit=10';
 }
@@ -671,7 +676,7 @@ function searchIntentPrefersQQ(q) {
   return /(^|\s)qq($|\s)|qq音乐|qq音樂|周杰伦|周杰倫|jay\s*chou|jay/.test(q);
 }
 var MUSIC_SEARCH_PROVIDER_ORDER = ['netease', 'qq', 'kugou']
-  .concat(MINERADIO_QISHUI_ENABLED ? ['qishui'] : [])
+  .concat(MINERADIO_QISHUI_CATALOG_ENABLED ? ['qishui'] : [])
   .concat(['spotify']);
 function searchProviderStatus(provider) {
   if (typeof platformStatus === 'function') return platformStatus(provider);
@@ -685,15 +690,19 @@ function searchProviderIsLoggedIn(provider) {
   var st = searchProviderStatus(provider);
   return !!(st && st.loggedIn);
 }
+function searchProviderCanSearch(provider) {
+  if (provider === 'qishui') return !!MINERADIO_QISHUI_CATALOG_ENABLED;
+  return searchProviderIsLoggedIn(provider);
+}
 function searchModeProvider(mode) {
-  if (mode === 'qishui' && !MINERADIO_QISHUI_ENABLED) return '';
+  if (mode === 'qishui' && !MINERADIO_QISHUI_CATALOG_ENABLED) return '';
   return mode === 'netease' || mode === 'qq' || mode === 'kugou' || mode === 'qishui' || mode === 'spotify' ? mode : '';
 }
 function activeSearchProvidersForMode(mode) {
   var specific = searchModeProvider(mode);
   if (specific === 'kugou') return ['kugou'];   // 酷狗搜索接口无需登录,沿用我方既发布行为;登录只影响播放音质/歌单能力
-  if (specific) return searchProviderIsLoggedIn(specific) ? [specific] : [];
-  return MUSIC_SEARCH_PROVIDER_ORDER.filter(searchProviderIsLoggedIn);
+  if (specific) return searchProviderCanSearch(specific) ? [specific] : [];
+  return MUSIC_SEARCH_PROVIDER_ORDER.filter(searchProviderCanSearch);
 }
 function searchProviderLoginNotice(mode) {
   var specific = searchModeProvider(mode);
@@ -706,6 +715,7 @@ function searchProviderLoginNotice(mode) {
 function searchProviderUrl(provider, q, limit) {
   if (provider === 'qq') return '/api/qq/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
   if (provider === 'kugou') return '/api/kugou/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
+  if (provider === 'qishui') return '/api/qishui/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
   if (provider === 'spotify') return '/api/spotify/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
   return '/api/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
 }

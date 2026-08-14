@@ -63,6 +63,7 @@ var fxDefaults = {
   backgroundColorCustom: false,
   backgroundImage: '',
   backgroundMedia: null,
+  perspectiveMode: false,       // 摄像头实景作底层，保留歌词 / 封面 / 粒子 / 音域内容
   backgroundAlbumCover: false,
   backgroundMediaCropX: 50,
   backgroundMediaCropY: 50,

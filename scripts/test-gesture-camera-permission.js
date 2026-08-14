@@ -94,6 +94,7 @@ test('打包给主 App 与 Helper 同时声明摄像头和麦克风 entitlement'
 test('渲染层先走原生权限 gate，且不会把所有启动错误误报成权限', () => {
   const main = fs.readFileSync(path.join(root, 'desktop', 'main.js'), 'utf8');
   const preload = fs.readFileSync(path.join(root, 'desktop', 'preload.js'), 'utf8');
+  const manager = fs.readFileSync(path.join(root, 'public', 'js', 'modules', '10-shell', '00-camera-stream-manager.js'), 'utf8');
   const gesture = fs.readFileSync(path.join(root, 'public', 'js', 'modules', '10-shell', '00-gesture-control.js'), 'utf8');
 
   assert.match(main, /systemPreferences/);
@@ -101,9 +102,12 @@ test('渲染层先走原生权限 gate，且不会把所有启动错误误报成
   assert.match(preload, /requestCameraAccess:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('mineradio-camera-permission-request'\)/);
   assert.match(preload, /openCameraPrivacySettings/);
 
-  const gateAt = gesture.indexOf('await requestGestureCameraAccess()');
-  const captureAt = gesture.indexOf('navigator.mediaDevices.getUserMedia');
+  const gateAt = manager.indexOf('await requestSharedCameraPermission()');
+  const captureAt = manager.indexOf('navigator.mediaDevices.getUserMedia');
   assert.ok(gateAt >= 0 && gateAt < captureAt, '必须先通过 macOS 权限 gate 再采集摄像头');
+  assert.match(gesture, /acquireSharedCameraStream\(['"]gesture['"]\)/);
+  assert.doesNotMatch(gesture, /navigator\.mediaDevices\.getUserMedia/);
+  assert.doesNotMatch(gesture, /gestureStream\.getTracks\(\)\.forEach/);
   assert.match(gesture, /系统设置[^'\n]*隐私与安全性[^'\n]*摄像头/);
   assert.match(gesture, /GESTURE_CAMERA_FRAME_TIMEOUT[\s\S]*摄像头没有画面或正被其他应用占用/);
   assert.doesNotMatch(gesture, /showToast\('手势启动失败 \(需要摄像头权限\)'\)/);

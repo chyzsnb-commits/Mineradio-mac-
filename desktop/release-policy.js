@@ -25,6 +25,7 @@ module.exports = Object.freeze({
   internalBeta: metadata.internalBeta === true,
   allowCredentialImport: !publicRelease && metadata.allowCredentialImport !== false,
   allowCredentialExport: !publicRelease && metadata.allowCredentialExport !== false,
+  qishuiCatalogEnabled: metadata.qishuiCatalogEnabled === true,
   qishuiEnabled: providerEnabled('qishui'),
   disabledProviders: Object.freeze(Array.from(disabledProviders)),
   providerEnabled,

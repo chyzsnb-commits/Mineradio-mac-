@@ -5,10 +5,12 @@ const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'public/js/modules/10-shell/00-gesture-control.js'), 'utf8');
+const cameraManager = fs.readFileSync(path.join(root, 'public/js/modules/10-shell/00-camera-stream-manager.js'), 'utf8');
 
 test('保留 PR 53 的 GPU Worker 手势引擎和低负载相机参数', () => {
   assert.match(source, /await ensureGestureWorker\(\)[\s\S]*gestureEngineMode = 'worker'/);
-  assert.match(source, /width:\s*\{ ideal:\s*320 \}[\s\S]*height:\s*\{ ideal:\s*240 \}[\s\S]*frameRate:\s*\{ ideal:\s*30, max:\s*30 \}/);
+  assert.match(cameraManager, /width:\s*\{ ideal:\s*320 \}[\s\S]*height:\s*\{ ideal:\s*240 \}[\s\S]*frameRate:\s*\{ ideal:\s*30, max:\s*30 \}/);
+  assert.match(source, /acquireSharedCameraStream\(['"]gesture['"]\)/);
   assert.doesNotMatch(source, /GESTURE_HANDS_LOCAL|ensureGestureHandsSolution/);
 });
 

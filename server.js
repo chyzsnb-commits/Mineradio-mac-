@@ -96,6 +96,12 @@ const {
   handleSpotifySongUrl,
   handleSpotifyLyric,
 } = require('./spotify-api');
+const {
+  handleQishuiCatalogStatus,
+  handleQishuiCatalogSearch,
+  handleQishuiCatalogLyric,
+  handleQishuiCatalogPlayback,
+} = require('./qishui-catalog-api');
 
 // QQ 逐字歌词(qrc):加密 qrc(hex)-> 网易 yrc 逐字格式,复用前端现成逐字渲染
 const { qrcHexToYrc } = require('./qq-qrc');
@@ -5308,6 +5314,55 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[SpotifySearch]', err);
       sendJSON(res, { provider: 'spotify', configured: getSpotifyConfig().configured, error: err.message, songs: [] }, 500);
+    }
+    return;
+  }
+
+  if (pn.startsWith('/api/qishui/') && !RELEASE_POLICY.qishuiCatalogEnabled) {
+    sendJSON(res, { error: 'PROVIDER_DISABLED', provider: 'qishui' }, 404);
+    return;
+  }
+
+  if (pn === '/api/qishui/status') {
+    sendJSON(res, handleQishuiCatalogStatus());
+    return;
+  }
+
+  if (pn === '/api/qishui/search') {
+    try {
+      const kw = url.searchParams.get('keywords') || '';
+      const limit = Math.max(1, Math.min(18, parseInt(url.searchParams.get('limit') || '8', 10) || 8));
+      sendJSON(res, await handleQishuiCatalogSearch(kw, limit));
+    } catch (err) {
+      console.error('[QishuiCatalogSearch]', err);
+      sendJSON(res, {
+        ...handleQishuiCatalogStatus(),
+        songs: [],
+        error: err && (err.code || err.message) || 'QISHUI_CATALOG_SEARCH_FAILED',
+        message: '汽水公开目录暂时不可用，请稍后重试。',
+      }, 502);
+    }
+    return;
+  }
+
+  if (pn === '/api/qishui/song/url') {
+    sendJSON(res, handleQishuiCatalogPlayback(url.searchParams.get('id') || ''));
+    return;
+  }
+
+  if (pn === '/api/qishui/lyric') {
+    try {
+      sendJSON(res, await handleQishuiCatalogLyric(url.searchParams.get('id') || ''));
+    } catch (err) {
+      console.error('[QishuiCatalogLyric]', err);
+      sendJSON(res, {
+        provider: 'qishui',
+        lyric: '',
+        tlyric: '',
+        yrc: '',
+        ytlrc: '',
+        error: err && (err.code || err.message) || 'QISHUI_CATALOG_LYRIC_FAILED',
+      }, 502);
     }
     return;
   }

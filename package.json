@@ -25,6 +25,7 @@
     "disabledProviders": [
       "qishui"
     ],
+    "qishuiCatalogEnabled": true,
     "allowCredentialImport": false,
     "allowCredentialExport": false,
     "runtimeName": "Mineradio",
@@ -32,7 +33,7 @@
   },
   "scripts": {
     "start": "electron .",
-    "check": "node --check server.js && node --check desktop/main.js && node scripts/check-memory-audio-guard.js && node --test scripts/test-stable-selective-fusion.js scripts/test-public-release-policy.js scripts/test-official-login-bridge.js scripts/test-control-tooltips-and-shelf-sensitivity.js scripts/test-account-tier-display.js scripts/test-quality-switch-stability.js scripts/test-qq-liked-playlist.js scripts/test-custom-cover-restore.js scripts/test-beat-unified-regressions.js scripts/test-lyric-depth-flight-preset.js scripts/test-lyric-depth-track-transition-hooks.js scripts/test-wallpaper-full-display.js scripts/test-wallpaper-idle-throttle.js scripts/test-gpu-mode-fast-splash.js scripts/test-gpu-usage-monitor.js scripts/test-true-idle-sleep.js scripts/test-singing-mode-power-save.js scripts/test-singing-mode-graph-rebuild.js scripts/test-mac-memory-safe-auto.js scripts/test-vocal-accompaniment-mixer.js scripts/test-realtime-stem-precision.js scripts/test-recent-scroll-performance.js scripts/test-playback-timer-power.js scripts/test-playback-async-races.js scripts/test-ai-stem-separation.js scripts/test-lyric-option-switch-performance.js scripts/test-audio-proxy-disconnect.js scripts/test-playback-skip-cascade.js scripts/test-gesture-two-hand-stability.js scripts/test-gesture-camera-permission.js scripts/test-lyrics-visibility-persistence.js scripts/test-crash-diagnostics.js scripts/test-build-cache-exclusions.js scripts/test-macos-ci-runners.js scripts/test-touchbar-track-sync.js scripts/test-karaoke-key-shift.js",
+    "check": "node --check server.js && node --check desktop/main.js && node scripts/check-memory-audio-guard.js && node --test scripts/test-stable-selective-fusion.js scripts/test-public-release-policy.js scripts/test-official-login-bridge.js scripts/test-control-tooltips-and-shelf-sensitivity.js scripts/test-account-tier-display.js scripts/test-quality-switch-stability.js scripts/test-qq-liked-playlist.js scripts/test-custom-cover-restore.js scripts/test-beat-unified-regressions.js scripts/test-lyric-depth-flight-preset.js scripts/test-lyric-depth-track-transition-hooks.js scripts/test-wallpaper-full-display.js scripts/test-wallpaper-idle-throttle.js scripts/test-wallpaper-library-fusion.js scripts/test-qishui-catalog-only.js scripts/test-perspective-camera-mode.js scripts/test-shared-camera-stream-manager.js scripts/test-gpu-mode-fast-splash.js scripts/test-gpu-usage-monitor.js scripts/test-true-idle-sleep.js scripts/test-singing-mode-power-save.js scripts/test-singing-mode-graph-rebuild.js scripts/test-mac-memory-safe-auto.js scripts/test-vocal-accompaniment-mixer.js scripts/test-realtime-stem-precision.js scripts/test-recent-scroll-performance.js scripts/test-playback-timer-power.js scripts/test-playback-async-races.js scripts/test-ai-stem-separation.js scripts/test-lyric-option-switch-performance.js scripts/test-audio-proxy-disconnect.js scripts/test-playback-skip-cascade.js scripts/test-gesture-two-hand-stability.js scripts/test-gesture-camera-permission.js scripts/test-lyrics-visibility-persistence.js scripts/test-crash-diagnostics.js scripts/test-build-cache-exclusions.js scripts/test-macos-ci-runners.js scripts/test-touchbar-track-sync.js scripts/test-karaoke-key-shift.js",
     "build:mac:dir": "electron-builder --mac --arm64 --dir",
     "build:mac:arm64": "electron-builder --mac dmg --arm64 && rm -f dist/latest-mac.yml",
     "build:mac:x64": "electron-builder --mac dmg --x64 && rm -f dist/latest-mac.yml",
@@ -71,6 +72,7 @@
       "dj-analyzer.js",
       "kugou-api.js",
       "qq-qrc.js",
+      "qishui-catalog-api.js",
       "spotify-api.js",
       "PRIVACY.md",
       "THIRD_PARTY_NOTICES.md",
@@ -96,7 +98,7 @@
         "NSHighResolutionCapable": true,
         "NSSupportsAutomaticGraphicsSwitching": true,
         "LSMinimumSystemVersion": "12.0",
-        "NSCameraUsageDescription": "Mineradio 仅在你开启手势控制时使用摄像头；画面在本机处理，不会上传。",
+        "NSCameraUsageDescription": "Mineradio 仅在你开启透视模式或手势控制时使用摄像头；画面仅在本机处理并实时显示，不会上传。",
         "NSMicrophoneUsageDescription": "Mineradio 仅在你开启唱歌模式或音频输入可视化时使用麦克风；音频在本机处理，不会上传。"
       }
     },

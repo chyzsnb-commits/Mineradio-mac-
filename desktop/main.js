@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, crashReporter, powerMonitor, systemPreferences } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, crashReporter, powerMonitor, systemPreferences, protocol } = require('electron');
 const net = require('net');
 const http = require('http');
 const path = require('path');
@@ -17,6 +17,8 @@ const { createAiStemService } = require('./ai-stem-separator');
 const { createCrashDiagnostics } = require('./crash-diagnostics');
 const { applyOfficialProviderLogin } = require('./official-login-bridge');
 const { createCameraPermissionController } = require('./camera-permission');
+const { registerWallpaperLibraryScheme } = require('./wallpaper-library-bridge');
+registerWallpaperLibraryScheme(protocol);
 const RELEASE_POLICY = require('./release-policy');
 const cameraPermissionController = createCameraPermissionController({
   platform: process.platform,
@@ -2543,6 +2545,70 @@ ipcMain.on('mineradio-wallpaper-control', (_e, payload) => {
   if (['togglePlay', 'prevTrack', 'nextTrack', 'nextPreset', 'prevPreset'].indexOf(action) >= 0) {
     mainWindow.webContents.send('mineradio-global-hotkey', { action });
   }
+});
+
+// Windows Wallpaper Engine library bridge: verified LAN service access.
+let wallpaperLibraryBridge = null;
+function getWallpaperLibraryBridge() {
+  if (!wallpaperLibraryBridge) {
+    const bridge = require('./wallpaper-library-bridge');
+    wallpaperLibraryBridge = bridge.init({ userDataPath: app.getPath('userData'), protocol });
+  }
+  return wallpaperLibraryBridge;
+}
+
+function wallpaperLibraryTrustedSender(event) {
+  const senderUrl = event && event.sender && !event.sender.isDestroyed() ? event.sender.getURL() : '';
+  return isLocalAppUrl(senderUrl);
+}
+
+function wallpaperLibraryRejected() {
+  return { ok: false, error: 'UNTRUSTED_SENDER' };
+}
+
+ipcMain.handle('mineradio-wallpaper-windows-discover', async (event) => {
+  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
+  return getWallpaperLibraryBridge().discoverWindowsSources();
+});
+ipcMain.handle('mineradio-wallpaper-windows-connect', async (event, baseUrl) => {
+  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
+  return getWallpaperLibraryBridge().connectWindowsSource(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-windows-live-status', async (event, baseUrl) => {
+  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
+  return getWallpaperLibraryBridge().getWindowsLiveStatus(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-windows-export-start', async (event, baseUrl, sceneId, seconds) => {
+  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
+  return getWallpaperLibraryBridge().startWindowsSceneExport(baseUrl, sceneId, seconds);
+});
+ipcMain.handle('mineradio-wallpaper-windows-export-status', async (event, baseUrl, jobId) => {
+  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
+  return getWallpaperLibraryBridge().getWindowsExportJob(baseUrl, jobId);
+});
+ipcMain.handle('mineradio-wallpaper-windows-exported-videos', async (event, baseUrl) => {
+  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
+  return getWallpaperLibraryBridge().listWindowsExportedVideos(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-windows-download-media', async (event, baseUrl, payload) => {
+  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
+  const request = payload && typeof payload === 'object' ? payload : {};
+  if (request.kind === 'scene-export') {
+    return getWallpaperLibraryBridge().downloadWindowsExportedMedia(baseUrl, String(request.fileName || ''));
+  }
+  return getWallpaperLibraryBridge().downloadWindowsWallpaperMedia(baseUrl, String(request.recordId || ''), String(request.type || ''));
+});
+ipcMain.handle('mineradio-wallpaper-windows-export-download', async (event, baseUrl, fileName) => {
+  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
+  const safeName = path.basename(String(fileName || '')).replace(/[^a-z0-9._ -]/gi, '_') || 'wallpaper-scene.mp4';
+  const owner = BrowserWindow.getFocusedWindow() || mainWindow;
+  const selected = await dialog.showSaveDialog(owner, {
+    title: '保存导出的壁纸视频',
+    defaultPath: safeName,
+    filters: [{ name: '视频', extensions: ['mp4', 'webm', 'mov'] }],
+  });
+  if (selected.canceled || !selected.filePath) return { ok: false, error: 'DOWNLOAD_CANCELLED' };
+  return getWallpaperLibraryBridge().downloadWindowsExport(baseUrl, fileName, selected.filePath);
 });
 
 // ── 手部姿态原生桥接(v12):Swift 助手用 Vision 在 ANE 上跑手部姿态(不碰 GPU,不与体素渲染抢核显)──

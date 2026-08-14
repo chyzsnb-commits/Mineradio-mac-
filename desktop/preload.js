@@ -6,6 +6,7 @@ const desktopWindowApi = {
   releasePolicy: {
     publicRelease: RELEASE_POLICY.publicRelease,
     disabledProviders: RELEASE_POLICY.disabledProviders,
+    qishuiCatalogEnabled: RELEASE_POLICY.qishuiCatalogEnabled,
     allowCredentialImport: RELEASE_POLICY.allowCredentialImport,
     allowCredentialExport: RELEASE_POLICY.allowCredentialExport,
   },
@@ -57,6 +58,14 @@ const desktopWindowApi = {
     return { ok: true };
   },
   readText: () => ({ ok: true, text: clipboard.readText() || '' }),
+  wallpaperWindowsDiscover: () => ipcRenderer.invoke('mineradio-wallpaper-windows-discover'),
+  wallpaperWindowsConnect: (baseUrl) => ipcRenderer.invoke('mineradio-wallpaper-windows-connect', String(baseUrl || '')),
+  wallpaperWindowsLiveStatus: (baseUrl) => ipcRenderer.invoke('mineradio-wallpaper-windows-live-status', String(baseUrl || '')),
+  wallpaperWindowsExportStart: (baseUrl, sceneId, seconds) => ipcRenderer.invoke('mineradio-wallpaper-windows-export-start', String(baseUrl || ''), String(sceneId || ''), Number(seconds) || 30),
+  wallpaperWindowsExportStatus: (baseUrl, jobId) => ipcRenderer.invoke('mineradio-wallpaper-windows-export-status', String(baseUrl || ''), String(jobId || '')),
+  wallpaperWindowsExportDownload: (baseUrl, fileName) => ipcRenderer.invoke('mineradio-wallpaper-windows-export-download', String(baseUrl || ''), String(fileName || '')),
+  wallpaperWindowsExportedVideos: (baseUrl) => ipcRenderer.invoke('mineradio-wallpaper-windows-exported-videos', String(baseUrl || '')),
+  wallpaperWindowsDownloadMedia: (baseUrl, payload) => ipcRenderer.invoke('mineradio-wallpaper-windows-download-media', String(baseUrl || ''), payload || {}),
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
   readCurrentFxAutosaveSync: () => ipcRenderer.sendSync('mineradio-current-fx-autosave-read-sync'),

@@ -478,6 +478,8 @@ function updateFxInputs() {
   updateHomeAccentControls();
   updateIconAccentControls();
   updateCustomBackgroundControls();
+  if (typeof updatePerspectiveModeControls === 'function') updatePerspectiveModeControls();
+  if (typeof syncPerspectiveCameraPowerState === 'function') syncPerspectiveCameraPowerState();
   updateVisualTintControls();
   applyControlGlassChromaticOffset();
   syncFxUniforms();

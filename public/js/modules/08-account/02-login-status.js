@@ -376,7 +376,23 @@ function normalizeQishuiLoginStatus(info) {
   });
 }
 async function refreshQishuiLoginStatus() {
-  qishuiLoginStatus = normalizeQishuiLoginStatus({ enabled: false, searchReady: false, publicCatalog: false });
+  if (!MINERADIO_QISHUI_CATALOG_ENABLED) {
+    qishuiLoginStatus = normalizeQishuiLoginStatus({ enabled: false, searchReady: false, publicCatalog: false });
+    qishuiPlaylists = [];
+    userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
+    return qishuiLoginStatus;
+  }
+  try {
+    qishuiLoginStatus = normalizeQishuiLoginStatus(await apiJson('/api/qishui/status', { timeoutMs: 5000 }));
+  } catch (e) {
+    qishuiLoginStatus = normalizeQishuiLoginStatus({
+      enabled: true,
+      catalogOnly: true,
+      searchReady: true,
+      publicCatalog: true,
+      playbackMode: 'recommend-match'
+    });
+  }
   qishuiPlaylists = [];
   userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
   return qishuiLoginStatus;
