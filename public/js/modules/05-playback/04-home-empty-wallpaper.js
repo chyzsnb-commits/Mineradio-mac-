@@ -182,11 +182,29 @@ function applyStartupStarfieldPreset() {
     syncFxUniforms();
   }
 }
+function canOpenPlaylistPanel() {
+  return !emptyHomeActive && !document.body.classList.contains('splash-active');
+}
+function hidePlaylistPanelOutsideListeningPage() {
+  if (canOpenPlaylistPanel()) return false;
+  if (typeof resetSecondaryPlaylistEdgeGuard === 'function') resetSecondaryPlaylistEdgeGuard();
+  if (typeof peekTimers !== 'undefined' && peekTimers && peekTimers.pl) {
+    clearTimeout(peekTimers.pl);
+    peekTimers.pl = null;
+  }
+  var panel = document.getElementById('playlist-panel');
+  if (!panel) return false;
+  panel.__playlistMotionUntil = 0;
+  panel.classList.remove('peek', 'show', 'playlist-panel-closing');
+  return true;
+}
 function updateEmptyHomeVisibility(opts) {
   opts = opts || {};
   var show = shouldShowEmptyHome();
   emptyHomeActive = show;
   document.body.classList.toggle('empty-home-active', show);
+  if (show) hidePlaylistPanelOutsideListeningPage();
+  else if (playlistPanelPinned && typeof applyPlaylistPanelPinState === 'function') applyPlaylistPanelPinState(true);
   if (!show) setHomeControlsLocked(false);
   if (show) activateHomeWallpaperPreview();
   else deactivateHomeWallpaperPreview(false);

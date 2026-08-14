@@ -25,6 +25,10 @@ function shouldAnimatePlaylistPanelOpen(panel) {
 }
 function setPeek(el, on, key) {
   if (!el) return;
+  if (key === 'pl' && on && typeof canOpenPlaylistPanel === 'function' && !canOpenPlaylistPanel()) {
+    if (typeof hidePlaylistPanelOutsideListeningPage === 'function') hidePlaylistPanelOutsideListeningPage();
+    return;
+  }
   if (immersiveMode && on && (key === 'search' || key === 'fx')) return;
   if (on && !diyPlayerMode && key === 'fx') return;
   if (!on && key === 'search' && emptyHomeActive && !immersiveMode) return;
@@ -186,12 +190,17 @@ function armSecondaryPlaylistEdgeDwell() {
     secondaryPlaylistEdgeGuard.timer = null;
     if (!isSecondaryLeftDisplaySeamGuardActive()) return;
     if (!isSecondaryPlaylistSafeBandPoint(secondaryPlaylistEdgeGuard.x, secondaryPlaylistEdgeGuard.y, secondaryPlaylistEdgeGuard.H)) return;
+    if (typeof canOpenPlaylistPanel === 'function' && !canOpenPlaylistPanel()) return;
     var panel = document.getElementById('playlist-panel');
     if (panel) setPeek(panel, true, 'pl');
   }, SECONDARY_PLAYLIST_EDGE_DWELL_MS);
 }
 function isPlaylistEdgeTrigger(ex, ey, H) {
   var pointerEvent = arguments.length > 3 ? arguments[3] : null;
+  if (typeof canOpenPlaylistPanel === 'function' && !canOpenPlaylistPanel()) {
+    resetSecondaryPlaylistEdgeGuard();
+    return false;
+  }
   if (isVisualPointerDragActive(pointerEvent)) {
     resetSecondaryPlaylistEdgeGuard();
     return false;

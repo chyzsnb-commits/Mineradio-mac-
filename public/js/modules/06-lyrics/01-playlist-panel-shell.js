@@ -72,6 +72,10 @@ function miniQueueSkeleton() {
 }
 function togglePlaylistPanel(force) {
   var el = document.getElementById('playlist-panel');
+  if (force !== false && typeof canOpenPlaylistPanel === 'function' && !canOpenPlaylistPanel()) {
+    if (typeof hidePlaylistPanelOutsideListeningPage === 'function') hidePlaylistPanelOutsideListeningPage();
+    return false;
+  }
   if (force === false) el.classList.remove('show');
   else if (force === true) el.classList.add('show');
   else el.classList.toggle('show');
@@ -101,9 +105,11 @@ function applyPlaylistPanelPinState(openPanel) {
   var btn = document.getElementById('playlist-pin-btn');
   if (panel) {
     panel.classList.toggle('pinned', !!playlistPanelPinned);
-    if (playlistPanelPinned || openPanel) {
+    if ((playlistPanelPinned || openPanel) && (typeof canOpenPlaylistPanel !== 'function' || canOpenPlaylistPanel())) {
       panel.dataset.preserveTabOnOpen = '1';
       setPeek(panel, true, 'pl');
+    } else if (typeof hidePlaylistPanelOutsideListeningPage === 'function') {
+      hidePlaylistPanelOutsideListeningPage();
     }
   }
   if (btn) {
@@ -210,11 +216,16 @@ function closeMiniQueue() {
   setMiniQueueOpen(false);
 }
 function openPlaylistPanelTab(tab, preserve) {
+  if (typeof canOpenPlaylistPanel === 'function' && !canOpenPlaylistPanel()) {
+    if (typeof hidePlaylistPanelOutsideListeningPage === 'function') hidePlaylistPanelOutsideListeningPage();
+    return false;
+  }
   tab = normalizePlaylistPanelTab(tab);
   var panel = document.getElementById('playlist-panel');
   if (panel && panel.dataset && preserve !== false) panel.dataset.preserveTabOnOpen = '1';
   switchPlaylistTab(tab);
   setPeek(panel, true, 'pl');
+  return true;
 }
 function renderMiniQueuePanel(opts) {
   opts = opts || {};
