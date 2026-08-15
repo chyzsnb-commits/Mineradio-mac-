@@ -19,11 +19,14 @@ on:
   pull_request:
     paths:
       - '.github/workflows/build-mac.yml'
+      - '.github/workflows/diff-on-release.yml'
+      - 'build/**'
       - 'desktop/**'
       - 'public/**'
       - 'scripts/**'
       - '*.js'
       - 'package.json'
+      - 'package-lock.json'
 
 concurrency:
   group: build-mac-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
