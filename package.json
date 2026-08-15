@@ -4,7 +4,7 @@
   "version": "2.0.0",
   "description": "沉浸式音乐播放器，融合天气电台、歌词舞台、粒子视觉和 3D 歌单架。",
   "author": "Mineradio",
-  "main": "desktop/main.js",
+  "main": "desktop/bootstrap.js",
   "private": true,
   "mineradio": {
     "update": {
@@ -33,7 +33,7 @@
   },
   "scripts": {
     "start": "electron .",
-    "check": "node --check server.js && node --check desktop/main.js && node scripts/check-memory-audio-guard.js && node --test scripts/test-stable-selective-fusion.js scripts/test-public-release-policy.js scripts/test-official-login-bridge.js scripts/test-control-tooltips-and-shelf-sensitivity.js scripts/test-account-tier-display.js scripts/test-quality-switch-stability.js scripts/test-qq-liked-playlist.js scripts/test-custom-cover-restore.js scripts/test-beat-unified-regressions.js scripts/test-lyric-depth-flight-preset.js scripts/test-lyric-depth-track-transition-hooks.js scripts/test-wallpaper-full-display.js scripts/test-wallpaper-idle-throttle.js scripts/test-wallpaper-library-fusion.js scripts/test-qishui-catalog-only.js scripts/test-perspective-camera-mode.js scripts/test-shared-camera-stream-manager.js scripts/test-hand-model-visuals.js scripts/test-gpu-mode-fast-splash.js scripts/test-gpu-usage-monitor.js scripts/test-true-idle-sleep.js scripts/test-singing-mode-power-save.js scripts/test-singing-mode-graph-rebuild.js scripts/test-mac-memory-safe-auto.js scripts/test-vocal-accompaniment-mixer.js scripts/test-realtime-stem-precision.js scripts/test-recent-scroll-performance.js scripts/test-playback-timer-power.js scripts/test-playback-async-races.js scripts/test-ai-stem-separation.js scripts/test-lyric-option-switch-performance.js scripts/test-audio-proxy-disconnect.js scripts/test-playback-skip-cascade.js scripts/test-gesture-two-hand-stability.js scripts/test-gesture-camera-permission.js scripts/test-lyrics-visibility-persistence.js scripts/test-crash-diagnostics.js scripts/test-build-cache-exclusions.js scripts/test-macos-ci-runners.js scripts/test-touchbar-track-sync.js scripts/test-karaoke-key-shift.js",
+    "check": "node --check server.js && node --check desktop/bootstrap.js && node --check desktop/main.js && node --check scripts/safe-storage-recovery-host.js && node --check scripts/install-local-macos-safe.js && node scripts/check-memory-audio-guard.js && node --test scripts/test-stable-selective-fusion.js scripts/test-public-release-policy.js scripts/test-official-login-bridge.js scripts/test-control-tooltips-and-shelf-sensitivity.js scripts/test-account-tier-display.js scripts/test-quality-switch-stability.js scripts/test-qq-liked-playlist.js scripts/test-custom-cover-restore.js scripts/test-beat-unified-regressions.js scripts/test-lyric-depth-flight-preset.js scripts/test-lyric-depth-track-transition-hooks.js scripts/test-wallpaper-full-display.js scripts/test-wallpaper-idle-throttle.js scripts/test-wallpaper-library-fusion.js scripts/test-qishui-catalog-only.js scripts/test-perspective-camera-mode.js scripts/test-shared-camera-stream-manager.js scripts/test-hand-model-visuals.js scripts/test-gpu-mode-fast-splash.js scripts/test-gpu-usage-monitor.js scripts/test-true-idle-sleep.js scripts/test-singing-mode-power-save.js scripts/test-singing-mode-graph-rebuild.js scripts/test-mac-memory-safe-auto.js scripts/test-vocal-accompaniment-mixer.js scripts/test-realtime-stem-precision.js scripts/test-recent-scroll-performance.js scripts/test-playback-timer-power.js scripts/test-playback-async-races.js scripts/test-ai-stem-separation.js scripts/test-lyric-option-switch-performance.js scripts/test-audio-proxy-disconnect.js scripts/test-playback-skip-cascade.js scripts/test-gesture-two-hand-stability.js scripts/test-gesture-camera-permission.js scripts/test-lyrics-visibility-persistence.js scripts/test-crash-diagnostics.js scripts/test-build-cache-exclusions.js scripts/test-macos-ci-runners.js scripts/test-touchbar-track-sync.js scripts/test-karaoke-key-shift.js scripts/test-electron-fuses-and-safe-storage-handoff.js scripts/test-safe-storage-recovery-helper.js scripts/test-local-macos-safe-installer.js",
     "build:mac:dir": "electron-builder --mac --arm64 --dir",
     "build:mac:arm64": "electron-builder --mac dmg --arm64 && rm -f dist/latest-mac.yml",
     "build:mac:x64": "electron-builder --mac dmg --x64 && rm -f dist/latest-mac.yml",
@@ -47,6 +47,7 @@
     "NeteaseCloudMusicApi": "^4.32.0"
   },
   "devDependencies": {
+    "@electron/fuses": "^2.1.3",
     "electron": "42.4.1",
     "electron-builder": "^26.0.18"
   },
@@ -78,12 +79,18 @@
       "THIRD_PARTY_NOTICES.md",
       "package.json"
     ],
+    "asarUnpack": [
+      "desktop/native/handpose/handpose-helper"
+    ],
     "mac": {
       "category": "public.app-category.music",
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64", "x64"]
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         }
       ],
       "hardenedRuntime": true,
@@ -106,8 +113,16 @@
       "title": "${productName} ${version}",
       "format": "ULFO",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "afterPack": "build/after-pack.js"

@@ -2616,7 +2616,9 @@ ipcMain.handle('mineradio-wallpaper-windows-export-download', async (event, base
 // 助手只做推理不碰摄像头,故无需摄像头权限。
 let handposeProc = null;
 let handposeStdoutBuf = '';
-const HANDPOSE_BIN = path.join(__dirname, 'native', 'handpose', 'handpose-helper');
+const HANDPOSE_BIN = app.isPackaged
+  ? path.join(process.resourcesPath, 'app.asar.unpacked', 'desktop', 'native', 'handpose', 'handpose-helper')
+  : path.join(__dirname, 'native', 'handpose', 'handpose-helper');
 function killHandpose() {
   if (handposeProc) { try { handposeProc.kill('SIGKILL'); } catch (e) {} handposeProc = null; }
   handposeStdoutBuf = '';
