@@ -1,5 +1,13 @@
 # Mineradio 项目记忆
 
+## 2026-08-15：Electron 包完整性与本机 Safe Storage 迁移边界
+
+- bootstrap、Electron fuse wire、ASAR header、packed Safe Storage handoff、外置 recovery helper、controller 固定哈希与最终签名 App 必须由同一冻结源码构建并一起验收；任一源码、二进制、签名或包路径变化都会使旧 controller 失效，禁止跨候选复用。
+- Mac 正式构建必须关闭 RunAsNode、`NODE_OPTIONS` 和 CLI inspector，开启 embedded ASAR integrity 与 OnlyLoadAppFromAsar；CookieEncryption 本轮明确保持关闭，避免与登录迁移叠加不可逆 Cookie 格式变化。Safe Storage handoff 必须保持 packed，不能放进可替换的 `app.asar.unpacked`。
+- ad-hoc 包 CDHash 每次变化，本机覆盖更新必须采用无明文落盘、持久 journal、完整 App/userData 备份、进程静止、签名身份绑定和物理 Keychain 状态对账的可恢复迁移；任何失败都应按实际 marker fail-forward 或 rollback。成功后 guard、pending、completed 与 recovery 都必须清空，稳定 0600 native lock 文件保留。
+- 迁移备份只能放在用户私有的 `~/Library/Application Support/Mineradio Migration/backups.noindex`，不能默认落到可能同步云端的 Desktop。首次创建每一级目录都要 fsync 自身与父目录，严格断电模型不能只依赖文件内容 fsync。
+- 重复 App 要区分真实文件和 LaunchServices 历史注册：可逐一注销已确认的旧路径并 `lsregister -gc`，不得全库 `-delete`。备份 App 可以保留，但不得继续作为可索引/可启动的第二入口；目录构建继续放 `/private/tmp` 或 `.noindex`。
+
 ## 2026-08-14：唯一 App、临时构建与词境穿行动画边界
 
 - macOS 会把桌面仓库里的 `dist/mac-arm64/Mineradio.app` 和 `/Applications/Mineradio.app` 同时交给 Spotlight，表现为两个完全同名图标。目录构建必须输出到 `/tmp/mineradio-performance-final.*` 或 `.noindex`；安装验收后只保留 `/Applications/Mineradio.app` 为可索引副本，不能靠全局重置 LaunchServices 掩盖重复文件。

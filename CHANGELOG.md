@@ -2,6 +2,10 @@
 
 ## 2.0.0
 
+- 本机融合候选完成 Electron 包安全收口：主入口改为最小 `desktop/bootstrap.js`，关闭 RunAsNode、`NODE_OPTIONS` 与 CLI inspector，开启 ASAR integrity 与 OnlyLoadAppFromAsar；Safe Storage 原生交接模块保持 packed 并锁定哈希，手势 helper 改为 universal arm64+x64、最低 macOS 12。
+- 新增只用于本机 ad-hoc 包切换的可恢复安装链：完整 App/userData 备份、持久 journal、进程静止检查、旧/新签名 Keychain 交接、provider 前后对账和失败自动回滚均在无凭据明文落盘的前提下完成。最终 `/Applications/Mineradio.app` 的 `app.asar` 为 `7dac0a…c024`，QQ 登录与播放密钥保留，Spotlight 只索引这一份 App。
+- 清理重复图标的 LaunchServices 历史记录：对 17 个明确的旧构建、废纸篓与迁移备份路径逐一注销，再执行垃圾回收；没有删除备份，也没有全局重置 LaunchServices。
+- macOS 主构建与 Release 包体差异工作流统一使用 Node 24，PR paths 同时覆盖 release workflow、`build/**` 与 lockfile；完整 `npm run check` 当前为 **274/274**。当前实装包仍为 ad-hoc、未公证的本机验收候选，不是公开发行包。
 - 透视模式恢复摄像头原始亮度：移除视频层的 `brightness(.82)` 与额外 16% 黑色遮罩，不再把 macOS 正常曝光二次压暗；画面仍保持镜像与全屏裁切，前景歌词、封面和粒子不受影响。
 - 手势识别本地运行时升级到 MediaPipe Tasks Vision 0.10.35，并把推理画布改为保持摄像头原始宽高比；双手身份结合官方 handedness 与最近位置稳定匹配，降低左右手跳槽和 16:9 画面被压成 4:3 后的误判。
 - 双手缩放改为两只张开手掌中心距离的直接缩放：稳定出现 140ms 后接管，2.5% 死区抑制抖动，短暂丢手保留 180ms；不要求两只手同时捏合，不模拟滚轮，不叠加惯性，也不再让双手连线误触旋转。

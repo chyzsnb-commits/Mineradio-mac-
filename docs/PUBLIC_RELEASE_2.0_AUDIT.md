@@ -4,7 +4,14 @@
 
 ## 结论
 
-当前分支可作为 **2.0.0 双架构技术候选包**，但在完成签名、公证、隐私联系信息和音乐平台授权确认前，不应标注为“已完成合规审查”的正式公开版本。
+2026-07-24 审计时的分支可作为 **2.0.0 双架构技术候选包**，但在完成签名、公证、隐私联系信息和音乐平台授权确认前，不应标注为“已完成合规审查”的正式公开版本。下文 `7fc715…` 与两份 DMG 哈希均是当时的历史候选，不代表当前安装包。
+
+## 2026-08-15 当前本机融合状态
+
+- 当前唯一 `/Applications/Mineradio.app` 是用于本机融合验收的 arm64 ad-hoc 包：`app.asar` SHA-256 为 `7dac0a781edf167689930d0ea050323fc9af38d005a83cba11f73eb40676c024`，CDHash 为 `96919e2fc469fa0ea4568bd794cdb8068633d1d7`。它没有 TeamIdentifier、没有 Developer ID、公证会被 Gatekeeper 拒绝，因此不是新的公开发布候选。
+- 本机安装通过持久 journal 与旧/新签名 Keychain 交接保留了 QQ 登录和播放密钥，安装状态为 `complete/new`；这只能证明当前 Mac 的受控同步，不构成通用 updater 或公开发行迁移方案。
+- Electron fuses 与 ASAR integrity 已加固，handpose helper 支持 arm64+x64 且最低 macOS 12；完整 `npm run check` 为 274/274。源码已保存到 `codex/camera-hand-models`，但版本仍为 2.0.0；公开候选仍必须从干净提交重新构建双架构、使用 Developer ID 签名并公证，再冻结新的公开哈希。
+- Spotlight 与 `/Applications` 均只识别当前 App，历史 LaunchServices 路径已逐一注销；真实摄像头首帧、权限弹窗、双手直缩、P11 四种新动画、歌词和 Intel 真机仍是公开发布前人工验收项。
 
 ## 已完成
 
