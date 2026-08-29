@@ -980,3 +980,81 @@ function setSonicWorkshopRegionColorFromPicker(id, color, silent) {
   pushSonicWorkshopColorChange(item.colorKey);
   if (!silent) showToast('\u97f3\u57df\u56de\u54cd\u00b7WE ' + item.label + ': ' + hex.toUpperCase());
 }
+
+// ===== \u754c\u9762\u4e3b\u9898(\u7f51\u9875\u7248\u89c4\u6574\u800c\u6765)=====
+// js/runtime-themes.js \u63d0\u4f9b 6 \u5957\u7ed3\u6784\u8272(default/midnight/ember/violet/aurora/rose);
+// default \u7684\u7ed3\u6784\u503c\u4e0e\u672c\u5730 :root \u9010\u9879\u4e00\u81f4,\u6240\u4ee5\u4e0d\u9009\u4e3b\u9898\u65f6\u5b8c\u5168\u7b49\u4ef7\u4e8e\u65e7\u884c\u4e3a\u3002
+function normalizeAppThemeId(id) {
+  if (window.MineradioThemes && typeof window.MineradioThemes.normalize === 'function') {
+    return window.MineradioThemes.normalize(id);
+  }
+  return 'default';
+}
+function getAppThemeMeta(id) {
+  if (window.MineradioThemes && typeof window.MineradioThemes.get === 'function') {
+    return window.MineradioThemes.get(id);
+  }
+  return { id: 'default', name: '\u9ed8\u8ba4' };
+}
+function applyAppThemeStructure(id) {
+  if (window.MineradioThemes && typeof window.MineradioThemes.applyStructure === 'function') {
+    return window.MineradioThemes.applyStructure(id);
+  }
+}
+function renderAppThemeGrid() {
+  var grid = document.getElementById('app-theme-grid');
+  if (!grid || !window.MineradioThemes || typeof window.MineradioThemes.list !== 'function') return;
+  var active = normalizeAppThemeId(fx && fx.appTheme);
+  grid.innerHTML = window.MineradioThemes.list().map(function (theme) {
+    var swatches = (theme.swatch || []).map(function (color) {
+      return '<span class="app-theme-swatch" style="background:' + escHtml(color) + '"></span>';
+    }).join('');
+    return '<button type="button" class="app-theme-card' + (theme.id === active ? ' active' : '') + '" data-app-theme="' + escHtml(theme.id) + '" role="option" aria-selected="' + (theme.id === active ? 'true' : 'false') + '" title="' + escHtml(theme.name) + '">' +
+      '<span class="app-theme-check" aria-hidden="true"></span>' +
+      '<span class="app-theme-swatches">' + swatches + '</span>' +
+      '<span class="app-theme-copy"><span class="app-theme-name">' + escHtml(theme.name) + '</span><span class="app-theme-desc">' + escHtml(theme.desc || '') + '</span></span>' +
+      '</button>';
+  }).join('');
+}
+function setAppTheme(id, opts) {
+  opts = opts || {};
+  var themeId = normalizeAppThemeId(id);
+  var theme = getAppThemeMeta(themeId);
+  fx.appTheme = themeId;
+  applyAppThemeStructure(themeId);
+  if (opts.syncFx !== false && window.MineradioThemes && typeof window.MineradioThemes.getFxDefaults === 'function') {
+    var defs = window.MineradioThemes.getFxDefaults(themeId) || {};
+    if (defs.uiAccentColor) fx.uiAccentColor = normalizeHexColor(defs.uiAccentColor, '#00f5d4');
+    if (defs.homeAccentColor) fx.homeAccentColor = normalizeHexColor(defs.homeAccentColor, '#00f5d4');
+    if (defs.homeIconColor) fx.homeIconColor = normalizeHexColor(defs.homeIconColor, '#f4d28a');
+    if (defs.visualIconColor) fx.visualIconColor = normalizeHexColor(defs.visualIconColor, '#7fd8ff');
+    if (defs.visualTintColor) fx.visualTintColor = normalizeHexColor(defs.visualTintColor, '#9db8cf');
+    if (defs.shelfAccentColor) fx.shelfAccentColor = normalizeHexColor(defs.shelfAccentColor, fx.uiAccentColor);
+    if (fx.visualTintMode !== 'custom') fx.visualTintMode = 'auto';
+    if (typeof updateUiAccentControls === 'function') updateUiAccentControls();
+    if (typeof updateHomeAccentControls === 'function') updateHomeAccentControls();
+    if (typeof updateIconAccentControls === 'function') updateIconAccentControls();
+    if (typeof updateVisualTintControls === 'function') updateVisualTintControls();
+    if (typeof updateShelfControlUi === 'function') updateShelfControlUi();
+    if (typeof shelfManager !== 'undefined' && shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
+  }
+  renderAppThemeGrid();
+  if (!opts.skipSave) saveLyricLayout({ user: true, reason: 'appTheme' });
+  if (!opts.silent) showToast('\u754c\u9762\u4e3b\u9898: ' + (theme.name || themeId));
+}
+function initAppThemeFromState() {
+  if (typeof fx === 'undefined' || !fx) return;
+  fx.appTheme = normalizeAppThemeId(fx.appTheme || (window.MineradioThemes ? window.MineradioThemes.readStored() : 'default'));
+  applyAppThemeStructure(fx.appTheme);
+  renderAppThemeGrid();
+}
+function bindAppThemeGrid() {
+  var grid = document.getElementById('app-theme-grid');
+  if (!grid || grid._themeBound) return;
+  grid._themeBound = true;
+  grid.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('[data-app-theme]') : null;
+    if (!btn) return;
+    setAppTheme(btn.getAttribute('data-app-theme'));
+  });
+}

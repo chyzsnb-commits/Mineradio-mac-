@@ -103,6 +103,8 @@
     'js/modules/10-shell/04-desktop-overlay-fullscreen.js',
     'js/modules/10-shell/05-startup-bindings.js',
     'js/modules/11-main-loop.js',
+    // 网页版首页仪表盘(乐评卡 / 快捷卡 / 今日聆听 / 为你挑选 / 平台推荐):必须排在本地 home 模块之后,加载时会包一层 renderHomeDiscover
+    'js/modules/12-home-dashboard.js',
   ];
 
   function readModule(path) {

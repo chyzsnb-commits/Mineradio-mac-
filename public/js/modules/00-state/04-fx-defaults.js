@@ -44,6 +44,7 @@ var fxDefaults = {
   lyricWeight: 900,
   lyricDepthWordSweep: true,        // 词境穿行：底色常亮，逐字流光随演唱进度覆盖
   lyricDepthInteraction: false,     // 词境穿行：360° 词境漫游（用户主动开启）
+  appTheme: 'default',              // 界面主题(网页版规整而来):只换 CSS 结构色,不动预设
   visualTintMode: 'auto',
   visualTintColor: '#9db8cf',
   uiAccentColor: '#ffffff',

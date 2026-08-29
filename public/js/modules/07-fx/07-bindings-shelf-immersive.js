@@ -9,6 +9,9 @@ function bindFxPanel() {
   if (typeof bindSystemMemoryControls === 'function') bindSystemMemoryControls();
   buildPresetGrid();
   renderUserFxArchives();
+  if (typeof bindAppThemeGrid === 'function') bindAppThemeGrid();
+  if (typeof initAppThemeFromState === 'function') initAppThemeFromState();
+  if (typeof applyFxPanelPinState === 'function') applyFxPanelPinState();
   buildLyricColorControls();
   var ids = [
     ['fx-intensity', 'intensity'], ['fx-depth', 'depth'], ['fx-coverres', 'coverResolution'], ['fx-cineshake', 'cinemaShake'], ['fx-lyricglow', 'lyricGlowStrength'], ['fx-lyricbgadapt', 'lyricBackgroundAdapt'],
@@ -397,18 +400,33 @@ function toggleFxPanel(force) {
     showToast('开启 DIY 玩家模式后可打开视觉控制台');
     return;
   }
-  var currentlyOpen = el.classList.contains('show') || el.classList.contains('peek');
+  var currentlyOpen = el.classList.contains('show') || el.classList.contains('peek') || el.classList.contains('pinned');
   if (peekTimers && peekTimers.fx) { clearTimeout(peekTimers.fx); peekTimers.fx = null; }
-  fxPanelPinned = false;
-  if (force === false) {
+  if (force === false || (force == null && currentlyOpen && !fxPanelPinned)) {
+    if (fxPanelPinned && force === false) {
+      fxPanelPinned = false;
+      saveBooleanPreference(FX_PANEL_PIN_STORE_KEY, false);
+      applyFxPanelPinState();
+    }
     el.classList.remove('show', 'peek');
     el.classList.toggle('closing', currentlyOpen);
     setTimeout(function () { el.classList.remove('closing'); }, 280);
     var fab = document.getElementById('fx-fab');
     if (fab) fab.classList.remove('active');
+    document.body.classList.remove('fx-console-open');
+    return;
+  }
+  if (force == null && currentlyOpen && fxPanelPinned) {
+    setFxPanelPinned(false);
+    el.classList.remove('show', 'peek');
+    document.body.classList.remove('fx-console-open');
+    var fabOff = document.getElementById('fx-fab');
+    if (fabOff) fabOff.classList.remove('active');
     return;
   }
   el.classList.remove('show', 'closing');
+  document.body.classList.add('fx-console-open');
+  updateFxConsoleStatus();
   setPeek(el, true, 'fx');
 }
 function resetFx() {

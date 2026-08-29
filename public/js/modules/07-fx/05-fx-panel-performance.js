@@ -481,6 +481,7 @@ function updateFxInputs() {
   if (typeof updatePerspectiveModeControls === 'function') updatePerspectiveModeControls();
   if (typeof syncPerspectiveCameraPowerState === 'function') syncPerspectiveCameraPowerState();
   updateVisualTintControls();
+  if (typeof initAppThemeFromState === 'function') initAppThemeFromState();
   applyControlGlassChromaticOffset();
   syncFxUniforms();
 }
@@ -576,19 +577,102 @@ function ensureFxSliderResetButton(id, key) {
   });
   el.parentElement.appendChild(btn);
 }
-var fxPanelTab = 'presets';
-function setFxPanelTab(tab) {
+// 控制台分页元数据(图标 + 副标题由网页版美术规整而来;歌单页为本地体素预设专属,网页版没有)
+var FX_TAB_META = [
+  { id: 'presets', label: '预设', hint: '视觉预设与用户存档', icon: '◇' },
+  { id: 'appearance', label: '外观', hint: '颜色、背景与玻璃', icon: '◐' },
+  { id: 'lyrics', label: '歌词', hint: '行数、翻译与字体', icon: '〰' },
+  { id: 'motion', label: '动态', hint: '律动、音域与镜头', icon: '⌁' },
+  { id: 'advanced', label: '高级', hint: '性能与粒子细节', icon: '⚙' },
+  { id: 'playlist', label: '歌单', hint: '体素预设的内嵌歌单', icon: '≣' }
+];
+function fxTabMeta(id) {
+  for (var i = 0; i < FX_TAB_META.length; i++) if (FX_TAB_META[i].id === id) return FX_TAB_META[i];
+  return FX_TAB_META[0];
+}
+var fxPanelTab = (function () {
+  try {
+    var saved = localStorage.getItem(FX_PANEL_TAB_STORE_KEY);
+    if (/^(presets|appearance|lyrics|motion|advanced|playlist)$/.test(saved || '')) return saved;
+  } catch (_) {}
+  return 'presets';
+})();
+function updateFxConsoleStatus() {
+  var status = document.getElementById('fx-console-status');
+  if (!status) return;
+  var meta = fxTabMeta(fxPanelTab);
+  var presetName = '';
+  try {
+    if (typeof presetMeta !== 'undefined' && presetMeta && typeof fx !== 'undefined' && fx && presetMeta[fx.preset]) {
+      presetName = String(presetMeta[fx.preset].name || '').replace(/<[^>]+>/g, '');
+    }
+  } catch (_) {}
+  status.textContent = meta.label + (presetName ? (' · ' + presetName) : (' · ' + meta.hint));
+}
+function setFxPanelTab(tab, opts) {
+  opts = opts || {};
   var allowed = { presets: 1, appearance: 1, lyrics: 1, motion: 1, advanced: 1, playlist: 1 };
-  fxPanelTab = allowed[tab] ? tab : 'presets';
+  var next = allowed[tab] ? tab : 'presets';
+  var changed = next !== fxPanelTab;
+  fxPanelTab = next;
+  try { localStorage.setItem(FX_PANEL_TAB_STORE_KEY, fxPanelTab); } catch (_) {}
   var panel = document.getElementById('fx-panel');
   if (panel) panel.setAttribute('data-active-tab', fxPanelTab);
   document.querySelectorAll('#fx-panel-tabs [data-fx-tab]').forEach(function (btn) {
-    btn.classList.toggle('active', btn.getAttribute('data-fx-tab') === fxPanelTab);
+    var on = btn.getAttribute('data-fx-tab') === fxPanelTab;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
   });
   document.querySelectorAll('#fx-panel .fx-tab-page').forEach(function (page) {
-    page.classList.toggle('active', page.getAttribute('data-fx-page') === fxPanelTab);
+    var on = page.getAttribute('data-fx-page') === fxPanelTab;
+    page.classList.toggle('active', on);
+    if (on && changed && !opts.silent) {
+      page.classList.remove('fx-page-enter');
+      void page.offsetWidth;
+      page.classList.add('fx-page-enter');
+    }
   });
+  var title = document.getElementById('fx-page-title');
+  var hint = document.getElementById('fx-page-hint');
+  var meta = fxTabMeta(fxPanelTab);
+  if (title) title.textContent = meta.label;
+  if (hint) hint.textContent = meta.hint;
+  updateFxConsoleStatus();
   repositionFxFloatingPanels();
+}
+function applyFxPanelPinState() {
+  var panel = document.getElementById('fx-panel');
+  var btn = document.getElementById('fx-panel-pin-btn');
+  if (panel) {
+    panel.classList.toggle('pinned', !!fxPanelPinned);
+    if (fxPanelPinned && typeof diyPlayerMode !== 'undefined' && diyPlayerMode) {
+      panel.classList.add('peek');
+      panel.classList.remove('closing');
+      document.body.classList.add('fx-console-open');
+      updateFxConsoleStatus();
+      var fab = document.getElementById('fx-fab');
+      if (fab) fab.classList.add('active');
+    }
+  }
+  if (btn) {
+    btn.classList.toggle('active', !!fxPanelPinned);
+    btn.setAttribute('aria-pressed', fxPanelPinned ? 'true' : 'false');
+    btn.title = fxPanelPinned ? '取消固定控制台' : '固定控制台';
+    btn.setAttribute('aria-label', btn.title);
+  }
+}
+function setFxPanelPinned(on, silent) {
+  fxPanelPinned = !!on;
+  saveBooleanPreference(FX_PANEL_PIN_STORE_KEY, fxPanelPinned);
+  applyFxPanelPinState();
+  if (!silent) showToast(fxPanelPinned ? '视觉控制台已固定' : '视觉控制台已恢复自动隐藏');
+}
+function toggleFxPanelPinned() {
+  if (typeof diyPlayerMode !== 'undefined' && !diyPlayerMode) {
+    showToast('请先开启 DIY 玩家模式');
+    return;
+  }
+  setFxPanelPinned(!fxPanelPinned);
 }
 function fxPanelInputId(node) {
   var input = node && node.querySelector ? node.querySelector('input[id]') : null;
@@ -604,7 +688,7 @@ function fxPanelTargetForNode(node, current) {
   if (id === 'fx-lyric-fold') return 'lyrics';
   if (id === 'fx-overlay-fold' || id === 'fx-stage-fold') return 'motion';
   if (id === 'fx-advanced' || node.classList.contains('fx-actions')) return 'advanced';
-  if (node.classList.contains('lyric-color-row') || node.classList.contains('cover-color-pop') || node.classList.contains('color-lab-pop') || node.classList.contains('cover-color-loupe')) return 'appearance';
+  if (node.classList.contains('lyric-color-row') || node.classList.contains('cover-color-pop') || node.classList.contains('color-lab-pop') || node.classList.contains('cover-color-loupe') || node.classList.contains('app-theme-grid')) return 'appearance';
   if (inputId === 'fx-bgopacity' || inputId === 'fx-glassaberration' || /^fx-playlist/.test(inputId)) return 'appearance';
   if (inputId === 'fx-lyricglow') return 'lyrics';
   if (/^fx-(intensity|depth|coverres|cineshake|shelf)/.test(inputId)) return 'motion';
@@ -614,42 +698,55 @@ function organizeFxPanel() {
   var panel = document.getElementById('fx-panel');
   if (!panel) return;
   if (panel._fxPanelOrganized) {
-    setFxPanelTab(fxPanelTab);
+    setFxPanelTab(fxPanelTab, { silent: true });
     return;
   }
+  panel.classList.add('fx-console');
   var head = panel.querySelector('.fx-head');
-  var tabMeta = [
-    ['presets', '\u9884\u8bbe'],
-    ['appearance', '\u5916\u89c2'],
-    ['lyrics', '\u6b4c\u8bcd'],
-    ['motion', '\u52a8\u6001'],
-    ['advanced', '\u9ad8\u7ea7'],
-    ['playlist', '\u6b4c\u5355']   // \u6b4c\u5355\u9875:\u4f53\u7d20\u9884\u8bbe\u4e13\u7528(CSS \u975e vox-on \u9690\u85cf),_voxDockPlaylist \u628a #playlist-panel \u8fc1\u8fdb\u6765
-  ];
-  var tabs = document.createElement('div');
+  var actions = panel.querySelector('.fx-actions');
+  // \u7f51\u9875\u7248\u89c4\u6574\u540e\u7684\u9aa8\u67b6:head / shell(\u5de6\u4fa7\u7ad6\u6392 tab \u680f + \u53f3\u4fa7 \u9875\u5934+\u6eda\u52a8\u533a) / actions
+  var shell = document.createElement('div');
+  shell.className = 'fx-console-shell';
+  shell.id = 'fx-console-shell';
+  var tabs = document.createElement('nav');
   tabs.className = 'fx-panel-tabs';
   tabs.id = 'fx-panel-tabs';
-  tabMeta.forEach(function (meta) {
+  tabs.setAttribute('role', 'tablist');
+  tabs.setAttribute('aria-label', '\u63a7\u5236\u53f0\u5206\u9875');
+  FX_TAB_META.forEach(function (meta) {
     var btn = document.createElement('button');
     btn.type = 'button';
-    btn.setAttribute('data-fx-tab', meta[0]);
-    btn.textContent = meta[1];
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('data-fx-tab', meta.id);
+    btn.innerHTML = '<span class="fx-tab-icon" aria-hidden="true">' + meta.icon + '</span><span class="fx-tab-label">' + meta.label + '</span>';
+    btn.title = meta.hint;
     tabs.appendChild(btn);
   });
-  if (head && head.nextSibling) panel.insertBefore(tabs, head.nextSibling);
-  else panel.insertBefore(tabs, panel.firstChild);
+  var main = document.createElement('div');
+  main.className = 'fx-console-main';
+  var pageHead = document.createElement('div');
+  pageHead.className = 'fx-page-head';
+  pageHead.innerHTML = '<div><div class="fx-page-title" id="fx-page-title">\u9884\u8bbe</div><div class="fx-page-hint" id="fx-page-hint">\u89c6\u89c9\u9884\u8bbe\u4e0e\u7528\u6237\u5b58\u6863</div></div>';
+  var pagesWrap = document.createElement('div');
+  pagesWrap.className = 'fx-console-pages';
+  pagesWrap.id = 'fx-console-pages';
+  main.appendChild(pageHead);
+  main.appendChild(pagesWrap);
+  shell.appendChild(tabs);
+  shell.appendChild(main);
+  if (head && head.nextSibling) panel.insertBefore(shell, head.nextSibling);
+  else panel.insertBefore(shell, panel.firstChild);
   var pages = {};
-  var insertAfter = tabs;
-  tabMeta.forEach(function (meta) {
+  FX_TAB_META.forEach(function (meta) {
     var page = document.createElement('div');
     page.className = 'fx-tab-page';
-    page.setAttribute('data-fx-page', meta[0]);
-    insertAfter.parentNode.insertBefore(page, insertAfter.nextSibling);
-    insertAfter = page;
-    pages[meta[0]] = page;
+    page.setAttribute('data-fx-page', meta.id);
+    page.setAttribute('role', 'tabpanel');
+    pagesWrap.appendChild(page);
+    pages[meta.id] = page;
   });
   var original = Array.prototype.slice.call(panel.children).filter(function (child) {
-    return child !== head && child !== tabs && !child.classList.contains('fx-tab-page');
+    return child !== head && child !== shell && child !== actions && !child.classList.contains('fx-tab-page');
   });
   var current = 'presets';
   original.forEach(function (node, idx) {
@@ -662,6 +759,12 @@ function organizeFxPanel() {
       current = target;
     }
     (pages[target] || pages.presets).appendChild(node);
+  });
+  if (actions) panel.appendChild(actions);   // 恢复默认按钮固定在最底,不随分页滚动
+  // 兜底:把仍留在 shell 外的散块扫进预设页,避免 flex 空洞
+  Array.prototype.slice.call(panel.children).forEach(function (child) {
+    if (child === head || child === shell || child === actions) return;
+    (pages.presets || pagesWrap).appendChild(child);
   });
   ['fx-lyric-fold', 'fx-overlay-fold', 'fx-stage-fold', 'fx-advanced'].forEach(function (id) {
     var fold = document.getElementById(id);
@@ -685,7 +788,7 @@ function organizeFxPanel() {
     setFxPanelTab(btn.getAttribute('data-fx-tab'));
   });
   panel._fxPanelOrganized = true;
-  setFxPanelTab(fxPanelTab);
+  setFxPanelTab(fxPanelTab, { silent: true });
 }
 
 function fxControlBlock(id) {
