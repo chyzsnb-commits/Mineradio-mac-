@@ -977,6 +977,52 @@
     });
   }
 
+  var HAND_MODEL_PROXIMAL = ['index', 'middle', 'ring', 'pinky'];
+
+  // 从 GLB 自身的 WebXR 关节名反推静止姿态：掌心锚点、指向轴、掌宽、左右手性。
+  // 关节缺失时返回 null，调用方退回旧的包围盒对齐。
+  function measureHandModelRest(root) {
+    var wrist = root.getObjectByName('wrist');
+    if (!wrist) return null;
+    var joints = HAND_MODEL_PROXIMAL.map(function (name) {
+      return root.getObjectByName(name + '-finger-phalanx-proximal');
+    });
+    if (joints.some(function (joint) { return !joint; })) return null;
+
+    var wristPos = wrist.getWorldPosition(new THREE.Vector3());
+    var knuckles = joints.map(function (joint) { return joint.getWorldPosition(new THREE.Vector3()); });
+    var anchor = wristPos.clone();
+    knuckles.forEach(function (point) { anchor.add(point); });
+    anchor.multiplyScalar(1 / (knuckles.length + 1));
+
+    var forward = knuckles[1].clone().sub(wristPos);
+    var lateral = knuckles[0].clone().sub(knuckles[3]);
+    if (forward.lengthSq() < 1e-12 || lateral.lengthSq() < 1e-12) return null;
+    forward.normalize();
+    lateral.addScaledVector(forward, -lateral.dot(forward));
+    if (lateral.lengthSq() < 1e-12) return null;
+    lateral.normalize();
+    var normal = new THREE.Vector3().crossVectors(lateral, forward).normalize();
+
+    var span = knuckles[0].distanceTo(knuckles[3]);
+    if (!(span > 1e-6)) return null;
+
+    var thumb = root.getObjectByName('thumb-tip');
+    var chirality = 0;
+    if (thumb) {
+      chirality = thumb.getWorldPosition(new THREE.Vector3()).sub(anchor).dot(normal);
+    }
+
+    return {
+      anchor: anchor,
+      quaternionInverse: new THREE.Quaternion()
+        .setFromRotationMatrix(new THREE.Matrix4().makeBasis(lateral, forward, normal))
+        .conjugate(),
+      knuckleSpan: span,
+      chirality: chirality,
+    };
+  }
+
   async function loadHandModelAsset(style) {
     clearHandModelAsset();
     var gen = ++handModelAssetGeneration;
@@ -1012,10 +1058,13 @@
         box.getSize(size);
         box.getCenter(center);
         var maxDimension = Math.max(size.x, size.y, size.z);
+        var rest = measureHandModelRest(root);
         var wrapper = new THREE.Group();
         wrapper.add(root);
-        root.position.sub(center);
+        root.position.sub(rest ? rest.anchor : center);
         wrapper.userData.handModelNormalization = 1 / Math.max(1e-7, maxDimension);
+        wrapper.userData.handModelRest = rest;
+        wrapper.userData.handModelSmoothed = null;
         wrapper.scale.setScalar(wrapper.userData.handModelNormalization);
         wrapper.visible = false;
         handModelSceneRoot.add(wrapper);
@@ -1129,25 +1178,127 @@
     if (handModelAssetReadyStyle !== style || handModelAssetObjects.length !== 2) return false;
     var visibleHands = 0;
     var aspect = Math.max(0.25, handModelLastWidth / Math.max(1, handModelLastHeight));
+
+    // ---- 双手 chirality 投票,带迟滞 ----
+    var votes = [0, 0];
     for (var handIndex = 0; handIndex < 2; handIndex++) {
       var slot = slots && slots[handIndex];
       var object = handModelAssetObjects[handIndex];
-      if (!slot || !slot.present || !slot.lm || slot.lm.length < 21) {
+      var rest = object.userData.handModelRest;
+      if (!slot || !slot.present || !slot.lm || slot.lm.length < 21 || !rest) continue;
+      var wrist = slot.lm[0];
+      var middle = slot.lm[9];
+      var index = slot.lm[5];
+      var pinky = slot.lm[17];
+      var thumb = slot.lm[4];
+      var palmCenter = {
+        x: (wrist.x + index.x + middle.x + slot.lm[13].x + pinky.x) / 5,
+        y: (wrist.y + index.y + middle.y + slot.lm[13].y + pinky.y) / 5,
+      };
+      var forward = { x: (middle.x - wrist.x) * aspect, y: middle.y - wrist.y };
+      var lateral = { x: (index.x - pinky.x) * aspect, y: index.y - pinky.y };
+      var fLen = Math.hypot(forward.x, forward.y);
+      var lLen = Math.hypot(lateral.x, lateral.y);
+      if (fLen < 0.02 || lLen < 0.02) continue;
+      forward.x /= fLen; forward.y /= fLen;
+      lateral.x /= lLen; lateral.y /= lLen;
+      var normalZ = lateral.x * forward.y - lateral.y * forward.x;
+      var thumbDelta = { x: (thumb.x - palmCenter.x) * aspect, y: thumb.y - palmCenter.y };
+      var thumbDotNormal = thumbDelta.x * (-forward.y) + thumbDelta.y * forward.x;
+      thumbDotNormal *= Math.sign(normalZ);
+      var obsChirality = thumbDotNormal;
+      var meshChirality = rest.chirality;
+      var match = obsChirality * meshChirality;
+      if (Math.abs(match) > 0.005) votes[handIndex] = match > 0 ? 1 : -1;
+    }
+
+    var prevMap = handModelAssetObjects.map(function (obj) {
+      var s = obj.userData.handModelSmoothed;
+      return s ? s.assignedSlotIndex : -1;
+    });
+    var slotMap = [-1, -1];
+    if (votes[0] !== 0 && votes[1] === 0) {
+      slotMap[0] = votes[0] > 0 ? 0 : 1;
+    } else if (votes[0] === 0 && votes[1] !== 0) {
+      slotMap[1] = votes[1] > 0 ? 1 : 0;
+    } else if (votes[0] !== 0 && votes[1] !== 0) {
+      if (votes[0] === votes[1]) {
+        slotMap[0] = votes[0] > 0 ? 0 : 1;
+        slotMap[1] = votes[1] > 0 ? 1 : 0;
+      } else {
+        slotMap = prevMap[0] >= 0 && prevMap[1] >= 0 ? prevMap : [0, 1];
+      }
+    } else {
+      slotMap = prevMap[0] >= 0 && prevMap[1] >= 0 ? prevMap : [0, 1];
+    }
+
+    for (var handIndex = 0; handIndex < 2; handIndex++) {
+      var slotIndex = slotMap[handIndex];
+      var slot = slotIndex >= 0 && slots ? slots[slotIndex] : null;
+      var object = handModelAssetObjects[handIndex];
+      var rest = object.userData.handModelRest;
+      if (!slot || !slot.present || !slot.lm || slot.lm.length < 21 || !rest) {
         object.visible = false;
+        object.userData.handModelSmoothed = null;
         continue;
       }
       visibleHands++;
       object.visible = true;
-      var palm = slot.palm || { x: 0.5, y: 0.5 };
-      var left = slot.lm[5];
-      var right = slot.lm[17];
+
       var wrist = slot.lm[0];
       var middle = slot.lm[9];
-      var span = Math.max(0.04, Math.hypot((left.x - right.x) * aspect, left.y - right.y) * 2);
-      var angle = Math.atan2(-(middle.y - wrist.y), (middle.x - wrist.x) * aspect) - Math.PI * 0.5;
-      object.position.set((palm.x - 0.5) * 2 * aspect, (0.5 - palm.y) * 2, 0.04);
-      object.rotation.set(0, 0, angle);
-      object.scale.setScalar(span * 2.25 * handModelScale * (Number(object.userData.handModelNormalization) || 1));
+      var index = slot.lm[5];
+      var pinky = slot.lm[17];
+      var palmPos = slot.palm || {
+        x: (wrist.x + index.x + middle.x + slot.lm[13].x + pinky.x) / 5,
+        y: (wrist.y + index.y + middle.y + slot.lm[13].y + pinky.y) / 5,
+      };
+
+      var forward = { x: (middle.x - wrist.x) * aspect, y: middle.y - wrist.y };
+      var lateral = { x: (index.x - pinky.x) * aspect, y: index.y - pinky.y };
+      var fLen = Math.hypot(forward.x, forward.y);
+      var lLen = Math.hypot(lateral.x, lateral.y);
+      forward.x /= Math.max(1e-9, fLen);
+      forward.y /= Math.max(1e-9, fLen);
+      lateral.x -= forward.x * (lateral.x * forward.x + lateral.y * forward.y);
+      lateral.y -= forward.y * (lateral.x * forward.x + lateral.y * forward.y);
+      lLen = Math.hypot(lateral.x, lateral.y);
+      lateral.x /= Math.max(1e-9, lLen);
+      lateral.y /= Math.max(1e-9, lLen);
+      var normalZ = lateral.x * forward.y - lateral.y * forward.x;
+      normalZ /= Math.max(1e-9, Math.abs(normalZ));
+
+      handModelMatrix.makeBasis(
+        new THREE.Vector3(lateral.x, lateral.y, 0),
+        new THREE.Vector3(forward.x, forward.y, 0),
+        new THREE.Vector3(0, 0, normalZ)
+      );
+      var qObs = handModelQuaternion.setFromRotationMatrix(handModelMatrix);
+      var qTarget = qObs.clone().multiply(rest.quaternionInverse);
+
+      var avgZ = ((Number(wrist.z) || 0) + (Number(middle.z) || 0)) * -0.8;
+      avgZ = Math.max(-0.5, Math.min(0.5, avgZ));
+
+      var span = Math.max(0.04, Math.hypot((index.x - pinky.x) * aspect, index.y - pinky.y) * 2);
+      var targetScale = (span / rest.knuckleSpan) * handModelScale * (Number(object.userData.handModelNormalization) || 1);
+
+      var smoothed = object.userData.handModelSmoothed;
+      if (!smoothed || smoothed.assignedSlotIndex !== slotIndex) {
+        object.userData.handModelSmoothed = smoothed = {
+          assignedSlotIndex: slotIndex,
+          quaternion: qTarget.clone(),
+          z: avgZ,
+          scale: targetScale,
+        };
+      } else {
+        smoothed.quaternion.slerp(qTarget, 0.35);
+        smoothed.z += (avgZ - smoothed.z) * 0.28;
+        smoothed.scale += (targetScale - smoothed.scale) * 0.32;
+      }
+
+      object.quaternion.copy(smoothed.quaternion);
+      object.position.set((palmPos.x - 0.5) * 2 * aspect, (0.5 - palmPos.y) * 2, smoothed.z);
+      object.scale.setScalar(smoothed.scale);
     }
     return visibleHands > 0;
   }

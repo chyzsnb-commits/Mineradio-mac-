@@ -73,7 +73,7 @@ test('宽屏手势距离按画面比例校正，张手和捏合不会被 16:9 �
 test('双手张开/收拢直接缩放，不再要求双捏或叠加旋转惯性', () => {
   assert.match(source, /GESTURE_TWO_HAND_ARM_MS\s*=\s*140/);
   assert.match(source, /GESTURE_TWO_HAND_DEADZONE\s*=\s*0\.025/);
-  assert.match(source, /twoHandsReady = present\.length === 2[\s\S]*openSm > 0\.42/);
+  assert.match(source, /twoHandsReady = present\.length === 2[\s\S]*present\[0\]\.pinch && present\[1\]\.pinch/);
   assert.match(source, /gestureMetricDistance\(present\[1\]\.palm, present\[0\]\.palm, aspect\)/);
   assert.match(source, /gestureTwoHandScaleRatio\(gestureTwoHand\.distSm, gestureTwoHand\.d0\)/);
   assert.doesNotMatch(source, /var twoPinch = present\.length === 2/);

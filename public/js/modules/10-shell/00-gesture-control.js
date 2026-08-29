@@ -769,18 +769,19 @@ function processGestureState(tNow) {
   }
 
   var aspect = gestureHandsAspect();
+  // 双手缩放必须双捏(两只手各自拇指+食指捏合); 仅把两只手放进视野不触发。
   var twoHandsReady = present.length === 2
     && !present[0].fist && !present[1].fist
-    && present[0].openSm > 0.42 && present[1].openSm > 0.42;
+    && present[0].pinch && present[1].pinch;
 
-  // ---- 双手掌心距离 = 直接缩放；不要求双捏，不模拟滚轮，不叠加旋转/惯性 ----
+  // ---- 双捏 + 掌心距离 = 直接缩放；不模拟滚轮，不叠加旋转/惯性 ----
   if (twoHandsReady) {
     if (!gestureTwoHand.pairSeenAt) gestureTwoHand.pairSeenAt = tNow;
     if (!gestureTwoHand.active && tNow - gestureTwoHand.pairSeenAt < GESTURE_TWO_HAND_ARM_MS) {
       pinchState.active = false;
       particleSpin.vx = particleSpin.vy = 0;
       updateGesturePushTargets(present, kind);
-      showGestureHUD('双手识别中', 0.42, '张开双手，拉开=放大 · 收拢=缩小');
+      showGestureHUD('双手识别中', 0.42, '双手各捏合，拉开=放大 · 收拢=缩小');
       return;
     }
     var dist = Math.max(0.04, gestureMetricDistance(present[1].palm, present[0].palm, aspect));
@@ -825,7 +826,7 @@ function processGestureState(tNow) {
     pinchState.active = false;
     gestureGrip.target = Math.min(0.2, gestureGrip.target);
     updateGesturePushTargets(present, kind);
-    showGestureHUD('双手保持', 0.5, '把双手放回视野即可继续缩放');
+    showGestureHUD('双手保持', 0.5, '保持双手捏合放回视野即可继续缩放');
     return;
   }
   gestureTwoHand.active = false;
