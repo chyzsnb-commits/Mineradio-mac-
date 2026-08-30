@@ -1,5 +1,7 @@
 # Changelog
 
+- 新增软件内更新检查（自研轻量方案）：启动 30 秒后与每 6 小时读取公开清单（`Mineradio-release` 仓库的 `version.json`），semver 对比发现新版本在右下角提示"发现新版本"，一键下载 dmg 到 `~/Downloads`（带进度与 `.part` 半截文件防护），完成后自动打开安装器。主进程走 Electron `net.fetch` 遵循系统代理；下载源流错误、HTTP 失败、超时均清理不留伪包；清单解析对坏 JSON/非法版本/非 https 全部静默降级，检查失败绝不影响主功能。因无 Developer ID 证书，macOS 不允许后台静默替换应用（系统限制），本方案为现实可行的"检查 + 一键下载安装"。新增 `scripts/test-update-checker.js` 回归（semver/清单解析/四路径检查/下载落盘与中断清理）并接入 `npm run check`（主套件 347/347）；真实 Electron 实测经系统代理拉取真实 GitHub 清单返回 `ok:true, hasUpdate:false`，卡片无误弹。发布新版本时需同步更新 `Mineradio-release` 的 `version.json` 与 Release dmg。
+
 - 修复 Windows 壁纸库缩略图媒体类型误判：缩略图标签此前只按 `record.type` 决定，视频壁纸的服务端静态图片预览（`preview.jpg/gif/png/webp`）被塞进 `<video>`，真实 Electron 复现为 `readyState=0`、`videoWidth=0` 的黑屏缩略图。现按 `previewUrl` 实际媒体类型选择标签（仅 URL 本身为 mp4/webm/ogg/mov/m4v 才用 video），详情页仍按 `record.type` 用 `record.fileUrl` 播放真实视频，Scene 实时 MJPEG 预览路径不变。新增 `scripts/test-wallpaper-library-thumb-media-type.js` 回归并接入 `npm run check`（主套件 342/342）；隔离 Electron 于真实 Windows 服务（246 条记录、动态端口 8137）实测：修复后图片预览加载成功（`naturalWidth=1024`）、视频预览正常解码（`videoWidth=1920`）、246 条记录 0 错标、连续抽屉开合与滚动后 DOM 无增长。
 
 - 性能治理（方案 A）：完全移除“云瀑共振”预设、其运行时模块、控制台控件和相关绑定，避免持续维护一条未使用的视觉链；为不让旧 DIY/自动保存误指向“声波地形”，保留退役索引 `11` 并统一迁移到雨境 `9`，后续预设仍为 `12/13`。雨境玻璃保留主场景、水滴场和合成的全帧渲染，但将两次模糊纹理 pass 限为 `30Hz`，首次、尺寸变化及 WebGL 恢复仍强制刷新，避免黑纹理。P10 音域回响的专用 512-bin 频谱分析同样限制为 `30Hz`，画面、镜头与城市更新仍按主渲染帧率运行。新增每个雨境 pass 的 CPU/GPU 诊断标签和 P10 分析探针；专项 `6/6`、完整 `npm run check` 前置专项 `5/5`、主套件 `340/340` 通过，当前 Electron 从本工作树启动且 `127.0.0.1:3000` 返回 `200`。本轮优先级固定为“流畅性 > Bug 风险 > 温度”；实际不同显卡上的温度和帧时间仍须用户在常用曲目与预设中复验。

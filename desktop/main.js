@@ -3378,6 +3378,34 @@ if (!gotSingleInstanceLock) {
     }
     await createWindow();
     try { require('./telemetry').startTelemetry(); } catch (e) {}
+    // 软件内更新检查（自研轻量方案：无 Developer ID 证书，不做后台静默替换，
+    // 只做"检查清单 → 提示 → 下载 dmg → 打开安装器"，见 desktop/update-checker.js）
+    try {
+      const appVersion = app.getVersion();
+      const updater = require('./update-checker');
+      updater.startUpdateChecker({
+        mainWindow,
+        manifestUrl: APP_METADATA.updateManifestUrl || '',
+        currentVersion: appVersion,
+      });
+      ipcMain.handle('mineradio-update-check-now', async () => {
+        return updater.checkForUpdate({ manifestUrl: APP_METADATA.updateManifestUrl || '', currentVersion: appVersion });
+      });
+      ipcMain.handle('mineradio-update-download', async (_event, downloadUrl) => {
+        const result = await updater.downloadUpdateDmg({
+          url: downloadUrl,
+          onProgress: (loaded, total) => {
+            try {
+              if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+                mainWindow.webContents.send('mineradio-update-event', { type: 'download-progress', loaded, total });
+              }
+            } catch (_) {}
+          },
+        });
+        if (result.ok) result.opened = updater.openDownloadedDmg(result.filePath);
+        return result;
+      });
+    } catch (e) { console.warn('[UpdateChecker] 初始化跳过:', e && e.message || e); }
   });
 
   app.on('activate', () => {

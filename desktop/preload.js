@@ -159,6 +159,15 @@ const desktopWindowApi = {
     ipcRenderer.on('desktop-window-state', listener);
     return () => ipcRenderer.removeListener('desktop-window-state', listener);
   },
+  // 软件内更新（检查 + 一键下载，见 desktop/update-checker.js）
+  updateCheckNow: () => ipcRenderer.invoke('mineradio-update-check-now'),
+  updateDownload: (downloadUrl) => ipcRenderer.invoke('mineradio-update-download', String(downloadUrl || '')),
+  onUpdateEvent: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => { try { callback(payload); } catch (_) {} };
+    ipcRenderer.on('mineradio-update-event', listener);
+    return () => ipcRenderer.removeListener('mineradio-update-event', listener);
+  },
 };
 
 if (RELEASE_POLICY.allowCredentialExport) {
