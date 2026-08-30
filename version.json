@@ -1,6 +1,6 @@
 {
-  "version": "2.0.0",
-  "notes": "Mineradio 2.0.0 正式版：多音源、歌词舞台、唱歌模式（实时去人声/AI 分轨/升降 Key）、性能优化、Windows 壁纸库。",
+  "version": "2.0.1",
+  "notes": "更新链路测试：发现新版本 → 下载 → 自动打开安装器。当前指向的安装包为 v2.0.0 测试内容。",
   "url": "https://github.com/chyzsnb-commits/Mineradio-mac-/releases/download/v2.0.0/Mineradio-2.0.0-arm64.dmg",
   "pub_date": "2026-08-30T00:00:00Z"
 }
