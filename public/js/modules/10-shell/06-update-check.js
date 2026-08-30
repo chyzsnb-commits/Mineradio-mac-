@@ -83,3 +83,35 @@ function updateCardBindEvents() {
 }
 
 updateCardBindEvents();
+
+// 右上角更新按钮入口：手动触发检查（走主进程真实清单）。
+// 检查中/无更新/有更新分别反馈；有新版复用提示卡（含下载按钮）。
+async function mineradioUpdateCheckManually() {
+  if (updateCardState.checking) return;
+  updateCardState.checking = true;
+  var el = updateCardEnsure();
+  el.innerHTML = '<div class="mineradio-update-title">软件更新</div><div class="mineradio-update-body">正在检查更新...</div>';
+  el.classList.add('show');
+  try {
+    var result = window.desktopWindow && window.desktopWindow.updateCheckNow
+      ? await window.desktopWindow.updateCheckNow()
+      : { ok: false, reason: 'no-bridge' };
+    updateCardState.checking = false;
+    if (result && result.ok && result.hasUpdate) {
+      updateCardState.lastResult = result;
+      updateCardRender({ hasUpdate: true, latestVersion: result.latestVersion, notes: result.notes });
+      return;
+    }
+    if (result && result.ok && !result.hasUpdate) {
+      el.innerHTML = '<div class="mineradio-update-title">软件更新</div><div class="mineradio-update-body">当前已是最新版本' + (result.latestVersion ? '（清单版本 v' + updateCardEsc(result.latestVersion) + '）' : '') + '。</div>';
+      setTimeout(function () { el.classList.remove('show'); }, 4000);
+      return;
+    }
+    el.innerHTML = '<div class="mineradio-update-title">检查失败</div><div class="mineradio-update-body">' + updateCardEsc((result && (result.reason || result.error)) || '网络异常，稍后重试') + '。</div>';
+    setTimeout(function () { el.classList.remove('show'); }, 5000);
+  } catch (e) {
+    updateCardState.checking = false;
+    el.innerHTML = '<div class="mineradio-update-title">检查失败</div><div class="mineradio-update-body">网络异常，稍后重试。</div>';
+    setTimeout(function () { el.classList.remove('show'); }, 5000);
+  }
+}
