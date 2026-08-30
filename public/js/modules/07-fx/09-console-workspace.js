@@ -74,12 +74,12 @@ var FX_CONSOLE_LAYOUT = [
   {
     key: 'lyrics',
     groups: [
-      { key: 'display', title: '显示与翻译', hint: '歌词来源、行数和双语译文', open: true, items: [
+      { key: 'display', title: '歌词翻译 / 译文显示', hint: '歌词来源、行数和译文显示方式', open: true, items: [
         fxConsoleItem('lyric-source-seg', '歌词来源', '原词 自定义歌词', false),
         fxConsoleItem('lyric-display-mode-seg', '歌词行数', '单行 双行 三行 沉浸 自定义'),
         fxConsoleItem('lyric-raster-quality-seg', '歌词清晰度', '1x 2x 3x 4x 超采样 分辨率'),
         fxConsoleItem('fx-lyriccustomlines', '显示行数', '自定义歌词行数'),
-        fxConsoleItem('lyric-translation-mode-seg', '双语翻译', '译文 当前 双行 多行 关闭'),
+        fxConsoleItem('lyric-translation-mode-seg', '译文显示', '关闭 当前 双行 多行'),
         fxConsoleItem('fx-lyrictranslationgap', '译文间距', '翻译距离'),
         fxConsoleItem('fx-lyrictranslationscale', '译文字号', '翻译 字体大小 缩放'),
         fxConsoleItem('fx-lyrictranslationopacity', '译文透明度', '翻译 透明度')
@@ -111,6 +111,8 @@ var FX_CONSOLE_LAYOUT = [
       ] },
       { key: 'motion', title: '歌词动画', hint: '滚动手感、上下文层次与故障效果', items: [
         fxConsoleItem('lyric-motion-style-seg', '歌词动画', '漂浮 柔滑 玻璃 线光 故障'),
+        fxConsoleItem('lyric-transition-style-seg', '歌词切换动效', '经典叠化 上浮淡入 分层掠过 镜头推进'),
+        fxConsoleItem('fx-lyrictransitionspeed', '切换速度', '歌词换句 动画速度'),
         fxConsoleItem('fx-lyricscalepulse', '缩放脉动', '歌词 缩放 节拍 脉动'),
         fxConsoleItem('lyric-glitch-controls', '故障细节', '故障强度 切片 色散 触发速度 抖动 鼓点'),
         fxConsoleItem('fx-lyriccontextopacity', '上下句清晰', '上下文透明度'),

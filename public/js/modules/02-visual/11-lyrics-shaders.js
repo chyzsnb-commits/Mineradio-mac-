@@ -87,12 +87,13 @@ function makeLyricShaderMaterial(mask, pal, motionProfile) {
       uGlitchBurst: { value: 0 },
       uEdgeBoost: { value: motionProfile.edgeBoost || 1 },
       uActiveMix: { value: 1 },
+      uTransitionBlur: { value: 0 },
     },
     vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
     fragmentShader: [
       'precision highp float;',
       'uniform sampler2D uMap;',
-      'uniform float uTime,uProgress,uTextMin,uTextMax,uOpacity,uFeather,uSolar,uSweep,uShimmer,uGlitch,uGlitchSlice,uGlitchChroma,uGlitchRate,uGlitchSeed,uGlitchBurst,uEdgeBoost,uActiveMix;',
+      'uniform float uTime,uProgress,uTextMin,uTextMax,uOpacity,uFeather,uSolar,uSweep,uShimmer,uGlitch,uGlitchSlice,uGlitchChroma,uGlitchRate,uGlitchSeed,uGlitchBurst,uEdgeBoost,uActiveMix,uTransitionBlur;',
       'uniform vec3 uBaseColor,uHiColor,uGlowColor,uSolarColor;',
       'varying vec2 vUv;',
       'float hash(float n){ return fract(sin(n) * 43758.5453123); }',
@@ -111,6 +112,11 @@ function makeLyricShaderMaterial(mask, pal, motionProfile) {
       '  float glitchWidth = (0.0020 + rowRnd * rowRnd * 0.0085) * (0.55 + uGlitchBurst * 1.85);',
       '  vec2 sampleUv = uv + vec2(glitchGate * glitchDir * glitchWave * uGlitch * uGlitchSlice * glitchWidth, 0.0);',
       '  float mask = texture2D(uMap, sampleUv).a;',
+      '  if (uTransitionBlur > 0.001) {',
+      '    vec2 blurStep = vec2(0.0032 * uTransitionBlur, 0.0020 * uTransitionBlur);',
+      '    float blurred = (texture2D(uMap, sampleUv + blurStep).a + texture2D(uMap, sampleUv - blurStep).a + texture2D(uMap, sampleUv + vec2(blurStep.x, -blurStep.y)).a + texture2D(uMap, sampleUv + vec2(-blurStep.x, blurStep.y)).a) * 0.25;',
+      '    mask = mix(mask, blurred, uTransitionBlur);',
+      '  }',
       '  if(mask < 0.01) discard;',
       '  float activeMix = clamp(uActiveMix, 0.0, 1.0);',
       '  float denom = max(0.001, uTextMax - uTextMin);',
@@ -140,4 +146,3 @@ function makeLyricShaderMaterial(mask, pal, motionProfile) {
     transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide,
   });
 }
-

@@ -202,7 +202,7 @@ function renderDetailComments(comments) {
     var user = c.user || {};
     var avatar = user.avatar ? coverUrlWithSize(user.avatar, 64) : '';
     return '<div class="comment-item">' +
-      (avatar ? '<img class="comment-avatar" src="' + avatar + '" alt="">' : '<div class="comment-avatar"></div>') +
+      (avatar ? '<img class="comment-avatar" src="' + coverMarkupSrc(avatar) + '" alt="">' : '<div class="comment-avatar"></div>') +
       '<div class="comment-main"><div class="comment-meta">' + escHtml(user.nickname || '音乐用户') + (c.likedCount ? (' · ' + c.likedCount + ' 赞') : '') + (c.time ? (' · ' + escHtml(commentTimeLabel(c.time))) : '') + '</div>' +
       '<div class="comment-text">' + escHtml(c.content || '') + '</div></div>' +
       '</div>';
@@ -263,7 +263,7 @@ function openTrackDetailModal(type, songOverride) {
   var body = document.getElementById('track-detail-body');
   if (!heading || !body) return;
   var cover = songCoverSrc(song, 180);
-  var coverHtml = cover ? '<img class="detail-cover" src="' + cover + '" alt="">' : '<div class="detail-cover"></div>';
+  var coverHtml = cover ? '<img class="detail-cover" src="' + coverMarkupSrc(cover) + '" alt="">' : '<div class="detail-cover"></div>';
   var title = song.name || '当前歌曲';
   var artists = currentArtistNames(song);
   var seq = ++trackDetailSeq;
@@ -841,6 +841,12 @@ function updateLyricMotionStyleControls() {
   });
   updateLyricGlitchControls();
 }
+function updateLyricTransitionControls() {
+  var style = normalizeLyricTransitionStyle(fx && fx.lyricTransitionStyle);
+  document.querySelectorAll('#lyric-transition-style-seg button').forEach(function (btn) {
+    btn.classList.toggle('active', btn.dataset.transition === style);
+  });
+}
 function updateLyricGlitchControls() {
   var style = normalizeLyricMotionStyle(fx && fx.lyricMotionStyle);
   var panel = document.getElementById('lyric-glitch-controls');
@@ -968,6 +974,22 @@ function setLyricMotionStyle(style) {
   else refreshStageLyricDisplayMode();
   saveLyricLayout({ user: true, reason: 'lyricMotionStyle' });
   showToast('歌词动画已切换');
+}
+function setLyricTransitionStyle(style) {
+  var nextStyle = normalizeLyricTransitionStyle(style);
+  if (fx.lyricTransitionStyle === nextStyle && fx.lyricTransitionExplicit === true) return;
+  fx.lyricTransitionStyle = nextStyle;
+  fx.lyricTransitionExplicit = true;
+  updateLyricTransitionControls();
+  saveLyricLayout({ user: true, reason: 'lyricTransitionStyle' });
+  showToast('歌词切换动效已切换');
+}
+function setLyricTransitionSpeed(value) {
+  var nextSpeed = clampRange(Number(value) || fxDefaults.lyricTransitionSpeed, 0.55, 1.65);
+  if (Math.abs((Number(fx && fx.lyricTransitionSpeed) || 0) - nextSpeed) < 0.001 && fx.lyricTransitionExplicit === true) return;
+  fx.lyricTransitionSpeed = nextSpeed;
+  fx.lyricTransitionExplicit = true;
+  saveLyricLayout({ user: true, reason: 'lyricTransitionSpeed' });
 }
 function setCustomLyricStatus(text, tone) {
   var el = document.getElementById('custom-lyric-status');
@@ -1296,7 +1318,7 @@ function renderCollectModal() {
   if (!current || !list) return;
   var song = collectTargetSong || {};
   var cover = songCoverSrc(song, 80);
-  current.innerHTML = (cover ? '<img src="' + cover + '" alt="">' : '<div class="cover-placeholder"></div>') +
+  current.innerHTML = (cover ? '<img src="' + coverMarkupSrc(cover) + '" alt="">' : '<div class="cover-placeholder"></div>') +
     '<div style="min-width:0"><div class="collect-title">' + escHtml(song.name || '当前歌曲') + '</div><div class="collect-sub">' + escHtml(song.artist || '') + '</div></div>';
   var targetProvider = songProviderKey(song) || 'netease';
   var create = document.querySelector('#collect-modal .collect-create');
@@ -1317,7 +1339,7 @@ function renderCollectModal() {
   list.innerHTML = mine.map(function (pl) {
     var thumb = pl.cover ? coverUrlWithSize(pl.cover, 80) : '';
     return '<div class="collect-item" data-collect-pid="' + escHtml(String(pl.id || '')) + '" onclick="addCollectTargetToPlaylist(this.getAttribute(\'data-collect-pid\'))">' +
-      (thumb ? '<img src="' + thumb + '" alt="">' : '<div class="cover-placeholder"></div>') +
+      (thumb ? '<img src="' + coverMarkupSrc(thumb) + '" alt="">' : '<div class="cover-placeholder"></div>') +
       '<div style="min-width:0"><div class="collect-title">' + escHtml(pl.name || '') + '</div><div class="collect-sub">' + (pl.trackCount || 0) + ' 首</div></div>' +
       '</div>';
   }).join('');

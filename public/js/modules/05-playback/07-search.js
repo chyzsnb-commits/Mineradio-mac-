@@ -184,7 +184,7 @@ function programMetaText(item) {
 }
 function searchThumbHtml(src) {
   return src
-    ? '<img src="' + coverUrlWithSize(src, 80) + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
+    ? '<img src="' + coverMarkupSrc(src, 80) + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
     : '<div style="width:40px;height:40px;border-radius:6px;background:rgba(255,255,255,0.06);flex-shrink:0"></div>';
 }
 function renderPodcastRadios(items, label) {
@@ -986,7 +986,7 @@ function renderSongSearchResults(songs) {
     var sourceClass = songProviderKey(s) + '-source';
     var thumb = songCoverSrc(s, 80);
     var imgTag = thumb
-      ? '<img src="' + thumb + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
+      ? '<img src="' + coverMarkupSrc(thumb) + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
       : '<div style="width:40px;height:40px;border-radius:6px;background:rgba(255,255,255,0.06);flex-shrink:0"></div>';
     return '<div class="search-result ' + sourceClass + '">' +
       '<div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0" onclick="playSearchResult(' + i + ')">' +

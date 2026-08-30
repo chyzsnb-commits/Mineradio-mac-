@@ -145,6 +145,9 @@ function wakeBottomHandle(duration) {
 }
 
 function forcePlaybackControlsInteractive() {
+  // Async home cards may refresh after Home has been locked. Do not let their
+  // generic playback cleanup reopen the listening-page control bar.
+  if (document.body.classList.contains('home-controls-locked')) return;
   if (!hasActivePlaybackControls()) return;
   try {
     document.body.classList.remove('home-controls-locked');
@@ -171,7 +174,12 @@ function forcePlaybackControlsInteractive() {
 
 function toggleBottomControlsFromHandle() {
   var bar = document.getElementById('bottom-bar');
-  if (!bar || document.body.classList.contains('home-controls-locked')) return;
+  if (!bar) return;
+  if (document.body.classList.contains('home-controls-locked')) {
+    // 主页的横条是唯一保留的主动入口；悬停和指针移动不应解锁主页。
+    if (typeof openHomePlayerConsole === 'function') openHomePlayerConsole();
+    return;
+  }
   // 手动点击拉杆是明确意图,压过歌架抑制窗(用户实测:体素/歌架态下拉杆点不开)
   controlsShelfSuppressUntil = 0;
   revealBottomControls(900);
@@ -239,12 +247,14 @@ function applyControlsAutoHidePreference() {
   var handle = document.getElementById('bottom-handle');
   if (!bar) return;
   function enterControls() {
+    if (document.body.classList.contains('home-controls-locked')) return;
     controlsHovering = true;
     wakeBottomHandle();
     setControlsHidden(false);
     if (controlsHideTimer) { clearTimeout(controlsHideTimer); controlsHideTimer = null; }
   }
   function leaveControls() {
+    if (document.body.classList.contains('home-controls-locked')) return;
     controlsHovering = false;
     scheduleControlsHide(70);
     wakeBottomHandle(900);
@@ -253,11 +263,25 @@ function applyControlsAutoHidePreference() {
   bar.addEventListener('mouseleave', leaveControls);
   if (handle) {
     handle.addEventListener('mouseenter', function () {
+      if (document.body.classList.contains('home-controls-locked')) return;
       controlsHovering = true;
       revealBottomControls(900);
     });
     handle.addEventListener('mouseleave', leaveControls);
-    handle.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); toggleBottomControlsFromHandle(); });
+    handle.addEventListener('click', function (e) {
+      // Home keeps a deliberate mouse click as its entry point, but a touch
+      // gesture must not open the listening-page console by synthesized click.
+      var touchClick = e && (e.pointerType === 'touch'
+        || (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents));
+      if (touchClick) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      toggleBottomControlsFromHandle();
+    });
   }
   updateControlsChromeState();
 })();

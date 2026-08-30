@@ -159,4 +159,3 @@ function disposeLyricMesh(mesh) {
     });
   }
 }
-

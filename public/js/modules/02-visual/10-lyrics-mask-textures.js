@@ -398,4 +398,3 @@ function makeLyricGlowTexture(text, fontSize, textWidth, lines, lineHeight, fitS
   if (typeof lyricRasterCacheSet === 'function') lyricRasterCacheSet(glowRasterKey, canvas, { width: tex.userData.width, height: tex.userData.height, textWidth: tex.userData.textWidth, matchMask: tex.userData.matchMask, lineY0: tex.userData.lineY0 });
   return tex;
 }
-

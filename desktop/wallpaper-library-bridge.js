@@ -24,10 +24,11 @@ const WINDOWS_PORT_PROBE_MIN = 8123;
 const WINDOWS_PORT_PROBE_MAX = 8155;
 const WINDOWS_PORT_PROBE_TIMEOUT_MS = 900;
 const WINDOWS_PORT_PROBE_CONCURRENCY = 4;
-const WINDOWS_ACTIVE_PROBE_CONCURRENCY = 32;
-const WINDOWS_ACTIVE_FALLBACK_DELAY_MS = 900;
+const WINDOWS_ACTIVE_PROBE_CONCURRENCY = 48;
+const WINDOWS_ACTIVE_FALLBACK_DELAY_MS = 250;
 const WINDOWS_ACTIVE_SUBNET_MAX_HOSTS = 512;
 const WINDOWS_MEDIA_MAX_BYTES = 256 * 1024 * 1024;
+const WINDOWS_EXPORT_DOWNLOAD_TIMEOUT_MS = 30000;
 let windowsDiscoveryJobSequence = 0;
 const execFileAsync = promisify(execFile);
 
@@ -75,6 +76,45 @@ function mediaExtensionForMime(mime, fallback) {
     'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
   };
   return extensions[normalized] || fallback;
+}
+
+async function readResponseBytes(response, maxBytes) {
+  const limit = Math.max(1, Number(maxBytes) || WINDOWS_MEDIA_MAX_BYTES);
+  if (response && response.body && typeof response.body.getReader === 'function') {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+      while (true) {
+        const part = await reader.read();
+        if (!part || part.done) break;
+        const chunk = Buffer.from(part.value || []);
+        total += chunk.length;
+        if (total > limit) {
+          const error = new Error('RESPONSE_TOO_LARGE');
+          error.code = 'RESPONSE_TOO_LARGE';
+          try { await reader.cancel(error); } catch (_) {}
+          throw error;
+        }
+        chunks.push(chunk);
+      }
+      return Buffer.concat(chunks, total);
+    } finally {
+      try { reader.releaseLock(); } catch (_) {}
+    }
+  }
+  if (!response || typeof response.arrayBuffer !== 'function') {
+    const error = new Error('RESPONSE_BODY_UNAVAILABLE');
+    error.code = 'RESPONSE_BODY_UNAVAILABLE';
+    throw error;
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length > limit) {
+    const error = new Error('RESPONSE_TOO_LARGE');
+    error.code = 'RESPONSE_TOO_LARGE';
+    throw error;
+  }
+  return bytes;
 }
 
 function parseWindowsDiscoveryAnnouncement(message) {
@@ -186,7 +226,7 @@ function normalizeWindowsWallpaperRecord(rawRecord, baseUrl, index) {
   const videoValue = typeof raw.video === 'string' ? raw.video : '';
   const imageValue = typeof raw.image === 'string' ? raw.image : '';
   const type = sceneId || declared === 'scene' ? 'scene' : (declared === 'video' || raw.video === true || videoValue ? 'video' : 'image');
-  const previewValue = raw.previewUrl || raw.preview || raw.thumbnail || raw.cover || imageValue || videoValue || '';
+  const previewValue = raw.previewUrl || raw.preview || raw.thumbnail || raw.cover || imageValue || videoValue || raw.url || raw.file || '';
   const directValue = raw.fileUrl || raw.url || raw.file || '';
   const encodedId = encodeURIComponent(id);
   const fileUrl = type === 'scene' ? '' : (resolveWindowsAssetUrl(baseUrl, directValue) || serviceUrl(baseUrl, '/api/wallpaper-file?id=' + encodedId));
@@ -215,6 +255,12 @@ function windowsWallpaperIsPreview(rawRecord) {
   return /^preview\.(jpe?g|png|webp|gif)$/i.test(id.split('/').pop() || '');
 }
 
+function wallpaperRecordWithSiblingPreview(record, previewEntry) {
+  if (!record || !previewEntry || !previewEntry.record || !previewEntry.record.previewUrl) return record;
+  if (record.previewUrl && record.previewUrl !== record.fileUrl) return record;
+  return Object.assign({}, record, { previewUrl: previewEntry.record.previewUrl });
+}
+
 function normalizeWindowsWallpaperRecords(rawRecords, baseUrl) {
   const groups = new Map();
   (Array.isArray(rawRecords) ? rawRecords : []).forEach((rawRecord, index) => {
@@ -227,7 +273,9 @@ function normalizeWindowsWallpaperRecords(rawRecords, baseUrl) {
     const scene = entries.find((entry) => entry.record.type === 'scene');
     if (scene) return [scene.record];
     const originals = entries.filter((entry) => !entry.preview);
-    return (originals.length ? originals : entries).map((entry) => entry.record);
+    const preview = entries.find((entry) => entry.preview && entry.record.previewUrl);
+    return (originals.length ? originals : entries).map((entry) =>
+      wallpaperRecordWithSiblingPreview(entry.record, preview));
   });
 }
 
@@ -238,6 +286,7 @@ class WindowsWallpaperClient {
     this.dgramImpl = opts.dgramImpl || dgram;
     this.networkInterfaces = opts.networkInterfaces || os.networkInterfaces;
     this.neighborHosts = opts.neighborHosts || defaultNeighborHosts;
+    this.exportDownloadTimeoutMs = Math.max(100, Number(opts.exportDownloadTimeoutMs) || WINDOWS_EXPORT_DOWNLOAD_TIMEOUT_MS);
     this.trustedBases = new Set();
   }
 
@@ -249,9 +298,16 @@ class WindowsWallpaperClient {
       const response = await this.fetchImpl(url, Object.assign({ headers: { Accept: 'application/json' } }, options || {}, {
         signal: controller ? controller.signal : undefined,
       }));
-      const data = await response.json().catch(() => null);
+      let data = null;
+      if (response && response.body && typeof response.body.getReader === 'function') {
+        const bytes = await readResponseBytes(response, HTTP_SOURCE_MAX_LIST_BYTES);
+        try { data = JSON.parse(bytes.toString('utf8')); } catch (_) { data = null; }
+      } else {
+        data = await response.json().catch(() => null);
+      }
       return { ok: response.ok, status: response.status, data };
     } catch (error) {
+      if (error && error.code === 'RESPONSE_TOO_LARGE') return { ok: false, error: 'HTTP_RESPONSE_TOO_LARGE' };
       return { ok: false, error: error && error.name === 'AbortError' ? 'HTTP_TIMEOUT' : 'HTTP_FAILED' };
     } finally {
       if (timer) clearTimeout(timer);
@@ -333,7 +389,10 @@ class WindowsWallpaperClient {
     diagnostics.subnetScan.candidates = neighborHosts.length + progressiveOnlyHosts.length;
     if (!diagnostics.subnetScan.candidates) return null;
     const ports = Array.from({ length: WINDOWS_PORT_PROBE_MAX - WINDOWS_PORT_PROBE_MIN + 1 }, (_, index) => WINDOWS_PORT_PROBE_MIN + index);
-    const orderedPorts = [8130].concat(ports.filter((port) => port !== 8130));
+    // Windows 自动避让后的常见实际端口是 8128；先验证这两个合法高概率端口，
+    // 再进入完整受限范围，避免 /24 上 8130 的慢失败把 8128 饿死到截止时间之后。
+    const priorityPorts = [8128, 8130];
+    const orderedPorts = priorityPorts.concat(ports.filter((port) => !priorityPorts.includes(port)));
     const probeCandidates = async (candidates) => {
       let service = null;
       let next = 0;
@@ -352,12 +411,19 @@ class WindowsWallpaperClient {
     // 先只验证 ARP 邻居的 8130；可用时不再请求整段 /24 或同一主机的其余端口。
     let service = await probeCandidates(neighborHosts.map((host) => 'http://' + host + ':8130'));
     if (!service && (!deadline || Date.now() < deadline)) {
-      const neighborFallbackCandidates = orderedPorts.slice(1).flatMap((port) => neighborHosts.map((host) => 'http://' + host + ':' + port));
+      const neighborFallbackCandidates = orderedPorts.filter((port) => port !== 8130)
+        .flatMap((port) => neighborHosts.map((host) => 'http://' + host + ':' + port));
       service = await probeCandidates(neighborFallbackCandidates);
     }
     if (!service && (!deadline || Date.now() < deadline)) {
-      // 无 ARP 命中才展开渐进扫描，且全体主机始终先探测最常见的 8130。
-      const progressiveCandidates = orderedPorts.flatMap((port) => progressiveOnlyHosts.map((host) => 'http://' + host + ':' + port));
+      // 无 ARP 命中才展开渐进扫描。两个高概率端口按端口波次优先，
+      // 其余端口按主机推进，保证动态端口不会被整段 8130 慢失败阻塞。
+      const priorityCandidates = priorityPorts.flatMap((port) => progressiveOnlyHosts.map((host) => 'http://' + host + ':' + port));
+      service = await probeCandidates(priorityCandidates);
+    }
+    if (!service && (!deadline || Date.now() < deadline)) {
+      const remainingPorts = orderedPorts.filter((port) => !priorityPorts.includes(port));
+      const progressiveCandidates = progressiveOnlyHosts.flatMap((host) => remainingPorts.map((port) => 'http://' + host + ':' + port));
       service = await probeCandidates(progressiveCandidates);
     }
     diagnostics.subnetScan.completed = !!service || (!deadline || Date.now() < deadline);
@@ -505,16 +571,16 @@ class WindowsWallpaperClient {
     if (typeof this.fetchImpl !== 'function') return { ok: false, error: 'FETCH_UNAVAILABLE' };
     try {
       const response = await this.fetchImpl(url);
-      if (!response || !response.ok || typeof response.arrayBuffer !== 'function') return { ok: false, error: 'MEDIA_RESPONSE_FAILED' };
+      if (!response || !response.ok || (!response.body && typeof response.arrayBuffer !== 'function')) return { ok: false, error: 'MEDIA_RESPONSE_FAILED' };
       const mime = String(response.headers && response.headers.get && response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
       if (!mime || (expectedType === 'image' ? !/^image\//.test(mime) : !/^video\//.test(mime))) return { ok: false, error: 'MEDIA_TYPE_REJECTED' };
       const length = Number(response.headers && response.headers.get && response.headers.get('content-length') || 0);
       if (Number.isFinite(length) && length > WINDOWS_MEDIA_MAX_BYTES) return { ok: false, error: 'MEDIA_TOO_LARGE' };
-      const bytes = Buffer.from(await response.arrayBuffer());
+      const bytes = await readResponseBytes(response, WINDOWS_MEDIA_MAX_BYTES);
       if (!bytes.length) return { ok: false, error: 'MEDIA_EMPTY' };
-      if (bytes.length > WINDOWS_MEDIA_MAX_BYTES) return { ok: false, error: 'MEDIA_TOO_LARGE' };
       return { ok: true, mime, name, bytes };
-    } catch (_) {
+    } catch (error) {
+      if (error && error.code === 'RESPONSE_TOO_LARGE') return { ok: false, error: 'MEDIA_TOO_LARGE' };
       return { ok: false, error: 'MEDIA_DOWNLOAD_FAILED' };
     }
   }
@@ -545,16 +611,43 @@ class WindowsWallpaperClient {
     const name = safeExportFileName(fileName);
     const target = String(destination || '').trim();
     if (!base || !name || !target) return { ok: false, error: 'INVALID_DOWNLOAD_REQUEST' };
-    const response = await this.fetchImpl(serviceUrl(base, '/api/exported-file?name=' + encodeURIComponent(name)));
+    if (!this.trustedBases.has(base)) return { ok: false, error: 'UNVERIFIED_SOURCE' };
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const response = await this.fetchImpl(serviceUrl(base, '/api/exported-file?name=' + encodeURIComponent(name)), controller ? { signal: controller.signal } : undefined);
     if (!response || !response.ok || !response.body) return { ok: false, error: 'DOWNLOAD_FAILED' };
+    const contentType = String(response.headers && response.headers.get && response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (contentType && !/^video\//.test(contentType)) return { ok: false, error: 'DOWNLOAD_TYPE_REJECTED' };
+    const contentLength = Number(response.headers && response.headers.get && response.headers.get('content-length') || 0);
+    if (Number.isFinite(contentLength) && contentLength > WINDOWS_MEDIA_MAX_BYTES) return { ok: false, error: 'MEDIA_TOO_LARGE' };
     const temporary = target + '.mineradio-part';
     try {
-      await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(temporary));
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+    } catch (_) {}
+    let timedOut = false;
+    let timeout = 0;
+    try {
+      const transfer = pipeline(Readable.fromWeb(response.body), fs.createWriteStream(temporary));
+      transfer.catch(() => {});
+      const timeoutPromise = new Promise((_, reject) => {
+        timeout = setTimeout(() => {
+          timedOut = true;
+          if (controller) controller.abort();
+          if (response.body && typeof response.body.cancel === 'function') Promise.resolve(response.body.cancel()).catch(() => {});
+          const error = new Error('DOWNLOAD_TIMEOUT');
+          error.code = 'DOWNLOAD_TIMEOUT';
+          reject(error);
+        }, this.exportDownloadTimeoutMs);
+      });
+      await Promise.race([transfer, timeoutPromise]);
       await fs.promises.rename(temporary, target);
       return { ok: true, filePath: target };
-    } catch (_) {
+    } catch (error) {
       try { await fs.promises.unlink(temporary); } catch (_) {}
+      if (timedOut || (error && error.code === 'DOWNLOAD_TIMEOUT')) return { ok: false, error: 'DOWNLOAD_TIMEOUT' };
+      if (error && error.code === 'RESPONSE_TOO_LARGE') return { ok: false, error: 'MEDIA_TOO_LARGE' };
       return { ok: false, error: 'DOWNLOAD_WRITE_FAILED' };
+    } finally {
+      if (timeout) clearTimeout(timeout);
     }
   }
 }

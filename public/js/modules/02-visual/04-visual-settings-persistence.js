@@ -164,6 +164,19 @@ function normalizeSavedLyricMotionStyle(style) {
   style = String(style || 'float');
   return /^(glass|smooth|float|quick|shine|glitch)$/.test(style) ? style : 'float';
 }
+function normalizeSavedLyricTransitionStyle(style) {
+  style = String(style || 'original');
+  if (style === 'quick') style = 'crossfade';
+  if (style === 'scale') style = 'focus';
+  return /^(original|crossfade|rise|slide|focus)$/.test(style) ? style : 'original';
+}
+function resolveSavedLyricTransition(raw) {
+  raw = plainCurrentFxAutosavePayload(raw) || {};
+  // The first transition prototype wrote its temporary selection through ordinary
+  // autosave. Only a later, explicit user choice may override the PR #111 default.
+  if (raw.lyricTransitionExplicit !== true) return fxDefaults.lyricTransitionStyle;
+  return normalizeSavedLyricTransitionStyle(raw.lyricTransitionStyle || fxDefaults.lyricTransitionStyle);
+}
 function readSavedLyricLayoutCriticalFallback(raw, err) {
   raw = plainCurrentFxAutosavePayload(raw);
   if (err) {
@@ -182,6 +195,9 @@ function readSavedLyricLayoutCriticalFallback(raw, err) {
     lyricDisplayMode: normalizeSavedLyricDisplayMode(raw.lyricDisplayMode || fxDefaults.lyricDisplayMode),
     lyricTranslationMode: normalizeSavedLyricTranslationMode(raw.lyricTranslationMode || fxDefaults.lyricTranslationMode),
     lyricMotionStyle: normalizeSavedLyricMotionStyle(raw.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+    lyricTransitionStyle: resolveSavedLyricTransition(raw),
+    lyricTransitionExplicit: raw.lyricTransitionExplicit === true,
+    lyricTransitionSpeed: layoutNumber(raw.lyricTransitionSpeed, fxDefaults.lyricTransitionSpeed, 0.55, 1.65),
     lyricRasterQuality: normalizeLyricRasterQuality(raw.lyricRasterQuality),
     lyricVerticalFloat: raw.lyricVerticalFloat !== false,
     lyricPauseHold: raw.lyricPauseHold !== false,
@@ -251,6 +267,9 @@ function readSavedLyricLayout() {
       lyricDisplayMode: normalizeSavedLyricDisplayMode(raw.lyricDisplayMode || fxDefaults.lyricDisplayMode),
       lyricTranslationMode: normalizeSavedLyricTranslationMode(raw.lyricTranslationMode || fxDefaults.lyricTranslationMode),
       lyricMotionStyle: normalizeSavedLyricMotionStyle(raw.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+      lyricTransitionStyle: resolveSavedLyricTransition(raw),
+      lyricTransitionExplicit: raw.lyricTransitionExplicit === true,
+      lyricTransitionSpeed: layoutNumber(raw.lyricTransitionSpeed, fxDefaults.lyricTransitionSpeed, 0.55, 1.65),
       lyricRasterQuality: normalizeLyricRasterQuality(raw.lyricRasterQuality),
       lyricVerticalFloat: raw.lyricVerticalFloat !== false,
       lyricPauseHold: raw.lyricPauseHold !== false,
@@ -496,6 +515,8 @@ function currentFxAutosaveTouchedKeys(reason, payload) {
     lyricDisplayMode: ['lyricDisplayMode'],
     lyricTranslationMode: ['lyricTranslationMode'],
     lyricMotionStyle: ['lyricMotionStyle'],
+    lyricTransitionStyle: ['lyricTransitionStyle', 'lyricTransitionExplicit'],
+    lyricTransitionSpeed: ['lyricTransitionSpeed', 'lyricTransitionExplicit'],
     lyricRasterQuality: ['lyricRasterQuality'],
     lyricVerticalFloat: ['lyricVerticalFloat'],
     lyricPauseHold: ['lyricPauseHold'],
@@ -636,6 +657,9 @@ function currentFxAutosaveCriticalPatch() {
     lyricDisplayMode: normalizeSavedLyricDisplayMode(fx.lyricDisplayMode || fxDefaults.lyricDisplayMode),
     lyricTranslationMode: normalizeSavedLyricTranslationMode(fx.lyricTranslationMode || fxDefaults.lyricTranslationMode),
     lyricMotionStyle: normalizeSavedLyricMotionStyle(fx.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+    lyricTransitionStyle: normalizeSavedLyricTransitionStyle(fx.lyricTransitionStyle || fxDefaults.lyricTransitionStyle),
+    lyricTransitionExplicit: fx.lyricTransitionExplicit === true,
+    lyricTransitionSpeed: layoutNumber(fx.lyricTransitionSpeed, fxDefaults.lyricTransitionSpeed, 0.55, 1.65),
     lyricRasterQuality: normalizeLyricRasterQuality(fx.lyricRasterQuality),
     lyricVerticalFloat: fx.lyricVerticalFloat !== false,
     lyricPauseHold: fx.lyricPauseHold !== false,
@@ -728,6 +752,9 @@ function saveLyricLayout(opts) {
       lyricDisplayMode: normalizeSavedLyricDisplayMode(fx.lyricDisplayMode || fxDefaults.lyricDisplayMode),
       lyricTranslationMode: normalizeSavedLyricTranslationMode(fx.lyricTranslationMode || fxDefaults.lyricTranslationMode),
       lyricMotionStyle: normalizeSavedLyricMotionStyle(fx.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+      lyricTransitionStyle: normalizeSavedLyricTransitionStyle(fx.lyricTransitionStyle || fxDefaults.lyricTransitionStyle),
+      lyricTransitionExplicit: fx.lyricTransitionExplicit === true,
+      lyricTransitionSpeed: layoutNumber(fx.lyricTransitionSpeed, fxDefaults.lyricTransitionSpeed, 0.55, 1.65),
       lyricRasterQuality: normalizeLyricRasterQuality(fx.lyricRasterQuality),
       lyricVerticalFloat: fx.lyricVerticalFloat !== false,
       lyricPauseHold: fx.lyricPauseHold !== false,

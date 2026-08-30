@@ -392,6 +392,7 @@ function lyricCurrentCoverPaletteKey() {
     return '';
   }
 }
+
 function updateLyricPaletteFromCover(coverCanvas) {
   if (!coverCanvas) return;
   try {

@@ -88,6 +88,7 @@ function createWallpaperPanelPortHarness(savedBaseUrl, options) {
   };
   vm.createContext(context);
   vm.runInContext(read('public/js/modules/07-fx/10-wallpaper-library-panel.js'), context, { filename: '10-wallpaper-library-panel.js' });
+  context.wallpaperLibraryState.isOpen = true;
   context.wallpaperLibraryRenderRecords = function () {};
   context.wallpaperLibraryRenderDetail = function () {};
   return { context, calls, input, status, discovered, storage, service };
@@ -351,6 +352,32 @@ test('无 UDP 自动发现必须实际探测 8128 并把其作为 subnet 来源�
   assert.ok(result.diagnostics.probes.some((probe) => probe.baseUrl === 'http://192.168.1.107:8128' && probe.outcome === 'PING_OK'));
 });
 
+test('无 ARP 且慢失败探测时，8128 不能被 8130 的全网段轮询饿死', async () => {
+  class SilentSocket {
+    on() {}
+    bind(_port, callback) { callback(); }
+    close() {}
+  }
+  const calls = [];
+  const client = new WindowsWallpaperClient({
+    dgramImpl: { createSocket: () => new SilentSocket() },
+    networkInterfaces: () => ({
+      en0: [{ address: '192.168.1.104', netmask: '255.255.255.248', family: 'IPv4', internal: false }],
+    }),
+    neighborHosts: async () => [],
+    fetchImpl: async (url) => {
+      calls.push(url);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      if (url === 'http://192.168.1.107:8128/api/ping') return jsonResponse(200, { ok: true, host: 'mineradio-wallpaper' });
+      if (url === 'http://192.168.1.107:8128/api/wallpapers') return jsonResponse(200, { ok: true, records: [] });
+      return jsonResponse(404, { ok: false });
+    },
+  });
+  const result = await client.discover(1000);
+  assert.equal(result.services[0].baseUrl, 'http://192.168.1.107:8128');
+  assert.ok(calls.includes('http://192.168.1.107:8128/api/ping'));
+});
+
 test('无 UDP 的主动扫描只枚举活跃私网网段并受全局并发限制', async () => {
   class SilentSocket {
     on() {}
@@ -484,6 +511,20 @@ test('Windows 的 Scene 预览图必须复用现有录制导出链，不能作�
   assert.equal(records[1].type, 'video');
 });
 
+test('同一项目的原始媒体与 preview 文件必须分工：播放用原始文件，缩略图用 preview 文件', () => {
+  const records = normalizeWindowsWallpaperRecords([
+    { id: '3182046198/ling_4k_地面.mp4', title: '风起弹剑', type: 'video', url: '/api/wallpaper-file?id=3182046198%2Fling_4k_%E5%9C%B0%E9%9D%A2.mp4' },
+    { id: '3182046198/preview.gif', title: '风起弹剑', type: 'image', url: '/api/wallpaper-file?id=3182046198%2Fpreview.gif' },
+  ], 'http://192.168.1.124:8137');
+
+  assert.equal(records.length, 1);
+  assert.equal(records[0].id, '3182046198/ling_4k_地面.mp4');
+  assert.equal(records[0].type, 'video');
+  assert.match(records[0].fileUrl, /ling_4k_/);
+  assert.match(records[0].previewUrl, /preview\.gif/);
+  assert.doesNotMatch(records[0].previewUrl, /ling_4k_/);
+});
+
 test('Scene 导出只接受 202 任务，完成后才允许下载', async () => {
   const client = new WindowsWallpaperClient({
     fetchImpl: async (url, options) => {
@@ -545,6 +586,43 @@ test('背景下载拒绝超过本地库安全上限的响应并允许调用者�
   });
   client.trustedBases.add('http://192.168.1.20:8123');
   assert.deepEqual(await client.downloadWallpaperMedia('http://192.168.1.20:8123', 'clip', 'video'), { ok: false, error: 'MEDIA_TOO_LARGE' });
+});
+
+test('壁纸媒体使用有界流读取，未知 Content-Length 超限时中止', async () => {
+  const client = new WindowsWallpaperClient({
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: (name) => String(name).toLowerCase() === 'content-type' ? 'image/png' : '' },
+      body: {
+        getReader() {
+          let index = 0;
+          return {
+            async read() {
+              if (index++ < 257) return { done: false, value: new Uint8Array(1024 * 1024) };
+              return { done: true, value: undefined };
+            },
+            async cancel() {},
+          };
+        },
+      },
+    }),
+  });
+  client.trustedBases.add('http://192.168.1.20:8123');
+  assert.deepEqual(await client.downloadWallpaperMedia('http://192.168.1.20:8123', 'huge', 'image'), { ok: false, error: 'MEDIA_TOO_LARGE' });
+});
+
+test('Scene 导出下载有超时，永不结束的响应不能让界面永久停在下载中', async () => {
+  const client = new WindowsWallpaperClient({
+    exportDownloadTimeoutMs: 60,
+    fetchImpl: async () => ({
+      ok: true,
+      body: new ReadableStream({ start() {} }),
+    }),
+  });
+  client.trustedBases.add('http://192.168.1.20:8123');
+  const result = await client.downloadExportedFile('http://192.168.1.20:8123', 'scene.mp4', path.join(root, 'output', 'never-ending.mp4'));
+  assert.deepEqual(result, { ok: false, error: 'DOWNLOAD_TIMEOUT' });
 });
 
 test('壁纸库滚动时延迟挂载媒体并停用重绘成本高的卡片效果', () => {
@@ -692,6 +770,17 @@ test('Scene 详情先保留真实静态缩略图，再延迟挂载有限重试�
   assert.match(panel, /removeAttribute\('src'\)/, '切换详情前必须先释放旧 MJPEG 连接');
   assert.match(panel, /wallpaperLibraryRetryLivePreview\(/, '手动重试必须启动新的一轮连接');
   assert.match(css, /\.wallpaper-live-preview\{[^}]*position:absolute[^}]*inset:0/, '实时流加载时必须覆盖静态图，不能在 flex 容器里把缩略图挤成半宽');
+});
+
+test('Scene 实时预览每次调度只建立一个 MJPEG 连接', async () => {
+  const harness = createWallpaperPanelPortHarness('', { service: { ok: true, baseUrl: 'http://192.168.1.107:8130', records: [] } });
+  let attachCount = 0;
+  harness.context.wallpaperLibraryAttachLivePreview = function () { attachCount += 1; };
+  const record = { id: 'scene-1', sceneId: 'scene-1', type: 'scene', liveUrl: 'http://192.168.1.107:8130/api/live/scene-1' };
+  harness.context.wallpaperLibraryState.selectedId = record.id;
+  harness.context.wallpaperLibraryScheduleLivePreview(record, 0, 0, 1);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(attachCount, 1);
 });
 
 test('Scene 导出完成态把保存和应用 MP4 放在同一操作行', () => {

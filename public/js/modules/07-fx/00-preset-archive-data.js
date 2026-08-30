@@ -95,6 +95,9 @@ var USER_FX_SHARE_KEYS = [
   'lyricDisplayMode',
   'lyricTranslationMode',
   'lyricMotionStyle',
+  'lyricTransitionStyle',
+  'lyricTransitionExplicit',
+  'lyricTransitionSpeed',
   'lyricRasterQuality',
   'lyricVerticalFloat',
   'lyricPauseHold',
@@ -268,6 +271,11 @@ function normalizeFxArchiveSnapshot(raw) {
     lyricDisplayMode: normalizeLyricDisplayMode(raw.lyricDisplayMode || fxDefaults.lyricDisplayMode),
     lyricTranslationMode: normalizeLyricTranslationMode(raw.lyricTranslationMode || fxDefaults.lyricTranslationMode),
     lyricMotionStyle: normalizeLyricMotionStyle(raw.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+    lyricTransitionStyle: raw.lyricTransitionExplicit === true
+      ? normalizeLyricTransitionStyle(raw.lyricTransitionStyle || fxDefaults.lyricTransitionStyle)
+      : fxDefaults.lyricTransitionStyle,
+    lyricTransitionExplicit: raw.lyricTransitionExplicit === true,
+    lyricTransitionSpeed: archiveNumber(raw, 'lyricTransitionSpeed', fxDefaults.lyricTransitionSpeed, 0.55, 1.65),
     lyricRasterQuality: normalizeLyricRasterQuality(raw.lyricRasterQuality),
     lyricVerticalFloat: raw.lyricVerticalFloat !== false,
     lyricPauseHold: raw.lyricPauseHold !== false,

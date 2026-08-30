@@ -19,6 +19,7 @@ function makeShelfManager() {
   var selectedIdx = -1;
   var coverBindResumeUntil = -10;
   var queueCurrentIdx = -1;
+  var pendingCoverRefresh = false;
 
   // v7.2 PSP 风格状态
   var centerIdx = 0;          // 当前居中卡片 index (在 items 数组中的位置)
@@ -88,6 +89,12 @@ function makeShelfManager() {
       });
     }
     return [];
+  }
+
+  function shelfCardRefreshAllowed() {
+    if (!group || mode === 'off' || shelfHardHidden) return false;
+    if (mode !== 'side') return true;
+    return !!(shelfAlwaysVisible() || shelfPinnedOpen || (contentList && contentList.isOpen()) || shelfVisibility > 0.06);
   }
 
   function makeRoundRect(ctx, x, y, w, h, r) {
@@ -844,6 +851,7 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
         allItems = [];
         queueCurrentIdx = -1;
         lastSig = '';
+        pendingCoverRefresh = false;
         if (contentList) contentList.close();
         return;
       }
@@ -889,6 +897,11 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       group.visible = !shelfSuppressedByPreset && appRevealed && (mode !== 'side' || shelfVisibility > 0) && (allItems.length > 0 || (contentList && contentList.isOpen()));
       if (connectorParticles) connectorParticles.visible = group.visible && mode === 'stage';
       if (floorMirror) floorMirror.visible = group.visible && mode === 'stage';
+      if (pendingCoverRefresh && shelfCardRefreshAllowed()) {
+        pendingCoverRefresh = false;
+        lastUpdate = uniforms.uTime.value;
+        if (!syncQueueCurrent(currentIdx, true)) rebuild(true);
+      }
           if (mode === 'side') {
             var passiveAlwaysGroup = shelfAlwaysVisible() && !shelfPinnedOpen && !(contentList && contentList.isOpen());
             var liftedCardActive = passiveAlwaysGroup && cards.some(function (c) { return c.selected || (c.floatMix || 0) > 0.025; });
@@ -944,7 +957,10 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       if (uniforms.uTime.value - lastUpdate > 0.8) {
         lastUpdate = uniforms.uTime.value;
         var nextSig = sig();
-        if (nextSig !== lastSig) rebuild();
+        if (nextSig !== lastSig) {
+          if (shelfCardRefreshAllowed()) rebuild(true);
+          else pendingCoverRefresh = true;
+        }
         else {
           var pulseBucket = Math.round((bass + beatPulse * 0.85) * 10);
           var redrawInterval = playing ? 1.35 : 4.0;
@@ -971,6 +987,10 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
         group.rotation.z += (particles.rotation.z - group.rotation.z) * 0.28;
       }
       if (group && mode !== 'off' && uniforms.uTime.value - lastUpdate > 0.2) {
+        if (!shelfCardRefreshAllowed()) {
+          pendingCoverRefresh = true;
+          return;
+        }
         lastUpdate = uniforms.uTime.value;
         // 切歌封面通常在播放确认后约半秒到达。此处若无条件 rebuild，会绕过
         // syncQueueCurrent 的增量窗口并再次销毁整组 CanvasTexture。

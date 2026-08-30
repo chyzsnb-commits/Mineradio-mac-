@@ -15,10 +15,12 @@ var wallpaperLibraryState = {
   batchTask: null,
   exportTask: null,
   exportPoller: 0,
+  exportPollToken: 0,
   applyTask: null,
   livePreviewToken: 0,
   livePreviewTimer: 0,
   livePreviewAttempts: 0,
+  isOpen: false,
 };
 
 function wallpaperLibraryPanelEl(id) { return document.getElementById(id); }
@@ -216,6 +218,21 @@ function wallpaperLibraryRenderRecords() {
   wallpaperLibraryBindScrollPerformance(list);
   wallpaperLibraryUpdateCardSelection();
 }
+function wallpaperLibraryReleaseListResources() {
+  var list = wallpaperLibraryPanelEl('wallpaper-library-list');
+  if (!list) return;
+  if (list._wallpaperMediaObserver) list._wallpaperMediaObserver.disconnect();
+  list._wallpaperMediaObserver = null;
+  if (list._wallpaperScrollStopTimer) clearTimeout(list._wallpaperScrollStopTimer);
+  list._wallpaperScrollStopTimer = 0;
+  list.classList.remove('is-scrolling');
+  Array.prototype.forEach.call(list.querySelectorAll('[data-wallpaper-preview]'), function (media) {
+    if (media.tagName === 'VIDEO' && typeof media.pause === 'function') media.pause();
+    media.removeAttribute('src');
+    if (media.tagName === 'VIDEO' && typeof media.load === 'function') media.load();
+  });
+  list.innerHTML = '<div class="wallpaper-library-empty">壁纸库已关闭。</div>';
+}
 function wallpaperLibraryStopLivePreview() {
   wallpaperLibraryState.livePreviewToken += 1;
   if (wallpaperLibraryState.livePreviewTimer) clearTimeout(wallpaperLibraryState.livePreviewTimer);
@@ -375,7 +392,10 @@ function wallpaperLibraryRenderDetail() {
 async function wallpaperLibraryCheckLiveStatus() {
   var getStatus = wallpaperLibraryApi('wallpaperWindowsLiveStatus');
   if (!getStatus || !wallpaperLibraryState.baseUrl) return;
+  var selectedId = wallpaperLibraryState.selectedId;
+  var livePreviewToken = wallpaperLibraryState.livePreviewToken;
   var result = await getStatus(wallpaperLibraryState.baseUrl).catch(function () { return null; });
+  if (selectedId !== wallpaperLibraryState.selectedId || livePreviewToken !== wallpaperLibraryState.livePreviewToken) return;
   if (!result || !result.ok) wallpaperLibraryRenderStatus('实时预览服务暂不可用，正在尝试连接。', 'warning');
 }
 function wallpaperLibraryUseConnection(result, sourceLabel, source) {
@@ -390,6 +410,7 @@ function wallpaperLibraryUseConnection(result, sourceLabel, source) {
   try { localStorage.setItem('mineradio.windows-wallpaper.base-url', result.baseUrl); } catch (_) {}
   var input = wallpaperLibraryPanelEl('wallpaper-library-http-input');
   if (input) input.value = result.baseUrl;
+  if (!wallpaperLibraryState.isOpen) return true;
   wallpaperLibraryRenderDiscoveredIp(result.baseUrl, wallpaperLibraryState.host, source);
   wallpaperLibraryRenderRecords();
   wallpaperLibraryRenderDetail();
@@ -417,6 +438,7 @@ async function wallpaperLibraryRunDiscovery() {
   var service = result && result.ok && Array.isArray(result.services) ? result.services[0] : null;
   var source = service && service.source || (result && result.diagnostics && result.diagnostics.udp && result.diagnostics.udp.received ? 'udp' : 'subnet');
   if (service && wallpaperLibraryUseConnection(service, '自动发现', source)) return true;
+  if (!wallpaperLibraryState.isOpen) return false;
   wallpaperLibraryRenderDiscoveredIp('', '');
   wallpaperLibraryRenderStatus(wallpaperLibraryDiscoveryDiagnosticText(result && result.diagnostics), 'warning');
   return false;
@@ -460,6 +482,7 @@ function closeWallpaperLibraryDetail() {
   wallpaperLibraryRenderDetail();
 }
 function wallpaperLibraryClearExportPoller() {
+  wallpaperLibraryState.exportPollToken += 1;
   if (wallpaperLibraryState.exportPoller) clearTimeout(wallpaperLibraryState.exportPoller);
   wallpaperLibraryState.exportPoller = 0;
 }
@@ -467,7 +490,12 @@ async function pollWindowsSceneExport() {
   var task = wallpaperLibraryState.exportTask;
   var getStatus = wallpaperLibraryApi('wallpaperWindowsExportStatus');
   if (!task || task.stopped || !getStatus) return;
-  var result = await getStatus(wallpaperLibraryState.baseUrl, task.id).catch(function () { return null; });
+  var pollToken = wallpaperLibraryState.exportPollToken;
+  var selectedId = wallpaperLibraryState.selectedId;
+  var baseUrl = wallpaperLibraryState.baseUrl;
+  var result = await getStatus(baseUrl, task.id).catch(function () { return null; });
+  if (pollToken !== wallpaperLibraryState.exportPollToken || task !== wallpaperLibraryState.exportTask
+    || task.stopped || selectedId !== wallpaperLibraryState.selectedId) return;
   if (!result || !result.ok) {
     task.state = 'failed'; task.message = '无法读取导出状态，可重试。';
   } else if (result.state === 'completed') {
@@ -487,9 +515,15 @@ async function startWindowsSceneExport() {
   var input = wallpaperLibraryPanelEl('wallpaper-library-export-seconds');
   if (!record || record.type !== 'scene' || !start || wallpaperLibraryState.exportPoller) return;
   var seconds = Math.max(1, Math.min(300, Math.round(Number(input && input.value) || 30)));
-  wallpaperLibraryState.exportTask = { sceneId: record.sceneId, state: 'starting', seconds: seconds, message: '正在提交 Windows 导出任务...' };
+  wallpaperLibraryState.exportPollToken += 1;
+  var task = wallpaperLibraryState.exportTask = { sceneId: record.sceneId, state: 'starting', seconds: seconds, message: '正在提交 Windows 导出任务...' };
+  var exportToken = wallpaperLibraryState.exportPollToken;
+  var selectedId = wallpaperLibraryState.selectedId;
+  var baseUrl = wallpaperLibraryState.baseUrl;
   wallpaperLibraryRenderExport(record);
-  var result = await start(wallpaperLibraryState.baseUrl, record.sceneId, seconds).catch(function () { return null; });
+  var result = await start(baseUrl, record.sceneId, seconds).catch(function () { return null; });
+  if (exportToken !== wallpaperLibraryState.exportPollToken || task !== wallpaperLibraryState.exportTask
+    || selectedId !== wallpaperLibraryState.selectedId || task.stopped) return;
   if (!result || !result.ok) {
     wallpaperLibraryState.exportTask.state = 'failed'; wallpaperLibraryState.exportTask.message = '导出任务未被 Windows 接受，可重试。';
     wallpaperLibraryRenderExport(record); return;
@@ -634,13 +668,17 @@ async function wallpaperLibraryOpenSavedOrDiscover() {
 function openWallpaperLibraryPanel() {
   var mask = wallpaperLibraryPanelEl('wallpaper-library-modal');
   if (!mask) return;
+  wallpaperLibraryState.isOpen = true;
   mask.classList.add('show'); mask.setAttribute('aria-hidden', 'false');
+  if (wallpaperLibraryState.baseUrl && wallpaperLibraryState.records.length) wallpaperLibraryRenderRecords();
   wallpaperLibraryDiscoverAndConnect();
 }
 function closeWallpaperLibraryPanel() {
   var mask = wallpaperLibraryPanelEl('wallpaper-library-modal');
+  wallpaperLibraryState.isOpen = false;
   wallpaperLibraryClearExportPoller();
   closeWallpaperLibraryDetail();
+  wallpaperLibraryReleaseListResources();
   if (!mask) return;
   mask.classList.remove('show'); mask.setAttribute('aria-hidden', 'true');
 }

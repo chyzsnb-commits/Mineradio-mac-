@@ -476,7 +476,7 @@
             <button type="button" data-lyric-raster-quality="3" onclick="setLyricRasterQuality(3)">3x</button>
             <button type="button" data-lyric-raster-quality="4" onclick="setLyricRasterQuality(4)">4x</button>
           </div>
-          <div class="fx-section-label">双语翻译</div>
+          <div class="fx-section-label">歌词翻译 / 译文显示</div>
           <div class="fx-seg lyric-translation-mode-seg" id="lyric-translation-mode-seg">
             <button type="button" data-translation="off" onclick="setLyricTranslationMode('off')">关闭</button>
             <button type="button" data-translation="current" onclick="setLyricTranslationMode('current')">当前</button>
@@ -487,6 +487,8 @@
               step="0.01"><output></output></div>
           <div class="fx-slider"><label>译文透明度</label><input id="fx-lyrictranslationopacity" type="range" min="0.20" max="1"
               step="0.01"><output></output></div>
+          <div class="fx-slider"><label>译文间距</label><input id="fx-lyrictranslationgap" type="range" min="0.28"
+              max="2.20" step="0.01"><output></output></div>
           <div class="fx-section-label">歌词动画</div>
           <div class="fx-seg lyric-motion-style-seg" id="lyric-motion-style-seg">
             <button type="button" data-motion="float" onclick="setLyricMotionStyle('float')">漂浮</button>
@@ -495,6 +497,16 @@
             <button type="button" data-motion="shine" onclick="setLyricMotionStyle('shine')">线光</button>
             <button type="button" data-motion="glitch" onclick="setLyricMotionStyle('glitch')">故障</button>
           </div>
+          <div class="fx-section-label">歌词切换动效</div>
+          <div class="fx-seg lyric-transition-style-seg" id="lyric-transition-style-seg" aria-label="歌词切换动效">
+            <button type="button" data-transition="original" onclick="setLyricTransitionStyle('original')">原始切换</button>
+            <button type="button" data-transition="crossfade" onclick="setLyricTransitionStyle('crossfade')">经典叠化</button>
+            <button type="button" data-transition="rise" onclick="setLyricTransitionStyle('rise')">上浮淡入</button>
+            <button type="button" data-transition="slide" onclick="setLyricTransitionStyle('slide')">分层掠过</button>
+            <button type="button" data-transition="focus" onclick="setLyricTransitionStyle('focus')">镜头推进</button>
+          </div>
+          <div class="fx-slider"><label>切换速度</label><input id="fx-lyrictransitionspeed" type="range" min="0.55" max="1.65"
+              step="0.05"><output></output></div>
           <div class="fx-slider"><label>缩放脉动</label><input id="fx-lyricscalepulse" type="range" min="0" max="0.06"
               step="0.005"><output></output></div>
           <div class="lyric-glitch-controls" id="lyric-glitch-controls">
@@ -515,8 +527,6 @@
               step="0.01"><output></output></div>
           <div class="fx-slider"><label>上下句间距</label><input id="fx-lyriccontextspread" type="range" min="0.60"
               max="2.40" step="0.01"><output></output></div>
-          <div class="fx-slider"><label>译文间距</label><input id="fx-lyrictranslationgap" type="range" min="0.28"
-              max="2.20" step="0.01"><output></output></div>
           <div class="fx-slider"><label>边缘渐隐</label><input id="fx-lyricedgefade" type="range" min="0" max="1"
               step="0.01"><output></output></div>
           <div class="fx-slider"><label>动画柔顺</label><input id="fx-lyricmotionsoftness" type="range" min="0.15" max="1.2"
@@ -1225,7 +1235,7 @@
 
     <!-- 左下小封面 -->
     <div id="thumb-wrap">
-      <img id="thumb-cover" src="" alt="">
+      <img id="thumb-cover" alt="">
       <div id="thumb-info">
         <div id="thumb-title" onclick="openTrackDetailModal('song')" title="歌曲详情"></div>
         <div id="thumb-artist" onclick="openTrackDetailModal('artist')" title="歌手详情"></div>
@@ -1640,7 +1650,7 @@
           </div>
           <div class="login-auth-body">
             <div id="qr-shell" class="qr-shell">
-              <img id="qr-img" src="" alt="">
+              <img id="qr-img" alt="">
               <button id="qq-web-login-card" class="qq-login-mark" type="button"
                 onclick="openProviderWebLogin()"><b>QQ</b><span>打开官方扫码窗口</span></button>
             </div>
@@ -1686,7 +1696,7 @@
         <h2>账号信息</h2>
         <div id="account-provider-chip" class="account-provider-chip netease"><span
             class="account-source-dot netease"></span><span>网易云音乐</span></div>
-        <img id="user-modal-avatar" src=""
+        <img id="user-modal-avatar"
           style="width:72px;height:72px;border-radius:50%;margin:0 auto 12px;object-fit:cover;background:rgba(255,255,255,0.1);display:block">
         <div id="user-modal-name" style="font-size:15px;margin-bottom:4px"></div>
         <div id="user-modal-vip"

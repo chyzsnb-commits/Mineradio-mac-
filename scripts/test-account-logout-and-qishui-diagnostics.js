@@ -76,10 +76,18 @@ test('登录接入页为已连接平台提供明确的退出入口', () => {
   assert.match(html, /id="login-session-logout"[\s\S]*?onclick="logoutLoginProvider\(\)"/);
   assert.match(flows, /function updateLoginSessionLogoutAction\(\)/);
   assert.match(flows, /providerHasLiveLogin\(loginProvider\)/);
-  assert.match(flows, /var providerLabel = platformMeta\(loginProvider\)\.label/);
+  assert.match(flows, /var providerLabel = platformMeta\(logoutProvider\)\.label/);
   assert.doesNotMatch(flows, /loginProviderDisplayName/);
   assert.match(css, /\.login-panel-head\s*>\s*div:first-child\s*\{\s*display:\s*none/);
   assert.doesNotMatch(css, /\.login-panel-head\s*>\s*div\s*\{\s*display:\s*none/);
+});
+
+test('当前选中平台未登录时，登录页仍显示其他已登录平台的退出入口', () => {
+  const flows = read('public/js/modules/08-account/03-login-modal-flows.js');
+
+  assert.match(flows, /var logoutProvider = providerHasLiveLogin\(loginProvider\) \? loginProvider : firstLoggedProvider\(\)/);
+  assert.match(flows, /button\.dataset\.logoutProvider = logoutProvider/);
+  assert.match(flows, /var provider = button && button\.dataset\.logoutProvider \|\| loginProvider/);
 });
 
 test('登录弹窗开场不会模糊整块玻璃面板导致短暂发白', () => {
@@ -109,6 +117,14 @@ test('汽水取流失败后自动换源会展示脱敏的失败证据', () => {
   assert.match(fallback, /function qishuiPlaybackFailureDetail\(/);
   assert.match(fallback, /汽水未返回可播放流/);
   assert.match(fallback, /qishuiPlaybackFailureDetail\(data\)/);
+});
+
+test('汽水仅作为匹配源时明确说明不能证明可播放，并把自动换源作为可选动作', () => {
+  const fallback = read('public/js/modules/05-playback/11-provider-fallback.js');
+
+  assert.match(fallback, /当前只提供搜索\/匹配信息，不能证明该平台可播放/);
+  assert.match(fallback, /可以选择自动换源/);
+  assert.doesNotMatch(fallback, /当前只提供搜索\/匹配信息，播放会自动寻找其它可播版本/);
 });
 
 test('一次音源切换只保留一个状态卡，并在替代音频实际启动后才确认成功', () => {

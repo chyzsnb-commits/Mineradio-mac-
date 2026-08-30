@@ -58,26 +58,15 @@ function resolveAdaptiveRenderCadence(now, mode) {
   var context = currentRenderAdaptiveContext(now);
   return selectAdaptiveRenderCadence(context.kind, context.tier);
 }
-// 前台帧率治理钩子(P1):vsync 分支不再无条件放行满帧,而是问治理器要一个上限,复用现有 minGap 跳帧机制。
-//  返回 >0 = 帧率上限(fps);返回 0 = 不设限(真 vsync)。
-//  - eco(用户显式选低配):立即硬上限 30fps,不等治理器 16s 爬坡。
-//  - auto + vsync + 未手动钉死 maxFps:治理器降档时返回 45/30;未降档时高刷屏(>62Hz)钳到 60,
-//    60Hz 屏返 0 保持真 vsync(避免 minGap 在 ~16.7ms vsync 抖动下误跳帧成半速)。
-//  - 其余(非 auto/eco、numeric 固定帧率、手动 maxFps):返回 0,完全不碰。
+// 前台可见运动默认保持显示器 VSync。只有用户显式选择 eco 时才锁 30fps，
+// 自动质量只调整实际生效的视觉预算，不能把前台运动偷偷降为 45/30fps。
 function foregroundFpsGovernorCap() {
   if (typeof fx === 'undefined' || !fx) return 0;
   var quality = (typeof normalizePerformanceQuality === 'function')
     ? normalizePerformanceQuality(fx.performanceQuality) : String(fx.performanceQuality || '');
   if (quality === 'eco') return 30;
   if (quality !== 'auto') return 0;
-  var mode = (typeof normalizeForegroundFpsMode === 'function')
-    ? normalizeForegroundFpsMode(fx.foregroundFpsMode) : String(fx.foregroundFpsMode || 'vsync');
-  if (mode !== 'vsync') return 0;
-  if (fx.maxFps > 0) return 0;
-  var gov = (typeof autoGovForegroundFps === 'function') ? autoGovForegroundFps() : 60;
-  if (gov < 60) return gov;
-  var hz = (typeof estimatedDisplayRefreshHz === 'function') ? estimatedDisplayRefreshHz() : 60;
-  return hz > 62 ? 60 : 0;
+  return 0;
 }
 function getAdaptiveRenderFps(now) {
   if (isDeepBackgroundMode()) return 1;
@@ -90,7 +79,7 @@ function getAdaptiveRenderFps(now) {
     return fixedFps !== null && fixedFps > 0 ? Math.min(20, fixedFps) : 20;
   }
   if (fixedFps !== null) {
-    if (fixedFps === 0) return foregroundFpsGovernorCap();   // vsync:交给治理器决定上限(45/30/60 钳位)或 0=真 vsync
+    if (fixedFps === 0) return foregroundFpsGovernorCap();   // vsync；仅用户显式 eco 会要求 30fps
     return fixedFps;                                          // 用户显式选的固定帧率,原样返回
   }
   if (RENDER_VISIBLE_VSYNC) return foregroundFpsGovernorCap();

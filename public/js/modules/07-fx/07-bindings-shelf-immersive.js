@@ -20,7 +20,7 @@ function bindFxPanel() {
     ['fx-shelfsummonopen', 'shelfSummonOpenDuration'], ['fx-shelfsummonclose', 'shelfSummonCloseDuration'], ['fx-shelfsummonslide', 'shelfSummonSlide'], ['fx-shelfsummonstagger', 'shelfSummonStagger'], ['fx-shelfsummonscale', 'shelfSummonScale'], ['fx-shelfsummonparallax', 'shelfSummonParallax'],
     ['fx-shelfcamenter', 'shelfCameraEnterSpeed'], ['fx-shelfcamexit', 'shelfCameraExitSpeed'],
     ['fx-lyricspacing', 'lyricLetterSpacing'], ['fx-lyriclineheight', 'lyricLineHeight'], ['fx-lyricweight', 'lyricWeight'],
-    ['fx-lyriccustomlines', 'lyricCustomLineCount'], ['fx-lyricscalepulse', 'lyricScalePulse'],
+    ['fx-lyriccustomlines', 'lyricCustomLineCount'], ['fx-lyrictransitionspeed', 'lyricTransitionSpeed'], ['fx-lyricscalepulse', 'lyricScalePulse'],
     ['fx-lyricglitchintensity', 'lyricGlitchIntensity'], ['fx-lyricglitchslice', 'lyricGlitchSlice'], ['fx-lyricglitchchroma', 'lyricGlitchChroma'], ['fx-lyricglitchrate', 'lyricGlitchRate'], ['fx-lyricglitchjitter', 'lyricGlitchJitter'],
     ['fx-lyriccontextopacity', 'lyricContextOpacity'], ['fx-lyriccontextspread', 'lyricContextSpread'], ['fx-lyrictranslationgap', 'lyricTranslationGap'], ['fx-lyrictranslationscale', 'lyricTranslationScale'], ['fx-lyrictranslationopacity', 'lyricTranslationOpacity'], ['fx-lyricedgefade', 'lyricEdgeFade'], ['fx-lyricmotionsoftness', 'lyricMotionSoftness'],
     ['fx-lyricscale', 'lyricScale'], ['fx-lyricx', 'lyricOffsetX'], ['fx-lyricy', 'lyricOffsetY'], ['fx-lyricz', 'lyricOffsetZ'], ['fx-lyrictiltx', 'lyricTiltX'], ['fx-lyrictilty', 'lyricTiltY'],
@@ -40,6 +40,12 @@ function bindFxPanel() {
     if (!el) return;
     ensureFxSliderResetButton(pair[0], pair[1]);
     el.addEventListener('input', function () {
+      if (pair[1] === 'lyricTransitionSpeed') {
+        setLyricTransitionSpeed(el.value);
+        var speedOut = el.parentElement.querySelector('output');
+        if (speedOut) speedOut.textContent = Number(fx.lyricTransitionSpeed).toFixed(2);
+        return;
+      }
       fx[pair[1]] = parseFloat(el.value);
       var out = el.parentElement.querySelector('output');
       if (pair[1] === 'lyricBackgroundAdapt') fx.lyricBackgroundAdapt = clampRange(fx.lyricBackgroundAdapt, 0, 1);

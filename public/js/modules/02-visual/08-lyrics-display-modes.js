@@ -2,6 +2,7 @@ var STAGE_LYRIC_MAX_LINES = 1;
 var STAGE_LYRIC_DISPLAY_MODES = { single: 1, dual: 1, triple: 1, cinema: 1, custom: 1 };
 var STAGE_LYRIC_TRANSLATION_MODES = { off: 1, current: 1, dual: 1, multi: 1 };
 var STAGE_LYRIC_MOTION_STYLES = { glass: 1, smooth: 1, float: 1, quick: 1, shine: 1, glitch: 1 };
+var STAGE_LYRIC_TRANSITION_STYLES = { original: 1, crossfade: 1, rise: 1, slide: 1, focus: 1 };
 
 function normalizeLyricDisplayMode(mode) {
   mode = String(mode || 'single');
@@ -37,6 +38,34 @@ function lyricDisplayOffsetsForMode(mode) {
 function normalizeLyricMotionStyle(style) {
   style = String(style || 'float');
   return STAGE_LYRIC_MOTION_STYLES[style] ? style : 'float';
+}
+function normalizeLyricTransitionStyle(style) {
+  style = String(style || 'original');
+  if (style === 'quick') style = 'crossfade';
+  if (style === 'scale') style = 'focus';
+  return STAGE_LYRIC_TRANSITION_STYLES[style] ? style : 'original';
+}
+function lyricTransitionSpeedValue() {
+  return clampRange(fx && fx.lyricTransitionSpeed == null ? fxDefaults.lyricTransitionSpeed : Number(fx && fx.lyricTransitionSpeed), 0.55, 1.65);
+}
+function lyricReduceMotionPreferred() {
+  try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { return false; }
+}
+function lyricTransitionProfile(motion) {
+  var style = normalizeLyricTransitionStyle(fx && fx.lyricTransitionStyle);
+  var speed = lyricTransitionSpeedValue();
+  var reduced = lyricReduceMotionPreferred();
+  if (style === 'original' || style === 'crossfade') {
+    motion = motion || lyricMotionProfile();
+    if (!reduced) return { style: style, enter: motion.enter / speed, exit: motion.exit / speed, reduced: false };
+    return { style: style, enter: 0.22, exit: 0.22, reduced: true };
+  }
+  var duration = reduced ? 0.22 : 0.46;
+  if (style === 'rise') duration = reduced ? 0.22 : 0.52;
+  else if (style === 'slide') duration = reduced ? 0.22 : 0.48;
+  else if (style === 'focus') duration = reduced ? 0.24 : 0.56;
+  duration /= speed;
+  return { style: style, enter: duration * 1.12, exit: duration, reduced: reduced };
 }
 function lyricContextOpacityValue() {
   return clampRange(fx && fx.lyricContextOpacity == null ? fxDefaults.lyricContextOpacity : Number(fx && fx.lyricContextOpacity), 0.25, 1);

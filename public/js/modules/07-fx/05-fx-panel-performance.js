@@ -391,8 +391,7 @@ function updatePerfHud() {
   var hud = document.getElementById('perf-hud');
   if (!hud || hud.style.display === 'none') return;
   var fps = (typeof renderPerfState !== 'undefined' && renderPerfState) ? (renderPerfState.fps || 0) : 0;
-  // 显示「真实绘制缓冲」= innerWidth×getRenderPixelRatio(含治理器 scaleMul + 绝对缓冲上限),这样降档/封顶肉眼可见;
-  // 括号内附滑块天花板。用户报「满屏 9fps 但分辨率显示没降」正是因为旧标签只显示滑块值、不反映实际缓冲。
+  // 显示实际绘制缓冲；自动治理不会改用户的分辨率滑块，括号仅在显示缓冲与手动滑块不同才出现。
   var pr = (typeof getRenderPixelRatio === 'function') ? getRenderPixelRatio() : 1;
   var bufLabel = Math.round(innerWidth * pr) + ' × ' + Math.round(innerHeight * pr);
   var scaleLabel = (typeof renderScaleResLabel === 'function') ? renderScaleResLabel() : (innerWidth + '×' + innerHeight);
@@ -408,7 +407,7 @@ function updatePerfHud() {
   var freeGB = (d && typeof d.memFreeMB === 'number' && isFinite(d.memFreeMB)) ? (d.memFreeMB / 1024).toFixed(1) + ' GB' : '--';
   var appMem = (d && typeof d.appMemMB === 'number' && isFinite(d.appMemMB)) ? Math.round(d.appMemMB) + ' MB' : '--';
   var memLine = memPct + '(剩余 ' + freeGB + ')· 播放器 ' + appMem;
-  // auto 档:保留自适应治理器态(如「自适应 ×0.84 · 高」),移到独立小行;非 auto 不显示该行
+  // auto 档只展示实际生效的品质 rank；不把不存在的分辨率或帧率降档伪装成状态。
   var adaptRow = '';
   var isAutoQuality = (typeof normalizePerformanceQuality === 'function')
     && normalizePerformanceQuality(fx && fx.performanceQuality) === 'auto';
@@ -416,8 +415,7 @@ function updatePerfHud() {
     var gs = autoGovState();
     if (gs) {
       var govRankName = ['低', '均衡', '高', '超高'][gs.rank] || '高';
-      var govFps = (gs.fgFps && gs.fgFps < 60) ? (' · ' + gs.fgFps + 'fps') : '';   // P1:治理器把前台帧率降到 45/30 时显示,便于确认降档
-      adaptRow = '<div class="ph-r"><span>自适应</span><b>×' + (Math.round(gs.scaleMul * 100) / 100).toFixed(2) + ' · ' + govRankName + govFps + '</b></div>';
+      adaptRow = '<div class="ph-r"><span>自适应</span><b>' + govRankName + '</b></div>';
     }
   }
   hud.innerHTML =
@@ -480,6 +478,7 @@ function updateFxInputs() {
   setRange('fx-lyriclineheight', fx.lyricLineHeight);
   setRange('fx-lyricweight', fx.lyricWeight);
   setRange('fx-lyriccustomlines', fx.lyricCustomLineCount);
+  setRange('fx-lyrictransitionspeed', fx.lyricTransitionSpeed);
   setRange('fx-lyricscalepulse', fx.lyricScalePulse);
   setRange('fx-lyricglitchintensity', fx.lyricGlitchIntensity);
   setRange('fx-lyricglitchslice', fx.lyricGlitchSlice);
@@ -643,6 +642,7 @@ function updateFxInputs() {
   updateLyricDisplayModeControls();
   updateLyricTranslationModeControls();
   updateLyricMotionStyleControls();
+  updateLyricTransitionControls();
   updateLyricFontControls();
   updateUiAccentControls();
   updateHomeAccentControls();
@@ -1018,7 +1018,9 @@ function relabelFxPanelControls() {
   setFxSectionBefore('lyric-glow-row', '歌词溢光颜色');
   setFxSectionBefore('lyric-source-seg', '歌词来源');
   setFxSectionBefore('lyric-display-mode-seg', '歌词行数');
+  setFxSectionBefore('lyric-translation-mode-seg', '歌词翻译 / 译文显示');
   setFxSectionBefore('lyric-motion-style-seg', '歌词动画');
+  setFxSectionBefore('lyric-transition-style-seg', '歌词切换动效');
   setFxSectionBefore('lyric-font-grid', '字体与字距');
   setFxSectionBefore('fx-lyricscale', '位置与角度');
   setFxSectionBefore('fx-desktoplyricssize', '桌面歌词');
@@ -1051,6 +1053,7 @@ function relabelFxPanelControls() {
   setFxSliderLabel('fx-lyriclineheight', '行距');
   setFxSliderLabel('fx-lyricweight', '字重');
   setFxSliderLabel('fx-lyriccustomlines', '显示行数');
+  setFxSliderLabel('fx-lyrictransitionspeed', '切换速度');
   setFxSliderLabel('fx-lyricglitchintensity', '故障强度');
   setFxSliderLabel('fx-lyricglitchslice', '切片幅度');
   setFxSliderLabel('fx-lyricglitchchroma', '色散强度');

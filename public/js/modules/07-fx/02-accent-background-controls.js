@@ -85,7 +85,10 @@ function customBackgroundAlbumCoverSource() {
   if (!src) {
     try {
       var thumb = document.getElementById('thumb-cover');
-      src = thumb && (thumb.currentSrc || thumb.src || thumb.getAttribute('src')) || '';
+      var thumbSrc = thumb && thumb.getAttribute('src');
+      var thumbSrcSet = thumb && thumb.getAttribute('srcset');
+      // 空 src 的 HTMLImageElement.src 会被浏览器解析为当前页面地址，不能当封面。
+      src = thumb && (thumbSrc || thumbSrcSet ? (thumb.currentSrc || thumbSrc) : '') || '';
     } catch (e3) { }
   }
   if (!src) {
@@ -1054,7 +1057,10 @@ function sonicWorkshopCurrentCoverDomSource() {
   } catch (e) { }
   try {
     var thumb = document.getElementById('thumb-cover');
-    var thumbSrc = thumb && (thumb.currentSrc || thumb.src || thumb.getAttribute('src'));
+    var thumbAttr = thumb && thumb.getAttribute('src');
+    var thumbSrcSet = thumb && thumb.getAttribute('srcset');
+    // 空 src 会解析为当前文档 URL；只有实际声明的图片来源才允许读 currentSrc。
+    var thumbSrc = thumb && (thumbAttr || thumbSrcSet ? (thumb.currentSrc || thumbAttr) : '');
     if (thumbSrc) return String(thumbSrc);
   } catch (e) { }
   try {

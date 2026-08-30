@@ -134,7 +134,7 @@ function playbackRestrictionNotice(song, data) {
     return {
       category: category,
       title: '平台仅作为匹配源',
-      body: message || (provider + ' 当前只提供搜索/匹配信息，播放会自动寻找其它可播版本。'),
+      body: message || (provider + ' 当前只提供搜索/匹配信息，不能证明该平台可播放。可以选择自动换源。'),
       action: 'switch_source',
       toast: '正在自动换源'
     };
@@ -170,11 +170,11 @@ function playbackRestrictionMessage(song, data) {
     else if (category === 'paid_required') message = provider + '歌曲需要购买或更高权限';
     else if (category === 'trial_only') message = provider + '仅返回试听片段';
     else if (category === 'copyright_unavailable') message = provider + '版权暂不可播';
-    else if (category === 'provider_limited') message = provider + '当前只作为匹配源，正在寻找其它可播版本';
+    else if (category === 'provider_limited') message = provider + '当前只提供搜索/匹配信息，不能证明该平台可播放';
     else message = provider + '没有返回可播放地址';
   }
   if (category === 'login_required') return message + ' · 正在打开登录';
-  if (category === 'provider_limited') return message + ' · 可以自动换源';
+  if (category === 'provider_limited') return message + ' · 可以选择自动换源';
   if (category === 'copyright_unavailable' || category === 'url_unavailable') return message + ' · 可以试试另一个平台版本';
   return message;
 }

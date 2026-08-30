@@ -55,6 +55,10 @@ var fxDefaults = {
   lyricDisplayMode: 'single',
   lyricTranslationMode: 'off',
   lyricMotionStyle: 'float',
+  // PR #111 的初始体验由 float 状态机直接复用当前轨道；新增切换动效不能替代它。
+  lyricTransitionStyle: 'original',
+  lyricTransitionExplicit: false,
+  lyricTransitionSpeed: 1,
   lyricRasterQuality: 1, // 歌词纹理超采样档位:1x/2x/3x/4x,默认不改变现有显存预算
   lyricScalePulse: 0,    // 歌词缩放脉动:0=关(稳定缩放),>0 做规律放大缩小(用户可调可关)
   lyricCustomLineCount: 5,

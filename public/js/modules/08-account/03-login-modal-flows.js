@@ -583,20 +583,27 @@ function setLoginProvider(provider, silent) {
 function updateLoginSessionLogoutAction() {
   var button = document.getElementById('login-session-logout');
   if (!button) return;
-  var connected = providerHasLiveLogin(loginProvider);
+  // The login graph may open on its default provider while another platform
+  // is the only active session. Keep the exit action discoverable and bind it
+  // to the platform that is actually logged in.
+  var logoutProvider = providerHasLiveLogin(loginProvider) ? loginProvider : firstLoggedProvider();
+  var connected = !!logoutProvider && providerHasLiveLogin(logoutProvider);
   button.hidden = !connected;
   if (!connected) return;
-  var providerLabel = platformMeta(loginProvider).label;
+  button.dataset.logoutProvider = logoutProvider;
+  var providerLabel = platformMeta(logoutProvider).label;
   button.textContent = '退出 ' + providerLabel;
   button.setAttribute('aria-label', '退出 ' + providerLabel);
 }
 async function logoutLoginProvider() {
-  if (!providerHasLiveLogin(loginProvider)) return;
+  var button = document.getElementById('login-session-logout');
+  var provider = button && button.dataset.logoutProvider || loginProvider;
+  if (!providerHasLiveLogin(provider)) return;
   if (typeof logoutPlatformAccount !== 'function') {
     showToast('退出功能尚未就绪，请重新打开账号面板');
     return;
   }
-  await logoutPlatformAccount(loginProvider, { keepLoginModalOpen: true });
+  await logoutPlatformAccount(provider, { keepLoginModalOpen: true });
 }
 function qishuiPublicSearchReady() {
   return !!(qishuiLoginStatus && (qishuiLoginStatus.searchReady || qishuiLoginStatus.publicCatalog));
@@ -918,7 +925,7 @@ async function refreshQr() {
     qrKey = null;
     var spotifyStatus = document.getElementById('qr-status');
     var spotifyImg = document.getElementById('qr-img');
-    if (spotifyImg) spotifyImg.src = '';
+    if (spotifyImg) spotifyImg.removeAttribute('src');
     var spotifyInfo = await refreshSpotifyLoginStatus();
     if (!isLoginRefreshCurrent(refreshProvider, refreshSeq)) return;
     updateLoginProviderUi();
@@ -935,7 +942,7 @@ async function refreshQr() {
     qrKey = null;
     var qqStatus = document.getElementById('qr-status');
     var qqImg = document.getElementById('qr-img');
-    if (qqImg) qqImg.src = '';
+    if (qqImg) qqImg.removeAttribute('src');
     var info = await refreshQQVipStatusNow('login-panel');
     if (!isLoginRefreshCurrent(refreshProvider, refreshSeq)) return;
     if (qqStatus) {
@@ -948,7 +955,7 @@ async function refreshQr() {
     qrKey = null;
     var kugouStatus = document.getElementById('qr-status');
     var kugouImg = document.getElementById('qr-img');
-    if (kugouImg) kugouImg.src = '';
+    if (kugouImg) kugouImg.removeAttribute('src');
     var kugouInfo = await refreshKugouLoginStatus();
     if (!isLoginRefreshCurrent(refreshProvider, refreshSeq)) return;
     if (kugouStatus) {
@@ -961,7 +968,7 @@ async function refreshQr() {
     qrKey = null;
     var neImg = document.getElementById('qr-img');
     var neStatus = document.getElementById('qr-status');
-    if (neImg) neImg.src = '';
+    if (neImg) neImg.removeAttribute('src');
     if (neStatus) {
       neStatus.textContent = loginStatus.loggedIn ? ('已保存网易云会话 · ' + (loginStatus.nickname || '')) : '点击“网页登录”打开网易云官方窗口';
       neStatus.className = 'preview';

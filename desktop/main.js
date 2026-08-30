@@ -33,6 +33,12 @@ const {
   clearSpotifyToken,
 } = require('../spotify-api');
 
+// Electron 42's development-only security warning handler calls `new URL()`
+// on empty Resource Timing names produced by intentionally source-less media
+// elements. It rejects in the isolated world before the app is usable. The
+// packaged app does not run that handler; disable only this dev-only advisory.
+if (!app.isPackaged) process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = '1';
+
 let mainWindow = null;
 let createWindowInFlight = null;
 let localServer = null;
@@ -58,6 +64,7 @@ let wallpaperState = {};
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
+let mainWindowActivationTimers = [];
 let appMemoryTrimTimer = null;
 let appMemoryTrimInFlight = false;
 let lastAppMemoryTrimAt = 0;
@@ -331,6 +338,23 @@ function flushMainWindowFxAutosave(reason) {
 }
 
 const LOCAL_APP_PERMISSION_ALLOWLIST = new Set(['media', 'speaker-selection', 'pointerLock', 'pointer-lock']);
+const SAFE_EXTERNAL_URL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
+function safeOpenExternalUrl(value) {
+  const raw = String(value || '').trim();
+  let target;
+  try {
+    target = new URL(raw);
+  } catch (_) {
+    return Promise.resolve({ ok: false, error: 'INVALID_EXTERNAL_URL' });
+  }
+  if (!SAFE_EXTERNAL_URL_PROTOCOLS.has(target.protocol)) {
+    return Promise.resolve({ ok: false, error: 'EXTERNAL_URL_PROTOCOL_REJECTED' });
+  }
+  return Promise.resolve(shell.openExternal(target.toString()))
+    .then(() => ({ ok: true }))
+    .catch(() => ({ ok: false, error: 'EXTERNAL_URL_OPEN_FAILED' }));
+}
 
 function isLocalAppUrl(value) {
   try {
@@ -783,14 +807,34 @@ function isZoomShortcutInput(input) {
     || code === 'NumpadSubtract' || code === 'Digit0' || code === 'Numpad0';
 }
 
+function activateMainWindow() {
+  if (process.platform !== 'darwin') return;
+  try { app.focus({ steal: true }); } catch (e) {}
+}
+
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (mainWindow.isMinimized()) mainWindow.restore();
+  activateMainWindow();
   if (!mainWindow.isVisible()) mainWindow.show();
   resetMainWindowZoom();
   mainWindow.focus();
+  try { if (typeof mainWindow.moveTop === 'function') mainWindow.moveTop(); } catch (e) {}
+  activateMainWindow();
   sendWindowState(mainWindow);
   return true;
+}
+
+// macOS 从终端启动时，Electron 可能在页面加载完成前仍被终端保持为后台进程。
+// 只在启动/恢复窗口时短暂重试，避免常驻计时器影响正常的应用切换。
+function scheduleMainWindowActivation() {
+  if (process.platform !== 'darwin' || !mainWindow || mainWindow.isDestroyed()) return;
+  mainWindowActivationTimers.forEach((timer) => clearTimeout(timer));
+  mainWindowActivationTimers = [0, 160, 420].map((delay) => setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isFocused()) return;
+    focusMainWindow();
+  }, delay));
 }
 
 function createOrUpdateTray() {
@@ -3074,7 +3118,6 @@ async function createWindowInternal() {
 
   const initialBounds = getWindowedBounds();
   const initialMinimum = getAdaptiveWindowMinimumSize(screen.getPrimaryDisplay());
-
   mainWindow = new BrowserWindow({
     ...initialBounds,
     minWidth: initialMinimum.width,
@@ -3115,7 +3158,7 @@ async function createWindowInternal() {
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    safeOpenExternalUrl(url);
     return { action: 'deny' };
   });
 
@@ -3139,9 +3182,13 @@ async function createWindowInternal() {
   mainWindow.once('ready-to-show', () => {
     resetMainWindowZoom();
     mainWindow.show();
+    activateMainWindow();
+    mainWindow.focus();
+    try { if (typeof mainWindow.moveTop === 'function') mainWindow.moveTop(); } catch (e) {}
     if (process.platform === 'darwin' && typeof mainWindow.setWindowButtonVisibility === 'function') {
       mainWindow.setWindowButtonVisibility(true);
     }
+    scheduleMainWindowActivation();
     sendWindowState(mainWindow);
   });
 
@@ -3227,6 +3274,8 @@ async function createWindowInternal() {
     }
   });
   mainWindow.on('closed', () => {
+    mainWindowActivationTimers.forEach((timer) => clearTimeout(timer));
+    mainWindowActivationTimers = [];
     mainWindowCloseFlushArmed = false;
     if (mainWindowStateTimer) {
       clearTimeout(mainWindowStateTimer);
@@ -3256,12 +3305,8 @@ async function createWindowInternal() {
     setTimeout(() => applyWindowedBounds(mainWindow), 50);
   });
 
-  try {
-    await mainWindow.webContents.session.clearCache();
-  } catch (e) {
-    console.warn('Main window cache clear skipped:', e.message);
-  }
   await mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  scheduleMainWindowActivation();
 }
 
 app.setName(APP_NAME);

@@ -205,7 +205,10 @@ function updateEmptyHomeVisibility(opts) {
   document.body.classList.toggle('empty-home-active', show);
   if (show) hidePlaylistPanelOutsideListeningPage();
   else if (playlistPanelPinned && typeof applyPlaylistPanelPinState === 'function') applyPlaylistPanelPinState(true);
-  if (!show) setHomeControlsLocked(false);
+  // Home is a browsing surface, so keep the listening-page player bar out of
+  // the way until the user explicitly opens the player console.
+  if (show) setHomeControlsLocked(true);
+  else setHomeControlsLocked(false);
   if (show) activateHomeWallpaperPreview();
   else deactivateHomeWallpaperPreview(false);
   if (show) {
