@@ -5,6 +5,15 @@
 
 var updateCardState = { checking: false, lastResult: null, downloading: false };
 
+// 右上角 update-entry 按钮徽标（效仿 Windows 版：有新版亮起呼吸光点，下载转进度环）
+function updateEntryBadge(mode) {
+  var entry = document.getElementById('update-entry');
+  if (!entry) return;
+  if (mode === 'available') { entry.classList.add('available'); entry.classList.remove('downloading', 'ready'); }
+  else if (mode === 'downloading') { entry.classList.add('available', 'downloading'); entry.classList.remove('ready'); }
+  else if (mode === 'clear') { entry.classList.remove('downloading', 'ready'); }
+}
+
 function updateCardEnsure() {
   var el = document.getElementById('mineradio-update-card');
   if (el) return el;
@@ -35,6 +44,7 @@ function updateCardRender(payload) {
   }
   el.innerHTML = html;
   el.classList.add('show');
+  updateEntryBadge('available');
 }
 
 function updateCardEsc(text) {
@@ -48,12 +58,14 @@ async function mineradioUpdateDownload() {
   if (!result || !result.downloadUrl || updateCardState.downloading) return;
   updateCardState.downloading = true;
   updateCardState.progress = 0;
+  updateEntryBadge('downloading');
   updateCardRender({ hasUpdate: true, latestVersion: result.latestVersion, notes: result.notes });
   try {
     var download = window.desktopWindow && window.desktopWindow.updateDownload
       ? await window.desktopWindow.updateDownload(result.downloadUrl)
       : { ok: false, reason: 'no-bridge' };
     updateCardState.downloading = false;
+    updateEntryBadge('clear');
     var el = updateCardEnsure();
     if (download && download.ok) {
       el.innerHTML = '<div class="mineradio-update-title">下载完成</div><div class="mineradio-update-body">已打开安装器，按提示拖入 Applications 完成安装。</div>';
@@ -64,6 +76,7 @@ async function mineradioUpdateDownload() {
     }
   } catch (e) {
     updateCardState.downloading = false;
+    updateEntryBadge('clear');
   }
 }
 
@@ -99,6 +112,7 @@ async function mineradioUpdateCheckManually() {
     updateCardState.checking = false;
     if (result && result.ok && result.hasUpdate) {
       updateCardState.lastResult = result;
+      updateEntryBadge('available');
       updateCardRender({ hasUpdate: true, latestVersion: result.latestVersion, notes: result.notes });
       return;
     }
