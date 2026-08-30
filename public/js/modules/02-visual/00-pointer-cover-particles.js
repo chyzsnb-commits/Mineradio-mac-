@@ -168,17 +168,14 @@ renderer.domElement.addEventListener('wheel', function (e) {
     saveFreeCameraState();
     return;
   }
-  if (typeof voxelCityActive === 'function' && voxelCityActive()) {   // 体素城市:两指滑动=推拉变焦(对齐原作 OrbitControls dolly:上推近·下拉远),保持俯仰角不变
-    if (freeCamera && freeCamera.locked && !freeCamera.active && typeof voxSyncCamFromCurrentCamera === 'function' && voxSyncCamFromCurrentCamera()) {
-      freeCamera.locked = false;   // 固定机位上滚轮:折算回轨道参数继续操作,不再死锁
-      if (typeof saveFreeCameraState === 'function') saveFreeCameraState();
-      if (typeof updateFreeCameraHint === 'function') updateFreeCameraHint();
+  // 体素城市:滚轮=直接缩放内容,和手势"双手缩放"走同一个 setVoxelGestureContentScale,
+  // 不再推拉相机(原来的 OrbitControls dolly 是滑动机位,手感和手势缩放不一致)。
+  if (typeof voxelCityActive === 'function' && voxelCityActive()) {
+    if (typeof setVoxelGestureContentScale === 'function' && typeof getVoxelGestureContentScale === 'function') {
+      setVoxelGestureContentScale(getVoxelGestureContentScale() * Math.exp(-e.deltaY * 0.0022));
+      if (typeof requestStageLyricCameraSnap === 'function') requestStageLyricCameraSnap(4);
+      return;
     }
-    var voxPolarRatio = _voxCam.height / Math.max(1e-6, _voxCam.radius);   // 俯仰角(cos φ)在变焦中保持
-    _voxCam.radius = clampRange(_voxCam.radius * (1 + e.deltaY * 0.0022), 12, 140);
-    _voxCam.height = _voxCam.radius * clampRange(voxPolarRatio, 0.10, 0.995);
-    if (typeof requestStageLyricCameraSnap === 'function') requestStageLyricCameraSnap(4);   // 手动变焦:歌词吸附相机(防滞后抖动)
-    return;
   }
   if (typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive() && fx && fx.lyricDepthInteraction === true) {
     if (typeof gestureZoom !== 'undefined') gestureZoom.target = clampRange(gestureZoom.target - e.deltaY * 0.0015, GESTURE_ZOOM_MIN, GESTURE_ZOOM_MAX);
@@ -190,7 +187,11 @@ renderer.domElement.addEventListener('wheel', function (e) {
   }
   idleGuideWheel(e);
   unlockCenteredView();
-  orbit.userRadius = Math.max(orbit.minRadius, Math.min(orbit.maxRadius, orbit.userRadius + e.deltaY * 0.005));
+  // 滚轮=直接缩放粒子组(写 gestureZoom.target,与手势"双手缩放"完全同一条路径),
+  // 不再改 orbit.userRadius 推拉相机。
+  if (typeof gestureZoom !== 'undefined') {
+    gestureZoom.target = clampRange(gestureZoom.target * Math.exp(-e.deltaY * 0.0015), GESTURE_ZOOM_MIN, GESTURE_ZOOM_MAX);
+  }
   if (orbit.recentering) orbit.recentering = false;
 }, { passive: false });
 

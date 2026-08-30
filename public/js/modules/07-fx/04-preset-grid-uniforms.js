@@ -30,7 +30,7 @@ function buildPresetCard(i) {
 function buildPresetGrid() {
   var grid = document.getElementById('preset-grid');
   if (!grid) return;
-  var seen = {};
+  var seen = { 7: true };   // 7=黑洞 已下架:不进网格,也不被下面的补位循环捞回来
   var order = presetDisplayOrder.filter(function (id) {
     var ok = id >= 0 && id < presetMeta.length && !seen[id] && !isPresetHidden(id);
     seen[id] = true;
