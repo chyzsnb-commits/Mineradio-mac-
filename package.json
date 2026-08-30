@@ -28,7 +28,7 @@
     "qishuiExperimental": true,
     "runtimeName": "Mineradio",
     "appUserModelId": "com.mineradio.desktop",
-    "updateManifestUrl": "https://raw.githubusercontent.com/chyzsnb-commits/Mineradio-release/main/version.json"
+    "updateManifestUrl": "https://raw.githubusercontent.com/chyzsnb-commits/Mineradio-mac-/main/version.json"
   },
   "scripts": {
     "start": "electron .",

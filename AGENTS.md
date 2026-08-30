@@ -43,7 +43,7 @@
 - 仓库主人（用户）会审查所有 PR 后才合并。AI 开的 PR 同样等用户点头。
 
 ### 6. 功能约束
-- **软件内更新**：使用自研轻量更新检查（`desktop/update-checker.js`，检查公开 version.json → 提示 → 下载 dmg → 打开安装器）。**不用 electron-updater**（无 Developer ID 证书，macOS 禁止后台静默替换，系统限制）。更新资产放公开仓库 `Mineradio-release`（只放产物不放源码），清单地址在 `package.json` 的 `mineradio.updateManifestUrl`。发布新版本时必须同步更新该仓库的 `version.json` 与 Release dmg。
+- **软件内更新**：使用自研轻量更新检查（`desktop/update-checker.js`，检查公开 version.json → 提示 → 下载 dmg → 打开安装器）。**不用 electron-updater**（无 Developer ID 证书，macOS 禁止后台静默替换，系统限制）。更新资产放公开仓库 `chyzsnb-commits/Mineradio-mac-`（仓库主人指定的发布渠道，version.json 在 main 根目录、dmg 放其 Release），清单地址在 `package.json` 的 `mineradio.updateManifestUrl`。发布新版本时必须同步更新该仓库的 `version.json` 与 Release dmg。
 - 仓库是**私有**的，不能开源。`chyzsnb-commits/Mineradio-mac-` 是独立开源仓库，**绝对不要碰**。
 
 ---
