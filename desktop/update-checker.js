@@ -158,7 +158,13 @@ function downloadUpdateDmg({ url, destDir, onProgress, fetchImpl } = {}) {
       let loaded = 0;
       let lastNotify = 0;
       const stream = fs.createWriteStream(tmpPath);
-      res.body.on('data', (chunk) => {
+      // net.fetch 返回 WHATWG Web ReadableStream（只有 getReader，无 .on/.pipe）；
+      // 统一转成 Node Readable 再 pipe，兼容两种形状（Electron 真实流 + 测试 mock）。
+      let source = res.body;
+      if (typeof source.getReader === 'function' && typeof source.on !== 'function') {
+        source = require('node:stream').Readable.fromWeb(source);
+      }
+      source.on('data', (chunk) => {
         loaded += chunk.length;
         const now = Date.now();
         if (onProgress && now - lastNotify > 400) {   // 进度节流 400ms
@@ -167,13 +173,13 @@ function downloadUpdateDmg({ url, destDir, onProgress, fetchImpl } = {}) {
         }
       });
       // 源流错误（网络中断/socket reset）必须清理并结束，否则下载永久挂起
-      res.body.on('error', (e) => {
+      source.on('error', (e) => {
         clearTimeout(hardTimer);
         try { stream.destroy(); } catch (_) {}
         try { fs.unlinkSync(tmpPath); } catch (_) {}
         finish({ ok: false, reason: 'network', error: String(e && e.message || e).slice(0, 160) });
       });
-      res.body.pipe(stream);
+      source.pipe(stream);
       stream.on('finish', () => {
         clearTimeout(hardTimer);
         try {

@@ -123,6 +123,34 @@ test('下载：成功流式落盘；HTTP 失败与半截文件均不留伪 dmg',
   assert.equal(failResult.ok, false);
   assert.ok(!fs.existsSync(path.join(destDir, 'Mineradio-2.0.1-failcase-arm64.dmg')), '失败不生成伪 dmg');
 
+  // 关键回归：net.fetch 的 res.body 是 WHATWG Web ReadableStream（只有 getReader），
+  // 之前实现用 Node stream API（.on/.pipe）导致真实 Electron 下载必失败（res.body.on is not a function）。
+  // 必须兼容 Web 流形状。
+  function webStreamFrom(chunks) {
+    const encoder = new TextEncoder();
+    // 用真正的 ReadableStream 实例（net.fetch 返回的就是这个形状，Readable.fromWeb 校验类型）
+    return new ReadableStream({
+      start(controller) {
+        chunks.forEach((chunk) => {
+          controller.enqueue(typeof chunk === 'string' ? encoder.encode(chunk) : chunk);
+        });
+        controller.close();
+      },
+    });
+  }
+  const webResult = await downloadUpdateDmg({
+    url: 'https://x/Mineradio-2.0.3-arm64.dmg',
+    destDir,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: (n) => (String(n).toLowerCase() === 'content-length' ? '13' : null) },
+      body: webStreamFrom([Buffer.from('web'), Buffer.from('-stream'), Buffer.from('-ok!')]),
+    }),
+  });
+  assert.equal(webResult.ok, true, 'Web ReadableStream（net.fetch 形状）必须下载成功');
+  assert.equal(fs.readFileSync(webResult.filePath).toString(), 'web-stream-ok!');
+
   // 中途中断的流：.part 被清理，完整 dmg 不存在
   const brokenStream = new Readable({ read() {} });
   const brokenResult = await new Promise((resolve) => {
