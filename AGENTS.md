@@ -1,6 +1,6 @@
 # Mineradio Project Rules (macOS / arm64)
 
-> 这是给所有 AI agent（Codex、ZCode、以及未来的接手者）的项目规则文件。**新对话开始处理 Mineradio 前，先读本文件和 `AI_HANDOFF.md`。**
+> 这是给所有 AI agent（Codex、ZCode、以及未来的接手者）的项目规则文件。**新对话/首次接手处理 Mineradio 前，必须按顺序先读：① 本文件（AGENTS.md）→ ② `AI_HANDOFF.md`（当前状态）→ ③ 本地 Obsidian 项目记忆（`/Users/chy/菜鸡的仓库/菜鸡的仓库/Codex Memory/10 项目记忆/Mineradio/` 下的 `当前进度.md` 与 `项目约束.md`）。三处都读完并向用户复述接手状态后，才能开始改代码。**
 
 ---
 
@@ -42,7 +42,16 @@
 - 仓库有真人协作者（不只是 AI）。协作者也走 PR 流程（开 PR → 仓库主人审查 → 合并）。协作者的操作说明见 `COLLABORATOR_QUICKSTART.md`。
 - 仓库主人（用户）会审查所有 PR 后才合并。AI 开的 PR 同样等用户点头。
 
-### 6. 功能约束
+### 6. 转交提示词（每次完成任务必须输出）
+- **每次完成任务后，最终回复必须附一段「转交提示词」**，供用户直接复制给下一位 AI（Codex/GLM/其他）或下一次会话使用。转交提示词最少包含：
+  - 当前工作树/分支/HEAD 和仓库地址
+  - 本次完成了什么、改了哪些文件
+  - 怎么验证（可直接粘贴的命令行）
+  - 未验证/待办事项
+  - 提醒下一位：先读 AGENTS.md + AI_HANDOFF.md + Obsidian 项目记忆再动手
+- AI_HANDOFF.md 与 Obsidian 同步更新不能替代转交提示词——前者是仓库状态，后者是给用户的"接力棒"。
+
+### 7. 功能约束
 - **软件内更新**：使用自研轻量更新检查（`desktop/update-checker.js`，检查公开 version.json → 提示 → 下载 dmg → 打开安装器）。**不用 electron-updater**（无 Developer ID 证书，macOS 禁止后台静默替换，系统限制）。清单地址在 `package.json` 的 `mineradio.updateManifestUrl`。
 - **发布新版本流程（必须完整执行，顺序不可颠倒）**：
   1. 确认 `npm run check` 全绿后构建 dmg：`CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:mac:arm64`（及需要时 `build:mac:x64`）。
