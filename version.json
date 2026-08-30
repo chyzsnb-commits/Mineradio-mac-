@@ -1,6 +1,6 @@
 {
-  "version": "0.0.0",
-  "notes": "占位清单，首个正式版发布时更新 version/notes/url。",
-  "url": "",
+  "version": "2.0.1",
+  "notes": "更新链路测试包：点击下载更新可测试完整下载安装流程。",
+  "url": "https://github.com/chyzsnb-commits/Mineradio-mac-/releases/download/v2.0.1-test/Mineradio-1.1.3-arm64.dmg",
   "pub_date": "2026-08-30T00:00:00Z"
 }
