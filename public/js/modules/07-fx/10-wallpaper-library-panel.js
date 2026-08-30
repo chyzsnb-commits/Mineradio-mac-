@@ -93,10 +93,18 @@ function wallpaperLibraryVisibleRecords() {
     return left.title.localeCompare(right.title);
   });
 }
+// 缩略图标签按 previewUrl 的实际媒体类型决定，不能只看 record.type：
+// Windows 端会为视频壁纸生成静态图片预览（preview.jpg/gif/png/webp），
+// 把图片塞进 <video> 会 readyState=0、videoWidth=0，缩略图黑屏（真实 Electron 已复现）。
+// 详情页仍按 record.type 用 record.fileUrl 播放真实视频，不受此影响。
+function wallpaperLibraryPreviewUrlIsVideo(previewUrl) {
+  return /\.(mp4|webm|ogg|mov|m4v)(?:[?#&]|$)/i.test(String(previewUrl || ''));
+}
 function wallpaperLibraryThumb(record) {
   var preview = wallpaperLibraryEsc(record.previewUrl || '');
   if (!preview) return '<div class="wallpaper-thumb wallpaper-thumb-empty">无缩略图</div>';
-  if (record.type === 'video') return '<video class="wallpaper-thumb-media" muted playsinline preload="none" data-wallpaper-preview="' + preview + '"></video>';
+  var previewIsVideo = wallpaperLibraryPreviewUrlIsVideo(record.previewUrl || '');
+  if (record.type === 'video' && previewIsVideo) return '<video class="wallpaper-thumb-media" muted playsinline preload="none" data-wallpaper-preview="' + preview + '"></video>';
   return '<img class="wallpaper-thumb-media" loading="lazy" decoding="async" data-wallpaper-preview="' + preview + '" alt="" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{className:\'wallpaper-thumb wallpaper-thumb-empty\',textContent:\'无缩略图\'}))">';
 }
 function wallpaperLibraryLoadLazyMedia(media) {
