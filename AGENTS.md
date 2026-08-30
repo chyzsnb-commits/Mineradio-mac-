@@ -43,8 +43,17 @@
 - 仓库主人（用户）会审查所有 PR 后才合并。AI 开的 PR 同样等用户点头。
 
 ### 6. 功能约束
-- **软件内更新**：使用自研轻量更新检查（`desktop/update-checker.js`，检查公开 version.json → 提示 → 下载 dmg → 打开安装器）。**不用 electron-updater**（无 Developer ID 证书，macOS 禁止后台静默替换，系统限制）。更新资产放公开仓库 `chyzsnb-commits/Mineradio-mac-`（仓库主人指定的发布渠道，version.json 在 main 根目录、dmg 放其 Release），清单地址在 `package.json` 的 `mineradio.updateManifestUrl`。发布新版本时必须同步更新该仓库的 `version.json` 与 Release dmg。
-- 仓库是**私有**的，不能开源。`chyzsnb-commits/Mineradio-mac-` 是独立开源仓库，**绝对不要碰**。
+- **软件内更新**：使用自研轻量更新检查（`desktop/update-checker.js`，检查公开 version.json → 提示 → 下载 dmg → 打开安装器）。**不用 electron-updater**（无 Developer ID 证书，macOS 禁止后台静默替换，系统限制）。清单地址在 `package.json` 的 `mineradio.updateManifestUrl`。
+- **发布新版本流程（必须完整执行，顺序不可颠倒）**：
+  1. 确认 `npm run check` 全绿后构建 dmg：`CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:mac:arm64`（及需要时 `build:mac:x64`）。
+  2. 上传 dmg 到公开发布仓库的 Release（tag 用新版本号）：
+     ```bash
+     gh release create vX.Y.Z dist/Mineradio-X.Y.Z-arm64.dmg        -R chyzsnb-commits/Mineradio-mac- --title "Mineradio vX.Y.Z" --notes "更新说明"
+     ```
+  3. 更新 `chyzsnb-commits/Mineradio-mac-` 仓库 main 分支根目录的 `version.json`（三个字段：`version` 新版本号、`notes` 更新说明、`url` 该 dmg 的 Release 下载直链），推送到 main。
+  4. 验证清单直链可访问：`curl https://raw.githubusercontent.com/chyzsnb-commits/Mineradio-mac-/main/version.json`。
+  完成后，所有已安装实例会在 30 秒~6 小时内收到更新提示。**只改 version.json 与 Release 资产，不改该仓库其他内容**。
+- 仓库 `mr` 是**私有**的，源码不能开源。`chyzsnb-commits/Mineradio-mac-` 是独立开源仓库：**仅授权用于发布资产**（按上方发版流程更新 version.json 与 Release dmg），**不得改动它的源码、文档或其他内容**。
 
 ---
 
