@@ -98,6 +98,14 @@ const {
   handleQishuiPlaylistTracks,
   handleQishuiLyric,
   handleQishuiSongUrl,
+  handleQishuiCheckTracksLiked,
+  handleQishuiSetTrackLiked,
+  handleQishuiSetPlaylistCollected,
+  handleQishuiPlaylistAddSong,
+  handleQishuiSetAlbumCollected,
+  handleQishuiReportRecentlyPlayed,
+  handleQishuiComments,
+  handleQishuiCreateComment,
 } = require('./qishui-api');
 const {
   getSpotifyConfig,
@@ -109,6 +117,8 @@ const {
   handleSpotifyPlaylistTracks,
   handleSpotifyAlbumDetail,
   handleSpotifyRecommendations,
+  handleSpotifyLibraryCheck,
+  handleSpotifyLibrarySet,
   handleSpotifyLikeCheck,
   handleSpotifyLikeToggle,
   handleSpotifyPlaylistAddSong,
@@ -6269,6 +6279,470 @@ const server = http.createServer(async (req, res) => {
       const id = url.searchParams.get('id') || 'qishui-feed';
       sendJSON(res, await handleQishuiPlaylistTracks(id, {}, qishuiCookie));
     } catch (err) { sendJSON(res, { provider: 'qishui', tracks: [], error: err.message }, 500); }
+    return;
+  }
+
+// ===== Win 移植: 听歌上报（平台听歌数据） =====
+const LISTEN_REPORT_NOT_ELIGIBLE = 'NOT_ELIGIBLE';
+
+async function handlePlatformListenReport(body) {
+  const report = validateListenReport(body);
+  const base = {
+    provider: report.provider || 'unknown',
+    songId: report.songId,
+    sessionId: report.sessionId,
+    listenMs: report.listenMs,
+    durationMs: report.durationMs,
+    eligible: report.eligible,
+    localRecorded: true,
+    platformSubmitted: false,
+    historySynced: false,
+    accountDurationSync: 'unsupported',
+  };
+  if (!report.eligible) {
+    return Object.assign(base, {
+      accepted: false,
+      reason: 'LISTEN_REPORT_NOT_ELIGIBLE',
+      requiredMs: report.requiredMs,
+    });
+  }
+
+  let credential = '';
+  if (report.provider === 'netease') credential = userCookie;
+  else if (report.provider === 'qishui') credential = qishuiCookie;
+  const journalKey = listenSyncJournalKey(report.provider, credential, report.sessionId);
+  const previous = listenSyncJournal.entries[journalKey];
+  if (previous) {
+    return Object.assign(base, previous, {
+      accepted: true,
+      duplicate: true,
+      platformSubmitted: true,
+    });
+  }
+
+  if (report.provider === 'netease') {
+    const info = await getLoginInfo();
+    if (!info.loggedIn || !userCookie) {
+      return Object.assign(base, { accepted: true, reason: 'NETEASE_LOGIN_REQUIRED' });
+    }
+    const rawSourceId = report.context.playlistId || report.context.id || report.context.sourceId || 0;
+    const sourceId = /^\d+$/.test(String(rawSourceId || '')) ? String(rawSourceId) : 0;
+    const result = await scrobble({
+      id: report.songId,
+      sourceid: sourceId,
+      time: Math.max(1, Math.floor(report.listenMs / 1000)),
+      cookie: userCookie,
+      timestamp: Date.now(),
+    });
+    const code = normalizeApiCode(result);
+    if (code !== 200) {
+      const err = new Error(normalizeApiMessage(result) || 'NETEASE_SCROBBLE_FAILED');
+      err.code = 'NETEASE_SCROBBLE_FAILED';
+      err.statusCode = code;
+      throw err;
+    }
+    const submitted = Object.assign(base, {
+      accepted: true,
+      platformSubmitted: true,
+      accountDurationSync: 'submitted_unverified',
+      platformCode: code,
+    });
+    rememberListenSyncSubmission(journalKey, submitted);
+    return submitted;
+  }
+
+  if (report.provider === 'qishui') {
+    if (!qishuiCookieHasLogin(qishuiCookie)) {
+      return Object.assign(base, { accepted: true, reason: 'QISHUI_LOGIN_REQUIRED' });
+    }
+    await handleQishuiReportRecentlyPlayed(report.songId, qishuiCookie);
+    const submitted = Object.assign(base, {
+      accepted: true,
+      platformSubmitted: true,
+      historySynced: true,
+      accountDurationSync: 'unsupported',
+      note: 'Qishui accepted a recent-play item, but its PC endpoint carries no listening duration.',
+    });
+    rememberListenSyncSubmission(journalKey, submitted);
+    return submitted;
+  }
+
+  return Object.assign(base, {
+    accepted: true,
+    reason: 'PLATFORM_DURATION_WRITE_UNAVAILABLE',
+  });
+}
+
+// ===== Win 移植: 音乐社交与订阅收藏端点 =====
+// ===== Win 移植: /api/spotify/album/like/check =====
+if (pn === '/api/spotify/album/like/check') {
+    try {
+      const ids = String(url.searchParams.get('ids') || url.searchParams.get('id') || '')
+        .split(',').map(value => value.trim()).filter(Boolean);
+      sendJSON(res, await handleSpotifyLibraryCheck('album', ids));
+    } catch (err) {
+      console.error('[SpotifyAlbumLikeCheck]', err);
+      sendJSON(res, { provider: 'spotify', liked: {}, error: err.code || err.message, message: err.message }, Number(err.statusCode) || 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/spotify/album/like =====
+if (pn === '/api/spotify/album/like') {
+    try {
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const album = body.album || {
+        id: body.id || body.albumId || url.searchParams.get('id') || '',
+        albumId: body.albumId || '',
+        spotifyUri: body.spotifyUri || body.uri || '',
+      };
+      const liked = String(body.like != null ? body.like : (url.searchParams.get('like') || 'true')) !== 'false';
+      sendJSON(res, await handleSpotifyLibrarySet('album', album, liked));
+    } catch (err) {
+      console.error('[SpotifyAlbumLike]', err);
+      sendJSON(res, { provider: 'spotify', success: false, error: err.code || err.message, message: err.message, missingScopes: err.missingScopes || [] }, Number(err.statusCode) || 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/qishui/song/like/check =====
+if (pn === '/api/qishui/song/like/check') {
+    try {
+      const ids = String(url.searchParams.get('ids') || url.searchParams.get('id') || '')
+        .split(',').map(value => value.trim()).filter(Boolean);
+      sendJSON(res, await handleQishuiCheckTracksLiked(ids, qishuiCookie));
+    } catch (err) {
+      console.error('[QishuiLikeCheck]', err);
+      sendJSON(res, { provider: 'qishui', liked: {}, error: err.message }, 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/qishui/song/like =====
+if (pn === '/api/qishui/song/like') {
+    try {
+      if (req.method !== 'POST') {
+        sendJSON(res, { provider: 'qishui', success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+        return;
+      }
+      const body = await readRequestBody(req);
+      const song = body.song || body;
+      const id = song.providerSongId || song.trackId || song.id || '';
+      const liked = String(body.like != null ? body.like : 'true') !== 'false';
+      const result = await handleQishuiSetTrackLiked(id, liked, qishuiCookie);
+      sendJSON(res, Object.assign({ success: true }, result));
+    } catch (err) {
+      console.error('[QishuiLike]', err);
+      sendJSON(res, { provider: 'qishui', success: false, error: err.message }, /COOKIE_REQUIRED|login/i.test(String(err.message)) ? 401 : 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/qishui/playlist/collect =====
+if (pn === '/api/qishui/playlist/collect') {
+    try {
+      if (req.method !== 'POST') {
+        sendJSON(res, { provider: 'qishui', success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+        return;
+      }
+      const body = await readRequestBody(req);
+      const collected = String(body.collected != null ? body.collected : 'true') !== 'false';
+      const result = await handleQishuiSetPlaylistCollected(body.id || body.playlistId || '', collected, qishuiCookie);
+      sendJSON(res, Object.assign({ success: true }, result));
+    } catch (err) {
+      console.error('[QishuiPlaylistCollect]', err);
+      sendJSON(res, { provider: 'qishui', success: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/qishui/playlist/add-song =====
+if (pn === '/api/qishui/playlist/add-song') {
+    try {
+      if (req.method !== 'POST') {
+        sendJSON(res, { provider: 'qishui', success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+        return;
+      }
+      const body = await readRequestBody(req);
+      sendJSON(res, await handleQishuiPlaylistAddSong(body.pid || body.playlistId || '', body.song || body, qishuiCookie));
+    } catch (err) {
+      console.error('[QishuiPlaylistAddSong]', err);
+      sendJSON(res, { provider: 'qishui', success: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/qishui/album/collect =====
+if (pn === '/api/qishui/album/collect') {
+    try {
+      if (req.method !== 'POST') {
+        sendJSON(res, { provider: 'qishui', success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+        return;
+      }
+      const body = await readRequestBody(req);
+      const collected = String(body.collected != null ? body.collected : 'true') !== 'false';
+      const result = await handleQishuiSetAlbumCollected(body.id || body.albumId || '', collected, qishuiCookie);
+      sendJSON(res, Object.assign({ success: true }, result));
+    } catch (err) {
+      console.error('[QishuiAlbumCollect]', err);
+      sendJSON(res, { provider: 'qishui', success: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/qishui/song/comments =====
+if (pn === '/api/qishui/song/comments') {
+    try {
+      const id = url.searchParams.get('id') || url.searchParams.get('trackId') || '';
+      if (req.method === 'POST') {
+        const body = await readRequestBody(req);
+        sendJSON(res, await handleQishuiCreateComment(id || body.id || body.trackId || '', body.content || body.text || '', qishuiCookie));
+      } else {
+        const limit = Math.max(1, Math.min(50, parseInt(url.searchParams.get('limit') || '18', 10) || 18));
+        sendJSON(res, await handleQishuiComments(id, {
+          limit,
+          cursor: url.searchParams.get('cursor') || '',
+        }, qishuiCookie));
+      }
+    } catch (err) {
+      console.error('[QishuiComments]', err);
+      sendJSON(res, { provider: 'qishui', comments: [], error: err.message }, 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/song/comments/like =====
+if (pn === '/api/song/comments/like') {
+    try {
+      const info = await requireLogin(res);
+      if (!info) return;
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const id = body.id || url.searchParams.get('id') || '';
+      const cid = body.commentId || body.cid || url.searchParams.get('commentId') || '';
+      const liked = String(body.liked != null ? body.liked : (url.searchParams.get('liked') || 'true')) !== 'false';
+      if (!id || !cid) { sendJSON(res, { success: false, error: 'Missing song id or comment id' }, 400); return; }
+      const result = await comment_like({ type: 0, id, cid, t: liked ? 1 : 0, cookie: userCookie, timestamp: Date.now() });
+      const code = normalizeApiCode(result);
+      sendJSON(res, { provider: 'netease', id, commentId: cid, liked, success: code === 200, code, body: result.body || result });
+    } catch (err) {
+      console.error('[SongCommentLike]', err);
+      sendJSON(res, { provider: 'netease', success: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/album/subscribe =====
+if (pn === '/api/album/subscribe') {
+    try {
+      const info = await requireLogin(res);
+      if (!info) return;
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const id = body.id || body.albumId || url.searchParams.get('id') || '';
+      const subscribed = String(body.subscribed != null ? body.subscribed : (url.searchParams.get('subscribed') || 'true')) !== 'false';
+      if (!id) { sendJSON(res, { success: false, error: 'Missing album id' }, 400); return; }
+      const result = await album_sub({ id, t: subscribed ? 1 : 0, cookie: userCookie, timestamp: Date.now() });
+      const code = normalizeApiCode(result);
+      sendJSON(res, { provider: 'netease', id, subscribed, success: code === 200, code, body: result.body || result });
+    } catch (err) {
+      console.error('[AlbumSubscribe]', err);
+      sendJSON(res, { provider: 'netease', success: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/album/subscribe/check =====
+if (pn === '/api/album/subscribe/check') {
+    try {
+      const info = await requireLogin(res);
+      if (!info) return;
+      const ids = String(url.searchParams.get('ids') || url.searchParams.get('id') || '')
+        .split(',').map(value => value.trim()).filter(Boolean);
+      if (!ids.length) { sendJSON(res, { provider: 'netease', subscribed: {} }); return; }
+      const wanted = new Set(ids);
+      const found = new Set();
+      let offset = 0;
+      for (let page = 0; page < 8 && found.size < wanted.size; page++) {
+        const result = await album_sublist({ limit: 50, offset, cookie: userCookie, timestamp: Date.now() });
+        const body = result.body || result || {};
+        const rows = Array.isArray(body.data) ? body.data : (body.albums || []);
+        rows.forEach(item => {
+          const id = String(item && item.id || '');
+          if (wanted.has(id)) found.add(id);
+        });
+        if (!body.hasMore || rows.length < 50) break;
+        offset += rows.length;
+      }
+      const subscribed = {};
+      ids.forEach(id => { subscribed[id] = found.has(id); });
+      sendJSON(res, { provider: 'netease', ids, subscribed });
+    } catch (err) {
+      console.error('[AlbumSubscribeCheck]', err);
+      sendJSON(res, { provider: 'netease', subscribed: {}, error: err.message }, 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/playlist/subscribe =====
+if (pn === '/api/playlist/subscribe') {
+    try {
+      const info = await requireLogin(res);
+      if (!info) return;
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const id = body.id || body.playlistId || url.searchParams.get('id') || '';
+      const subscribed = String(body.subscribed != null ? body.subscribed : (url.searchParams.get('subscribed') || 'true')) !== 'false';
+      if (!id) { sendJSON(res, { success: false, error: 'Missing playlist id' }, 400); return; }
+      const result = await playlist_subscribe({ id, t: subscribed ? 1 : 0, cookie: userCookie, timestamp: Date.now() });
+      const code = normalizeApiCode(result);
+      sendJSON(res, { provider: 'netease', id, subscribed, success: code === 200, code, body: result.body || result });
+    } catch (err) {
+      console.error('[PlaylistSubscribe]', err);
+      sendJSON(res, { provider: 'netease', success: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/listen/report =====
+// Win 依赖函数: normalizeListenReportProvider
+function normalizeListenReportProvider(value) {
+  value = String(value || '').trim().toLowerCase();
+  if (value === 'qq' || value === 'kugou' || value === 'qishui' || value === 'spotify') return value;
+  return value === 'netease' || value === 'cloud' || value === 'song' ? 'netease' : '';
+}
+
+// Win 依赖函数: validateListenReport
+function validateListenReport(body) {
+  body = body && typeof body === 'object' ? body : {};
+  const song = body.song && typeof body.song === 'object' ? body.song : {};
+  const provider = normalizeListenReportProvider(
+    body.provider || song.provider || song.source || song.sourceKey || song.type || song.resolvedPlaybackProvider
+  );
+  const songId = listenReportSongId(provider, song);
+  const sessionId = String(body.sessionId || '').trim().slice(0, 160);
+  const listenMs = Math.max(0, Math.min(12 * 60 * 60 * 1000, Math.round(Number(body.listenMs) || 0)));
+  const durationMs = Math.max(0, Math.min(12 * 60 * 60 * 1000, Math.round(Number(body.durationMs) || 0)));
+  const cappedListenMs = durationMs > 0 ? Math.min(listenMs, durationMs + 2500) : listenMs;
+  const requiredMs = durationMs > 0
+    ? (durationMs <= 30000 ? durationMs * 0.8 : Math.min(30000, durationMs * 0.5))
+    : 30000;
+  const eligible = !!(
+    provider &&
+    songId &&
+    sessionId.length >= 8 &&
+    cappedListenMs >= Math.max(5000, requiredMs) &&
+    song.type !== 'local' &&
+    song.type !== 'podcast' &&
+    song.source !== 'podcast' &&
+    !song.trial
+  );
+  return {
+    provider,
+    song,
+    songId,
+    sessionId,
+    listenMs: cappedListenMs,
+    durationMs,
+    requiredMs: Math.ceil(requiredMs),
+    eligible,
+    context: body.context && typeof body.context === 'object' ? body.context : {},
+  };
+}
+// Win 依赖函数: listenReportSongId
+function listenReportSongId(provider, song) {
+  song = song && typeof song === 'object' ? song : {};
+  if (provider === 'qq') return String(song.qqId || song.mid || song.mediaMid || song.id || '');
+  if (provider === 'kugou') return String(song.hash || song.mixSongId || song.providerSongId || song.id || '');
+  if (provider === 'qishui') return String(song.providerSongId || song.trackId || song.id || '');
+  if (provider === 'spotify') return String(song.spotifyId || song.providerSongId || song.id || '').replace(/^spotify:track:/i, '');
+  return String(song.id || song.providerSongId || '');
+}
+
+if (pn === '/api/listen/report') {
+    try {
+      if (req.method !== 'POST') {
+        sendJSON(res, { accepted: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+        return;
+      }
+      const body = await readRequestBody(req);
+      sendJSON(res, await handlePlatformListenReport(body));
+    } catch (err) {
+      console.error('[ListenReport]', err);
+      sendJSON(res, {
+        accepted: false,
+        platformSubmitted: false,
+        error: err.code || err.message,
+        message: err.message,
+      }, Number(err.statusCode) === 401 ? 401 : 502);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/listen/total =====
+if (pn === '/api/listen/total') {
+    try {
+      const provider = normalizeListenReportProvider(url.searchParams.get('provider') || 'netease');
+      if (provider !== 'netease') {
+        sendJSON(res, { provider, supported: false, accountDurationSync: 'unsupported' });
+        return;
+      }
+      const info = await requireLogin(res);
+      if (!info) return;
+      const result = await listen_data_total({ cookie: userCookie, timestamp: Date.now() });
+      sendJSON(res, {
+        provider: 'netease',
+        supported: true,
+        readOnly: true,
+        body: result.body || result,
+      });
+    } catch (err) {
+      console.error('[ListenTotal]', err);
+      sendJSON(res, { provider: 'netease', supported: true, error: err.message }, 500);
+    }
+    return;
+  }
+
+// ===== Win 移植: /api/cuefield/feedback =====
+// /api/cuefield/feedback 端点未移植：Win 侧为半成品（调用的 readCuefieldFeedbackStats/appendCuefieldFeedback 在 Win 源码中也不存在）
+
+
+// ===== Win 移植: /api/cuefield/transition =====
+// /api/cuefield/transition 端点未移植：Win 侧为半成品（调用的 readCuefieldFeedbackStats/appendCuefieldFeedback 在 Win 源码中也不存在）
+
+
+// ===== Win 移植: /api/platform/capabilities =====
+if (pn === '/api/platform/capabilities') {
+    const spotifyStatus = await handleSpotifyStatus().catch(() => ({ loggedIn: false, capabilities: {} }));
+    sendJSON(res, {
+      netease: {
+        playlists: true, likeRead: true, likeWrite: true, albumRead: true,
+        albumCollect: true, commentsRead: true, commentsWrite: true,
+        listenReport: 'experimental-unverified',
+      },
+      qq: {
+        playlists: true, likeRead: true, likeWrite: false, albumRead: true,
+        albumCollect: false, commentsRead: true, commentsWrite: false,
+        listenReport: false,
+      },
+      kugou: {
+        playlists: true, likeRead: true, likeWrite: true, albumRead: false,
+        albumCollect: false, commentsRead: false, commentsWrite: false,
+        listenReport: false,
+      },
+      qishui: {
+        playlists: true, likeRead: true, likeWrite: qishuiCookieHasLogin(qishuiCookie),
+        albumRead: false, albumCollect: qishuiCookieHasLogin(qishuiCookie),
+        commentsRead: qishuiCookieHasLogin(qishuiCookie), commentsWrite: qishuiCookieHasLogin(qishuiCookie),
+        recentPlayReport: qishuiCookieHasLogin(qishuiCookie), listenReport: false,
+      },
+      spotify: {
+        playlists: true, likeRead: true,
+        likeWrite: !!(spotifyStatus.capabilities && spotifyStatus.capabilities.likeWrite),
+        playlistWrite: !!(spotifyStatus.capabilities && spotifyStatus.capabilities.playlistWrite),
+        albumRead: true,
+        albumCollect: !!(spotifyStatus.capabilities && spotifyStatus.capabilities.likeWrite),
+        commentsRead: false, commentsWrite: false, listenReport: false,
+        missingWriteScopes: spotifyStatus.missingWriteScopes || [],
+      },
+    });
     return;
   }
 

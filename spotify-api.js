@@ -1184,6 +1184,76 @@ async function handleSpotifyLyric(id) {
   };
 }
 
+
+
+// ===== 自 Windows 版合并：Spotify 专辑库（喜欢/收藏检查与设置）=====
+async function handleSpotifyLibraryCheck(type, values) {
+  const raw = Array.isArray(values) ? values : String(values == null ? '' : values).split(',');
+  const pairs = raw.map(value => ({
+    id: normalizeText(value && typeof value === 'object'
+      ? (value.spotifyId || value.providerSongId || value.albumId || value.id || value.spotifyUri || value.uri)
+      : value),
+    uri: spotifyLibraryUri(type, value),
+  })).filter(item => item.id && item.uri).slice(0, 40);
+  if (!pairs.length) return { provider: 'spotify', ids: [], liked: {} };
+  const result = await spotifyUserGet('/me/library/contains', {
+    uris: pairs.map(item => item.uri).join(','),
+  }, { timeoutMs: 9000 });
+  const valuesOut = Array.isArray(result) ? result : [];
+  const liked = {};
+  pairs.forEach((item, index) => { liked[item.id] = !!valuesOut[index]; });
+  return {
+    provider: 'spotify',
+    loggedIn: true,
+    ids: pairs.map(item => item.id),
+    liked,
+  };
+}
+
+async function handleSpotifyLibrarySet(type, value, saved) {
+  requireSpotifyScopes(['user-library-modify']);
+  const uri = spotifyLibraryUri(type, value);
+  if (!uri) {
+    const err = new Error('SPOTIFY_ITEM_ID_REQUIRED');
+    err.code = 'SPOTIFY_ITEM_ID_REQUIRED';
+    throw err;
+  }
+  await spotifyUserRequest('/me/library', saved === false ? 'DELETE' : 'PUT', { uris: uri }, null, { timeoutMs: 9000 });
+  return {
+    provider: 'spotify',
+    loggedIn: true,
+    id: uri.split(':').pop(),
+    uri,
+    liked: saved !== false,
+    saved: saved !== false,
+    success: true,
+  };
+}
+
+function requireSpotifyScopes(required) {
+  required = uniqueList(required);
+  const granted = normalizeScopes(readStoredSpotifyToken().scope);
+  const missing = required.filter(scope => !granted.includes(scope));
+  if (!missing.length) return;
+  const err = new Error('SPOTIFY_WRITE_SCOPE_REQUIRED');
+  err.code = 'SPOTIFY_WRITE_SCOPE_REQUIRED';
+  err.statusCode = 403;
+  err.missingScopes = missing;
+  err.reauthRequired = true;
+  throw err;
+}
+
+function spotifyLibraryUri(type, value) {
+  type = normalizeText(type || 'track').toLowerCase();
+  value = normalizeText(value && typeof value === 'object'
+    ? (value.spotifyUri || value.uri || value.spotifyId || value.providerSongId || value.albumId || value.id)
+    : value);
+  if (/^spotify:(?:track|album|playlist|episode|show|audiobook|artist|user):[^:]+$/i.test(value)) return value;
+  value = value.replace(/^spotify:(?:track|album|playlist):/i, '');
+  if (!/^(?:track|album|playlist|episode|show|audiobook|artist|user)$/.test(type) || !value) return '';
+  return 'spotify:' + type + ':' + value;
+}
+
 module.exports = {
   getSpotifyConfig,
   getSpotifyOAuthConfig,
@@ -1205,4 +1275,6 @@ module.exports = {
   handleSpotifyLyric,
   SPOTIFY_SEARCH_LIMIT_MAX,
   SPOTIFY_LIKED_PLAYLIST_ID,
+  handleSpotifyLibraryCheck,
+  handleSpotifyLibrarySet
 };

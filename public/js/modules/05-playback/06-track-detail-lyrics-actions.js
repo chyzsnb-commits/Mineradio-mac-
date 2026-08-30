@@ -1128,8 +1128,11 @@ function isSpotifyWritableSong(song) {
 }
 // QQ 红心写入(加入我喜欢)实测受 QQ musicu 签名风控拦截:AddSonglist 恒返回 code 80105(仅取消 DelSonglist 放行),
 // 本仓库无 QQ 安全签名实现,加红心不可靠,故 QQ 不进入红心/收藏写路径;后端 /api/qq/song/like(/check) 仍在,待日后补签名可复用。
+function isQishuiWritableSong(song) {
+  return songProviderKey(song) === 'qishui' && typeof qishuiLoginStatus !== 'undefined' && qishuiLoginStatus && qishuiLoginStatus.loggedIn;
+}
 function isLikeableSong(song) {
-  return isCloudSong(song) || isKugouWritableSong(song) || isSpotifyWritableSong(song);
+  return isCloudSong(song) || isKugouWritableSong(song) || isSpotifyWritableSong(song) || isQishuiWritableSong(song);
 }
 function songLikeKey(song) {
   return (songProviderKey(song) || 'netease') + ':' + String(song && song.id || '');
@@ -1249,7 +1252,13 @@ function refreshSearchResultActionStates() {
 }
 async function toggleLikeSong(song) {
   var spotifyTarget = songProviderKey(song) === 'spotify';
+  var qishuiTarget = songProviderKey(song) === 'qishui';
   if (spotifyTarget && !ensureSpotifyLoggedInForAction()) return;
+  if (qishuiTarget && !(typeof qishuiLoginStatus !== 'undefined' && qishuiLoginStatus && qishuiLoginStatus.loggedIn)) {
+    showToast('登录汽水音乐后可同步喜欢');
+    showLoginModal();
+    return;
+  }
   if (!isLikeableSong(song)) {
     showToast(songProviderKey(song) === 'qq' ? 'QQ 红心写入受签名风控限制，暂不可用' : '本地文件暂不支持红心同步');
     return;
@@ -1268,15 +1277,17 @@ async function toggleLikeSong(song) {
   try {
     var r = spotifyTarget
       ? await apiJson('/api/spotify/song/like', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ song: song, like: next }) })
-      : (isKugouWritableSong(song)
+      : (qishuiTarget
+        ? await apiJson('/api/qishui/song/like', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ song: song, like: next }) })
+        : (isKugouWritableSong(song)
         ? await apiJson('/api/kugou/song/like', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ song: song, like: next }) })
-        : await apiJson('/api/song/like?id=' + encodeURIComponent(String(song.id)) + '&like=' + encodeURIComponent(String(next))));
+          : await apiJson('/api/song/like?id=' + encodeURIComponent(String(song.id)) + '&like=' + encodeURIComponent(String(next)))));
     if (r && r.error) throw new Error(r.error);
     likedSongMap[key] = next;
-    showToast(spotifyTarget ? (next ? '已加入 Spotify 喜欢的歌曲' : '已取消 Spotify 喜欢') : (next ? '已加入红心喜欢' : '已取消红心'));
+    showToast(spotifyTarget ? (next ? '已加入 Spotify 喜欢的歌曲' : '已取消 Spotify 喜欢') : (qishuiTarget ? (next ? '已加入汽水喜欢' : '已取消汽水喜欢') : (next ? '已加入红心喜欢' : '已取消红心')));
   } catch (err) {
     if (!spotifyTarget) likedSongMap[key] = !next;
-    showToast(spotifyTarget ? (err && err.message ? err.message : 'Spotify 收藏操作失败') : '红心操作失败');
+    showToast(spotifyTarget ? (err && err.message ? err.message : 'Spotify 收藏操作失败') : (qishuiTarget ? '汽水喜欢操作失败' : '红心操作失败'));
   } finally {
     delete likeBusyMap[key];
     updateLikeButtons(song);
