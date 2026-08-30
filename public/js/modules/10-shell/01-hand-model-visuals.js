@@ -1007,19 +1007,12 @@
     var span = knuckles[0].distanceTo(knuckles[3]);
     if (!(span > 1e-6)) return null;
 
-    var thumb = root.getObjectByName('thumb-tip');
-    var chirality = 0;
-    if (thumb) {
-      chirality = thumb.getWorldPosition(new THREE.Vector3()).sub(anchor).dot(normal);
-    }
-
     return {
       anchor: anchor,
       quaternionInverse: new THREE.Quaternion()
         .setFromRotationMatrix(new THREE.Matrix4().makeBasis(lateral, forward, normal))
         .conjugate(),
       knuckleSpan: span,
-      chirality: chirality,
     };
   }
 
@@ -1059,6 +1052,8 @@
         box.getCenter(center);
         var maxDimension = Math.max(size.x, size.y, size.z);
         var rest = measureHandModelRest(root);
+        // paths 的顺序就是权威的左右性,不必再从几何反推(平面投影推不出手性)。
+        if (rest) rest.isRightHand = handIndex === 1;
         var wrapper = new THREE.Group();
         wrapper.add(root);
         root.position.sub(rest ? rest.anchor : center);
@@ -1179,57 +1174,80 @@
     var visibleHands = 0;
     var aspect = Math.max(0.25, handModelLastWidth / Math.max(1, handModelLastHeight));
 
-    // ---- 双手 chirality 投票,带迟滞 ----
-    var votes = [0, 0];
-    for (var handIndex = 0; handIndex < 2; handIndex++) {
-      var slot = slots && slots[handIndex];
-      var object = handModelAssetObjects[handIndex];
-      var rest = object.userData.handModelRest;
-      if (!slot || !slot.present || !slot.lm || slot.lm.length < 21 || !rest) continue;
+    // 地标 y 向下、世界 y 向上,所以取世界向量时 y 必须取反,否则整套旋转是镜像的。
+    function assetHandAxes(slot) {
       var wrist = slot.lm[0];
       var middle = slot.lm[9];
       var index = slot.lm[5];
       var pinky = slot.lm[17];
-      var thumb = slot.lm[4];
-      var palmCenter = {
-        x: (wrist.x + index.x + middle.x + slot.lm[13].x + pinky.x) / 5,
-        y: (wrist.y + index.y + middle.y + slot.lm[13].y + pinky.y) / 5,
+      var forwardX = (middle.x - wrist.x) * aspect;
+      var forwardY = -(middle.y - wrist.y);
+      var lateralX = (index.x - pinky.x) * aspect;
+      var lateralY = -(index.y - pinky.y);
+      var fLen = Math.hypot(forwardX, forwardY);
+      var lLen = Math.hypot(lateralX, lateralY);
+      if (fLen < 0.02 || lLen < 0.02) return null;
+      forwardX /= fLen; forwardY /= fLen;
+      var proj = lateralX * forwardX + lateralY * forwardY;
+      lateralX -= forwardX * proj;
+      lateralY -= forwardY * proj;
+      lLen = Math.hypot(lateralX, lateralY);
+      if (lLen < 1e-6) return null;
+      lateralX /= lLen; lateralY /= lLen;
+      var palmX = (wrist.x + index.x + middle.x + slot.lm[13].x + pinky.x) / 5;
+      var palmY = (wrist.y + index.y + middle.y + slot.lm[13].y + pinky.y) / 5;
+      return {
+        forwardX: forwardX, forwardY: forwardY,
+        lateralX: lateralX, lateralY: lateralY,
+        palmX: palmX, palmY: palmY,
       };
-      var forward = { x: (middle.x - wrist.x) * aspect, y: middle.y - wrist.y };
-      var lateral = { x: (index.x - pinky.x) * aspect, y: index.y - pinky.y };
-      var fLen = Math.hypot(forward.x, forward.y);
-      var lLen = Math.hypot(lateral.x, lateral.y);
-      if (fLen < 0.02 || lLen < 0.02) continue;
-      forward.x /= fLen; forward.y /= fLen;
-      lateral.x /= lLen; lateral.y /= lLen;
-      var normalZ = lateral.x * forward.y - lateral.y * forward.x;
-      var thumbDelta = { x: (thumb.x - palmCenter.x) * aspect, y: thumb.y - palmCenter.y };
-      var thumbDotNormal = thumbDelta.x * (-forward.y) + thumbDelta.y * forward.x;
-      thumbDotNormal *= Math.sign(normalZ);
-      var obsChirality = thumbDotNormal;
-      var meshChirality = rest.chirality;
-      var match = obsChirality * meshChirality;
-      if (Math.abs(match) > 0.005) votes[handIndex] = match > 0 ? 1 : -1;
+    }
+
+    // ---- 网格↔槽位配对 ----
+    // 平面投影判不出左右手(两只手的拇指都紧邻食指,该投影镜像不变),所以用检测器
+    // 自己的 handedness 标签。摄像头原始帧没翻转,而地标做了 1-x 镜像,两处抵消:
+    // 标签值正好就是镜像空间里该只手的几何左右性,直接拿来选网格。
+    var axesCache = [null, null];
+    var slotWantsRight = [null, null];
+    for (var handIndex = 0; handIndex < 2; handIndex++) {
+      var slot = slots && slots[handIndex];
+      if (!slot || !slot.present || !slot.lm || slot.lm.length < 21) continue;
+      axesCache[handIndex] = assetHandAxes(slot);
+      if (slot.handedness && Number(slot.handednessScore) >= 0.5) {
+        slotWantsRight[handIndex] = slot.handedness === 'right';
+      }
     }
 
     var prevMap = handModelAssetObjects.map(function (obj) {
       var s = obj.userData.handModelSmoothed;
       return s ? s.assignedSlotIndex : -1;
     });
+    // 先按左右性相符配对;没标签的槽位延续上一帧的配对,再不行按顺序补。
     var slotMap = [-1, -1];
-    if (votes[0] !== 0 && votes[1] === 0) {
-      slotMap[0] = votes[0] > 0 ? 0 : 1;
-    } else if (votes[0] === 0 && votes[1] !== 0) {
-      slotMap[1] = votes[1] > 0 ? 1 : 0;
-    } else if (votes[0] !== 0 && votes[1] !== 0) {
-      if (votes[0] === votes[1]) {
-        slotMap[0] = votes[0] > 0 ? 0 : 1;
-        slotMap[1] = votes[1] > 0 ? 1 : 0;
-      } else {
-        slotMap = prevMap[0] >= 0 && prevMap[1] >= 0 ? prevMap : [0, 1];
+    var slotTaken = [false, false];
+    for (var meshA = 0; meshA < 2; meshA++) {
+      var restA = handModelAssetObjects[meshA].userData.handModelRest;
+      if (!restA) continue;
+      for (var slotA = 0; slotA < 2; slotA++) {
+        if (slotTaken[slotA] || slotWantsRight[slotA] === null) continue;
+        if (slotWantsRight[slotA] === !!restA.isRightHand) {
+          slotMap[meshA] = slotA;
+          slotTaken[slotA] = true;
+          break;
+        }
       }
-    } else {
-      slotMap = prevMap[0] >= 0 && prevMap[1] >= 0 ? prevMap : [0, 1];
+    }
+    for (var meshB = 0; meshB < 2; meshB++) {
+      if (slotMap[meshB] >= 0) continue;
+      var keep = prevMap[meshB];
+      if (keep >= 0 && !slotTaken[keep]) {
+        slotMap[meshB] = keep;
+        slotTaken[keep] = true;
+        continue;
+      }
+      for (var slotB = 0; slotB < 2; slotB++) {
+        if (!slotTaken[slotB]) { slotMap[meshB] = slotB; slotTaken[slotB] = true; break; }
+      }
     }
 
     for (var handIndex = 0; handIndex < 2; handIndex++) {
@@ -1245,42 +1263,37 @@
       visibleHands++;
       object.visible = true;
 
+      var axes = axesCache[slotIndex] || assetHandAxes(slot);
+      if (!axes) {
+        object.visible = false;
+        object.userData.handModelSmoothed = null;
+        visibleHands--;
+        continue;
+      }
       var wrist = slot.lm[0];
       var middle = slot.lm[9];
       var index = slot.lm[5];
       var pinky = slot.lm[17];
-      var palmPos = slot.palm || {
-        x: (wrist.x + index.x + middle.x + slot.lm[13].x + pinky.x) / 5,
-        y: (wrist.y + index.y + middle.y + slot.lm[13].y + pinky.y) / 5,
-      };
+      var palmPos = slot.palm || { x: axes.palmX, y: axes.palmY };
 
-      var forward = { x: (middle.x - wrist.x) * aspect, y: middle.y - wrist.y };
-      var lateral = { x: (index.x - pinky.x) * aspect, y: index.y - pinky.y };
-      var fLen = Math.hypot(forward.x, forward.y);
-      var lLen = Math.hypot(lateral.x, lateral.y);
-      forward.x /= Math.max(1e-9, fLen);
-      forward.y /= Math.max(1e-9, fLen);
-      lateral.x -= forward.x * (lateral.x * forward.x + lateral.y * forward.y);
-      lateral.y -= forward.y * (lateral.x * forward.x + lateral.y * forward.y);
-      lLen = Math.hypot(lateral.x, lateral.y);
-      lateral.x /= Math.max(1e-9, lLen);
-      lateral.y /= Math.max(1e-9, lLen);
-      var normalZ = lateral.x * forward.y - lateral.y * forward.x;
-      normalZ /= Math.max(1e-9, Math.abs(normalZ));
-
-      handModelMatrix.makeBasis(
-        new THREE.Vector3(lateral.x, lateral.y, 0),
-        new THREE.Vector3(forward.x, forward.y, 0),
-        new THREE.Vector3(0, 0, normalZ)
-      );
-      var qObs = handModelQuaternion.setFromRotationMatrix(handModelMatrix);
-      var qTarget = qObs.clone().multiply(rest.quaternionInverse);
+      // normal = lateral × forward,两轴都在 XY 平面内所以它天然是 ±Z(已正交归一,模长=1)。
+      // 不要强行取正:符号本身携带这只手的左右性,配对正确时正好让掌面朝向镜头。
+      var normalZ = axes.lateralX * axes.forwardY - axes.lateralY * axes.forwardX;
+      handModelPointA.set(axes.lateralX, axes.lateralY, 0);
+      handModelPointB.set(axes.forwardX, axes.forwardY, 0);
+      handModelDelta.set(0, 0, normalZ);
+      handModelMatrix.makeBasis(handModelPointA, handModelPointB, handModelDelta);
+      var qTarget = handModelQuaternion
+        .setFromRotationMatrix(handModelMatrix)
+        .multiply(rest.quaternionInverse);
 
       var avgZ = ((Number(wrist.z) || 0) + (Number(middle.z) || 0)) * -0.8;
       avgZ = Math.max(-0.5, Math.min(0.5, avgZ));
 
       var span = Math.max(0.04, Math.hypot((index.x - pinky.x) * aspect, index.y - pinky.y) * 2);
-      var targetScale = (span / rest.knuckleSpan) * handModelScale * (Number(object.userData.handModelNormalization) || 1);
+      // rest.knuckleSpan 是 GLB 原始单位,span/knuckleSpan 已是原始→世界的完整倍率。
+      // 不能再乘 handModelNormalization(那是自定义模型走单位化包围盒时才需要的)。
+      var targetScale = (span / rest.knuckleSpan) * handModelScale;
 
       var smoothed = object.userData.handModelSmoothed;
       if (!smoothed || smoothed.assignedSlotIndex !== slotIndex) {

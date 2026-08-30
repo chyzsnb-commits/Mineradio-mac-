@@ -27,7 +27,7 @@ var presetIcons = [
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 21h18"/><rect x="4.5" y="11" width="3" height="10"/><rect x="9.5" y="6" width="3" height="15"/><rect x="14.5" y="13" width="3" height="8"/><rect x="19" y="9" width="0.1" height="12"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5h8.5M7 12h11M3.5 16.5h8"/><circle cx="17.5" cy="6.5" r="2.5"/><path d="M13.5 18.5l3-2.2 3 2.2"/></svg>',
 ];
-var presetDisplayOrder = [0, 11, 10, 6, 5, 4, 2, 1, 3, 7, 8];   // 9=声波走廊 已按用户要求下架(索引保留,存档遇 9 回落 0);11=词境穿行
+var presetDisplayOrder = [0, 11, 10, 6, 5, 4, 2, 1, 3, 8];   // 9=声波走廊 7=黑洞 已按用户要求下架(索引保留,存档遇 7/9 回落 0);11=词境穿行
 var lyricColorPresets = [
   { name: '雾蓝', color: '#a9b8c8' },
   { name: '银蓝', color: '#9db8cf' },
@@ -220,7 +220,7 @@ function archiveMode(raw, key, pattern, fallback) {
 function normalizeFxArchiveSnapshot(raw) {
   if (!raw || typeof raw !== 'object') return null;
   var savedPreset = clampRange(Number(raw.preset) || 0, 0, presetMeta.length - 1);
-  if (savedPreset === 9) savedPreset = 0;   // 声波走廊已下架
+  if (savedPreset === 9 || savedPreset === 7) savedPreset = 0;   // 9=声波走廊 7=黑洞 已下架
   if (savedPreset === 3 && raw.visualPresetSchema !== VISUAL_PRESET_SCHEMA) savedPreset = 5;
   var archiveShelfMode = archiveMode(raw, 'shelf', /^(side|stage|both)$/, fxDefaults.shelf);
   var archiveShelfPresence = archiveShelfMode === 'off' ? 'auto' : archiveMode(raw, 'shelfPresence', /^(auto|always)$/, fxDefaults.shelfPresence);

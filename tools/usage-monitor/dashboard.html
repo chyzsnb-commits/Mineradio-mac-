@@ -1,0 +1,190 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mineradio 用量监视器</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #0a0c10; --card: #12161d; --line: #232a35;
+    --text: #e6edf3; --dim: #8b96a5; --accent: #5ac8fa; --up: #4ade80; --down: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", system-ui, sans-serif; }
+  header { padding: 28px 32px 8px; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  .meta { color: var(--dim); font-size: 13px; }
+  main { padding: 16px 32px 48px; display: grid; gap: 20px; }
+  .row { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .card h2 { margin: 0 0 10px; font-size: 13px; font-weight: 500; color: var(--dim); letter-spacing: .04em; }
+  .big { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .delta.up { color: var(--up); } .delta.down { color: var(--down); }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 9px 8px; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--dim); font-weight: 500; font-size: 13px; }
+  tbody tr:last-child td { border-bottom: none; }
+  .spark { display: flex; align-items: flex-end; gap: 3px; height: 40px; margin-top: 10px; }
+  .spark i { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 2px; opacity: .75; }
+  .spark i.partial { opacity: .35; }
+  .empty { color: var(--dim); padding: 24px 0; text-align: center; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--up); margin-right: 6px; }
+</style>
+
+<header>
+  <h1>Mineradio 用量监视器</h1>
+  <span class="meta" id="meta">载入中…</span>
+</header>
+
+<main>
+  <div class="row" id="top"></div>
+  <div class="card">
+    <h2>各周期活跃量与使用时间</h2>
+    <table>
+      <thead><tr><th>周期</th><th>活跃人数</th><th>较上期</th><th>使用时间</th><th>人均</th></tr></thead>
+      <tbody id="periods"></tbody>
+    </table>
+  </div>
+  <div class="row" id="trends"></div>
+  <div class="card">
+    <h2>版本分布（近 30 天活跃安装）</h2>
+    <table>
+      <thead><tr><th>版本</th><th>安装数</th></tr></thead>
+      <tbody id="versions"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+const PERIOD_LABELS = { day: '今日', week: '本周', month: '本月', quarter: '本季', year: '本年' };
+const PERIOD_ORDER = ['day', 'week', 'month', 'quarter', 'year'];
+const key = new URLSearchParams(location.search).get('key') || '';
+
+function fmtDuration(ms) {
+  if (!ms) return '0 分';
+  const totalMin = Math.round(ms / 60000);
+  if (totalMin < 60) return totalMin + ' 分';
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h < 24) return m ? h + ' 时 ' + m + ' 分' : h + ' 时';
+  const d = Math.floor(h / 24);
+  return d + ' 天 ' + (h % 24) + ' 时';
+}
+
+function delta(current, previous) {
+  if (!previous) return current ? { text: '新增', cls: 'up' } : { text: '—', cls: '' };
+  const pct = Math.round(((current - previous) / previous) * 100);
+  if (pct === 0) return { text: '持平', cls: '' };
+  return { text: (pct > 0 ? '+' : '') + pct + '%', cls: pct > 0 ? 'up' : 'down' };
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function statCard(title, value, sub) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, title));
+  card.appendChild(el('div', 'big', value));
+  if (sub) card.appendChild(el('div', 'sub', sub));
+  return card;
+}
+
+function renderTop(data) {
+  const top = document.getElementById('top');
+  top.textContent = '';
+
+  const online = el('div', 'card');
+  online.appendChild(el('h2', null, '正在使用'));
+  const big = el('div', 'big');
+  if (data.online > 0) big.appendChild(el('span', 'dot'));
+  big.appendChild(document.createTextNode(String(data.online)));
+  online.appendChild(big);
+  online.appendChild(el('div', 'sub', '最近 ' + Math.round(data.onlineWindowMs / 60000) + ' 分钟内有心跳'));
+  top.appendChild(online);
+
+  const day = data.periods.day;
+  top.appendChild(statCard('今日使用时间', fmtDuration(day.usageMs), '活跃 ' + day.activeUsers + ' 人'));
+  top.appendChild(statCard('累计安装', String(data.totalInstalls), '去重随机安装 ID'));
+}
+
+function renderPeriods(data) {
+  const body = document.getElementById('periods');
+  body.textContent = '';
+  PERIOD_ORDER.forEach(function (name) {
+    const p = data.periods[name];
+    const d = delta(p.activeUsers, p.previousActiveUsers);
+    const per = p.activeUsers ? fmtDuration(p.usageMs / p.activeUsers) : '—';
+    const tr = document.createElement('tr');
+    tr.appendChild(el('td', null, PERIOD_LABELS[name] + '（' + p.start + ' 起）'));
+    tr.appendChild(el('td', null, String(p.activeUsers)));
+    tr.appendChild(el('td', 'delta ' + d.cls, d.text));
+    tr.appendChild(el('td', null, fmtDuration(p.usageMs)));
+    tr.appendChild(el('td', null, per));
+    body.appendChild(tr);
+  });
+}
+
+function renderTrends(data) {
+  const wrap = document.getElementById('trends');
+  wrap.textContent = '';
+  PERIOD_ORDER.forEach(function (name) {
+    const p = data.periods[name];
+    const card = el('div', 'card');
+    card.appendChild(el('h2', null, PERIOD_LABELS[name].replace(/^本|^今/, '') + '度趋势 · 活跃人数'));
+    const peak = p.trend.reduce(function (max, point) { return Math.max(max, point.activeUsers); }, 0);
+    const spark = el('div', 'spark');
+    p.trend.forEach(function (point) {
+      const bar = el('i', point.partial ? 'partial' : null);
+      bar.style.height = (peak ? Math.max(2, Math.round((point.activeUsers / peak) * 40)) : 2) + 'px';
+      bar.title = point.start + '：活跃 ' + point.activeUsers + ' 人 · ' + fmtDuration(point.usageMs);
+      spark.appendChild(bar);
+    });
+    card.appendChild(spark);
+    card.appendChild(el('div', 'sub', '峰值 ' + peak + ' 人 · 末格为进行中周期'));
+    wrap.appendChild(card);
+  });
+}
+
+function renderVersions(data) {
+  const body = document.getElementById('versions');
+  body.textContent = '';
+  if (!data.versions.length) {
+    const tr = document.createElement('tr');
+    const td = el('td', 'empty', '还没有任何上报。等这个版本分发下去、用户同意匿名统计后就会出现。');
+    td.colSpan = 2;
+    tr.appendChild(td);
+    body.appendChild(tr);
+    return;
+  }
+  data.versions.forEach(function (row) {
+    const tr = document.createElement('tr');
+    tr.appendChild(el('td', null, row.version));
+    tr.appendChild(el('td', null, String(row.installs)));
+    body.appendChild(tr);
+  });
+}
+
+async function refresh() {
+  try {
+    const res = await fetch('/api/summary' + (key ? '?key=' + encodeURIComponent(key) : ''));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    renderTop(data);
+    renderPeriods(data);
+    renderTrends(data);
+    renderVersions(data);
+    document.getElementById('meta').textContent =
+      '更新于 ' + new Date(data.generatedAt).toLocaleTimeString() + ' · 每 15 秒自动刷新 · 仅本机';
+  } catch (err) {
+    document.getElementById('meta').textContent = '读取失败：' + err.message;
+  }
+}
+
+refresh();
+setInterval(refresh, 15000);
+</script>

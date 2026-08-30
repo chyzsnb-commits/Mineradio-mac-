@@ -48,7 +48,9 @@ test('音域回响双手张合直接缩放内容，不复用滚轮相机半径',
   assert.match(voxel, /voxelCity\.contentRoot\.scale\.setScalar\(_voxGestureContentScale\)/);
   assert.match(voxel, /contentRoot\.add\(platter\)/);
   assert.match(voxel, /contentRoot\.add\(_coverPlane\)/);
-  assert.match(pointer, /_voxCam\.radius\s*=\s*clampRange\(_voxCam\.radius \* \(1 \+ e\.deltaY \* 0\.0022\), 12, 140\)/);
+  // 滚轮也改成直接缩放内容(和手势双手缩放同一条路径),不再推拉相机半径
+  assert.match(pointer, /setVoxelGestureContentScale\(getVoxelGestureContentScale\(\) \* Math\.exp\(-e\.deltaY \* 0\.0022\)\)/);
+  assert.doesNotMatch(pointer, /_voxCam\.radius\s*=\s*clampRange\(_voxCam\.radius \* \(1 \+ e\.deltaY/);
 
   const helperBlock = voxel.match(/var _voxGestureContentScale\s*=\s*1;[\s\S]*?function voxFloatBlockScaleValue\(value\)/);
   assert.ok(helperBlock, '体素内容缩放 helper');
