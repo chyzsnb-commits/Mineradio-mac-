@@ -1,5 +1,7 @@
 # Changelog
 
+- 修复右上角残留的 DIY 红色引导框：视觉引导两组步骤里各有一条指向已不存在的 `#fullscreen-diy-btn`（DIY 按钮已在早前改版中移除），且引导定位逻辑为该死元素写了"找不到就画在右上角固定坐标"的兜底，导致引导打开时高亮环永远残留在右上角空白处。现删除两条死步骤（DIY 组剩余步骤编号顺延重排），移除 fullscreen-diy 特判与右上角兜底，改为目标不存在时回屏幕中央兜底；真实 Electron 验证引导环 opacity=0、无残留、`npm run check` 347/347。
+
 - 新增软件内更新检查（自研轻量方案）：启动 30 秒后与每 6 小时读取公开清单（`Mineradio-release` 仓库的 `version.json`），semver 对比发现新版本在右下角提示"发现新版本"，一键下载 dmg 到 `~/Downloads`（带进度与 `.part` 半截文件防护），完成后自动打开安装器。主进程走 Electron `net.fetch` 遵循系统代理；下载源流错误、HTTP 失败、超时均清理不留伪包；清单解析对坏 JSON/非法版本/非 https 全部静默降级，检查失败绝不影响主功能。因无 Developer ID 证书，macOS 不允许后台静默替换应用（系统限制），本方案为现实可行的"检查 + 一键下载安装"。新增 `scripts/test-update-checker.js` 回归（semver/清单解析/四路径检查/下载落盘与中断清理）并接入 `npm run check`（主套件 347/347）；真实 Electron 实测经系统代理拉取真实 GitHub 清单返回 `ok:true, hasUpdate:false`，卡片无误弹。发布新版本时需同步更新 `Mineradio-release` 的 `version.json` 与 Release dmg。
 
 - 修复 Windows 壁纸库缩略图媒体类型误判：缩略图标签此前只按 `record.type` 决定，视频壁纸的服务端静态图片预览（`preview.jpg/gif/png/webp`）被塞进 `<video>`，真实 Electron 复现为 `readyState=0`、`videoWidth=0` 的黑屏缩略图。现按 `previewUrl` 实际媒体类型选择标签（仅 URL 本身为 mp4/webm/ogg/mov/m4v 才用 video），详情页仍按 `record.type` 用 `record.fileUrl` 播放真实视频，Scene 实时 MJPEG 预览路径不变。新增 `scripts/test-wallpaper-library-thumb-media-type.js` 回归并接入 `npm run check`（主套件 342/342）；隔离 Electron 于真实 Windows 服务（246 条记录、动态端口 8137）实测：修复后图片预览加载成功（`naturalWidth=1024`）、视频预览正常解码（`videoWidth=1920`）、246 条记录 0 错标、连续抽屉开合与滚动后 DOM 无增长。
