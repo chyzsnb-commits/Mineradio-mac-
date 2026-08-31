@@ -65,6 +65,7 @@ const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer
 const { serveAiStemRequest } = require('./desktop/ai-stem-cache-server');
 const RELEASE_POLICY = require('./desktop/release-policy');
 const { TrackDecryptor } = require('./qishui-audio-decryptor/track-decryptor');
+const qishuiCatalogApi = require('./qishui-catalog-api');
 const {
   handleKugouSearch,
   handleKugouSongUrl,

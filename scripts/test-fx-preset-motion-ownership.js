@@ -79,13 +79,7 @@ test('频谱面板是通用动效组，声波地形八段权重仍保持预设 1
     'fx-sonicaudiothreshold', 'fx-sonicaudiopulse'].forEach((id) => {
     assert.match(workspace, new RegExp("fxConsoleItem\\('" + id + "'"));
   });
-  assert.match(workspace, /\{ key: 'sonic-audio', title: '音域权重'/);
-  ['fx-sonicsubbass', 'fx-sonicbass', 'fx-soniclowmid', 'fx-sonicmid',
-    'fx-sonichighmid', 'fx-sonicpresence', 'fx-sonicbrilliance', 'fx-sonicair'].forEach((id) => {
-    assert.match(workspace, new RegExp("fxConsoleItem\\('" + id + "'"));
-  });
   assert.match(panel, /'audio-spectrum': true/);
-  assert.match(panel, /'sonic-audio': preset === SONIC_PRESET_INDEX/);
   assert.doesNotMatch(panel, /SONIC_ORIGINAL_FX_CONTROL_IDS = \[[\s\S]*fx-sonic-audio-section/);
 });
 

@@ -17,12 +17,10 @@ const { createAiStemService } = require('./ai-stem-separator');
 const { createCrashDiagnostics } = require('./crash-diagnostics');
 const { LocalMusicLibrary, registerLocalMusicScheme } = require('./local-music-library');
 const { applyOfficialProviderLogin } = require('./official-login-bridge');
-const { WallpaperEngineLibrary, registerWallpaperEngineScheme } = require('./wallpaper-engine-library');
 const { clearDirectoryContents, safeWallpaperLibraryFileName, scanDirectoryUsage } = require('./cache-manager');
 const { createCameraPermissionController } = require('./camera-permission');
 const { registerWallpaperLibraryScheme } = require('./wallpaper-library-bridge');
 registerLocalMusicScheme(protocol);
-registerWallpaperEngineScheme(protocol);
 registerWallpaperLibraryScheme(protocol);
 
 
@@ -2618,18 +2616,12 @@ function getWallpaperLibraryBridge() {
   return wallpaperLibraryBridge;
 }
 
-ipcMain.handle('mineradio-wallpaper-library-scan-dir', async (_event, dirPath) => {
-  return getWallpaperLibraryBridge().scanDirectory(dirPath);
-});
-ipcMain.handle('mineradio-wallpaper-library-scan-http', async (_event, baseUrl) => {
-  return getWallpaperLibraryBridge().scanHttpSource(baseUrl);
-});
-ipcMain.handle('mineradio-wallpaper-library-list', async () => {
-  return getWallpaperLibraryBridge().list();
-});
-ipcMain.handle('mineradio-wallpaper-library-media', async (_event, recordId, kind) => {
-  return getWallpaperLibraryBridge().getMediaFile(recordId, kind);
-});
+function wallpaperLibraryTrustedSender(event) {
+  const senderUrl = event && event.sender && !event.sender.isDestroyed() ? event.sender.getURL() : '';
+  if (!isLocalAppUrl(senderUrl)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  return { ok: true, senderUrl };
+}
+
 ipcMain.handle('mineradio-wallpaper-windows-discover', async () => {
   return getWallpaperLibraryBridge().discoverWindowsSources();
 });

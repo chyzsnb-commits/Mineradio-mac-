@@ -155,13 +155,16 @@ function exportMimeForName(name) {
   return '';
 }
 
-async function streamResponseToFile(response, destination, maxBytes, tooLargeCode) {
+async function streamResponseToFile(response, destination, maxBytes, tooLargeCode, signal) {
   const source = responseNodeStream(response);
   if (!source) throw byteLimitError('MEDIA_RESPONSE_BODY_MISSING');
   const limit = Math.max(1, Number(maxBytes) || 1);
   const declared = responseContentLength(response);
   if (declared < 0) throw byteLimitError('HTTP_INVALID_CONTENT_LENGTH');
   if (declared > limit) throw byteLimitError(tooLargeCode);
+  if (signal && signal.aborted) { source.destroy(); throw byteLimitError('ABORTED'); }
+  const onAbort = () => source.destroy(byteLimitError('ABORTED'));
+  if (signal) signal.addEventListener('abort', onAbort, { once: true });
   let size = 0;
   const limiter = new Transform({
     transform(chunk, _encoding, callback) {
@@ -170,7 +173,11 @@ async function streamResponseToFile(response, destination, maxBytes, tooLargeCod
       callback(null, chunk);
     },
   });
-  await pipeline(source, limiter, fs.createWriteStream(destination, { flags: 'wx', mode: 0o600 }));
+  try {
+    await pipeline(source, limiter, fs.createWriteStream(destination, { flags: 'wx', mode: 0o600 }));
+  } finally {
+    if (signal) signal.removeEventListener('abort', onAbort);
+  }
   if (!size) throw byteLimitError('MEDIA_EMPTY');
   return size;
 }
@@ -346,6 +353,7 @@ class WindowsWallpaperClient {
     this.neighborHosts = opts.neighborHosts || defaultNeighborHosts;
     this.maxListBytes = Math.max(1, Number(opts.maxListBytes) || HTTP_SOURCE_MAX_LIST_BYTES);
     this.maxMediaBytes = Math.max(1, Number(opts.maxMediaBytes) || WINDOWS_MEDIA_MAX_BYTES);
+    this.exportDownloadTimeoutMs = Number(opts.exportDownloadTimeoutMs) || WINDOWS_MEDIA_TIMEOUT_MS;
     this.tempRoot = path.resolve(String(opts.tempRoot || path.join(os.tmpdir(), 'mineradio-wallpaper-downloads')));
     this.trustedBases = new Set();
     this.temporaryAssets = new Map();
@@ -807,7 +815,7 @@ class WindowsWallpaperClient {
     const expectedMime = exportMimeForName(name);
     if (!expectedMime) return { ok: false, error: 'INVALID_DOWNLOAD_REQUEST' };
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), WINDOWS_MEDIA_TIMEOUT_MS) : null;
+    const timer = controller ? setTimeout(() => controller.abort(), this.exportDownloadTimeoutMs) : null;
     const temporary = target + '.mineradio-part-' + crypto.randomBytes(8).toString('hex');
     try {
       // 目标目录不存在时先补齐，避免落盘直接 WRITE_FAILED（HEAD 侧 bugfix）。
@@ -820,15 +828,16 @@ class WindowsWallpaperClient {
       });
       if (!response || !response.ok || !response.body) return { ok: false, error: 'DOWNLOAD_FAILED' };
       if (normalizedContentType(response) !== expectedMime) return { ok: false, error: 'MEDIA_TYPE_REJECTED' };
-      await streamResponseToFile(response, temporary, this.maxMediaBytes, 'MEDIA_TOO_LARGE');
+      await streamResponseToFile(response, temporary, this.maxMediaBytes, 'MEDIA_TOO_LARGE', controller ? controller.signal : undefined);
       await fs.promises.rename(temporary, target);
       return { ok: true, filePath: target };
     } catch (error) {
       try { await fs.promises.unlink(temporary); } catch (_) {}
+      const aborted = (error && error.name === 'AbortError') || (error && error.code === 'ABORTED');
       return {
         ok: false,
-        error: error && error.name === 'AbortError'
-          ? 'MEDIA_DOWNLOAD_TIMEOUT'
+        error: aborted
+          ? 'DOWNLOAD_TIMEOUT'
           : (error && error.code || 'DOWNLOAD_WRITE_FAILED'),
       };
     } finally {

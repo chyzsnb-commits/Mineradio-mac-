@@ -16498,10 +16498,6 @@ body.vox-on #fx-stage-fold .fx-fold-body > :not(#cam-block){display:none}
 body.vox-on #t-float,body.vox-on #t-cinema,body.vox-on #t-bloom,body.vox-on #t-edge,
 body.vox-on .fx-slider:has(#fx-scatter),body.vox-on .fx-slider:has(#fx-cineshake){display:none}
 body.vox-on .fx-slider:has(#fx-point),body.vox-on .fx-slider:has(#fx-speed),body.vox-on .fx-slider:has(#fx-twist),body.vox-on .fx-slider:has(#fx-color),body.vox-on .fx-slider:has(#fx-bloom),body.vox-on .fx-slider:has(#fx-bgfade),body.vox-on .fx-section-label:has(+ .fx-slider:has(#fx-point)){display:none!important}
-/* 体素城市:「动态」tab 只保留音域回响(#vox-fx-section)+ 摄像头交互(#fx-stage-fold 内 #cam-block),其余顶层块隐藏 */
-body.vox-on #fx-panel:not([data-console-layout="task-first-v2"]) [data-fx-page="motion"] > *:not(#vox-fx-section):not(#fx-stage-fold){display:none}
-/* 兼容旧存档生成的宿主:当前 p10 不再迁移歌单面板，正常入口仍由左边缘控制。 */
-body.vox-on [data-fx-page="motion"] > *:not(#vox-fx-section):not(#fx-stage-fold){display:none}
 /* 词境穿行「动态」只保留专属交互和摄像头入口，避免展示不作用于该独立舞台的粒子参数。 */
 body.lyric-depth-on #fx-stage-fold{display:block!important}
 body.lyric-depth-on #fx-stage-fold .fx-fold-head{display:none}

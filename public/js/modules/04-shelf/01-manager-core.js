@@ -891,10 +891,8 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       var visRate = targetVis > shelfVisibility ? 0.14 : 0.11;
       shelfVisibility += (targetVis - shelfVisibility) * Math.min(1, visRate * Math.max(1, dt * 60));
       if (shelfVisibility < 0.01 && targetVis === 0) shelfVisibility = 0;
-      // 右侧 3D 歌单架保留(用户澄清),播放栏书架按钮控制显隐;仅体素预设下不渲染(歌单走控制台「歌单」tab)
-      // 壁纸模式也隐藏 3D 歌单架(它是 3D 场景物体,mw-wallpaper 的 CSS 只隐藏 DOM,管不到它)
-      var shelfSuppressedByPreset = (typeof voxelCityActive === 'function' && voxelCityActive())
-        || (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf())
+      // 右侧 3D 歌单架保留(用户澄清),播放栏书架按钮控制显隐;壁纸模式下隐藏(它是 3D 场景物体,mw-wallpaper 的 CSS 只隐藏 DOM,管不到它)
+      var shelfSuppressedByPreset = (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf())
         || !!(typeof fx !== 'undefined' && fx && fx.wallpaperMode);
       group.visible = !shelfSuppressedByPreset && appRevealed && (mode !== 'side' || shelfVisibility > 0) && (allItems.length > 0 || (contentList && contentList.isOpen()));
       if (connectorParticles) connectorParticles.visible = group.visible && mode === 'stage';

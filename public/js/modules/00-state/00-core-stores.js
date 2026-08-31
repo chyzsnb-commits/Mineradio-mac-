@@ -103,10 +103,10 @@ var LYRIC_LAYOUT_STORE_KEY = 'mineradio-lyric-layout-v1';
 var CURRENT_FX_AUTOSAVE_STORE_KEY = 'mineradio-current-fx-autosave-v1';
 var CURRENT_FX_AUTOSAVE_SCHEMA = 'current-fx-autosave-v2';
 var VISUAL_PRESET_SCHEMA = 'skull-preset-v2';
-// 预设索引:0-11 为全部预设;12=声波地形(音域地形),13=声波工坊(音域回响·WE) —— Windows v2.1.0 迁移
-var MAX_VISUAL_PRESET_INDEX = 13;
-var SONIC_PRESET_INDEX = 12;              // 声波地形(Sonic Topography)
-var SONIC_WORKSHOP_PRESET_INDEX = 13;     // 声波工坊(Sonic Workshop / Wallpaper Engine)
+// 预设索引:0-11 为全部预设(声波地形 12 和声波工坊 13 已在 Mac 合并中移除)
+var MAX_VISUAL_PRESET_INDEX = 11;
+var SONIC_PRESET_INDEX = 12;              // 声波地形(Sonic Topography) - 已移除,保留常量避免引用报错
+var SONIC_WORKSHOP_PRESET_INDEX = 13;     // 声波工坊(Sonic Workshop / Wallpaper Engine) - 已移除
 var PLAYBACK_QUALITY_STORE_KEY = 'mineradio-playback-quality-v1';
 var AUDIO_OUTPUT_DEVICE_STORE_KEY = 'mineradio-audio-output-device-v1';
 var AUDIO_OUTPUT_MIRROR_STORE_KEY = 'mineradio-audio-output-mirror-v1';

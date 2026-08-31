@@ -17,12 +17,22 @@ const {
 const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
+const { Readable } = require('node:stream');
+
 function jsonResponse(status, body) {
+  const text = JSON.stringify(body);
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: {
+      get: (name) => {
+        const key = String(name || '').toLowerCase();
+        return key === 'content-length' ? String(Buffer.byteLength(text)) : '';
+      },
+    },
+    body: Readable.from([Buffer.from(text)]),
     async json() { return body; },
-    async text() { return JSON.stringify(body); },
+    async text() { return text; },
   };
 }
 
@@ -33,9 +43,15 @@ function binaryResponse(status, mime, bytes, headers) {
     headers: {
       get: (name) => {
         const key = String(name || '').toLowerCase();
-        return key === 'content-type' ? mime : String(headers && headers[key] || '');
+        if (key === 'content-type') return mime;
+        if (key === 'content-length') {
+          if (headers && Object.prototype.hasOwnProperty.call(headers, 'content-length')) return String(headers['content-length']);
+          return String(bytes.length);
+        }
+        return String(headers && headers[key] || '');
       },
     },
+    body: Readable.from([Buffer.from(bytes)]),
     async arrayBuffer() {
       return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     },
@@ -528,6 +544,8 @@ test('同一项目的原始媒体与 preview 文件必须分工：播放用原�
 test('Scene 导出只接受 202 任务，完成后才允许下载', async () => {
   const client = new WindowsWallpaperClient({
     fetchImpl: async (url, options) => {
+      if (url.endsWith('/api/ping')) return jsonResponse(200, { ok: true });
+      if (url.endsWith('/api/wallpapers')) return jsonResponse(200, { ok: true, records: [] });
       if (url.includes('/api/export-scene?')) {
         assert.equal(options.method, 'POST');
         return jsonResponse(202, { ok: true, id: 'job-7', scene: 'demo', seconds: 30, state: 'queued', statusUrl: '/api/export-jobs?id=job-7' });
@@ -537,6 +555,7 @@ test('Scene 导出只接受 202 任务，完成后才允许下载', async () => 
     },
   });
 
+  await client.connect('http://192.168.1.20:8123');
   const started = await client.startSceneExport('http://192.168.1.20:8123', 'demo', 30);
   assert.equal(started.state, 'queued');
   const status = await client.getExportJob('http://192.168.1.20:8123', 'job-7');
@@ -546,7 +565,9 @@ test('Scene 导出只接受 202 任务，完成后才允许下载', async () => 
 
 test('已验证 Windows 服务的图片视频与已完成 Scene 可下载为本地背景媒体', async () => {
   const calls = [];
+  const tempRoot = path.join(__dirname, '.test-wallpaper-temp-' + Date.now());
   const client = new WindowsWallpaperClient({
+    tempRoot,
     fetchImpl: async (url) => {
       calls.push(url);
       if (url.endsWith('/api/ping')) return jsonResponse(200, { ok: true });
@@ -557,12 +578,21 @@ test('已验证 Windows 服务的图片视频与已完成 Scene 可下载为本�
     },
   });
 
+  await client.installProtocol({ handle: () => {} });
   await client.connect('http://192.168.1.20:8123');
   const image = await client.downloadWallpaperMedia('http://192.168.1.20:8123', 'poster', 'image');
   const scene = await client.downloadExportedMedia('http://192.168.1.20:8123', 'scene.mp4');
 
-  assert.deepEqual(image, { ok: true, mime: 'image/png', name: 'wallpaper-poster.png', bytes: Buffer.from([137, 80, 78, 71]) });
-  assert.deepEqual(scene, { ok: true, mime: 'video/mp4', name: 'scene.mp4', bytes: Buffer.from([0, 0, 0, 24]) });
+  assert.equal(image.ok, true);
+  assert.equal(image.mime, 'image/png');
+  assert.equal(image.name, 'wallpaper-poster.png');
+  assert.equal(image.size, 4);
+  assert.ok(image.url.startsWith('mineradio-wallpaper://download/'));
+  assert.equal(scene.ok, true);
+  assert.equal(scene.mime, 'video/mp4');
+  assert.equal(scene.name, 'scene.mp4');
+  assert.equal(scene.size, 4);
+  assert.ok(scene.url.startsWith('mineradio-wallpaper://download/'));
   assert.deepEqual(calls, [
     'http://192.168.1.20:8123/api/ping',
     'http://192.168.1.20:8123/api/wallpapers',
@@ -582,44 +612,49 @@ test('背景下载拒绝未验证来源和错误媒体类型', async () => {
 
 test('背景下载拒绝超过本地库安全上限的响应并允许调用者重试', async () => {
   const client = new WindowsWallpaperClient({
+    tempRoot: path.join(__dirname, '.test-wallpaper-temp-' + Date.now()),
     fetchImpl: async () => binaryResponse(200, 'video/mp4', Buffer.from([0, 0, 0, 24]), { 'content-length': String(256 * 1024 * 1024 + 1) }),
   });
+  await client.installProtocol({ handle: () => {} });
   client.trustedBases.add('http://192.168.1.20:8123');
   assert.deepEqual(await client.downloadWallpaperMedia('http://192.168.1.20:8123', 'clip', 'video'), { ok: false, error: 'MEDIA_TOO_LARGE' });
 });
 
 test('壁纸媒体使用有界流读取，未知 Content-Length 超限时中止', async () => {
   const client = new WindowsWallpaperClient({
+    tempRoot: path.join(__dirname, '.test-wallpaper-temp-' + Date.now()),
     fetchImpl: async () => ({
       ok: true,
       status: 200,
       headers: { get: (name) => String(name).toLowerCase() === 'content-type' ? 'image/png' : '' },
-      body: {
-        getReader() {
-          let index = 0;
-          return {
-            async read() {
-              if (index++ < 257) return { done: false, value: new Uint8Array(1024 * 1024) };
-              return { done: true, value: undefined };
-            },
-            async cancel() {},
-          };
+      body: new ReadableStream({
+        pull(controller) {
+          if (this._index === undefined) this._index = 0;
+          if (this._index++ < 257) {
+            controller.enqueue(new Uint8Array(1024 * 1024));
+          } else {
+            controller.close();
+          }
         },
-      },
+      }),
     }),
   });
+  await client.installProtocol({ handle: () => {} });
   client.trustedBases.add('http://192.168.1.20:8123');
   assert.deepEqual(await client.downloadWallpaperMedia('http://192.168.1.20:8123', 'huge', 'image'), { ok: false, error: 'MEDIA_TOO_LARGE' });
 });
 
 test('Scene 导出下载有超时，永不结束的响应不能让界面永久停在下载中', async () => {
   const client = new WindowsWallpaperClient({
+    tempRoot: path.join(__dirname, '.test-wallpaper-temp-' + Date.now()),
     exportDownloadTimeoutMs: 60,
     fetchImpl: async () => ({
       ok: true,
+      headers: { get: (name) => String(name).toLowerCase() === 'content-type' ? 'video/mp4' : '' },
       body: new ReadableStream({ start() {} }),
     }),
   });
+  await client.installProtocol({ handle: () => {} });
   client.trustedBases.add('http://192.168.1.20:8123');
   const result = await client.downloadExportedFile('http://192.168.1.20:8123', 'scene.mp4', path.join(root, 'output', 'never-ending.mp4'));
   assert.deepEqual(result, { ok: false, error: 'DOWNLOAD_TIMEOUT' });

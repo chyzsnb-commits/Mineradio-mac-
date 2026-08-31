@@ -1035,41 +1035,6 @@ var VOX_SHELF_REFERENCE_RADIUS = 50;
 // 默认视角封面完整居中于地形后方(用户指定);radius/height 仍是原版低掠视,海浪条纹不会回来
 var VOX_CAM_DEF_AZIMUTH = -Math.PI / 4;
 var _voxCam = { radius: VOX_CAM_DEF_RADIUS, height: VOX_CAM_DEF_HEIGHT, azimuth: VOX_CAM_DEF_AZIMUTH, autoRotate: false, rotateSpeed: 0.5 };
-// _voxCam 是输入/惯性持续写入的目标；显示相机单独跟随它，和普通预设的
-// target rotation -> particles.rotation 缓动一致，避免 p10 拖动时完全贴手。
-var _voxCamDisplay = { radius: VOX_CAM_DEF_RADIUS, height: VOX_CAM_DEF_HEIGHT, azimuth: VOX_CAM_DEF_AZIMUTH };
-var voxelShelfCompositionMix = 0;
-var voxelShelfCompositionTarget = 0;
-// p10 的体素世界远大于通用场景。歌架 focus 只借用右侧构图方位，
-// 不借用通用的近景半径/仰角，否则会把镜头推进音柱内部。
-function voxelShelfCompositionShouldFocus() {
-  if (typeof voxelCityActive === 'function' && !voxelCityActive()) return false;
-  if (typeof freeCamera !== 'undefined' && freeCamera && (freeCamera.active || freeCamera.locked)) return false;
-  if (typeof shelfManager !== 'undefined' && shelfManager && typeof shelfManager.getMode === 'function' && shelfManager.getMode() !== 'side') return false;
-  if (typeof orbit === 'undefined' || !orbit || !orbit.focus) return false;
-  var type = String(orbit.focus.type || '');
-  return (type === 'shelf-side' || type === 'shelf-detail') && (orbit.focus.active || /^shelf-/.test(type));
-}
-function tickVoxelShelfComposition(dt) {
-  voxelShelfCompositionTarget = voxelShelfCompositionShouldFocus() ? 1 : 0;
-  var settings = typeof shelfSummonSettings === 'function' ? shelfSummonSettings() : null;
-  var seconds = voxelShelfCompositionTarget
-    ? (settings && settings.openDuration) || 0.48
-    : (settings && settings.closeDuration) || 0.32;
-  var ease = typeof durationEaseFactor === 'function'
-    ? durationEaseFactor(seconds, dt)
-    : 1 - Math.exp(-Math.max(1 / 240, Number(dt) || 1 / 60) / seconds);
-  voxelShelfCompositionMix += (voxelShelfCompositionTarget - voxelShelfCompositionMix) * ease;
-  if (Math.abs(voxelShelfCompositionTarget - voxelShelfCompositionMix) < 0.0005) voxelShelfCompositionMix = voxelShelfCompositionTarget;
-  return voxelShelfCompositionMix;
-}
-function voxelShelfCompositionMixValue() {
-  return clampRange(Number(voxelShelfCompositionMix) || 0, 0, 1);
-}
-function voxelShelfCompositionScale() {
-  // 右键 focus 时恢复 Win 的近景卡片比例；动画期间不跳变。
-  return 0.93 + voxelShelfCompositionMixValue() * 0.07;
-}
 function voxelShelfPinnedScale() {
   return 1;
 }
@@ -1084,49 +1049,7 @@ function voxelShelfWorldFrameYaw() {
   return (typeof VOX_CAM_DEF_AZIMUTH === 'number' && isFinite(VOX_CAM_DEF_AZIMUTH)) ? VOX_CAM_DEF_AZIMUTH : 0;
 }
 function voxelShelfFocusFrameYaw() {
-  var baseYaw = voxelShelfWorldFrameYaw();
-  if (typeof orbit === 'undefined' || !orbit || !orbit.focus) return baseYaw;
-  var type = String(orbit.focus.type || '');
-  if (!orbit.focus.active && !/^shelf-/.test(type)) return baseYaw;
-  var baselineTheta = Number(orbit.baselineTheta) || 0;
-  var theta = Number(orbit.theta);
-  if (!isFinite(theta)) theta = baselineTheta;
-  var targetYaw = baseYaw + (theta - baselineTheta);
-  var fromYaw = typeof _voxCamDisplay !== 'undefined' && _voxCamDisplay && isFinite(Number(_voxCamDisplay.azimuth))
-    ? Number(_voxCamDisplay.azimuth)
-    : baseYaw;
-  var mix = voxelShelfCompositionMixValue();
-  return fromYaw + shortestVoxelAzimuthDelta(fromYaw, targetYaw) * mix;
-}
-function voxelShelfCameraFocusPose() {
-  if (typeof orbit === 'undefined' || !orbit || !orbit.focus) return null;
-  var focusType = String(orbit.focus.type || '');
-  if (!orbit.focus.active && !/^shelf-/.test(focusType)) return null;
-  var baselineRadius = Number(orbit.baselineRadius);
-  if (!isFinite(baselineRadius) || baselineRadius <= 0) baselineRadius = 6.6;
-  var baselineTheta = Number(orbit.baselineTheta) || 0;
-  var theta = Number(orbit.theta);
-  if (!isFinite(theta)) theta = baselineTheta;
-  var nativeRadius = typeof _voxCam !== 'undefined' && _voxCam ? Number(_voxCam.radius) : NaN;
-  var nativeHeight = typeof _voxCam !== 'undefined' && _voxCam ? Number(_voxCam.height) : NaN;
-  if (!isFinite(nativeRadius) || nativeRadius <= 0) nativeRadius = VOX_CAM_DEF_RADIUS;
-  if (!isFinite(nativeHeight)) nativeHeight = VOX_CAM_DEF_HEIGHT;
-  var lookAt = orbit.lookAt || { x: 0, y: 0, z: 0 };
-  var scale = VOX_CAM_DEF_RADIUS / baselineRadius;
-  var frameYaw = voxelShelfWorldFrameYaw();
-  var cosYaw = Math.cos(frameYaw), sinYaw = Math.sin(frameYaw);
-  var lookX = Number(lookAt.x) || 0;
-  var lookZ = Number(lookAt.z) || 0;
-  return {
-    radius: nativeRadius,
-    height: nativeHeight,
-    azimuth: VOX_CAM_DEF_AZIMUTH + (theta - baselineTheta),
-    lookAt: {
-      x: (cosYaw * lookX + sinYaw * lookZ) * scale,
-      y: (Number(lookAt.y) || 0) * scale,
-      z: (-sinYaw * lookX + cosYaw * lookZ) * scale
-    }
-  };
+  return voxelShelfWorldFrameYaw();
 }
 function shortestVoxelAzimuthDelta(from, to) {
   var delta = (to || 0) - (from || 0);
@@ -1134,21 +1057,8 @@ function shortestVoxelAzimuthDelta(from, to) {
   while (delta < -Math.PI) delta += Math.PI * 2;
   return delta;
 }
-function voxSnapCameraDisplayState() {
-  _voxCamDisplay.radius = _voxCam.radius;
-  _voxCamDisplay.height = _voxCam.height;
-  _voxCamDisplay.azimuth = _voxCam.azimuth;
-}
-function tickVoxelCameraDisplayState(display, target, dt) {
-  if (!display || !target) return;
-  var follow = typeof pointerDragFollowBlend === 'function' ? pointerDragFollowBlend(dt) : 0.055;
-  display.radius += (target.radius - display.radius) * follow;
-  display.height += (target.height - display.height) * follow;
-  display.azimuth += shortestVoxelAzimuthDelta(display.azimuth, target.azimuth) * follow;
-}
 function voxRecenterCamera() {   // 回正/K:_voxCam 归位到原作默认机位
   _voxCam.radius = VOX_CAM_DEF_RADIUS; _voxCam.height = VOX_CAM_DEF_HEIGHT; _voxCam.azimuth = VOX_CAM_DEF_AZIMUTH;
-  voxSnapCameraDisplayState();
 }
 var _voxWhite = null, _voxTmpColorA = null;
 var _voxDummyMat = null, _voxDummyPos = null, _voxDummyQuat = null, _voxDummyScale = null;
@@ -1245,7 +1155,6 @@ function voxSyncCamFromCurrentCamera() {
   _voxCam.radius = clampRange(r, 5, 120);   // 对齐原作 OrbitControls minDistance5/maxDistance120(MapScene.tsx:639-640)
   _voxCam.height = clampRange(y, 0.10 * _voxCam.radius, 0.995 * _voxCam.radius);
   _voxCam.azimuth = Math.atan2(x, z);
-  voxSnapCameraDisplayState();
   return true;
 }
 function _voxUpdateCamera(dt) {                            // 原作机位:对准原点·fov45(相机永远手动,无自动公转——原作转的是转盘不是相机)
@@ -1255,24 +1164,14 @@ function _voxUpdateCamera(dt) {                            // 原作机位:对�
   }
   if (typeof requestStageLyricCameraSnap === 'function') requestStageLyricCameraSnap(2);  // 歌词吸附相机(防抖)
   var _vsc = (voxelCity && voxelCity.scale) ? voxelCity.scale : 1.0;
-  var focusPose = voxelShelfCameraFocusPose();
-  tickVoxelCameraDisplayState(_voxCamDisplay, _voxCam, dt);
-  var focusMix = focusPose ? voxelShelfCompositionMixValue() : 0;
-  var displayRadius = _voxCamDisplay.radius + ((focusPose ? focusPose.radius : _voxCamDisplay.radius) - _voxCamDisplay.radius) * focusMix;
-  var displayHeight = _voxCamDisplay.height + ((focusPose ? focusPose.height : _voxCamDisplay.height) - _voxCamDisplay.height) * focusMix;
-  var displayAzimuth = _voxCamDisplay.azimuth + (focusPose ? shortestVoxelAzimuthDelta(_voxCamDisplay.azimuth, focusPose.azimuth) * focusMix : 0);
-  var horiz = Math.sqrt(Math.max(0, displayRadius * displayRadius - displayHeight * displayHeight));
+  var horiz = Math.sqrt(Math.max(0, _voxCam.radius * _voxCam.radius - _voxCam.height * _voxCam.height));
   camera.up.set(0, 1, 0);
-  var focusLookAt = focusPose && focusPose.lookAt;
-  var focusLookX = focusLookAt ? focusLookAt.x * _vsc * focusMix : 0;
-  var focusLookY = focusLookAt ? (VOX_CAM_DEF_LOOKY + (focusLookAt.y - VOX_CAM_DEF_LOOKY) * focusMix) * _vsc : VOX_CAM_DEF_LOOKY * _vsc;
-  var focusLookZ = focusLookAt ? focusLookAt.z * _vsc * focusMix : 0;
   camera.position.set(
-    focusLookX + horiz * Math.sin(displayAzimuth) * _vsc,
-    focusLookY + displayHeight * _vsc,
-    focusLookZ + horiz * Math.cos(displayAzimuth) * _vsc
+    horiz * Math.sin(_voxCam.azimuth) * _vsc,
+    _voxCam.height * _vsc,
+    horiz * Math.cos(_voxCam.azimuth) * _vsc
   );
-  camera.lookAt(focusLookX, focusLookY, focusLookZ);
+  camera.lookAt(0, 0, 0);
   camera.fov = clampRange(45 + pinchFovDelta, 20, 75);
   camera.updateProjectionMatrix();
 }
@@ -1597,23 +1496,6 @@ function _voxToggleParticleSliders(hide) {
   var label = firstRow ? firstRow.previousElementSibling : null;
   if (label && label.classList && label.classList.contains('fx-section-label')) label.style.display = hide ? 'none' : '';
 }
-function _voxDockPlaylist(dock) {
-  var fxp = document.getElementById('fx-panel');
-  if (!fxp) return;
-  if (dock) {
-    if (typeof organizeFxPanel === 'function') organizeFxPanel();
-    var host = document.getElementById('vox-playlist-host');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'vox-playlist-host';
-      var firstPage = fxp.querySelector('[data-fx-page="playlist"]');
-      if (firstPage) firstPage.appendChild(host); else fxp.appendChild(host);
-    }
-    if (_dockVisualPlaylist('voxel', host, true)) {
-      _voxApplyPlaylistColor();   // 应用自定义歌单颜色(若设)
-    }
-  } else _dockVisualPlaylist('voxel', null, false);
-}
 
 function voxResDims() {
   var r = (fx && fx.voxRes) || 'mid';
@@ -1818,7 +1700,7 @@ function updateVoxelCity(dt) {
     if (_voxSeamFloor) _voxSeamFloor.visible = false; // 缝隙封底盘同理
     if (voxelCity && voxelCity.coverPlane) voxelCity.coverPlane.visible = false;
     if (_voxFogSet) { scene.fog = _voxPrevFog; _voxFogSet = false; _voxApplyBg(); if (_voxPrevFar && camera) { camera.far = _voxPrevFar; camera.updateProjectionMatrix(); _voxPrevFar = 0; } }   // 还原雾+far;背景按自定义重设
-    if (document.body && document.body.classList.contains('vox-on')) { document.body.classList.remove('vox-on'); _voxToggleParticleSliders(false); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); }   // 退出体素:恢复通用歌单入口、DPR和帧率
+    if (document.body && document.body.classList.contains('vox-on')) { document.body.classList.remove('vox-on'); _voxToggleParticleSliders(false); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); _dockVisualPlaylist('voxel', null, false); }   // 退出体素:恢复通用歌单入口、DPR和帧率
     return;
   }
   // voxRes 可经预设快照直写(applyFxArchiveSnapshot 直改 fx.voxRes,不走 setVoxRes/rebuild)变更:与已建网格不一致时重建
@@ -1826,7 +1708,7 @@ function updateVoxelCity(dt) {
   var vc = ensureVoxelCity(); if (!vc) return;
   vc.mesh.visible = true;
   if (_voxFbMesh) _voxFbMesh.visible = !(fx && fx.voxFloatBlocks === false);   // 「悬浮方块」开关(蓝色方块+白色线框方块)
-  if (document.body && !document.body.classList.contains('vox-on')) { document.body.classList.add('vox-on'); _voxToggleParticleSliders(true); _voxApplyBg(); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); }   // 体素预设:应用专属控件、背景和性能策略
+  if (document.body && !document.body.classList.contains('vox-on')) { document.body.classList.add('vox-on'); _voxToggleParticleSliders(true); _voxApplyBg(); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); var host = document.getElementById('vox-playlist-host'); if (host) _dockVisualPlaylist('voxel', host, true); }   // 体素预设:应用专属控件、背景和性能策略
   var fdt = dt || 0.016;
   _voxClock += fdt;     // 原作:时钟始终推进(暂停时 idle 海面继续起伏,不冻结)
   // 转盘自转(原作 MapScene.tsx:366-369 + sceneDefaults.ts:19-21 rotationSpeed 0.15):旋转整组(地形+悬浮块+流星+粒子),涟漪/流星局部坐标不受影响。
@@ -2057,7 +1939,6 @@ function updateVoxelCity(dt) {
   }
   _voxUpdateMeteors(fdt, u.uWarmCore.value);
   _voxUpdateParticles(fdt);
-  tickVoxelShelfComposition(fdt);
   if (typeof _voxDrag !== 'undefined' && typeof tickVoxelPointerDragState === 'function') {
     tickVoxelPointerDragState(_voxCam, fdt, _voxCam.radius, _voxDrag);
   }

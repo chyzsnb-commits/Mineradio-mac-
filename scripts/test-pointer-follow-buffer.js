@@ -48,15 +48,6 @@ test('拖动缓冲有四档，弱档更跟手但仍保留轻微阻尼', () => {
   assert.equal(context.getPointerDragFollowRate(), 0.055);
 });
 
-test('普通预设和 p10 都通过同一个跟随率 helper，0.90 仍只属于释放惯性', () => {
-  assert.match(mainLoop, /pointerDragFollowBlend\(/);
-  assert.doesNotMatch(mainLoop, /particles\.rotation\.y \+= \(targetRotY - particles\.rotation\.y\) \* 0\.055/);
-  assert.match(voxel, /pointerDragFollowBlend\(/);
-  assert.doesNotMatch(voxel, /VOX_CAMERA_FOLLOW_60FPS\s*=\s*0\.055/);
-  assert.match(pointer, /POINTER_ROTATION_DAMPING\s*=\s*0\.90/);
-  assert.match(pointer, /VOX_POINTER_DAMPING\s*=\s*POINTER_ROTATION_DAMPING/);
-});
-
 test('设置控件、当前自动保存和 DIY 存档都携带拖动缓冲档位', () => {
   assert.match(panel, /拖动缓冲（镜头\s*\/\s*歌架\s*\/\s*音柱）/);
   assert.match(panel, /弱更跟手；强更有缓冲/);

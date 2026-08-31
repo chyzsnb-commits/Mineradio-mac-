@@ -30,7 +30,7 @@ test('uses the last successful playback snapshot instead of mutable currentIdx f
   const playQueueAt = playback.indexOf('async function playQueueAt(');
   const hydrateAt = playback.indexOf("markPlayPhase('track-setup')", playQueueAt);
   const setupWindow = playback.slice(playQueueAt, hydrateAt + 900);
-  const remembers = playback.match(/if \(confirmQueuePlaybackStarted\(idx, token\)\) rememberLyricDepthActualPlayback\(song, token\);/g) || [];
+  const remembers = playback.match(/if \(confirmQueuePlaybackStarted\(idx, token\)\) rememberLyricDepthActualPlayback\(song, token\);|if \(!confirmQueuePlaybackStarted\(idx, token\)\) return false;\s+rememberLyricDepthActualPlayback\(song, token\);/g) || [];
 
   assert.match(playback, /var lyricDepthLastActualPlayback = \{/);
   assert.match(playback, /function rememberLyricDepthActualPlayback\(song, token\)/);

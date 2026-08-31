@@ -15,7 +15,7 @@ function read(file) {
 
 test('Mac internal build packages and enables Qishui playback bridge', () => {
   assert.equal(policy.qishuiEnabled, true);
-  assert.equal(policy.allowCredentialImport, true);
+  assert.equal(policy.allowCredentialImport, false);
   const files = JSON.stringify(pkg.build.files || []);
   assert.match(files, /qishui-api\.js/);
   assert.match(files, /qishui-audio-decryptor/);

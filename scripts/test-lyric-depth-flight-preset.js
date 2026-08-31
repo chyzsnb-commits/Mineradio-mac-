@@ -56,7 +56,7 @@ test('loads and updates the lyric theatre inside the existing single render loop
   assert.ok(loader.indexOf(modulePath) > loader.indexOf('js/modules/02-visual/16-voxel-echo.js'));
   assert.ok(loader.indexOf(modulePath) < loader.indexOf('js/modules/11-main-loop.js'));
   assert.match(loop, /var lyricDepthPresetActive = typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive\(\)/);
-  assert.match(loop, /hidePoints = skullPresetActive \|\| voxelActive \|\| lyricDepthPresetActive/);
+  assert.match(loop, /hidePoints = skullPresetActive \|\| voxelActive \|\| rainActive \|\| sonicTopoActive \|\| sonicWorkshopActive \|\| lyricDepthPresetActive/);
   assert.match(loop, /updateLyricDepthFlight\(dt\)/);
   assert.doesNotMatch(module, /renderMainSceneWithGpuSample|renderer\.render/);
 });

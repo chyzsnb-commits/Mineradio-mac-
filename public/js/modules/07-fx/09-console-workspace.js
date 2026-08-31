@@ -158,20 +158,6 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-scatter', '离散感', '粒子散开'),
         fxConsoleItem('fx-bgfade', '背景压暗', '背景压缩 暗度')
       ] },
-      { key: 'sonic-terrain', title: '音域地形', hint: '地面形态、颜色和空间位置', items: [
-        fxConsoleItem('fx-sonicamp', '地面起伏', '音域振幅'),
-        fxConsoleItem('fx-sonicspeed', '起伏速度', '地形运动'),
-        fxConsoleItem('fx-sonicdensity', '地形密度', '网格密度'),
-        fxConsoleItem('fx-sonicrange', '地面范围', '地形大小'),
-        fxConsoleItem('fx-soniclower', '歌词避让', '地形降低'),
-        fxConsoleItem('fx-sonicdepth', '地面远近', '地形景深'),
-        fxConsoleItem('fx-sonicautorotate', '地形自转', '旋转速度'),
-        fxConsoleItem('sonic-ground-base-picker', '地形暗部', '音域底色'),
-        fxConsoleItem('sonic-ground-cool-picker', '冷色峰值', '音域冷色'),
-        fxConsoleItem('sonic-ground-warm-picker', '暖色峰值', '音域暖色'),
-        fxConsoleItem('sonic-ground-accent-picker', '涟漪高光', '音域强调色'),
-        fxConsoleItem('fx-sonicglow', '音域光强', '地形辉光')
-      ] },
       { key: 'audio-spectrum', title: '频谱面板', hint: '所有预设通用的实时音频分析与频段触发', items: [
         fxConsoleItem('t-sonicAudioMonitorEnabled', '实时频谱', '音频分析 频谱开关'),
         fxConsoleItem('t-sonicAudioAutoTrack', 'Kick 自动', '鼓点自动追踪'),
@@ -181,37 +167,6 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-sonicaudiobandend', '范围终点', '频谱终点'),
         fxConsoleItem('fx-sonicaudiothreshold', '触发阈值', '频谱门限'),
         fxConsoleItem('fx-sonicaudiopulse', '触发力度', '频谱脉冲')
-      ] },
-      { key: 'sonic-audio', title: '音域权重', hint: '声波地形八段频域的空间权重（预设 12）', items: [
-        fxConsoleItem('fx-sonicsubbass', '中心低频', 'Sub Bass'),
-        fxConsoleItem('fx-sonicbass', '低频重量', 'Bass'),
-        fxConsoleItem('fx-soniclowmid', '慢波流动', 'Low Mid'),
-        fxConsoleItem('fx-sonicmid', '方向流', 'Mid'),
-        fxConsoleItem('fx-sonichighmid', '尖峰', 'High Mid'),
-        fxConsoleItem('fx-sonicpresence', '闪光触发', 'Presence'),
-        fxConsoleItem('fx-sonicbrilliance', '边缘微闪', 'Brilliance'),
-        fxConsoleItem('fx-sonicair', '空气颗粒', 'Air 高频')
-      ] },
-      { key: 'sonic-blocks', title: '音域方块', hint: '浮空方块的数量、尺寸和速度', items: [
-        fxConsoleItem('t-sonicGroundFloatingEnabled', '浮空方块', '音域方块开关'),
-        fxConsoleItem('fx-sonicfloatcount', '方块数量', '浮空数量'),
-        fxConsoleItem('fx-sonicfloatintensity', '方块强度', '浮空强度'),
-        fxConsoleItem('fx-sonicfloatmin', '方块小值', '最小尺寸'),
-        fxConsoleItem('fx-sonicfloatmax', '方块大值', '最大尺寸'),
-        fxConsoleItem('fx-sonicfloatspeed', '方块速度', '浮空速度')
-      ] },
-      { key: 'sonic-we', title: '音域回响 · WE', hint: 'Wallpaper Engine 派生地形的响应与配色', items: [
-        fxConsoleItem('fx-sonicwegain', '输入压制', 'WE 输入增益'),
-        fxConsoleItem('fx-sonicweaudio', '音频响应', 'WE 音频强度'),
-        fxConsoleItem('fx-sonicwerange', '响应范围', 'WE 范围'),
-        fxConsoleItem('fx-sonicwepeak', '中心高光', 'WE 峰值'),
-        fxConsoleItem('sonic-workshop-cover-picker', 'WE 主题基色', '主题 封面取色'),
-        fxConsoleItem('sonic-workshop-base-picker', '地形底色', 'WE 底色'),
-        fxConsoleItem('sonic-workshop-warm-picker', '暖色主体', 'WE 暖色'),
-        fxConsoleItem('sonic-workshop-cool-picker', '上层高光', 'WE 冷色'),
-        fxConsoleItem('sonic-workshop-ripple-picker', '波纹亮区', 'WE 波纹'),
-        fxConsoleItem('sonic-workshop-peak-picker', '峰值高光', 'WE 高光'),
-        fxConsoleItem('sonic-workshop-theme-seg', 'WE 主题', '珊瑚 深海 冰蓝 翠绿 极简')
       ] },
       { key: 'rain-mood', title: '雨境', hint: '雨丝、打雷与玻璃水珠（预设 9）', items: [
         fxConsoleItem('t-rainGhostCover', '湿玻璃封面', '雨幕 封面 玻璃'),
