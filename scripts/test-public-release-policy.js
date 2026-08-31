@@ -30,15 +30,18 @@ test('2.0 uses formal public identity', () => {
   assert.equal(pkg.mineradio.appUserModelId, 'com.mineradio.desktop');
 });
 
-test('public package excludes Qishui implementation and credential export', () => {
+test('public package enables only the credential-free Qishui catalog', () => {
   const files = JSON.stringify(pkg.build.files || []);
   if (pkg.mineradio.qishuiExperimental === true) {
     assert.equal(policy.qishuiEnabled, true);
-    assert.equal(policy.allowCredentialImport, true);
+    assert.equal(policy.allowCredentialImport, false);
+    assert.equal(policy.qishuiCatalogEnabled, true);
     assert.match(files, /qishui-api|qishui-audio-decryptor/i);
     return;
   }
   assert.doesNotMatch(files, /qishui-api|qishui-audio-decryptor/i);
+  assert.match(files, /qishui-catalog-api\.js/);
+  assert.equal(policy.qishuiCatalogEnabled, true);
   assert.equal(policy.qishuiEnabled, false);
   assert.equal(policy.allowCredentialImport, false);
   assert.equal(policy.allowCredentialExport, false);
@@ -59,9 +62,12 @@ test('Qishui backend, login bridge and decryptor are deleted from public source'
     'desktop/qishui-disabled.js',
   ];
   removed.forEach((file) => assert.equal(fs.existsSync(path.join(root, file)), false, file));
-  ['desktop/main.js', 'desktop/preload.js', 'server.js'].forEach((file) => {
-    assert.doesNotMatch(read(file), /qishui|汽水|sodamusic|spade/i, file);
-  });
+  assert.doesNotMatch(read('desktop/main.js'), /qishui|汽水|sodamusic|spade/i);
+  assert.doesNotMatch(read('desktop/preload.js'), /openQishui|clearQishui|qishui.*(?:cookie|token|login)/i);
+  const catalog = read('qishui-catalog-api.js');
+  assert.doesNotMatch(catalog, /sessionid|cookie|authorization|track_v2|decrypt|safeStorage/i);
+  assert.match(catalog, /playable:\s*false/);
+  assert.match(catalog, /recommend-match/);
 });
 
 test('public renderer and server enforce release boundary', () => {
@@ -82,8 +88,11 @@ test('public renderer and server enforce release boundary', () => {
     assert.doesNotMatch(preload, /qishui.*decrypt|decrypt.*qishui/i);
     return;
   }
-  assert.doesNotMatch(index, /qishui|汽水/i);
-  assert.doesNotMatch(rendererModules, /\/api\/qishui|openQishuiMusicLogin|clearQishuiMusicLogin/i);
+  assert.match(index, /search-mode-qishui/);
+  assert.match(server, /\/api\/qishui\/search/);
+  assert.match(rendererModules, /\/api\/qishui\/search/);
+  assert.doesNotMatch(preload, /openQishuiMusicLogin|clearQishuiMusicLogin|qishui.*(?:cookie|token|decrypt)/i);
+  assert.doesNotMatch(server, /qishui.*(?:cookie|token|decrypt|sessionid)/i);
 });
 
 test('official provider login bypasses blocked manual import without exposing cookies', () => {

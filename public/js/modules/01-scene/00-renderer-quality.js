@@ -158,10 +158,6 @@ function getRenderLoadTier() {
   if (cssPixels >= 3200000 || renderPixels >= 3600000) return 1;
   return 0;
 }
-var mainGpuPowerPreference = window.MineradioGpuMode
-  ? window.MineradioGpuMode.powerPreferenceForMode(window.MineradioGpuMode.readMode(window.localStorage))
-  : 'default';
-
 // GPU 计时查询不会等待显卡；结果没准备好时直接留到下次读取。
 function createRendererGpuTimer(gl, nowFn) {
   if (!gl || typeof gl.getExtension !== 'function') return null;
@@ -291,7 +287,9 @@ function createRendererGpuTimer(gl, nowFn) {
   };
 }
 
-var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: mainGpuPowerPreference });
+// Apple Silicon 只有统一 Metal 设备；性能四档通过当前运行态预算即时治理，
+// 不再把不可变的 WebGL powerPreference 伪装成需要重启的用户设置。
+var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'default' });
 renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(getRenderPixelRatio());
 renderer.setSize(innerWidth, innerHeight);

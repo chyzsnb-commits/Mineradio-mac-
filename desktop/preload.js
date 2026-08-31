@@ -7,6 +7,7 @@ const desktopWindowApi = {
     publicRelease: RELEASE_POLICY.publicRelease,
     disabledProviders: RELEASE_POLICY.disabledProviders,
     qishuiEnabled: RELEASE_POLICY.qishuiEnabled,
+    qishuiCatalogEnabled: RELEASE_POLICY.qishuiCatalogEnabled,
     allowCredentialImport: RELEASE_POLICY.allowCredentialImport,
     allowCredentialExport: RELEASE_POLICY.allowCredentialExport,
   },
@@ -45,6 +46,8 @@ const desktopWindowApi = {
   clearQishuiMusicLogin: () => ipcRenderer.invoke('qishui-music-clear-login'),
   openSpotifyMusicLogin: () => ipcRenderer.invoke('spotify-music-open-login'),
   clearSpotifyMusicLogin: () => ipcRenderer.invoke('spotify-music-clear-login'),
+  requestCameraAccess: () => ipcRenderer.invoke('mineradio-camera-permission-request'),
+  openCameraPrivacySettings: () => ipcRenderer.invoke('mineradio-camera-permission-open-settings'),
   // 手部姿态原生桥接(Vision/ANE):start 返回 {ok};frame 送 RGBA;onResult 收 21 点关键点
   handposeStart: () => ipcRenderer.invoke('mineradio-handpose-start'),
   handposeFrame: (buf) => ipcRenderer.send('mineradio-handpose-frame', buf),

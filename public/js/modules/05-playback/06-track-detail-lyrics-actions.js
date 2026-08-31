@@ -550,12 +550,23 @@ function clearCustomCoverForCurrent() {
     for (var i = 0; i < playQueue.length; i++) {
       if (songCustomCoverKey(playQueue[i]) === key) delete playQueue[i].customCover;
     }
+    if (Array.isArray(playlist)) {
+      for (var j = 0; j < playlist.length; j++) {
+        if (songCustomCoverKey(playlist[j]) === key) delete playlist[j].customCover;
+      }
+    }
   }
   if (key && currentLocalSong && songCustomCoverKey(currentLocalSong) === key) delete currentLocalSong.customCover;
   if (currentIdx >= 0 && playQueue[currentIdx] && playQueue[currentIdx].cover) loadCoverFromUrl(coverUrlWithSize(playQueue[currentIdx].cover, 400));
   else loadCoverFromUrl('');
   safeRenderQueuePanel('custom-cover-clear', { scrollCurrent: miniQueueOpen });
   safeShelfRebuild('custom-cover-clear');
+  if (typeof renderSongSearchResults === 'function'
+      && typeof $results !== 'undefined' && $results
+      && $results.classList.contains('show')
+      && typeof isMusicSearchMode === 'function' && isMusicSearchMode(searchMode)) {
+    renderSongSearchResults(playlist);
+  }
   updateCustomCoverButton();
   showToast('已恢复默认封面');
 }
@@ -695,6 +706,9 @@ function applyLyricsState(lines, hasNativeKaraoke, timingSource, translationLine
   var prepared = preparedLyricStateForApply(lines, hasNativeKaraoke, timingSource, translationLines, translationSource);
   if (skipSameLyricStateRender(prepared, renderOptions, 'applyLyricsState')) {
     updateCustomLyricControls();
+    if (prepared.timingSource !== 'pending' && typeof markLyricDepthLyricsReady === 'function') {
+      try { markLyricDepthLyricsReady(trackSwitchToken); } catch (e) { }
+    }
     return;
   }
   lyricsHasNativeKaraoke = prepared.hasNativeKaraoke;
@@ -706,6 +720,9 @@ function applyLyricsState(lines, hasNativeKaraoke, timingSource, translationLine
   if (typeof refreshVoxelLyricStageAfterLyricsReady === 'function') refreshVoxelLyricStageAfterLyricsReady('lyrics-ready');
   if (typeof refreshSonicWorkshopLyricStageAfterLyricsReady === 'function') refreshSonicWorkshopLyricStageAfterLyricsReady('lyrics-ready');
   updateCustomLyricControls();
+  if (prepared.timingSource !== 'pending' && typeof markLyricDepthLyricsReady === 'function') {
+    try { markLyricDepthLyricsReady(trackSwitchToken); } catch (e) { }
+  }
 }
 function applyOriginalLyricsState(renderOptions) {
   lyricSourceMode = 'original';
@@ -748,6 +765,9 @@ function applyCustomLyricState(song, silent, renderOptions) {
   var prepared = preparedLyricStateForApply(lines, false, lines[0] && lines[0].source === 'custom-lrc' ? 'custom-lrc' : 'custom-text', [], 'none');
   if (skipSameLyricStateRender(prepared, renderOptions, 'applyCustomLyricState')) {
     updateCustomLyricControls();
+    if (typeof markLyricDepthLyricsReady === 'function') {
+      try { markLyricDepthLyricsReady(trackSwitchToken); } catch (e) { }
+    }
     return true;
   }
   lyricsHasNativeKaraoke = prepared.hasNativeKaraoke;
@@ -758,6 +778,9 @@ function applyCustomLyricState(song, silent, renderOptions) {
   renderLyrics(renderOptions || {});
   if (typeof refreshVoxelLyricStageAfterLyricsReady === 'function') refreshVoxelLyricStageAfterLyricsReady('lyrics-ready-custom');
   updateCustomLyricControls();
+  if (typeof markLyricDepthLyricsReady === 'function') {
+    try { markLyricDepthLyricsReady(trackSwitchToken); } catch (e) { }
+  }
   return true;
 }
 function preferredLyricSourceForSong(song) {
@@ -938,6 +961,10 @@ function refreshStageLyricVisualOptions() {
   pushDesktopLyricsState(true);
 }
 function setLyricDisplayMode(mode) {
+  if (fx && Number(fx.preset) === 11) {
+    showToast('词境穿行固定使用五层景深');
+    return;
+  }
   var nextMode = normalizeLyricDisplayMode(mode);
   if (normalizeLyricDisplayMode(fx && fx.lyricDisplayMode) === nextMode) return;
   fx.lyricDisplayMode = nextMode;

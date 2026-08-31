@@ -36,16 +36,18 @@ test('keeps timed equal-power crossfade with memory protection', () => {
   assert.match(playback, /CROSSFADE_MIN_FREE_MB = 1500/);
 });
 
-test('uses two-hand pinch midpoints without changing vertical shelf direction', () => {
+test('uses two-hand palm distance for direct scaling without changing single-hand pinch tracking', () => {
   const gesture = read('public/js/modules/10-shell/00-gesture-control.js');
 
   assert.match(gesture, /pinchPt\.x = \(slot\.lm\[4\]\.x \+ slot\.lm\[8\]\.x\) \/ 2/);
   assert.match(gesture, /pinchPt\.y = \(slot\.lm\[4\]\.y \+ slot\.lm\[8\]\.y\) \/ 2/);
-  assert.match(gesture, /present\[1\]\.pinchPt\.x - present\[0\]\.pinchPt\.x/);
-  assert.match(gesture, /drawn\[0\]\.pinchPt\.x \* W/);
+  assert.match(gesture, /gestureMetricDistance\(present\[1\]\.palm, present\[0\]\.palm, aspect\)/);
+  assert.match(gesture, /drawn\[0\]\.palm\.x \* W/);
+  assert.match(gesture, /setVoxelGestureContentScale\(gestureTwoHand\.voxScaleBase \* ratio\)/);
+  assert.doesNotMatch(gesture, /present\[1\]\.pinchPt\.x - present\[0\]\.pinchPt\.x/);
 });
 
-test('keeps custom-background voxel transparency without the deferred water preset', () => {
+test('keeps custom-background voxel transparency without restoring the deferred water preset', () => {
   const voxel = read('public/js/modules/02-visual/16-voxel-echo.js');
   const loader = read('public/js/index-loader.js');
   const state = read('public/js/modules/00-state/00-core-stores.js');
@@ -56,6 +58,7 @@ test('keeps custom-background voxel transparency without the deferred water pres
   assert.doesNotMatch(loader, /water-membrane/);
   assert.match(state, /MAX_VISUAL_PRESET_INDEX = 13/);   // 0-11 既有 + 12 声波地形 + 13 声波工坊
   assert.doesNotMatch(presets, /水膜共振/);
+  assert.match(presets, /presetDisplayOrder = \[[^\]]*11/);
   assert.equal(fs.existsSync(path.join(root, 'public/js/modules/02-visual/18-water-membrane.js')), false);
   // 雨境复用索引 9，不是水膜；对象池模块存在且已进 loader
   assert.match(loader, /18-rain-mood\.js/);

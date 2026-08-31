@@ -110,6 +110,9 @@ function setPreset(p, opts) {
   if (isPresetHidden(p)) p = HIDDEN_PRESET_FALLBACK;
   var prev = fx.preset;
   var changed = prev !== p;
+  if (changed && typeof reconcileFreeCameraPresetOwnership === 'function') {
+    reconcileFreeCameraPresetOwnership(p);
+  }
   fx.preset = p;
   if (changed && prev === SKULL_PRESET_INDEX && p !== SKULL_PRESET_INDEX) clearSkullPresetResidue();
   if (p === SKULL_PRESET_INDEX) loadSkullParticleAsset();
@@ -122,6 +125,8 @@ function setPreset(p, opts) {
   if (typeof updateSonicWorkshopColorControls === 'function') updateSonicWorkshopColorControls();
   if (typeof refreshVoxelLyricStageAfterPresetChange === 'function') refreshVoxelLyricStageAfterPresetChange(changed ? 'voxel-preset-change' : 'voxel-preset-refresh');
   if (typeof refreshSonicWorkshopLyricStageAfterPresetChange === 'function') refreshSonicWorkshopLyricStageAfterPresetChange(changed ? 'sonic-workshop-preset-change' : 'sonic-workshop-preset-refresh');
+  if (typeof updateLyricDepthControlAvailability === 'function') updateLyricDepthControlAvailability();
+  if (typeof updateLyricDepthSettingsControls === 'function') updateLyricDepthSettingsControls();
   if (changed && !opts.skipTransition) triggerPresetParticleTransition(prev, p);
   // 每个预设对应的相机基线 (改 userOrbit)
   if (changed && !opts.preserveCamera) {
@@ -135,6 +140,7 @@ function setPreset(p, opts) {
     else if (p === 8) { orbit.userRadius = 8.4; orbit.userPhi = 0.08; orbit.userTheta = 0.0; orbit.baselineRadius = 8.4; orbit.baselinePhi = 0.08; }
     else if (p === 9) { orbit.userRadius = 7.2; orbit.userPhi = 0.06; orbit.userTheta = 0.0; orbit.baselineRadius = 7.2; orbit.baselinePhi = 0.06; }   // 雨境：正视雨幕
     else if (p === 10){ orbit.userRadius = 50.0; orbit.userPhi = 0.20; orbit.userTheta = 0.0; orbit.baselineRadius = 50.0; orbit.baselinePhi = 0.20; }   // 音域回响：远处低角度横扫整片地形
+    else if (p === 11){ orbit.userRadius = 7.2; orbit.userPhi = 0.04; orbit.userTheta = 0.0; orbit.baselineRadius = 7.2; orbit.baselinePhi = 0.04; }   // 词境穿行：镜头内独立景深舞台
     else if (p === 12){ orbit.userRadius = 10.0; orbit.userPhi = 0.18; orbit.userTheta = 0.0; orbit.baselineRadius = 10.0; orbit.baselinePhi = 0.18; }   // 声波地形：远处低角度横扫整片地形
     else if (p === 13){ orbit.userRadius = 10.0; orbit.userPhi = 0.18; orbit.userTheta = 0.0; orbit.baselineRadius = 10.0; orbit.baselinePhi = 0.18; }   // 声波工坊：同声波地形机位
     else { orbit.userRadius = 6.6; orbit.userPhi = 0.08; orbit.userTheta = 0.0; orbit.baselineRadius = 6.6; orbit.baselinePhi = 0.08; }

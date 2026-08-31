@@ -8,6 +8,9 @@ var MINERADIO_DISABLED_PROVIDERS = Array.isArray(MINERADIO_RELEASE_POLICY.disabl
   ? MINERADIO_RELEASE_POLICY.disabledProviders
   : [];
 var MINERADIO_QISHUI_ENABLED = MINERADIO_RELEASE_POLICY.qishuiEnabled === true;
+// 公开目录能力与汽水直连能力分离：即使直连被发布策略禁用，仍可安全搜索
+// 元数据并交给现有跨平台换源链播放。
+var MINERADIO_QISHUI_CATALOG_ENABLED = MINERADIO_RELEASE_POLICY.qishuiCatalogEnabled === true || MINERADIO_QISHUI_ENABLED;
 var MINERADIO_ALLOW_CREDENTIAL_IMPORT = MINERADIO_RELEASE_POLICY.allowCredentialImport === true;
 var MINERADIO_ALLOW_CREDENTIAL_EXPORT = MINERADIO_RELEASE_POLICY.allowCredentialExport === true;
 var audio = null, audioCtx = null, source = null, analyser = null, beatAnalyser = null, gainNode = null, analysisSinkNode = null, audioReady = false;
@@ -142,6 +145,8 @@ var PLAYBACK_QUALITY_OPTIONS = {
 var UPLOAD_TIP_STORE_KEY = 'mineradio-upload-tip-seen';
 var DIY_MODE_STORE_KEY = 'mineradio-diy-player-mode-v1';
 var PLAYLIST_PANEL_PIN_STORE_KEY = 'mineradio-playlist-panel-pinned-v1';
+var FX_PANEL_PIN_STORE_KEY = 'mineradio-fx-panel-pinned-v1';
+var FX_PANEL_TAB_STORE_KEY = 'mineradio-fx-panel-tab-v1';
 var PLAYLIST_PANEL_TAB_STORE_KEY = 'mineradio-playlist-panel-tab-v1';
 var USER_CAPSULE_AUTO_HIDE_STORE_KEY = 'mineradio-user-capsule-auto-hide-v1';
 var FX_FAB_AUTO_HIDE_STORE_KEY = 'mineradio-fx-fab-auto-hide-v1';

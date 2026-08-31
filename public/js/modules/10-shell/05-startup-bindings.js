@@ -49,6 +49,7 @@ switchPlaylistTab(queueViewTab, { save: false, animate: false, refresh: false })
 applyPlaylistPanelPinState(false);
 if (fx.floatLayer) createFloatLayer();
 if (fx.particleLyrics) createLyricsParticles();
+if (typeof syncLyricsToggleButton === 'function') syncLyricsToggleButton();
 if (fx.backCover) createBackCoverLayer();
 initIdleGuideCanvas();
 // netease + QQ 立即拉取;startupLoginStatusPromise 只等这两家(下游 hasAnyPlatformLogin 链沿用 Promise.all 语义)

@@ -383,22 +383,26 @@ function normalizeQishuiLoginStatus(info) {
   });
 }
 async function refreshQishuiLoginStatus() {
-  if (!MINERADIO_QISHUI_ENABLED) {
+  if (!MINERADIO_QISHUI_CATALOG_ENABLED) {
     qishuiLoginStatus = normalizeQishuiLoginStatus({ enabled: false, searchReady: false, publicCatalog: false });
     qishuiPlaylists = [];
     userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
     return qishuiLoginStatus;
   }
   try {
-    var info = await apiJson('/api/qishui/status', { timeoutMs: 7000 });
-    qishuiLoginStatus = normalizeQishuiLoginStatus(info);
-    qishuiLoginWasLoggedIn = !!qishuiLoginStatus.loggedIn;
-    return qishuiLoginStatus;
+    qishuiLoginStatus = normalizeQishuiLoginStatus(await apiJson('/api/qishui/status', { timeoutMs: 5000 }));
   } catch (e) {
-    console.warn('Qishui login status failed:', e);
-    qishuiLoginStatus = normalizeQishuiLoginStatus({ enabled: true, error: e.message || 'STATUS_FAILED' });
-    return qishuiLoginStatus;
+    qishuiLoginStatus = normalizeQishuiLoginStatus({
+      enabled: true,
+      catalogOnly: true,
+      searchReady: true,
+      publicCatalog: true,
+      playbackMode: 'recommend-match'
+    });
   }
+  qishuiPlaylists = [];
+  userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
+  return qishuiLoginStatus;
 }
 function startQishuiLoginStatusAutoRefresh() {
   if (qishuiLoginAutoRefreshTimer) clearInterval(qishuiLoginAutoRefreshTimer);

@@ -8,6 +8,9 @@ function bindFxPanel() {
   if (typeof bindSystemMemoryControls === 'function') bindSystemMemoryControls();
   buildPresetGrid();
   renderUserFxArchives();
+  if (typeof bindAppThemeGrid === 'function') bindAppThemeGrid();
+  if (typeof initAppThemeFromState === 'function') initAppThemeFromState();
+  if (typeof applyFxPanelPinState === 'function') applyFxPanelPinState();
   buildLyricColorControls();
   var ids = [
     ['fx-intensity', 'intensity'], ['fx-depth', 'depth'], ['fx-coverres', 'coverResolution'], ['fx-cineshake', 'cinemaShake'], ['fx-lyricglow', 'lyricGlowStrength'], ['fx-lyricbgadapt', 'lyricBackgroundAdapt'],
@@ -34,6 +37,7 @@ function bindFxPanel() {
     ['fx-rainglassamount', 'rainGlassAmount'],
     ['fx-rainglassspeed', 'rainGlassSpeed'],
     ['fx-rainglasssize', 'rainGlassSize'],
+    ['fx-voxfloatblockscale', 'voxFloatBlockScale'],
   ];
   ids.forEach(function (pair) {
     var el = document.getElementById(pair[0]);
@@ -147,12 +151,16 @@ function bindFxPanel() {
       if (pair[1] === 'lyricTranslationScale') fx.lyricTranslationScale = clampRange(fx.lyricTranslationScale, 0.46, 1.12);
       if (pair[1] === 'lyricTranslationOpacity') fx.lyricTranslationOpacity = clampRange(fx.lyricTranslationOpacity, 0.20, 1);
       if (pair[1] === 'lyricGlitchJitter') fx.lyricGlitchJitter = clampRange(fx.lyricGlitchJitter, 0, 1.8);
+      if (pair[1] === 'voxFloatBlockScale') fx.voxFloatBlockScale = clampRange(fx.voxFloatBlockScale, 1, 2);
       if (out) out.textContent = pair[1] === 'rainRandomFrequency'
         ? String(Math.round(fx.rainRandomFrequency)) + ' 秒'
         : pair[1] === 'coverResolution'
         ? coverParticleCountLabel(fx.coverResolution)
+        : pair[1] === 'voxFloatBlockScale'
+          ? Math.round(fx.voxFloatBlockScale * 100) + '%'
         : (pair[1] === 'lyricWeight' || pair[1] === 'controlGlassChromaticOffset' || pair[1] === 'playlistPanelGlassBlur' || pair[1] === 'backgroundMediaCropX' || pair[1] === 'backgroundMediaCropY' || pair[1] === 'lyricTiltX' || pair[1] === 'lyricTiltY' || pair[1] === 'shelfAngleY' || pair[1] === 'shelfDetailAngleX' || pair[1] === 'shelfDetailAngleY' ? String(Math.round(fx[pair[1]])) : Number(el.value).toFixed(pair[1] === 'lyricLetterSpacing' ? 3 : 2));
       syncFxUniforms();
+      if (pair[1] === 'voxFloatBlockScale' && typeof saveVoxToggles === 'function') saveVoxToggles();
       if (/^playlistPanel/.test(pair[1])) applyPlaylistPanelFxSettings();
       if (/^shelf(Size|OffsetX|OffsetY|OffsetZ|AngleY|Opacity|BgOpacity|Detail|Summon|Camera)/.test(pair[1]) && shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
       syncLyricRealtimeFxChange(pair[1], { deferred: true });
@@ -399,6 +407,7 @@ function toggleFx(key) {
   fx[key] = !fx[key];
   if (/^vox/.test(key) && typeof saveVoxToggles === 'function') saveVoxToggles();   // 体素开关独立持久化
   if (/^rain/.test(key) && typeof saveRainToggles === 'function') saveRainToggles(); // 雨境开关独立持久化
+  if (key === 'voxFloatBlocks' && typeof updateVoxFloatBlockScaleControl === 'function') updateVoxFloatBlockScaleControl();
   var toggleId = 't-' + (key === 'floatLayer' ? 'float' : key === 'aiDepth' ? 'aidepth' : key);
   var toggle = document.getElementById(toggleId);
   if (toggle) toggle.classList.toggle('on', fx[key]);
@@ -481,18 +490,33 @@ function toggleFxPanel(force) {
     showToast('开启 DIY 玩家模式后可打开视觉控制台');
     return;
   }
-  var currentlyOpen = el.classList.contains('show') || el.classList.contains('peek');
+  var currentlyOpen = el.classList.contains('show') || el.classList.contains('peek') || el.classList.contains('pinned');
   if (peekTimers && peekTimers.fx) { clearTimeout(peekTimers.fx); peekTimers.fx = null; }
-  fxPanelPinned = false;
-  if (force === false) {
+  if (force === false || (force == null && currentlyOpen && !fxPanelPinned)) {
+    if (fxPanelPinned && force === false) {
+      fxPanelPinned = false;
+      saveBooleanPreference(FX_PANEL_PIN_STORE_KEY, false);
+      applyFxPanelPinState();
+    }
     el.classList.remove('show', 'peek');
     el.classList.toggle('closing', currentlyOpen);
     setTimeout(function () { el.classList.remove('closing'); }, 280);
     var fab = document.getElementById('fx-fab');
     if (fab) fab.classList.remove('active');
+    document.body.classList.remove('fx-console-open');
+    return;
+  }
+  if (force == null && currentlyOpen && fxPanelPinned) {
+    setFxPanelPinned(false);
+    el.classList.remove('show', 'peek');
+    document.body.classList.remove('fx-console-open');
+    var fabOff = document.getElementById('fx-fab');
+    if (fabOff) fabOff.classList.remove('active');
     return;
   }
   el.classList.remove('show', 'closing');
+  document.body.classList.add('fx-console-open');
+  updateFxConsoleStatus();
   setPeek(el, true, 'fx');
 }
 function resetFx() {
@@ -523,6 +547,7 @@ function resetFx() {
   if (fx.floatLayer) createFloatLayer(); else destroyFloatLayer();
   if (shelfManager && shelfManager.rebuild) shelfManager.rebuild(true);
   if (shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
+  if (typeof saveVoxToggles === 'function') saveVoxToggles();
   saveLyricLayout({ user: true, reason: 'resetFx' });
   showToast('已恢复默认参数');
 }
@@ -572,6 +597,13 @@ function setShelfMode(m, opts) {
 // 播放栏「3D 歌单架」开关:三档 seg 已删,此按钮是 3D 歌架唯一开关——关=硬隐藏,开=恢复(side 模式下先切 stage)
 function toggleShelfFromControls() {
   // 此按钮 = 所有预设共用的右侧 3D 歌单架显示/隐藏开关，p10 不再走控制台专属分支。
+  // 歌词景深预设(11)下歌单只活在视觉控制台的「歌单」tab(fork 设计):按钮直达该 tab,不召 3D 浮卡
+  if ((typeof voxelCityActive === 'function' && voxelCityActive())
+      || (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf())) {
+    toggleFxPanel(true);
+    if (typeof setFxPanelTab === 'function') setFxPanelTab('playlist');
+    return;
+  }
   if (shelfHardHidden) {
     shelfHardHidden = false;
     setShelfPinnedOpen(true, true);
@@ -673,6 +705,7 @@ function setParticleLyricsSilently(on) {
     if (typeof scheduleStageLyricFullTrackWarmup === 'function') scheduleStageLyricFullTrackWarmup('track-ready', 220);
   } else clearStageLyrics();
   lyricsVisible = fx.particleLyrics;
+  if (typeof syncLyricsToggleButton === 'function') syncLyricsToggleButton();
 }
 
 function updateImmersiveButton() {

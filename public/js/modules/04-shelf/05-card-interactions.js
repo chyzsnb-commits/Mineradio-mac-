@@ -7,6 +7,7 @@ function raycasterFromPointerEvent(e) {
   return rc;
 }
 function pointerCardHit(rc, e, screenPad) {
+  if (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf()) return null;
   if (!shelfManager) return null;
   return shelfManager.raycastCards(rc) || (shelfManager.pickCardAtScreen && shelfManager.pickCardAtScreen(e.clientX, e.clientY, screenPad));
 }
@@ -68,6 +69,7 @@ function isShelfPlaylistPlayHit(hit) {
   return hit.uv.x >= 0.49 && hit.uv.x <= 0.72 && hit.uv.y >= 0.13 && hit.uv.y <= 0.42;
 }
 renderer.domElement.addEventListener('click', function (e) {
+  if (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf()) return;
   if (!shelfManager || shelfManager.getMode() === 'off') return;
   if (typeof shelfPlaybackSwitchGuardActive === 'function' && shelfPlaybackSwitchGuardActive()) return;
   if (document.body.classList.contains('splash-active')) return;
@@ -141,6 +143,7 @@ renderer.domElement.addEventListener('click', function (e) {
 });
 
 renderer.domElement.addEventListener('contextmenu', function (e) {
+  if (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf()) return;
   if (document.body.classList.contains('splash-active')) return;
   if (typeof shelfPlaybackSwitchGuardActive === 'function' && shelfPlaybackSwitchGuardActive()) return;
   if (isPointerOverUi(e)) return;
@@ -203,6 +206,7 @@ function shelfWheelDir(e) {
   return 0;
 }
 renderer.domElement.addEventListener('wheel', function (e) {
+  if (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf()) return;
   if (isPointerOverUi(e)) return;
   if (!shelfManager || shelfManager.getMode() === 'off') return;
   if (typeof shelfPlaybackSwitchGuardActive === 'function' && shelfPlaybackSwitchGuardActive()) return;

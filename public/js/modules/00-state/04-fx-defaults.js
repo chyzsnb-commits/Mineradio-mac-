@@ -79,6 +79,9 @@ var fxDefaults = {
   lyricLetterSpacing: 0,
   lyricLineHeight: 1.0,
   lyricWeight: 900,
+  lyricDepthWordSweep: true,        // 词境穿行：底色常亮，逐字流光随演唱进度覆盖
+  lyricDepthInteraction: false,     // 词境穿行：360° 词境漫游（用户主动开启）
+  appTheme: 'default',              // 界面主题(网页版规整而来):只换 CSS 结构色,不动预设
   visualTintMode: 'auto',
   visualTintColor: '#9db8cf',
   uiAccentColor: '#ffffff',
@@ -98,6 +101,7 @@ var fxDefaults = {
   backgroundColorCustom: false,
   backgroundImage: '',
   backgroundMedia: null,
+  perspectiveMode: false,       // 摄像头实景作底层，保留歌词 / 封面 / 粒子 / 音域内容
   backgroundAlbumCover: false,
   albumBackgroundMouseBind: false,
   wallpaperMouseParallax: false,
@@ -192,6 +196,7 @@ var fxDefaults = {
   rainWindOffset: 0,      // 雨境:风向偏移(-1 左飘 ~ 1 右飘),叠加在中频驱动风向上
   rainDensity: 1.0,       // 雨境:雨幕浓度(0.3 稀疏 ~ 1.5 浓密),缩放雨丝整体强度
   voxFloatBlocks: true,  // 音域回响:悬浮方块(蓝方块+白线框)
+  voxFloatBlockScale: 1, // 1=原版大小，2=移植版大方块观感；只缩放现有实例，不增加数量
   voxShimmer: true,      // 音域回响:地形散落发光小方块的顶面闪烁/棱边火花/微光(关=uShimmer 0)
   voxSensitivity: 1.0,
   voxRotateSpeed: 0.5,

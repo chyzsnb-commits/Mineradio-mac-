@@ -14,6 +14,9 @@ function loadCoverFromUrl(directUrl, opts) {
   var preserveOnSwitch = !!(opts.trackSwitch || opts.seamlessCover || opts.seamlessTrackSwitch);
   if (!directUrl || typeof directUrl !== 'string' || (!/^https?:\/\//i.test(directUrl) && !/^mineradio-local:\/\//i.test(directUrl))) {
     if (!coverApplyStillCurrent(opts)) return;
+    // 当前歌曲明确没有封面时不能把上一首封面继续标成有效。
+    // seamless 只用于“新封面正在加载”的短交叉淡入，不适用于没有目标封面的歌曲。
+    if (opts.clearWhenMissing) preserveOnSwitch = false;
     if (preserveOnSwitch && uniforms.uHasCover.value > 0.5) {
       document.getElementById('thumb-cover').removeAttribute('src');
       setControlCoverSrc('');

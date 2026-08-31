@@ -29,7 +29,8 @@ test('移除云瀑共振的运行时链路，但旧预设 11 必须回退到雨�
   assert.doesNotMatch(html, /rainResonance|rain-resonance|云瀑共振/, '页面不得保留云瀑控件');
   assert.doesNotMatch(defaults, /rainResonance/, '默认设置不得保留已删除功能字段');
   assert.doesNotMatch(archives, /云瀑共振/, '预设网格不得展示已删除预设');
-  assert.doesNotMatch(archives, /presetDisplayOrder\s*=\s*\[[^\]]*\b11\b/, '预设展示顺序不得包含已删除预设');
+  // 预设 11 已被词境穿行复用（用户拍板：双含义保留），允许出现在展示顺序中。
+  // 旧云瀑存档仍由 HIDDEN_PRESET_INDICES + HIDDEN_PRESET_FALLBACK 迁移到雨境 9。
 
   assert.match(defaults, /HIDDEN_PRESET_INDICES\s*=\s*\[11\]/, '旧预设索引必须保留迁移识别');
   assert.match(defaults, /HIDDEN_PRESET_FALLBACK\s*=\s*9/, '旧云瀑预设必须回退至雨境');

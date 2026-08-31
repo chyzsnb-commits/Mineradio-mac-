@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, crashReporter, powerMonitor, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, crashReporter, powerMonitor, systemPreferences, protocol } = require('electron');
 const net = require('net');
 const http = require('http');
 const path = require('path');
@@ -19,10 +19,19 @@ const { LocalMusicLibrary, registerLocalMusicScheme } = require('./local-music-l
 const { applyOfficialProviderLogin } = require('./official-login-bridge');
 const { WallpaperEngineLibrary, registerWallpaperEngineScheme } = require('./wallpaper-engine-library');
 const { clearDirectoryContents, safeWallpaperLibraryFileName, scanDirectoryUsage } = require('./cache-manager');
+const { createCameraPermissionController } = require('./camera-permission');
+const { registerWallpaperLibraryScheme } = require('./wallpaper-library-bridge');
 registerLocalMusicScheme(protocol);
 registerWallpaperEngineScheme(protocol);
+registerWallpaperLibraryScheme(protocol);
+
 
 const RELEASE_POLICY = require('./release-policy');
+const cameraPermissionController = createCameraPermissionController({
+  platform: process.platform,
+  systemPreferences,
+  shell,
+});
 // macOS Touch Bar 播放控制（2016-2019 Intel MBP）。无 Touch Bar 的机器安全 no-op。
 const touchbar = require('./touchbar');
 const { extractKugouAuth } = require('../kugou-api');
@@ -2242,6 +2251,18 @@ ipcMain.handle('mineradio-get-crash-diagnostics', () => {
   return crashDiagnostics.snapshot();
 });
 
+ipcMain.handle('mineradio-camera-permission-request', async (event) => {
+  const senderUrl = event && event.sender && !event.sender.isDestroyed() ? event.sender.getURL() : '';
+  if (!isLocalAppUrl(senderUrl)) return { ok: false, status: 'unknown', requested: false, settingsRequired: false, error: 'UNTRUSTED_SENDER' };
+  return cameraPermissionController.requestCameraAccess();
+});
+
+ipcMain.handle('mineradio-camera-permission-open-settings', async (event) => {
+  const senderUrl = event && event.sender && !event.sender.isDestroyed() ? event.sender.getURL() : '';
+  if (!isLocalAppUrl(senderUrl)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  return cameraPermissionController.openCameraPrivacySettings();
+});
+
 // 负载 HUD 设备指标:CPU + macOS 系统 GPU + 内存(HUD 可见时渲染层每 2s 拉一次)
 let __deviceStatsCpuPrev = null; // os.cpus() 上次累计采样,用于系统 CPU 差分
 ipcMain.handle('mineradio-device-stats', async () => {
@@ -3019,12 +3040,15 @@ ipcMain.on('mineradio-wallpaper-control', (_e, payload) => {
   }
 });
 
+
 // ── 手部姿态原生桥接(v12):Swift 助手用 Vision 在 ANE 上跑手部姿态(不碰 GPU,不与体素渲染抢核显)──
 // 渲染层采集摄像头(已有权限)→ 送 256×192 RGBA 帧到助手 stdin;助手回 21 点关键点 JSON → 转发渲染层。
 // 助手只做推理不碰摄像头,故无需摄像头权限。
 let handposeProc = null;
 let handposeStdoutBuf = '';
-const HANDPOSE_BIN = path.join(__dirname, 'native', 'handpose', 'handpose-helper');
+const HANDPOSE_BIN = app.isPackaged
+  ? path.join(process.resourcesPath, 'app.asar.unpacked', 'desktop', 'native', 'handpose', 'handpose-helper')
+  : path.join(__dirname, 'native', 'handpose', 'handpose-helper');
 function killHandpose() {
   if (handposeProc) { try { handposeProc.kill('SIGKILL'); } catch (e) {} handposeProc = null; }
   handposeStdoutBuf = '';

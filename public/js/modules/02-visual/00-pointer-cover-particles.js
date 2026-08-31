@@ -73,6 +73,7 @@ function updateParticlePointerFrame() {
 function beginParticlePointerDrag(e) {
   if (e.button === 2) return;
   if (isPointerOverUi(e)) return;
+  if (typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive() && !(fx && fx.lyricDepthInteraction === true)) return;
   markRenderInteraction('canvas-drag', 1200);
   idleGuidePointerDown(e);
   orbit.rotating = true; orbit.last.x = e.clientX; orbit.last.y = e.clientY;
@@ -107,6 +108,7 @@ window.addEventListener('mousemove', function (e) {
   }
   updateControlsAutoHideFromPointer(e.clientX, e.clientY);
   idleGuidePointerMove(e);
+  if (typeof lyricDepthHandlePointerMove === 'function') lyricDepthHandlePointerMove(e);
   if (freeCamera && freeCamera.active) {
     markRenderInteraction('free-camera', 900);
     var pointerLocked = typeof freeCameraPointerLockActive === 'function' && freeCameraPointerLockActive();
@@ -154,6 +156,7 @@ renderer.domElement.addEventListener('mouseleave', function () {
   particlePointerFrame.dirty = false;
   mouseWorld.set(-999, -999, 0);
   mouseActive = false;
+  if (typeof lyricDepthHandlePointerLeave === 'function') lyricDepthHandlePointerLeave();
   idleGuidePointerLeave();
 });
 renderer.domElement.addEventListener('wheel', function (e) {
@@ -175,6 +178,10 @@ renderer.domElement.addEventListener('wheel', function (e) {
     _voxCam.radius = clampRange(_voxCam.radius * (1 + e.deltaY * 0.0022), 12, 140);
     _voxCam.height = _voxCam.radius * clampRange(voxPolarRatio, 0.10, 0.995);
     if (typeof requestStageLyricCameraSnap === 'function') requestStageLyricCameraSnap(4);   // 手动变焦:歌词吸附相机(防滞后抖动)
+    return;
+  }
+  if (typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive() && fx && fx.lyricDepthInteraction === true) {
+    if (typeof gestureZoom !== 'undefined') gestureZoom.target = clampRange(gestureZoom.target - e.deltaY * 0.0015, GESTURE_ZOOM_MIN, GESTURE_ZOOM_MAX);
     return;
   }
   if (fx && fx.preset === SKULL_PRESET_INDEX && typeof skullWheelZoomTarget !== 'undefined') {
@@ -1179,6 +1186,7 @@ function backgroundStarRiverTargetAlpha() {
   if (Number(fx.preset) === 10) return 0;   // 音域回响(我方体素预设,上游不识):有自己的暗底盘/封底体系,星河叠上去是杂色
   if (typeof SONIC_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SONIC_PRESET_INDEX) return 0;
   if (typeof SONIC_WORKSHOP_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SONIC_WORKSHOP_PRESET_INDEX) return 0.28;
+  if (Number(fx.preset) === 11) return 0;   // 词境穿行自带低密度景深星尘，避免叠成普通星河
   if (typeof rainMoodActive === 'function' && rainMoodActive()) return 0;
   if (typeof voxelCityActive === 'function' && voxelCityActive()) return 0;
   if (typeof SKULL_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SKULL_PRESET_INDEX) return 0.38;

@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 
@@ -11,53 +12,30 @@ function read(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), 'utf8');
 }
 
-test('显卡模式把三个用户选项映射为 WebGL 偏好', () => {
-  const helperPath = path.join(root, 'public/js/gpu-mode.js');
-  assert.ok(fs.existsSync(helperPath), '缺少 public/js/gpu-mode.js');
-  const gpuMode = require(helperPath);
+function extractFunction(source, name) {
+  const match = source.match(new RegExp('function ' + name + '\\([^)]*\\) \\{[\\s\\S]*?\\n\\}'));
+  assert.ok(match, '缺少函数 ' + name);
+  return match[0];
+}
 
-  assert.equal(gpuMode.normalizeMode('auto'), 'auto');
-  assert.equal(gpuMode.normalizeMode('low-power'), 'low-power');
-  assert.equal(gpuMode.normalizeMode('high-performance'), 'high-performance');
-  assert.equal(gpuMode.normalizeMode('broken'), 'auto');
-  assert.equal(gpuMode.powerPreferenceForMode('auto'), 'default');
-  assert.equal(gpuMode.powerPreferenceForMode('low-power'), 'low-power');
-  assert.equal(gpuMode.powerPreferenceForMode('high-performance'), 'high-performance');
-});
-
-test('显卡模式读取失败时回到自动并能保存合法值', () => {
-  const helperPath = path.join(root, 'public/js/gpu-mode.js');
-  assert.ok(fs.existsSync(helperPath), '缺少 public/js/gpu-mode.js');
-  const gpuMode = require(helperPath);
-  const values = new Map();
-  const storage = {
-    getItem(key) { return values.get(key) || null; },
-    setItem(key, value) { values.set(key, value); }
-  };
-
-  assert.equal(gpuMode.readMode(storage), 'auto');
-  assert.equal(gpuMode.saveMode(storage, 'low-power'), 'low-power');
-  assert.equal(gpuMode.readMode(storage), 'low-power');
-  assert.equal(gpuMode.saveMode(storage, 'invalid'), 'auto');
-  assert.equal(gpuMode.readMode({ getItem() { throw new Error('blocked'); } }), 'auto');
-});
-
-test('显卡模式脚本先于主模块加载且两个 WebGL 上下文共用设置', () => {
+test('WebGL 固定使用当前 Mac 的默认 Metal 设备，不保留下次启动偏好', () => {
   const html = read('public/index.html');
   const renderer = read('public/js/modules/01-scene/00-renderer-quality.js');
   const splash = read('public/js/modules/10-shell/03-splash.js');
-  const helperAt = html.indexOf('js/gpu-mode.js');
-  const loaderAt = html.indexOf('js/index-loader.js');
 
-  assert.ok(helperAt >= 0, 'index.html 没有加载显卡模式脚本');
-  assert.ok(loaderAt > helperAt, '显卡模式脚本必须先于主模块加载');
-  assert.match(renderer, /MineradioGpuMode\.powerPreferenceForMode/);
-  assert.match(splash, /MineradioGpuMode\.powerPreferenceForMode/);
+  assert.doesNotMatch(html, /js\/gpu-mode\.js/);
+  assert.doesNotMatch(renderer, /MineradioGpuMode|mineradio-gpu-mode-v1/);
+  assert.doesNotMatch(splash, /MineradioGpuMode|mineradio-gpu-mode-v1/);
+  assert.match(renderer, /powerPreference:\s*'default'/);
+  assert.match(splash, /powerPreference:\s*'default'/);
 });
 
-test('性能面板把显卡偏好和性能档位融合为一个四档控件', () => {
+test('性能面板四档是纯运行时设置，但通用更新重启能力仍保留', () => {
   const html = read('public/index.html');
   const controls = read('public/js/modules/07-fx/05-fx-panel-performance.js');
+  const preload = read('desktop/preload.js');
+  const main = read('desktop/main.js');
+  const updatePreview = read('public/js/modules/08-account/00-update-preview.js');
   const segment = html.match(/<div[^>]*id="performance-mode-seg"[^>]*>[\s\S]*?<\/div>/);
 
   assert.ok(segment, '缺少 performance-mode-seg');
@@ -72,13 +50,42 @@ test('性能面板把显卡偏好和性能档位融合为一个四档控件', ()
   assert.doesNotMatch(html, /id="gpu-mode-seg"/);
   assert.doesNotMatch(html, /id="performance-quality-seg"/);
   assert.match(controls, /function setUnifiedPerformanceMode/);
-  assert.match(controls, /mode === 'eco' \? 'low-power' : \(mode === 'ultra' \? 'high-performance' : 'auto'\)/);
-  assert.match(html, /id="gpu-mode-restart-modal"[^>]*role="dialog"[^>]*aria-modal="true"/);
-  assert.match(controls, /function setGpuMode/);
-  assert.match(controls, /restartApp/);
-  assert.match(controls, /gpu-mode-later-btn[\s\S]*\.focus\(\{\s*preventScroll:\s*true\s*\}\)/);
-  assert.match(controls, /previousFocus\.focus\(\{\s*preventScroll:\s*true\s*\}\)/);
-  assert.match(controls, /e\.key !== 'Tab'/);
+  assert.doesNotMatch(html, /gpu-mode-restart-modal|重启后生效|立即重启|稍后重启/);
+  assert.doesNotMatch(controls, /GpuModeRestart|restartForGpuMode|setGpuMode|currentGpuMode|MineradioGpuMode/);
+  assert.match(preload, /restartApp:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('mineradio-restart-app'\)/);
+  assert.match(main, /ipcMain\.handle\('mineradio-restart-app'/);
+  assert.match(updatePreview, /restartForAppliedPatch[\s\S]*desktopWindow\.restartApp/);
+});
+
+test('切换性能档后立即刷新当前运行态并唤醒渲染', () => {
+  const controls = read('public/js/modules/07-fx/05-fx-panel-performance.js');
+  const calls = { controls: 0, renderer: 0, glass: 0, wake: 0, restart: 0, save: [], toast: [] };
+  const sandbox = {
+    fx: { performanceQuality: 'balanced' },
+    normalizePerformanceQuality(value) { return String(value || 'auto'); },
+    updatePerformanceControls() { calls.controls += 1; },
+    applyRendererPowerMode() { calls.renderer += 1; },
+    syncGlassLiteClass() { calls.glass += 1; },
+    markRenderInteraction() { calls.wake += 1; },
+    saveLyricLayout(opts) { calls.save.push(opts); },
+    showToast(message) { calls.toast.push(message); },
+    unifiedPerformanceModeLabel(mode) { return mode === 'eco' ? '省电' : mode; },
+    openGpuModeRestartPrompt() { calls.restart += 1; },
+    currentGpuMode() { return 'auto'; },
+    performanceModeGpuMode(mode) { return mode === 'eco' ? 'low-power' : 'auto'; },
+    window: { localStorage: {}, MineradioGpuMode: { saveMode() {}, readMode() { return 'auto'; } } },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(extractFunction(controls, 'setUnifiedPerformanceMode'), sandbox);
+  sandbox.setUnifiedPerformanceMode('eco', false);
+
+  assert.equal(sandbox.fx.performanceQuality, 'eco');
+  assert.deepEqual(
+    { controls: calls.controls, renderer: calls.renderer, glass: calls.glass, wake: calls.wake, restart: calls.restart },
+    { controls: 1, renderer: 1, glass: 1, wake: 1, restart: 0 }
+  );
+  assert.equal(calls.save[0] && calls.save[0].reason, 'performanceMode');
+  assert.match(calls.toast[0] || '', /立即应用/);
 });
 
 test('启动页无需等待即可手动跳过', () => {

@@ -1,6 +1,28 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses');
+
+async function hardenMacElectron(context) {
+  const appName = context.packager.appInfo.productFilename || 'Mineradio';
+  const appPath = path.join(context.appOutDir, `${appName}.app`);
+  if (!fs.existsSync(appPath)) throw new Error(`Mineradio app was not found for fuse hardening: ${appPath}`);
+  console.log('  • hardening Mineradio Electron fuses');
+  await flipFuses(appPath, {
+    version: FuseVersion.V1,
+    strictlyRequireAllFuses: true,
+    resetAdHocDarwinSignature: true,
+    [FuseV1Options.RunAsNode]: false,
+    [FuseV1Options.EnableCookieEncryption]: false,
+    [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+    [FuseV1Options.EnableNodeCliInspectArguments]: false,
+    [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+    [FuseV1Options.OnlyLoadAppFromAsar]: true,
+    [FuseV1Options.LoadBrowserProcessSpecificV8Snapshot]: false,
+    [FuseV1Options.GrantFileProtocolExtraPrivileges]: true,
+    [FuseV1Options.WasmTrapHandlers]: true,
+  });
+}
 
 function findNewestRceditInCache(cacheRoot) {
   if (!cacheRoot || !fs.existsSync(cacheRoot)) return null;
@@ -41,6 +63,10 @@ function resolveRcedit(projectDir) {
 }
 
 module.exports = async function afterPack(context) {
+  if (context.electronPlatformName === 'darwin') {
+    await hardenMacElectron(context);
+    return;
+  }
   if (context.electronPlatformName !== 'win32') return;
 
   const appName = context.packager.appInfo.productFilename || 'Mineradio';

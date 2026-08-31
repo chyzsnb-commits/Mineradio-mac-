@@ -11,8 +11,8 @@ var presetMeta = [
   { name: '极光', desc: '丝带翻涌 · 中频流动' },
   { name: '雨境', desc: '节奏雨丝 · 频段风向' },
   { name: '音域回响', desc: '频谱方块 · 反应堆核心' },
-  null, // 11: retired preset index; old saved settings migrate to rain mood.
-  { name: '音域回响', nameHtml: '音域回响 <span class="pc-name-en">Sonic-Topography</span>', desc: '作者 Ajin', descHtml: '作者 <span class="pc-author-ajin">Ajin</span>' },
+    { name: '词境穿行', desc: '景深歌词 · 封面漫游' },
+{ name: '音域回响', nameHtml: '音域回响 <span class="pc-name-en">Sonic-Topography</span>', desc: '作者 Ajin', descHtml: '作者 <span class="pc-author-ajin">Ajin</span>' },
   { name: '音域回响', nameHtml: '音域回响 <span class="pc-name-en">Wallpaper Engine</span>', desc: '作者 CmzYa' },
 ];
 var presetIcons = [
@@ -26,13 +26,12 @@ var presetIcons = [
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="9" ry="3.4"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M2.5 9c3-3.5 6-1 9-4M3 14c3-3.5 6-1 9-4M4 19c3-3.5 6-1 9-4"/><path d="M14 5c2.5-2 5-1 7.5-2M15 10c2.5-2 5-1 7.5-2"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M7 3v10M12 5v12M17 2v11"/><path d="M7 15c0 1.7 1.1 3 2.5 3S12 16.7 12 15M12 19c0 1.5.9 2.6 2.1 2.6S16.2 20.5 16.2 19M17 15c0 1.2.8 2.2 1.8 2.2"/></svg>',
-  '', // 11: retired preset index
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 20c3-6 5-6 8 0s5 6 10 0"/><path d="M3 14c3-6 5-6 8 0s5 6 10 0"/><path d="M3 8c3-6 5-6 8 0s5 6 10 0"/></svg>',
   // 12=声波地形(Sonic-Topography) 13=声波工坊(Wallpaper Engine)
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18c2-3 4-3 6 0s4 3 6 0 4-3 6 0"/><path d="M3 12c2-2.5 4-2.5 6 0s4 2.5 6 0 4-2.5 6 0"/><path d="M3 6c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><circle cx="18" cy="5" r="1.2" fill="currentColor"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M5 15c1.4-4 2.8-4 4.2 0s2.8 4 4.2 0 2.8-4 4.6 0"/><path d="M4 10c2-2 4-2 6 0s4 2 6 0 3-2 4 0"/><path d="M7 6h10"/><circle cx="18.2" cy="5.8" r="1.35" fill="currentColor"/></svg>',
 ];
-var presetDisplayOrder = [0, 10, 9, 6, 5, 4, 2, 1, 3, 7, 8, 12, 13];
+var presetDisplayOrder = [0, 10, 9, 6, 5, 4, 2, 1, 3, 7, 8, 11, 12, 13];
 var lyricColorPresets = [
   { name: '雾蓝', color: '#a9b8c8' },
   { name: '银蓝', color: '#9db8cf' },

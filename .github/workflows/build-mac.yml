@@ -18,16 +18,15 @@ on:
           - stable
   pull_request:
     paths:
-      - '.github/workflows/build-mac.yml'
       - 'desktop/**'
       - 'public/**'
+      - '.github/workflows/build-mac.yml'
+      - '.github/workflows/diff-on-release.yml'
+      - 'build/**'
       - 'scripts/**'
+      - 'package-lock.json'
       - '*.js'
       - 'package.json'
-
-concurrency:
-  group: build-mac-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build:
@@ -36,12 +35,12 @@ jobs:
       fail-fast: false  # 一个架构失败不影响另一个继续
       matrix:
         include:
-          # arm64 用 macOS 15 Apple Silicon runner
+          # arm64 用 Apple Silicon runner
           - arch: arm64
             runner: macos-15
             build_cmd: npm run build:mac:arm64
             build_dir_cmd: ./node_modules/.bin/electron-builder --mac --arm64 --dir
-          # x64 用 macOS 15 Intel runner（macos-13 已下线）
+          # x64 用 Intel runner（原生模块兼容性更好）
           - arch: x64
             runner: macos-15-intel
             build_cmd: npm run build:mac:x64

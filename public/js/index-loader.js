@@ -15,6 +15,7 @@
     'js/modules/00-state/09-performance-probe.js',
     'js/modules/00-state/10-frame-scheduler.js',
     'js/modules/00-state/11-system-memory-controls.js',
+    'js/modules/10-shell/00-camera-stream-manager.js',
     'js/modules/01-scene/00-renderer-quality.js',
     'js/modules/01-scene/01-orbit-free-camera.js',
     'js/modules/01-scene/02-beat-camera-runtime.js',
@@ -39,7 +40,9 @@
     'js/modules/02-visual/16-voxel-echo.js',
     'js/modules/02-visual/17-video-bg-store.js',
     'js/modules/02-visual/18-rain-mood.js',
+    'js/modules/02-visual/18-lyric-depth-flight.js',
     'js/modules/02-visual/19-rain-glass.js',
+    'js/modules/02-visual/19-perspective-camera.js',
     'sonic-topography-preset.js',
     'sonic-workshop-preset.js',
     'js/modules/03-beat/00-tempo-worker-cache-prefetch.js',
@@ -96,6 +99,7 @@
     'js/modules/07-fx/10-wallpaper-library-panel.js',
     'js/modules/07-fx/06-hotkeys.js',
     'js/modules/07-fx/07-bindings-shelf-immersive.js',
+    'js/modules/07-fx/10-wallpaper-library-panel.js',
     'js/modules/08-account/00-update-preview.js',
     'js/modules/08-account/01-login-modal-utils.js',
     'js/modules/08-account/02-login-status.js',
@@ -104,6 +108,7 @@
     'js/modules/08-account/05-startup-login-guide.js',
     'js/modules/09-idle-toast-libraries.js',
     'js/modules/10-shell/00-gesture-control.js',
+    'js/modules/10-shell/01-hand-model-visuals.js',
     'js/modules/10-shell/01-viewport-resize-shortcuts.js',
     'js/modules/10-shell/02-peek-panels-upload.js',
     'js/modules/10-shell/03-splash.js',
@@ -111,6 +116,8 @@
     'js/modules/10-shell/05-startup-bindings.js',
     'js/modules/10-shell/06-update-check.js',
     'js/modules/11-main-loop.js',
+    // 网页版首页仪表盘(乐评卡 / 快捷卡 / 今日聆听 / 为你挑选 / 平台推荐):必须排在本地 home 模块之后,加载时会包一层 renderHomeDiscover
+    'js/modules/12-home-dashboard.js',
   ];
 
   function readModule(path) {

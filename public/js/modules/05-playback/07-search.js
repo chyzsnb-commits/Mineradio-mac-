@@ -138,10 +138,7 @@ function updateSearchModeTabs() {
   requestAnimationFrame(updateSearchPillGlassDisplacementMap);
 }
 function setSearchMode(mode) {
-  if (mode === 'qishui' && !MINERADIO_QISHUI_ENABLED) {
-    if (typeof showToast === 'function') showToast('汽水音乐仅在 macOS 内部实验版可用');
-    return;
-  }
+  if (mode === 'qishui' && !MINERADIO_QISHUI_CATALOG_ENABLED) mode = 'song';
   mode = (mode === 'podcast' || mode === 'netease' || mode === 'qq' || mode === 'kugou' || mode === 'qishui' || mode === 'spotify' || mode === 'ytmusic') ? mode : 'song';
   if (searchMode === mode) return;
   searchMode = mode;
@@ -384,9 +381,11 @@ function controlSourceProviders(song) {
     { key: 'netease', label: 'NE', title: '网易云' },
     { key: 'qq', label: 'QQ', title: 'QQ音乐' },
     { key: 'kugou', label: 'KG', title: '酷狗' },
-    { key: 'qishui', label: 'QS', title: '汽水音乐' },
     { key: 'spotify', label: 'SP', title: 'Spotify' }
   ];
+  if (MINERADIO_QISHUI_CATALOG_ENABLED) {
+    providers.splice(3, 0, { key: 'qishui', label: 'QS', title: '汽水音乐' });
+  }
   var current = songProviderKey(song);
   var currentIndex = providers.findIndex(function (provider) { return provider.key === current; });
   if (currentIndex > 0) providers.unshift(providers.splice(currentIndex, 1)[0]);
@@ -691,7 +690,7 @@ function searchIntentPrefersQQ(q) {
   return /(^|\s)qq($|\s)|qq音乐|qq音樂|周杰伦|周杰倫|jay\s*chou|jay/.test(q);
 }
 var MUSIC_SEARCH_PROVIDER_ORDER = ['netease', 'qq', 'kugou']
-  .concat(MINERADIO_QISHUI_ENABLED ? ['qishui'] : [])
+  .concat(MINERADIO_QISHUI_CATALOG_ENABLED ? ['qishui'] : [])
   .concat(['spotify']);
 function searchProviderStatus(provider) {
   if (typeof platformStatus === 'function') return platformStatus(provider);
@@ -705,15 +704,19 @@ function searchProviderIsLoggedIn(provider) {
   var st = searchProviderStatus(provider);
   return !!(st && st.loggedIn);
 }
+function searchProviderCanSearch(provider) {
+  if (provider === 'qishui') return !!MINERADIO_QISHUI_CATALOG_ENABLED;
+  return searchProviderIsLoggedIn(provider);
+}
 function searchModeProvider(mode) {
-  if (mode === 'qishui' && !MINERADIO_QISHUI_ENABLED) return '';
+  if (mode === 'qishui' && !MINERADIO_QISHUI_CATALOG_ENABLED) return '';
   return mode === 'netease' || mode === 'qq' || mode === 'kugou' || mode === 'qishui' || mode === 'spotify' ? mode : '';
 }
 function activeSearchProvidersForMode(mode) {
   var specific = searchModeProvider(mode);
   if (specific === 'kugou') return ['kugou'];   // 酷狗搜索接口无需登录,沿用我方既发布行为;登录只影响播放音质/歌单能力
-  if (specific) return searchProviderIsLoggedIn(specific) ? [specific] : [];
-  return MUSIC_SEARCH_PROVIDER_ORDER.filter(searchProviderIsLoggedIn);
+  if (specific) return searchProviderCanSearch(specific) ? [specific] : [];
+  return MUSIC_SEARCH_PROVIDER_ORDER.filter(searchProviderCanSearch);
 }
 function searchProviderLoginNotice(mode) {
   var specific = searchModeProvider(mode);

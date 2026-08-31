@@ -45,6 +45,22 @@ function isPlaybackProviderDisabled(provider) {
 }
 function playbackProviderUnavailablePayload(provider) {
   provider = normalizePlaybackProvider(provider);
+  if (provider === 'qishui' && typeof MINERADIO_QISHUI_CATALOG_ENABLED !== 'undefined' && MINERADIO_QISHUI_CATALOG_ENABLED) {
+    return {
+      url: '',
+      playable: false,
+      provider: 'qishui',
+      playbackMode: 'recommend-match',
+      error: 'QISHUI_CATALOG_ONLY',
+      message: '汽水音乐当前作为搜索与匹配源接入，正在寻找其它平台的可播版本。',
+      category: 'provider_limited',
+      restriction: {
+        category: 'provider_limited',
+        action: 'switch_source',
+        message: '汽水音乐当前作为搜索与匹配源接入，播放时会自动寻找其它平台的可播版本。'
+      }
+    };
+  }
   var label = provider === 'qishui' ? '汽水音乐' : (provider === 'spotify' ? 'Spotify' : (provider === 'qq' ? 'QQ 音乐' : (provider === 'kugou' ? '酷狗音乐' : '该音源')));
   return {
     url: '',

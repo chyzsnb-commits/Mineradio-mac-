@@ -317,6 +317,9 @@ async function completeAudioPlayStart(opts, reason) {
   schedulePlaybackStallRecovery(reason || 'playback-started', opts);
   forcePlaybackControlsInteractive();
   hideLoading();
+  if (opts.trackSwitch && typeof markLyricDepthAudioReady === 'function') {
+    try { markLyricDepthAudioReady(trackSwitchToken); } catch (e) { }
+  }
   return true;
 }
 

@@ -551,13 +551,17 @@ async function downloadWindowsSceneExport() {
   task.message = result && result.ok ? '已保存 MP4。' : (result && result.error === 'DOWNLOAD_CANCELLED' ? '已取消保存。' : '保存失败，可重试。');
   wallpaperLibraryRenderExport(wallpaperLibrarySelectedRecord());
 }
-function wallpaperLibraryBlobFromResult(result) {
-  var bytes = result && result.bytes;
-  if (bytes instanceof ArrayBuffer) return new Blob([bytes], { type: result.mime || '' });
-  if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(bytes)) {
-    return new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)], { type: result.mime || '' });
-  }
-  return null;
+async function wallpaperLibraryBlobFromResult(result) {
+  if (!result || !result.url) return null;
+  var parsed;
+  try { parsed = new URL(result.url); } catch (error) { return null; }
+  if (parsed.protocol !== 'mineradio-wallpaper:' || parsed.hostname !== 'download') return null;
+  var response = await fetch(result.url);
+  if (!response || !response.ok) return null;
+  var mime = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (!mime || mime !== String(result.mime || '').toLowerCase()) return null;
+  var blob = await response.blob();
+  return blob && blob.size > 0 && (!result.size || blob.size === Number(result.size)) ? blob : null;
 }
 async function wallpaperLibraryImportRecord(record) {
   var download = wallpaperLibraryApi('wallpaperWindowsDownloadMedia');
@@ -572,7 +576,7 @@ async function wallpaperLibraryImportRecord(record) {
     ? { kind: 'scene-export', fileName: output }
     : { kind: 'wallpaper', recordId: record.id, type: record.type };
   var result = await download(wallpaperLibraryState.baseUrl, request);
-  var blob = result && result.ok ? wallpaperLibraryBlobFromResult(result) : null;
+  var blob = result && result.ok ? await wallpaperLibraryBlobFromResult(result) : null;
   if (!blob || !blob.size) throw new Error(result && result.error || 'MEDIA_DOWNLOAD_FAILED');
   var type = /^image\//i.test(result.mime || '') ? 'image' : 'video';
   var id = 'windows-bg-' + type + '-' + Date.now() + '-' + Math.random().toString(16).slice(2);

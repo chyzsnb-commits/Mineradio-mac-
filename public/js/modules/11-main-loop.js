@@ -735,9 +735,10 @@ function animate() {
   var rainActive = typeof rainMoodActive === 'function' && rainMoodActive();
   var sonicTopoActive = window.MineradioSonicTopography && MineradioSonicTopography.isActive(fx);
   var sonicWorkshopActive = window.MineradioSonicWorkshop && MineradioSonicWorkshop.isActive(fx);
+  var lyricDepthPresetActive = typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive();
   var presetUsesStarRiverParticles = fx && (Number(fx.preset) === 5 || (typeof SONIC_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SONIC_PRESET_INDEX));
   var presetStarRiverMuted = presetUsesStarRiverParticles && fx.backgroundStarRiver === false;
-  var hidePoints = skullPresetActive || voxelActive || rainActive || sonicTopoActive || sonicWorkshopActive;
+  var hidePoints = skullPresetActive || voxelActive || rainActive || sonicTopoActive || sonicWorkshopActive || lyricDepthPresetActive;
   particles.visible = !hidePoints && !presetStarRiverMuted;
   if (bloomParticles) bloomParticles.visible = !hidePoints && !presetStarRiverMuted && fx.bloom && fx.bloomStrength > 0.01;
   if (floatGroup) floatGroup.visible = !hidePoints;
@@ -802,6 +803,7 @@ function animate() {
   var stageLyricsPerfStart = performance.now();
   var stageLyricsStepDt = consumeFrameGate(mainFrameGates.stageLyrics, now, dt, targetMainStageLyricsFps(now), false, 'stage-lyrics');
   if (stageLyricsStepDt > 0) updateStageLyrics3D(stageLyricsStepDt);
+  if (typeof updateLyricDepthFlight === 'function') updateLyricDepthFlight(dt);
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.stage-lyrics', stageLyricsPerfStart);
   var desktopOverlayPerfStart = performance.now();
   var desktopOverlayStepDt = consumeFrameGate(mainFrameGates.desktopOverlay, now, dt, targetMainDesktopOverlayFps(now), false, 'desktop-overlay');

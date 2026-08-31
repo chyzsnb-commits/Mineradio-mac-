@@ -10,9 +10,12 @@ function consumeFreeCameraKeyEvent(e, isDown) {
     toggleFreeCamera();
     return true;
   }
-  // 音域回响里 R 固定后仍捕获 WASD(机位可继续平移);其它场景保持只在 active 时捕获
-  var voxLockedMove = freeCamera && freeCamera.locked && !freeCamera.active && typeof voxelCityActive === 'function' && voxelCityActive();
-  if (!freeCamera || !(freeCamera.active || voxLockedMove)) return false;
+  // 音域回响 / 词境穿行里 R 固定后仍捕获 WASD，机位可继续微调。
+  var immersiveLockedMove = freeCamera && freeCamera.locked && !freeCamera.active && (
+    (typeof voxelCityActive === 'function' && voxelCityActive() && Number(freeCamera.ownerPreset) === 10) ||
+    (typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive() && Number(freeCamera.ownerPreset) === 11)
+  );
+  if (!freeCamera || !(freeCamera.active || immersiveLockedMove)) return false;
   if (isDown && e.code === 'KeyK') {
     e.preventDefault();
     e.stopImmediatePropagation();

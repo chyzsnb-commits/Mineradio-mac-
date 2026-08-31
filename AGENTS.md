@@ -1,4 +1,4 @@
-# Mineradio Project Rules (macOS / arm64)
+# Mineradio Project Rules (macOS / arm64 + x64)
 
 > 这是给所有 AI agent（Codex、ZCode、以及未来的接手者）的项目规则文件。**新对话/首次接手处理 Mineradio 前，必须按顺序先读：① 本文件（AGENTS.md）→ ② `AI_HANDOFF.md`（当前状态）→ ③ 本地 Obsidian 项目记忆（`/Users/chy/菜鸡的仓库/菜鸡的仓库/Codex Memory/10 项目记忆/Mineradio/` 下的 `当前进度.md` 与 `项目约束.md`）。三处都读完并向用户复述接手状态后，才能开始改代码。**
 
@@ -68,17 +68,18 @@
 
 ## Project Identity
 
-Mineradio 是一个 **macOS arm64** 的 Electron 桌面音乐播放器。核心体验：搜索、播放、歌单、歌词舞台、粒子视觉、3D 歌单架、桌面歌词、壁纸模式。
+Mineradio 是一个 **macOS arm64 + x64** 的 Electron 桌面音乐播放器。核心体验：搜索、播放、歌单、歌词舞台、粒子视觉、3D 歌单架、桌面歌词、壁纸模式。
 
-- 平台：**macOS（Apple Silicon, arm64）**。当前构建产物是 `.dmg`。
+- 平台：**macOS（Apple Silicon arm64 与 Intel x64）**。两个架构分别产出 `.dmg`。
 - 框架：Electron **42.4.1** + electron-builder **^26**。
-- **不是 Windows 项目**。仓库里有少量 Windows 历史代码（`desktop/system-memory.js` 的 PowerShell 部分、`build/after-pack.js` 的 rcedit），它们在 Mac 上是死代码，**不要删除但要理解它们不生效**。
+- **不是 Windows 项目**。仓库里有少量 Windows 历史代码（`desktop/system-memory.js` 的 PowerShell 部分、`build/after-pack.js` 的 rcedit）；Mac 分支的 afterPack 现在还负责 Electron fuse 加固，不能再视为整文件 no-op。
 
 ## Repository Layout
 
 ```text
 ├─ desktop/                    Electron 主进程、preload、系统集成
-│  ├─ main.js                  主进程入口（~3870 行，含窗口/IPC/快捷键/壁纸/内存）
+│  ├─ bootstrap.js             最小主入口（迁移 guard / Safe Storage handoff / 正常转入 main）
+│  ├─ main.js                  正常 App 主进程（窗口/IPC/快捷键/壁纸/内存）
 │  ├─ preload.js               渲染进程预加载
 │  ├─ overlay-preload.js       桌面歌词覆盖层 preload
 │  ├─ wallpaper-control-preload.js
@@ -86,7 +87,7 @@ Mineradio 是一个 **macOS arm64** 的 Electron 桌面音乐播放器。核心�
 │  ├─ system-memory.js         ⚠️ Windows 内存清理（Mac 上死代码，待跳过加载）
 │  ├─ app-memory.js            应用内存管理
 │  ├─ wallpaper-mode.js        壁纸播放模式
-│  └─ native/                  Mac 原生模块（handpose Swift、mac-wallpaper-window.node）
+│  └─ native/                  Mac 原生模块（handpose helper、Safe Storage handoff、壁纸模块）
 ├─ public/                     前端（渲染进程）
 │  ├─ index.html               主 UI
 │  ├─ desktop-lyrics.html      桌面歌词
@@ -97,7 +98,7 @@ Mineradio 是一个 **macOS arm64** 的 Electron 桌面音乐播放器。核心�
 │  └─ vendor/                  本地第三方依赖
 ├─ build/                      electron-builder 构建资源
 │  ├─ icon.icns / icon.ico / icon.png
-│  ├─ after-pack.js            打包后钩子（Windows 用，Mac 上 no-op）
+│  ├─ after-pack.js            打包后钩子（Mac 翻转并校验 Electron fuses；Windows 注入资源）
 │  └─ installer*.nsh           NSIS 安装器脚本（Windows 用）
 ├─ server.js                   本地 API 服务（~6485 行，音源代理/搜索/首页数据）
 ├─ dj-analyzer.js              节奏/音频分析
@@ -115,20 +116,23 @@ Mineradio 是一个 **macOS arm64** 的 Electron 桌面音乐播放器。核心�
 ```bash
 npm install                  # 安装依赖（含 devDependencies: electron, electron-builder）
 npm start                    # 本地运行（electron .）
-npm run check                # 语法检查 server.js + desktop/main.js
+npm run check                # 语法、内存守卫与完整 Node 自动回归套件
 npm run build:mac:dir        # 仅解包到 dist/（快速验证打包，不造 dmg）
 npm run build:mac            # 产出 dist/Mineradio-<ver>-arm64.dmg
+npm run build:mac:x64        # 产出 Intel x64 dmg
+npm run build:mac:all        # 同时产出 arm64 + x64 dmg
 ```
 
-**改动后必做的验证（没有自动测试套件）：**
+**改动后必做的验证：**
 
 ```bash
 node --check server.js
+node --check desktop/bootstrap.js
 node --check desktop/main.js
 npm run check
 ```
 
-然后用 `npm start` 实际运行，检查关键交互（搜索、播放、歌词、粒子）。
+`npm run check` 是必须通过的完整自动门禁；然后用隔离 userData 或最终签名包实际运行，检查搜索、播放、歌词、粒子、摄像头与登录态。不得在真实 profile 上做会写封面/登录态的自动化。
 
 ## Coding Conventions
 
@@ -156,18 +160,21 @@ Codex / reviewer 审 PR 时检查：
 - 新增的 `require` 是否引入了 Mac 上不必要的模块加载。
 - 是否有新的网络请求/定时器（评估对启动和常驻开销的影响）。
 - CHANGELOG.md 是否更新（中文，写在顶部）。
-- `node --check` 是否通过。
+- `npm run check` 是否完整通过。
+- bootstrap、packed Safe Storage helper、native recovery helper、最终签名包与 controller 固定哈希是否来自同一提交；任一字节变化都要重建并重新验收。
 
 ## Release Workflow
 
 1. 确认 `package.json` 的 `version`、`mineradio.internalBeta`、`build.appId` 符合本次发布类型（正式 vs 测试）。**不含 `build.publish`**（Mac 版不自动更新）。
 2. 更新 `CHANGELOG.md` 顶部。
 3. `npm run check`。
-4. `npm run build:mac` → 产出 `dist/Mineradio-<ver>-arm64.dmg`（脚本会自动删除 `latest-mac.yml`）。
+4. `npm run build:mac:arm64` 与 `npm run build:mac:x64`（或 `npm run build:mac:all`）分别产出双架构 DMG，脚本会自动删除 `latest-mac.yml`。
 5. CI（`.github/workflows/build-mac.yml`）在打 tag `v*` 时自动构建，把 dmg 上传到本仓库 Release（供手动下载，无自动更新通道）。
    - **测试版** → pre-release。
    - **正式版** → latest release。
 6. 用户升级方式：手动从 Release 下载新 dmg 覆盖安装。
+
+> 本机 ad-hoc 更新例外：Safe Storage 迁移 controller、旧/新 App CDHash、native helper 和 journal 是一次性强绑定恢复链。只允许使用为该候选冻结并复核过的完整链路；未来构建不得复用旧 controller、替换单独 `app.asar`、把密钥/Cookie 明文落盘或绕过失败回滚。
 
 ## 单仓库架构（私有）
 

@@ -10,11 +10,13 @@
     href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Inter:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&family=UnifrakturCook:wght@700&display=optional"
     rel="stylesheet">
   <script src="vendor/three.r128.min.js"></script>
+  <script src="vendor/GLTFLoader.r128.js"></script>
   <script src="vendor/music-tempo.min.js"></script>
   <script src="vendor/gsap.min.js"></script>
-  <script src="js/gpu-mode.js"></script>
   <script src="js/preload-mode.js"></script>
   <link rel="stylesheet" href="css/index.css">
+  <!-- 网页版新美术层:只含新增/变更的选择器,必须排在 index.css 之后 -->
+  <link rel="stylesheet" href="css/web-art-refresh.css">
 </head>
 
 <body>
@@ -61,6 +63,9 @@
     <div id="album-bg"></div>
     <div id="album-bg-next" aria-hidden="true"></div>
     <div id="vox-bg"></div>
+    <div id="perspective-bg" aria-hidden="true">
+      <video id="perspective-bg-video" muted playsinline autoplay></video>
+    </div>
     <div id="canvas-container"></div>
     <canvas id="idle-guide-canvas" aria-hidden="true"></canvas>
 
@@ -157,6 +162,26 @@
     <!-- 空场 Home -->
     <section id="empty-home" aria-label="Mineradio home">
       <div class="empty-home-shell">
+        <div class="home-hero" aria-live="polite">
+          <div class="daily-review-card">
+            <div class="daily-review-content">
+              <div class="daily-review-brand">MINERADIO</div>
+              <div id="daily-review-date" class="daily-review-date"></div>
+              <div id="daily-review-time" class="daily-review-time">--:--</div>
+              <div class="daily-review-quote">“让今天的声音，从你喜欢的地方开始。”</div>
+              <div class="daily-review-source">今日乐评 · 随心换一首心情</div>
+            </div>
+            <div class="daily-review-actions">
+              <button type="button" class="daily-review-btn primary" onclick="homeDashboardNextReview()">换一条</button>
+              <button id="home-dashboard-video-choose" type="button" class="daily-review-btn"
+                onclick="openHomeDashboardVideoPicker()">锁屏背景</button>
+              <button id="home-dashboard-video-clear" type="button" class="daily-review-btn ghost"
+                onclick="clearHomeDashboardVideo()" hidden>移除</button>
+              <button type="button" class="daily-review-btn ghost" onclick="openHomePlayerConsole()">播放控制台</button>
+            </div>
+          </div>
+        </div>
+
         <div class="home-hero">
           <div class="home-hero-inner home-recent-inner">
             <div class="home-kicker">Recently Played</div>
@@ -181,9 +206,11 @@
               <button class="home-chip" type="button" onclick="openWallpaperLibraryPanel()">Windows 壁纸库</button>
             </div>
           </div>
+          <input id="home-dashboard-video-input" type="file"
+            accept="image/*,video/mp4,video/webm,.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm" hidden aria-hidden="true">
         </div>
 
-        <div class="home-grid">
+        <div class="home-grid home-quick-grid" aria-label="常用音乐入口">
           <button class="home-card" data-home-tone="library" type="button" onclick="openHomeLibrary()">
             <div class="home-card-label">Library</div>
             <div class="home-card-title" id="home-weather-card-title">我的歌单</div>
@@ -282,7 +309,8 @@
             </button>
           </div>
 
-          <div class="home-legacy-rail">
+          <!-- 本地旧首页节点:CSS 里已隐藏,但保留让本地渲染器(最近播放 / 推荐磁贴)继续正常工作 -->
+          <div class="home-legacy-rail" aria-hidden="true">
             <div class="home-section-head">
               <div class="home-section-title" id="home-rail-title">为你准备</div>
               <div class="home-section-note" id="home-rail-note">正在整理推荐</div>
@@ -292,6 +320,34 @@
         </div>
       </div>
     </section>
+
+    <div id="home-platform-recommend-mask" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true"
+      aria-labelledby="home-platform-recommend-title">
+      <div class="modal home-platform-recommend-modal">
+        <div class="home-platform-recommend-head">
+          <div>
+            <h2 id="home-platform-recommend-title">平台推荐</h2>
+            <p>只读取平台可验证的推荐数据，不用关键词搜索替代。</p>
+          </div>
+          <button id="home-platform-recommend-close" class="home-platform-recommend-close" type="button"
+            aria-label="关闭平台推荐">×</button>
+        </div>
+        <div id="home-platform-recommend-tabs" class="home-platform-recommend-tabs" role="tablist" aria-label="推荐平台">
+          <button type="button" role="tab" data-home-recommend-source="netease" aria-selected="true">网易云</button>
+          <button type="button" role="tab" data-home-recommend-source="qishui" aria-selected="false">汽水</button>
+          <button type="button" role="tab" data-home-recommend-source="qq" aria-selected="false">QQ</button>
+          <button type="button" role="tab" data-home-recommend-source="kugou" aria-selected="false">酷狗</button>
+          <button type="button" role="tab" data-home-recommend-source="spotify" aria-selected="false">Spotify</button>
+        </div>
+        <div id="home-platform-recommend-status" class="home-platform-recommend-status" role="status" aria-live="polite">
+        </div>
+        <div id="home-platform-recommend-list" class="home-platform-recommend-list"></div>
+        <div class="home-platform-recommend-actions">
+          <button id="home-platform-recommend-refresh" type="button">刷新当前平台</button>
+          <button id="home-platform-recommend-done" type="button">完成</button>
+        </div>
+      </div>
+    </div>
 
     <!-- 顶部右侧 (只保留用户) -->
     <div id="top-right">
@@ -323,12 +379,25 @@
 
     <div id="perf-hud"></div>
 
-    <!-- 控制台 (右侧贴边自动显示, 无关闭按钮) -->
-    <div id="fx-panel">
+    <!-- 控制台 (右侧贴边自动显示; 可用图钉固定常开) -->
+    <div id="fx-panel" class="fx-console" aria-label="视觉控制台">
       <div class="fx-head">
-        <div>
-          <div class="fx-title">视觉控制台</div>
-          <div class="fx-sub">MINERADIO VISUALS · 鼠标移开自动隐藏</div>
+        <div class="fx-head-brand">
+          <span class="fx-head-mark" aria-hidden="true"></span>
+          <div class="fx-head-main">
+            <div class="fx-title">视觉控制台</div>
+            <div class="fx-sub" id="fx-console-status">MINERADIO VISUALS · 即时生效</div>
+          </div>
+        </div>
+        <div class="fx-head-actions">
+          <button class="fx-panel-pin" id="fx-panel-pin-btn" type="button" onclick="toggleFxPanelPinned()" title="固定控制台" aria-label="固定控制台" aria-pressed="false">
+            <svg class="fx-panel-pin-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 21v-4.5"/>
+              <path d="M8.25 3.5h7.5L14.5 11H9.5L8.25 3.5z"/>
+              <path d="M9 11h6"/>
+            </svg>
+          </button>
+          <button class="fx-panel-close" type="button" onclick="toggleFxPanel(false)" title="关闭" aria-label="关闭控制台">×</button>
         </div>
       </div>
 
@@ -336,6 +405,8 @@
       <div class="preset-grid" id="preset-grid"></div>
       <div class="fx-section-label">用户存档</div>
       <div class="user-archive-grid" id="user-archive-grid"></div>
+      <div class="fx-section-label">界面主题</div>
+      <div class="app-theme-grid" id="app-theme-grid" role="listbox" aria-label="界面主题"></div>
       <div class="fx-section-label">自定义颜色</div>
       <div class="lyric-color-row">
         <input id="ui-accent-picker" class="lyric-color-picker" type="color" value="#ffffff" title="界面高亮色">
@@ -350,18 +421,18 @@
         <button class="fx-mini-btn ghost" type="button" onclick="resetVisualTintColor()">默认</button>
       </div>
       <div class="lyric-color-row">
-        <input id="home-accent-picker" class="lyric-color-picker" type="color" value="#00f5d4" title="Home 填充色">
-        <div class="fx-color-row-label">Home 填充<small id="home-accent-value">#00F5D4</small></div>
+        <input id="home-accent-picker" class="lyric-color-picker" type="color" value="#ffffff" title="Home 填充色">
+        <div class="fx-color-row-label">Home 填充<small id="home-accent-value">#FFFFFF</small></div>
         <button class="fx-mini-btn ghost" type="button" onclick="resetHomeAccentColor()">默认</button>
       </div>
       <div class="lyric-color-row">
-        <input id="home-icon-picker" class="lyric-color-picker" type="color" value="#f4d28a" title="主页图标">
-        <div class="fx-color-row-label">主页图标<small id="home-icon-value">#F4D28A</small></div>
+        <input id="home-icon-picker" class="lyric-color-picker" type="color" value="#ffffff" title="主页图标">
+        <div class="fx-color-row-label">主页图标<small id="home-icon-value">#FFFFFF</small></div>
         <button class="fx-mini-btn ghost" type="button" onclick="resetHomeIconColor()">默认</button>
       </div>
       <div class="lyric-color-row">
-        <input id="visual-icon-picker" class="lyric-color-picker" type="color" value="#7fd8ff" title="视觉图标">
-        <div class="fx-color-row-label">视觉图标<small id="visual-icon-value">#7FD8FF</small></div>
+        <input id="visual-icon-picker" class="lyric-color-picker" type="color" value="#ffffff" title="视觉图标">
+        <div class="fx-color-row-label">视觉图标<small id="visual-icon-value">#FFFFFF</small></div>
         <button class="fx-mini-btn ghost" type="button" onclick="resetVisualIconColor()">默认</button>
       </div>
       <div class="cover-color-pop" id="cover-color-pop">
@@ -467,7 +538,7 @@
             <button type="button" data-mode="cinema" onclick="setLyricDisplayMode('cinema')">沉浸</button>
             <button type="button" data-mode="custom" onclick="setLyricDisplayMode('custom')">自定</button>
           </div>
-          <div class="fx-slider"><label>显示行数</label><input id="fx-lyriccustomlines" type="range" min="1" max="10"
+          <div class="fx-slider" id="lyric-custom-line-row"><label>显示行数</label><input id="fx-lyriccustomlines" type="range" min="1" max="10"
               step="1"><output></output></div>
           <div class="fx-section-label">歌词清晰度</div>
           <div class="fx-seg lyric-raster-quality-seg" id="lyric-raster-quality-seg" aria-label="歌词清晰度">
@@ -476,6 +547,7 @@
             <button type="button" data-lyric-raster-quality="3" onclick="setLyricRasterQuality(3)">3x</button>
             <button type="button" data-lyric-raster-quality="4" onclick="setLyricRasterQuality(4)">4x</button>
           </div>
+          <div class="lyric-depth-line-note" id="lyric-depth-line-note" role="note">词境穿行使用固定五层景深，行数选项在此预设中不生效</div>
           <div class="fx-section-label">歌词翻译 / 译文显示</div>
           <div class="fx-seg lyric-translation-mode-seg" id="lyric-translation-mode-seg">
             <button type="button" data-translation="off" onclick="setLyricTranslationMode('off')">关闭</button>
@@ -614,6 +686,15 @@
               <button data-cam="off" class="active">关闭</button>
               <button data-cam="gesture">手势触碰</button>
             </div>
+            <div class="hand-model-library" id="hand-model-library">
+              <div class="hand-model-library-head">
+                <span><strong>手部模型</strong><small>跟随 21 点手部关键点</small></span>
+                <button class="fx-mini-btn ghost" type="button" onclick="openHandModelPicker()">导入 GLB / GLTF</button>
+              </div>
+              <div class="hand-model-grid" id="hand-model-grid" role="radiogroup" aria-label="手部模型样式"></div>
+              <div class="fx-slider hand-model-scale-row"><label>模型大小</label><input id="hand-model-scale" type="range" min="0.55" max="2.20" step="0.01" value="1"><output>100%</output></div>
+              <div class="hand-model-note" id="hand-model-status" aria-live="polite">内置模型不占存储；自定义模型仅保存在本机。</div>
+            </div>
           </div>
 
           <div class="fx-section-label">拖动缓冲（镜头 / 歌架 / 音柱）</div>
@@ -730,6 +811,27 @@
         <div class="fx-slider"><label>雨幕浓度</label><input id="fx-rainDensity" type="range" min="0.3" max="1.5" step="0.01" title="雨幕整体浓度：稀疏到浓密"><output></output></div>
       </div>
 
+      <section id="lyric-depth-fx-section" aria-label="词境穿行专属动态设置">
+        <div class="lyric-depth-fx-kicker">LYRIC DEPTH FLIGHT</div>
+        <div class="fx-section-label">词境穿行</div>
+        <button class="lyric-depth-orbit-button" id="t-lyricDepthInteraction" type="button"
+          aria-pressed="false" onclick="toggleLyricDepthInteraction()">
+          <span class="lyric-depth-orbit-icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48" fill="none"><ellipse cx="24" cy="24" rx="19" ry="8.5"/><ellipse cx="24" cy="24" rx="8.5" ry="19" transform="rotate(42 24 24)"/><circle cx="24" cy="24" r="3.5" fill="currentColor" stroke="none"/></svg>
+          </span>
+          <span class="lyric-depth-orbit-copy"><strong>360° 词境漫游</strong><small>拖动旋转 · 开启摄像头后双手缩放</small></span>
+          <span class="lyric-depth-orbit-state">开启</span>
+        </button>
+        <div class="fx-toggle-grid lyric-depth-toggle-grid">
+          <div class="fx-toggle" id="t-lyricDepthWordSweep" role="button" tabindex="0"
+            aria-pressed="true" onclick="toggleLyricDepthWordSweep()"
+            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleLyricDepthWordSweep()}">
+            <span><strong>逐字流光</strong><small>底色常亮 · 亮光随演唱平滑扫过</small></span><span class="dot"></span>
+          </div>
+        </div>
+        <p class="lyric-depth-fx-hint">开启词境漫游后，鼠标拖动会旋转舞台；再开启摄像头，双手距离即可直接缩放。</p>
+      </section>
+
       <div id="vox-fx-section">
         <div class="fx-section-label">音域回响</div>
         <div class="fx-toggle-grid">
@@ -740,6 +842,7 @@
           <div class="fx-toggle" id="t-voxFloatBlocks" onclick="toggleFx('voxFloatBlocks')" title="音域回响:变换位置的蓝色方块与白色线框方块"><span>悬浮方块</span><span class="dot"></span></div>
           <div class="fx-toggle" id="t-voxShimmer" onclick="toggleFx('voxShimmer')" title="音域回响:地形上散落发光小方块的闪烁/棱边火花/微光"><span>闪烁点</span><span class="dot"></span></div>
         </div>
+        <div class="fx-slider" id="vox-float-block-scale-row"><label>悬浮方块大小</label><input id="fx-voxfloatblockscale" type="range" min="1" max="2" step="0.05" title="100% 为原版大小，200% 为移植版的大方块观感"><output></output></div>
         <div class="fx-section-label">柱体数量</div>
         <div class="fx-seg" id="vox-res-seg" style="margin:4px 0 8px">
           <button data-voxres="low" onclick="setVoxRes('low')">少</button>
@@ -946,15 +1049,15 @@
         <span style="font-size:11px;color:rgba(255,255,255,.62)">纯色</span>
         <button class="fx-mini-btn ghost" onclick="voxClearBg()" style="height:24px;padding:0 9px;font-size:11px">默认</button>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px">
-        <span onclick="voxSetBg('#05080d')" title="深蓝" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#05080d;border:1px solid rgba(255,255,255,.2)"></span>
-        <span onclick="voxSetBg('#1a1030')" title="暗紫" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#1a1030;border:1px solid rgba(255,255,255,.2)"></span>
-        <span onclick="voxSetBg('#0d1f1a')" title="墨绿" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#0d1f1a;border:1px solid rgba(255,255,255,.2)"></span>
-        <span onclick="voxSetBg('#2a0e12')" title="暗红" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#2a0e12;border:1px solid rgba(255,255,255,.2)"></span>
-        <span onclick="voxSetBg('#000000')" title="纯黑" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#000000;border:1px solid rgba(255,255,255,.2)"></span>
-        <span onclick="voxSetBg('#f5f1e6')" title="米白" style="width:22px;height:22px;border-radius:6px;cursor:pointer;background:#f5f1e6;border:1px solid rgba(255,255,255,.2)"></span>
+      <button class="perspective-mode-card" id="t-perspectiveMode" type="button" role="switch" aria-checked="false"
+        onclick="togglePerspectiveMode()" title="用摄像头实时画面替换背景，歌词、封面和视觉效果保留在前景">
+        <span class="perspective-mode-copy"><strong>透视模式</strong><small>摄像头背景 · 保留歌词、封面与视觉</small></span>
+        <span class="perspective-mode-state"><span id="perspective-mode-label">关闭</span><i></i></span>
+      </button>
+      <div class="fx-section-label fx-section-label-with-action">
+        <span>视频 / 图片背景</span>
+        <button class="fx-mini-btn ghost" type="button" onclick="openWallpaperLibraryPanel()" title="读取 Windows Wallpaper Engine 壁纸库">Wallpaper</button>
       </div>
-      <div class="fx-section-label"><span>视频 / 图片背景</span></div>
       <div class="bg-media-actions" id="bg-media-actions">
         <button class="fx-mini-btn ghost" id="bg-media-upload-btn" type="button" title="上传图片或视频背景" onclick="document.getElementById('background-image-input').click()">上传</button>
         <button class="fx-mini-btn ghost" type="button" title="在 Finder 中打开 Mineradio 壁纸库" onclick="openMineradioWallpaperFolder()">打开壁纸文件夹</button>
@@ -1039,7 +1142,7 @@
           </div>
           <div class="fx-section-label">性能模式</div>
           <div class="fx-seg performance-mode-seg" id="performance-mode-seg"
-            title="同时调整播放器负载和显卡功耗偏好；显卡偏好在重启后生效">
+            title="切换后立即调整当前播放器的帧率、分析频率和视觉负载">
             <button data-performance-mode="auto" onclick="setUnifiedPerformanceMode('auto')">自动</button>
             <button data-performance-mode="eco" onclick="setUnifiedPerformanceMode('eco')">省电</button>
             <button data-performance-mode="balanced" onclick="setUnifiedPerformanceMode('balanced')">均衡</button>
@@ -1229,9 +1332,10 @@
       <div>手势：<b id="gesture-label">待命</b></div>
       <div id="gesture-confirm" class="gesture-confirm">将手放进摄像头视野</div>
       <div class="gesture-meter"><span id="gesture-fill"></span></div>
-      <div class="gesture-legend">掌推 · 捏合旋转 · 握拳收束 · 双捏缩放/推拉(支持双手)</div>
+      <div class="gesture-legend">掌推 · 捏合旋转 · 握拳收束 · 双手捏合拉开/收拢缩放</div>
     </div>
     <canvas id="hand-canvas"></canvas>
+    <canvas id="hand-model-canvas" aria-hidden="true"></canvas>
 
     <!-- 左下小封面 -->
     <div id="thumb-wrap">
@@ -1594,6 +1698,9 @@
     <input type="file" id="background-image-input"
       accept=".jpg,.jpeg,.png,.webp,.mp4,.webm,.mov,image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
       style="display:none">
+    <input type="file" id="hand-model-file-input"
+      accept=".glb,.gltf,model/gltf-binary,model/gltf+json,application/json"
+      style="display:none">
     <div id="drop-overlay">
       <div class="drop-text">拖放音乐或封面</div>
     </div>
@@ -1748,34 +1855,6 @@
       </div>
     </div>
 
-    <div id="background-crop-modal" class="modal-mask">
-      <div class="modal cover-crop-modal background-crop-modal">
-        <h2>裁切背景媒体</h2>
-        <div class="background-crop-layout">
-          <div id="background-crop-stage" class="background-crop-stage">
-            <img id="background-crop-img" alt="">
-            <video id="background-crop-video" muted loop playsinline preload="metadata"></video>
-          </div>
-          <div class="cover-crop-side">
-            <div id="background-crop-preview" class="background-crop-preview" aria-hidden="true">
-              <img id="background-crop-preview-img" alt="">
-              <video id="background-crop-preview-video" muted loop playsinline preload="metadata"></video>
-            </div>
-            <label class="cover-zoom-control">
-              <span>缩放</span>
-              <input id="background-crop-zoom" type="range" min="1" max="2.8" step="0.01" value="1">
-            </label>
-            <div class="background-crop-note">拖动预览调整位置</div>
-          </div>
-        </div>
-        <div class="btn-row">
-          <button class="modal-btn" onclick="cancelCustomBackgroundCropModal()">取消</button>
-          <button class="modal-btn" onclick="resetCustomBackgroundCropInModal()">复位</button>
-          <button class="modal-btn primary" onclick="commitCustomBackgroundCropModal()">使用裁切</button>
-        </div>
-      </div>
-    </div>
-
     <!-- 收藏到歌单模态 -->
     <div id="collect-modal" class="modal-mask">
       <div class="modal collect-modal">
@@ -1855,7 +1934,7 @@
           <div>
             <div class="wallpaper-library-kicker">WINDOWS WALLPAPER LIBRARY</div>
             <h2 id="wallpaper-library-title">Wallpaper Engine 壁纸库</h2>
-            <p>从局域网 Windows Mineradio 读取真实库项目。图片和视频在 Mac 预览；Scene 使用 Windows 的实时画面，并由 Windows 导出 MP4。</p>
+            <p>从局域网 Windows Mineradio 读取真实库项目。图片和视频可直接预览；Scene 使用 Windows 实时画面并导出为 MP4。</p>
           </div>
           <button class="wallpaper-library-close" type="button" onclick="closeWallpaperLibraryPanel()" aria-label="关闭 Windows 壁纸库">×</button>
         </div>
@@ -1899,35 +1978,6 @@
               <div id="wallpaper-library-export"></div>
             </section>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="home-platform-recommend-mask" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true"
-      aria-labelledby="home-platform-recommend-title">
-      <div class="modal home-platform-recommend-modal">
-        <div class="home-platform-recommend-head">
-          <div>
-            <h2 id="home-platform-recommend-title">平台推荐</h2>
-            <p>只读取平台可验证的推荐数据，不用关键词搜索替代。</p>
-          </div>
-          <button id="home-platform-recommend-close" class="home-platform-recommend-close" type="button"
-            aria-label="关闭平台推荐">×</button>
-        </div>
-        <div id="home-platform-recommend-tabs" class="home-platform-recommend-tabs" role="tablist"
-          aria-label="推荐平台">
-          <button type="button" role="tab" data-home-recommend-source="netease" aria-selected="true">网易云</button>
-          <button type="button" role="tab" data-home-recommend-source="qishui" aria-selected="false">汽水</button>
-          <button type="button" role="tab" data-home-recommend-source="qq" aria-selected="false">QQ</button>
-          <button type="button" role="tab" data-home-recommend-source="kugou" aria-selected="false">酷狗</button>
-          <button type="button" role="tab" data-home-recommend-source="spotify" aria-selected="false">Spotify</button>
-        </div>
-        <div id="home-platform-recommend-status" class="home-platform-recommend-status" role="status"
-          aria-live="polite"></div>
-        <div id="home-platform-recommend-list" class="home-platform-recommend-list"></div>
-        <div class="home-platform-recommend-actions">
-          <button id="home-platform-recommend-refresh" type="button">刷新当前平台</button>
-          <button id="home-platform-recommend-done" type="button">完成</button>
         </div>
       </div>
     </div>
@@ -2002,20 +2052,6 @@
       </div>
     </div>
 
-    <div id="gpu-mode-restart-modal" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true"
-      aria-labelledby="gpu-mode-restart-title">
-      <div class="modal gpu-mode-restart-modal">
-        <h2 id="gpu-mode-restart-title">性能模式已保存</h2>
-        <div id="gpu-mode-restart-desc" class="desc">性能参数已应用，显卡偏好将在重启后生效。</div>
-        <div class="btn-row">
-          <button id="gpu-mode-later-btn" class="modal-btn" type="button"
-            onclick="dismissGpuModeRestartPrompt()">稍后重启</button>
-          <button id="gpu-mode-restart-btn" class="modal-btn primary" type="button"
-            onclick="restartForGpuMode()">立即重启</button>
-        </div>
-      </div>
-    </div>
-
     <div id="toast"></div>
     <div id="cookie-export-prompt" class="cookie-export-prompt" aria-live="polite">
       <div class="cookie-export-card">
@@ -2054,6 +2090,7 @@
 
   </div>
 
+  <script src="js/runtime-themes.js"></script>
   <script src="js/index-loader.js"></script>
 </body>
 

@@ -7373,3 +7373,48 @@ server.listen(PORT, HOST, () => {
 
 server.acceptOfficialLoginCookie = acceptOfficialLoginCookie;
 module.exports = server;
+
+// Win 依赖函数: normalizeListenReportProvider
+function normalizeListenReportProvider(value) {
+  value = String(value || '').trim().toLowerCase();
+  if (value === 'qq' || value === 'kugou' || value === 'qishui' || value === 'spotify') return value;
+  return value === 'netease' || value === 'cloud' || value === 'song' ? 'netease' : '';
+}
+
+// Win 依赖函数: validateListenReport
+function validateListenReport(body) {
+  body = body && typeof body === 'object' ? body : {};
+  const song = body.song && typeof body.song === 'object' ? body.song : {};
+  const provider = normalizeListenReportProvider(
+    body.provider || song.provider || song.source || song.sourceKey || song.type || song.resolvedPlaybackProvider
+  );
+  const songId = listenReportSongId(provider, song);
+  const sessionId = String(body.sessionId || '').trim().slice(0, 160);
+  const listenMs = Math.max(0, Math.min(12 * 60 * 60 * 1000, Math.round(Number(body.listenMs) || 0)));
+  const durationMs = Math.max(0, Math.min(12 * 60 * 60 * 1000, Math.round(Number(body.durationMs) || 0)));
+  const cappedListenMs = durationMs > 0 ? Math.min(listenMs, durationMs + 2500) : listenMs;
+  const requiredMs = durationMs > 0
+    ? (durationMs <= 30000 ? durationMs * 0.8 : Math.min(30000, durationMs * 0.5))
+    : 30000;
+  const eligible = !!(
+    provider &&
+    songId &&
+    sessionId.length >= 8 &&
+    cappedListenMs >= Math.max(5000, requiredMs) &&
+    song.type !== 'local' &&
+    song.type !== 'podcast' &&
+    song.source !== 'podcast' &&
+    !song.trial
+  );
+  return {
+    provider,
+    song,
+    songId,
+    sessionId,
+    listenMs: cappedListenMs,
+    durationMs,
+    requiredMs: Math.ceil(requiredMs),
+    eligible,
+    context: body.context && typeof body.context === 'object' ? body.context : {},
+  };
+}

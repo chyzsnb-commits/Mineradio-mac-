@@ -1,20 +1,19 @@
 'use strict';
-// macOS 壁纸库桥接：从另一台 Windows 电脑（Win 版 Mineradio + Wallpaper Engine 库）或本地 SMB 挂载目录
-// 读取 WE 壁纸库（图片/视频壁纸），供 Mac 壁纸模式播放。Scene 场景壁纸（PKGV）需 WE 引擎，标注不可用。
+// macOS 壁纸库桥接：从另一台 Windows 电脑上的 Mineradio / Wallpaper Engine 库
+// 读取图片、视频与 Scene 导出。远端媒体先在主进程限额落盘，再经私有协议流给渲染层。
 // 自包含：仅通过 init(refs) 接入主进程的 protocol / ipcMain / app，不侵入式改 main.js。
 const path = require('path');
 const fs = require('fs');
 const dgram = require('dgram');
 const os = require('os');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
-const { Readable } = require('stream');
+const { Readable, Transform } = require('stream');
 const { pipeline } = require('stream/promises');
-const { WallpaperEngineLibrary, registerWallpaperEngineScheme } = require('./wallpaper-engine-library');
-
-const IS_MAC = process.platform === 'darwin';
 
 // HTTP 壁纸源（Win 端可选共享脚本）：列表 + 媒体文件代理
+const WALLPAPER_LIBRARY_SCHEME = 'mineradio-wallpaper';
 const HTTP_SOURCE_TIMEOUT_MS = 8000;
 const HTTP_SOURCE_MAX_LIST_BYTES = 4 * 1024 * 1024;
 const WINDOWS_DISCOVERY_PORT = 45678;
@@ -28,13 +27,26 @@ const WINDOWS_ACTIVE_PROBE_CONCURRENCY = 48;
 const WINDOWS_ACTIVE_FALLBACK_DELAY_MS = 250;
 const WINDOWS_ACTIVE_SUBNET_MAX_HOSTS = 512;
 const WINDOWS_MEDIA_MAX_BYTES = 256 * 1024 * 1024;
-const WINDOWS_EXPORT_DOWNLOAD_TIMEOUT_MS = 30000;
+const WINDOWS_MEDIA_TIMEOUT_MS = 2 * 60 * 1000;
+const TEMP_ASSET_TTL_MS = 10 * 60 * 1000;
 let windowsDiscoveryJobSequence = 0;
 const execFileAsync = promisify(execFile);
 
-let library = null;
 let refs = {};
 let windowsClient = null;
+
+function registerWallpaperLibraryScheme(protocol) {
+  protocol.registerSchemesAsPrivileged([{
+    scheme: WALLPAPER_LIBRARY_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  }]);
+}
 
 function normalizeWindowsBaseUrl(value) {
   const raw = String(value || '').trim().replace(/\/+$/, '');
@@ -78,43 +90,89 @@ function mediaExtensionForMime(mime, fallback) {
   return extensions[normalized] || fallback;
 }
 
-async function readResponseBytes(response, maxBytes) {
-  const limit = Math.max(1, Number(maxBytes) || WINDOWS_MEDIA_MAX_BYTES);
-  if (response && response.body && typeof response.body.getReader === 'function') {
-    const reader = response.body.getReader();
-    const chunks = [];
-    let total = 0;
-    try {
-      while (true) {
-        const part = await reader.read();
-        if (!part || part.done) break;
-        const chunk = Buffer.from(part.value || []);
-        total += chunk.length;
-        if (total > limit) {
-          const error = new Error('RESPONSE_TOO_LARGE');
-          error.code = 'RESPONSE_TOO_LARGE';
-          try { await reader.cancel(error); } catch (_) {}
-          throw error;
-        }
-        chunks.push(chunk);
-      }
-      return Buffer.concat(chunks, total);
-    } finally {
-      try { reader.releaseLock(); } catch (_) {}
+const WINDOWS_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const WINDOWS_VIDEO_MIMES = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
+
+function normalizedContentType(response) {
+  return String(response && response.headers && response.headers.get && response.headers.get('content-type') || '')
+    .split(';')[0]
+    .trim()
+    .toLowerCase();
+}
+
+function responseContentLength(response) {
+  const raw = String(response && response.headers && response.headers.get && response.headers.get('content-length') || '').trim();
+  if (!raw) return 0;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value >= 0 ? value : -1;
+}
+
+function responseNodeStream(response) {
+  const body = response && response.body;
+  if (!body) return null;
+  if (typeof body.getReader === 'function') return Readable.fromWeb(body);
+  if (typeof body.pipe === 'function') return body;
+  return Readable.from(body);
+}
+
+function byteLimitError(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
+}
+
+async function readResponseBufferLimited(response, maxBytes, errorCode) {
+  const limit = Math.max(1, Number(maxBytes) || 1);
+  const declared = responseContentLength(response);
+  if (declared < 0) throw byteLimitError('HTTP_INVALID_CONTENT_LENGTH');
+  if (declared > limit) throw byteLimitError(errorCode);
+  const source = responseNodeStream(response);
+  if (!source) throw byteLimitError('HTTP_RESPONSE_BODY_MISSING');
+  const chunks = [];
+  let total = 0;
+  for await (const value of source) {
+    const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+    total += chunk.length;
+    if (total > limit) {
+      source.destroy(byteLimitError(errorCode));
+      throw byteLimitError(errorCode);
     }
+    chunks.push(chunk);
   }
-  if (!response || typeof response.arrayBuffer !== 'function') {
-    const error = new Error('RESPONSE_BODY_UNAVAILABLE');
-    error.code = 'RESPONSE_BODY_UNAVAILABLE';
-    throw error;
-  }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length > limit) {
-    const error = new Error('RESPONSE_TOO_LARGE');
-    error.code = 'RESPONSE_TOO_LARGE';
-    throw error;
-  }
-  return bytes;
+  return Buffer.concat(chunks, total);
+}
+
+function allowedMediaMime(mime, expectedType, expectedMime) {
+  if (expectedMime) return mime === expectedMime;
+  return expectedType === 'image' ? WINDOWS_IMAGE_MIMES.has(mime) : WINDOWS_VIDEO_MIMES.has(mime);
+}
+
+function exportMimeForName(name) {
+  const extension = path.extname(String(name || '')).toLowerCase();
+  if (extension === '.mp4') return 'video/mp4';
+  if (extension === '.webm') return 'video/webm';
+  if (extension === '.mov') return 'video/quicktime';
+  return '';
+}
+
+async function streamResponseToFile(response, destination, maxBytes, tooLargeCode) {
+  const source = responseNodeStream(response);
+  if (!source) throw byteLimitError('MEDIA_RESPONSE_BODY_MISSING');
+  const limit = Math.max(1, Number(maxBytes) || 1);
+  const declared = responseContentLength(response);
+  if (declared < 0) throw byteLimitError('HTTP_INVALID_CONTENT_LENGTH');
+  if (declared > limit) throw byteLimitError(tooLargeCode);
+  let size = 0;
+  const limiter = new Transform({
+    transform(chunk, _encoding, callback) {
+      size += chunk.length;
+      if (size > limit) return callback(byteLimitError(tooLargeCode));
+      callback(null, chunk);
+    },
+  });
+  await pipeline(source, limiter, fs.createWriteStream(destination, { flags: 'wx', mode: 0o600 }));
+  if (!size) throw byteLimitError('MEDIA_EMPTY');
+  return size;
 }
 
 function parseWindowsDiscoveryAnnouncement(message) {
@@ -286,8 +344,12 @@ class WindowsWallpaperClient {
     this.dgramImpl = opts.dgramImpl || dgram;
     this.networkInterfaces = opts.networkInterfaces || os.networkInterfaces;
     this.neighborHosts = opts.neighborHosts || defaultNeighborHosts;
-    this.exportDownloadTimeoutMs = Math.max(100, Number(opts.exportDownloadTimeoutMs) || WINDOWS_EXPORT_DOWNLOAD_TIMEOUT_MS);
+    this.maxListBytes = Math.max(1, Number(opts.maxListBytes) || HTTP_SOURCE_MAX_LIST_BYTES);
+    this.maxMediaBytes = Math.max(1, Number(opts.maxMediaBytes) || WINDOWS_MEDIA_MAX_BYTES);
+    this.tempRoot = path.resolve(String(opts.tempRoot || path.join(os.tmpdir(), 'mineradio-wallpaper-downloads')));
     this.trustedBases = new Set();
+    this.temporaryAssets = new Map();
+    this.protocolReady = null;
   }
 
   async requestJson(url, options, timeoutMs) {
@@ -298,20 +360,125 @@ class WindowsWallpaperClient {
       const response = await this.fetchImpl(url, Object.assign({ headers: { Accept: 'application/json' } }, options || {}, {
         signal: controller ? controller.signal : undefined,
       }));
+      const bytes = await readResponseBufferLimited(response, this.maxListBytes, 'HTTP_RESPONSE_TOO_LARGE');
       let data = null;
-      if (response && response.body && typeof response.body.getReader === 'function') {
-        const bytes = await readResponseBytes(response, HTTP_SOURCE_MAX_LIST_BYTES);
-        try { data = JSON.parse(bytes.toString('utf8')); } catch (_) { data = null; }
-      } else {
-        data = await response.json().catch(() => null);
+      try { data = JSON.parse(bytes.toString('utf8')); } catch (_) {
+        return { ok: false, status: response.status, error: 'HTTP_INVALID_JSON' };
       }
       return { ok: response.ok, status: response.status, data };
     } catch (error) {
-      if (error && error.code === 'RESPONSE_TOO_LARGE') return { ok: false, error: 'HTTP_RESPONSE_TOO_LARGE' };
-      return { ok: false, error: error && error.name === 'AbortError' ? 'HTTP_TIMEOUT' : 'HTTP_FAILED' };
+      return {
+        ok: false,
+        error: error && error.name === 'AbortError'
+          ? 'HTTP_TIMEOUT'
+          : (error && error.code || 'HTTP_FAILED'),
+      };
     } finally {
       if (timer) clearTimeout(timer);
     }
+  }
+
+  async installProtocol(protocol) {
+    if (this.protocolReady) return this.protocolReady;
+    if (!protocol || typeof protocol.handle !== 'function') throw byteLimitError('WALLPAPER_PROTOCOL_UNAVAILABLE');
+    this.protocolReady = Promise.resolve(protocol.handle(
+      WALLPAPER_LIBRARY_SCHEME,
+      (request) => this.temporaryAssetResponse(request),
+    )).catch((error) => {
+      this.protocolReady = null;
+      throw error;
+    });
+    return this.protocolReady;
+  }
+
+  async ensureProtocolReady() {
+    if (!this.protocolReady) throw byteLimitError('WALLPAPER_PROTOCOL_UNAVAILABLE');
+    await this.protocolReady;
+  }
+
+  async prepareTempRoot() {
+    if (!this.tempPrepared) {
+      this.tempPrepared = (async () => {
+        await fs.promises.mkdir(this.tempRoot, { recursive: true, mode: 0o700 });
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        const entries = await fs.promises.readdir(this.tempRoot, { withFileTypes: true }).catch(() => []);
+        await Promise.all(entries.map(async (entry) => {
+          if (!entry.isFile() || !/^wallpaper-[a-f0-9]{48}\.tmp$/.test(entry.name)) return;
+          const file = path.join(this.tempRoot, entry.name);
+          const stat = await fs.promises.stat(file).catch(() => null);
+          if (stat && stat.mtimeMs < cutoff) await fs.promises.unlink(file).catch(() => {});
+        }));
+      })().catch((error) => {
+        this.tempPrepared = null;
+        throw error;
+      });
+    }
+    await this.tempPrepared;
+  }
+
+  async deleteTemporaryAsset(token) {
+    const asset = this.temporaryAssets.get(token);
+    if (!asset) return;
+    this.temporaryAssets.delete(token);
+    if (asset.timer) clearTimeout(asset.timer);
+    await fs.promises.unlink(asset.filePath).catch(() => {});
+  }
+
+  async registerTemporaryAsset(token, filePath, mime, name, size) {
+    await this.ensureProtocolReady();
+    const asset = {
+      filePath,
+      mime,
+      name: String(name || '').slice(0, 200),
+      size,
+      expiresAt: Date.now() + TEMP_ASSET_TTL_MS,
+      timer: null,
+    };
+    asset.timer = setTimeout(() => { this.deleteTemporaryAsset(token); }, TEMP_ASSET_TTL_MS);
+    if (asset.timer && typeof asset.timer.unref === 'function') asset.timer.unref();
+    this.temporaryAssets.set(token, asset);
+    return {
+      ok: true,
+      mime,
+      name: asset.name,
+      size,
+      url: WALLPAPER_LIBRARY_SCHEME + '://download/' + token,
+    };
+  }
+
+  async temporaryAssetResponse(request) {
+    const method = String(request && request.method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') {
+      return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD', 'X-Content-Type-Options': 'nosniff' } });
+    }
+    let url;
+    try { url = new URL(request.url); } catch (_) {
+      return new Response('Not found', { status: 404, headers: { 'X-Content-Type-Options': 'nosniff' } });
+    }
+    const token = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+    const asset = url.protocol === WALLPAPER_LIBRARY_SCHEME + ':' && url.hostname === 'download' && /^[a-f0-9]{48}$/.test(token)
+      ? this.temporaryAssets.get(token)
+      : null;
+    if (!asset || asset.expiresAt <= Date.now()) {
+      if (asset) await this.deleteTemporaryAsset(token);
+      return new Response('Not found', { status: 404, headers: { 'X-Content-Type-Options': 'nosniff' } });
+    }
+    const stat = await fs.promises.stat(asset.filePath).catch(() => null);
+    if (!stat || !stat.isFile() || stat.size !== asset.size) {
+      await this.deleteTemporaryAsset(token);
+      return new Response('Not found', { status: 404, headers: { 'X-Content-Type-Options': 'nosniff' } });
+    }
+    const headers = {
+      'Content-Type': asset.mime,
+      'Content-Length': String(asset.size),
+      'Cache-Control': 'no-store',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'X-Content-Type-Options': 'nosniff',
+    };
+    if (method === 'HEAD') return new Response(null, { status: 200, headers });
+    const stream = fs.createReadStream(asset.filePath);
+    stream.once('close', () => { this.deleteTemporaryAsset(token); });
+    return new Response(Readable.toWeb(stream), { status: 200, headers });
   }
 
   async connect(baseUrl) {
@@ -530,6 +697,7 @@ class WindowsWallpaperClient {
   async getLiveStatus(baseUrl) {
     const base = normalizeWindowsBaseUrl(baseUrl);
     if (!base) return { ok: false, error: 'INVALID_URL' };
+    if (!this.trustedBases.has(base)) return { ok: false, error: 'UNVERIFIED_SOURCE' };
     const result = await this.requestJson(serviceUrl(base, '/api/live-status'));
     return result.ok && result.data && result.data.ok === true ? { ok: true, status: result.data } : { ok: false, error: result.error || 'LIVE_UNAVAILABLE' };
   }
@@ -539,6 +707,7 @@ class WindowsWallpaperClient {
     const scene = String(sceneId || '').trim();
     const duration = Math.max(1, Math.min(300, Math.round(Number(seconds) || 30)));
     if (!base || !scene) return { ok: false, error: 'INVALID_EXPORT_REQUEST' };
+    if (!this.trustedBases.has(base)) return { ok: false, error: 'UNVERIFIED_SOURCE' };
     const result = await this.requestJson(serviceUrl(base, '/api/export-scene?scene=' + encodeURIComponent(scene) + '&seconds=' + duration), { method: 'POST' });
     if (result.status !== 202 || !result.data || result.data.ok !== true || !result.data.id) return { ok: false, error: result.error || 'EXPORT_REJECTED' };
     return { ok: true, id: String(result.data.id), scene, seconds: duration, state: String(result.data.state || 'queued'), statusUrl: String(result.data.statusUrl || '') };
@@ -548,6 +717,7 @@ class WindowsWallpaperClient {
     const base = normalizeWindowsBaseUrl(baseUrl);
     const id = String(jobId || '').trim();
     if (!base || !id) return { ok: false, error: 'INVALID_EXPORT_JOB' };
+    if (!this.trustedBases.has(base)) return { ok: false, error: 'UNVERIFIED_SOURCE' };
     const result = await this.requestJson(serviceUrl(base, '/api/export-jobs?id=' + encodeURIComponent(id)));
     if (!result.ok || !result.data || result.data.ok !== true) return { ok: false, error: result.error || 'EXPORT_STATUS_FAILED' };
     const state = String(result.data.state || '');
@@ -559,6 +729,7 @@ class WindowsWallpaperClient {
   async listExportedVideos(baseUrl) {
     const base = normalizeWindowsBaseUrl(baseUrl);
     if (!base) return { ok: false, error: 'INVALID_URL' };
+    if (!this.trustedBases.has(base)) return { ok: false, error: 'UNVERIFIED_SOURCE' };
     const result = await this.requestJson(serviceUrl(base, '/api/exported-videos'));
     if (!result.ok || !result.data || result.data.ok !== true || !Array.isArray(result.data.records)) return { ok: false, error: result.error || 'EXPORTED_VIDEOS_FAILED' };
     return { ok: true, records: result.data.records.map((record) => {
@@ -567,21 +738,36 @@ class WindowsWallpaperClient {
     }).filter(Boolean) };
   }
 
-  async downloadMedia(url, expectedType, name) {
+  async downloadMedia(url, expectedType, name, expectedMime) {
     if (typeof this.fetchImpl !== 'function') return { ok: false, error: 'FETCH_UNAVAILABLE' };
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), WINDOWS_MEDIA_TIMEOUT_MS) : null;
+    let temporary = '';
     try {
-      const response = await this.fetchImpl(url);
-      if (!response || !response.ok || (!response.body && typeof response.arrayBuffer !== 'function')) return { ok: false, error: 'MEDIA_RESPONSE_FAILED' };
-      const mime = String(response.headers && response.headers.get && response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-      if (!mime || (expectedType === 'image' ? !/^image\//.test(mime) : !/^video\//.test(mime))) return { ok: false, error: 'MEDIA_TYPE_REJECTED' };
-      const length = Number(response.headers && response.headers.get && response.headers.get('content-length') || 0);
-      if (Number.isFinite(length) && length > WINDOWS_MEDIA_MAX_BYTES) return { ok: false, error: 'MEDIA_TOO_LARGE' };
-      const bytes = await readResponseBytes(response, WINDOWS_MEDIA_MAX_BYTES);
-      if (!bytes.length) return { ok: false, error: 'MEDIA_EMPTY' };
-      return { ok: true, mime, name, bytes };
+      const response = await this.fetchImpl(url, {
+        signal: controller ? controller.signal : undefined,
+        redirect: 'error',
+      });
+      if (!response || !response.ok || !response.body) return { ok: false, error: 'MEDIA_RESPONSE_FAILED' };
+      const mime = normalizedContentType(response);
+      if (!allowedMediaMime(mime, expectedType, expectedMime)) return { ok: false, error: 'MEDIA_TYPE_REJECTED' };
+      await this.prepareTempRoot();
+      const token = crypto.randomBytes(24).toString('hex');
+      temporary = path.join(this.tempRoot, 'wallpaper-' + token + '.tmp');
+      const size = await streamResponseToFile(response, temporary, this.maxMediaBytes, 'MEDIA_TOO_LARGE');
+      const result = await this.registerTemporaryAsset(token, temporary, mime, name, size);
+      temporary = '';
+      return result;
     } catch (error) {
-      if (error && error.code === 'RESPONSE_TOO_LARGE') return { ok: false, error: 'MEDIA_TOO_LARGE' };
-      return { ok: false, error: 'MEDIA_DOWNLOAD_FAILED' };
+      if (temporary) await fs.promises.unlink(temporary).catch(() => {});
+      return {
+        ok: false,
+        error: error && error.name === 'AbortError'
+          ? 'MEDIA_DOWNLOAD_TIMEOUT'
+          : (error && error.code || 'MEDIA_DOWNLOAD_FAILED'),
+      };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -603,7 +789,12 @@ class WindowsWallpaperClient {
     const name = safeExportFileName(fileName);
     if (!base || !name) return { ok: false, error: 'INVALID_MEDIA_REQUEST' };
     if (!this.trustedBases.has(base)) return { ok: false, error: 'UNVERIFIED_SOURCE' };
-    return this.downloadMedia(serviceUrl(base, '/api/exported-file?name=' + encodeURIComponent(name)), 'video', name);
+    return this.downloadMedia(
+      serviceUrl(base, '/api/exported-file?name=' + encodeURIComponent(name)),
+      'video',
+      name,
+      exportMimeForName(name),
+    );
   }
 
   async downloadExportedFile(baseUrl, fileName, destination) {
@@ -612,42 +803,36 @@ class WindowsWallpaperClient {
     const target = String(destination || '').trim();
     if (!base || !name || !target) return { ok: false, error: 'INVALID_DOWNLOAD_REQUEST' };
     if (!this.trustedBases.has(base)) return { ok: false, error: 'UNVERIFIED_SOURCE' };
+    if (typeof this.fetchImpl !== 'function') return { ok: false, error: 'FETCH_UNAVAILABLE' };
+    const expectedMime = exportMimeForName(name);
+    if (!expectedMime) return { ok: false, error: 'INVALID_DOWNLOAD_REQUEST' };
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const response = await this.fetchImpl(serviceUrl(base, '/api/exported-file?name=' + encodeURIComponent(name)), controller ? { signal: controller.signal } : undefined);
-    if (!response || !response.ok || !response.body) return { ok: false, error: 'DOWNLOAD_FAILED' };
-    const contentType = String(response.headers && response.headers.get && response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    if (contentType && !/^video\//.test(contentType)) return { ok: false, error: 'DOWNLOAD_TYPE_REJECTED' };
-    const contentLength = Number(response.headers && response.headers.get && response.headers.get('content-length') || 0);
-    if (Number.isFinite(contentLength) && contentLength > WINDOWS_MEDIA_MAX_BYTES) return { ok: false, error: 'MEDIA_TOO_LARGE' };
-    const temporary = target + '.mineradio-part';
+    const timer = controller ? setTimeout(() => controller.abort(), WINDOWS_MEDIA_TIMEOUT_MS) : null;
+    const temporary = target + '.mineradio-part-' + crypto.randomBytes(8).toString('hex');
     try {
+      // 目标目录不存在时先补齐，避免落盘直接 WRITE_FAILED（HEAD 侧 bugfix）。
       fs.mkdirSync(path.dirname(target), { recursive: true });
     } catch (_) {}
-    let timedOut = false;
-    let timeout = 0;
     try {
-      const transfer = pipeline(Readable.fromWeb(response.body), fs.createWriteStream(temporary));
-      transfer.catch(() => {});
-      const timeoutPromise = new Promise((_, reject) => {
-        timeout = setTimeout(() => {
-          timedOut = true;
-          if (controller) controller.abort();
-          if (response.body && typeof response.body.cancel === 'function') Promise.resolve(response.body.cancel()).catch(() => {});
-          const error = new Error('DOWNLOAD_TIMEOUT');
-          error.code = 'DOWNLOAD_TIMEOUT';
-          reject(error);
-        }, this.exportDownloadTimeoutMs);
+      const response = await this.fetchImpl(serviceUrl(base, '/api/exported-file?name=' + encodeURIComponent(name)), {
+        signal: controller ? controller.signal : undefined,
+        redirect: 'error',
       });
-      await Promise.race([transfer, timeoutPromise]);
+      if (!response || !response.ok || !response.body) return { ok: false, error: 'DOWNLOAD_FAILED' };
+      if (normalizedContentType(response) !== expectedMime) return { ok: false, error: 'MEDIA_TYPE_REJECTED' };
+      await streamResponseToFile(response, temporary, this.maxMediaBytes, 'MEDIA_TOO_LARGE');
       await fs.promises.rename(temporary, target);
       return { ok: true, filePath: target };
     } catch (error) {
       try { await fs.promises.unlink(temporary); } catch (_) {}
-      if (timedOut || (error && error.code === 'DOWNLOAD_TIMEOUT')) return { ok: false, error: 'DOWNLOAD_TIMEOUT' };
-      if (error && error.code === 'RESPONSE_TOO_LARGE') return { ok: false, error: 'MEDIA_TOO_LARGE' };
-      return { ok: false, error: 'DOWNLOAD_WRITE_FAILED' };
+      return {
+        ok: false,
+        error: error && error.name === 'AbortError'
+          ? 'MEDIA_DOWNLOAD_TIMEOUT'
+          : (error && error.code || 'DOWNLOAD_WRITE_FAILED'),
+      };
     } finally {
-      if (timeout) clearTimeout(timeout);
+      if (timer) clearTimeout(timer);
     }
   }
 }
@@ -655,16 +840,17 @@ class WindowsWallpaperClient {
 function init(options) {
   refs = Object.assign(refs, options || {});
   const userDataPath = refs.userDataPath || '';
-  if (!library && userDataPath) {
-    library = new WallpaperEngineLibrary({ userDataPath });
+  if (!windowsClient) {
+    windowsClient = new WindowsWallpaperClient({
+      tempRoot: path.join(userDataPath || os.tmpdir(), 'wallpaper-download-cache'),
+    });
   }
-  if (!windowsClient) windowsClient = new WindowsWallpaperClient();
+  if (refs.protocol) {
+    windowsClient.installProtocol(refs.protocol).catch((error) => {
+      console.error('[WallpaperLibrary] private download protocol failed:', error);
+    });
+  }
   return {
-    scanDirectory,
-    scanHttpSource,
-    list,
-    getMediaFile,
-    getLibrary,
     discoverWindowsSources: (waitMs) => windowsClient.discover(waitMs),
     connectWindowsSource: (baseUrl) => windowsClient.connect(baseUrl),
     getWindowsLiveStatus: (baseUrl) => windowsClient.getLiveStatus(baseUrl),
@@ -677,48 +863,13 @@ function init(options) {
   };
 }
 
-function getLibrary() {
-  return library;
-}
-
-async function scanDirectory(dirPath) {
-  if (!library) return { ok: false, error: 'LIBRARY_NOT_READY' };
-  const root = String(dirPath || '').trim();
-  if (!root) return { ok: false, error: 'EMPTY_PATH' };
-  try {
-    const result = await library.addManualRoot(root);
-    const snapshot = await library.performScan();
-    return { ok: true, result, snapshot };
-  } catch (e) {
-    return { ok: false, error: e && e.message || 'SCAN_FAILED' };
-  }
-}
-
-async function list() {
-  if (!library) return { ok: false, error: 'LIBRARY_NOT_READY' };
-  try {
-    const records = await library.list({ includeUnplayable: true });
-    return { ok: true, records };
-  } catch (e) {
-    return { ok: false, error: e && e.message || 'LIST_FAILED' };
-  }
-}
-
-async function getMediaFile(recordId, kind) {
-  if (!library) return { ok: false, error: 'LIBRARY_NOT_READY' };
-  try {
-    const file = await library.validatedRecordFile(recordId, kind === 'video' ? 'video' : 'image');
-    if (!file) return { ok: false, error: 'NO_MEDIA_FILE' };
-    return { ok: true, filePath: file };
-  } catch (e) {
-    return { ok: false, error: e && e.message || 'MEDIA_FAILED' };
-  }
-}
-
-// HTTP 源：Win 端可选共享脚本返回 { records: [{ id, title, type: image|video, url, previewUrl }] }
-async function scanHttpSource(baseUrl) {
-  if (!windowsClient) windowsClient = new WindowsWallpaperClient();
-  return windowsClient.connect(baseUrl);
-}
-
-module.exports = { init, WindowsWallpaperClient, normalizeWindowsWallpaperRecord, normalizeWindowsWallpaperRecords, normalizeWindowsBaseUrl, parseWindowsDiscoveryAnnouncement, parseNeighborHosts };
+module.exports = {
+  init,
+  registerWallpaperLibraryScheme,
+  WindowsWallpaperClient,
+  normalizeWindowsWallpaperRecord,
+  normalizeWindowsWallpaperRecords,
+  normalizeWindowsBaseUrl,
+  parseWindowsDiscoveryAnnouncement,
+  parseNeighborHosts,
+};
