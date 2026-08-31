@@ -22,6 +22,7 @@
     },
     "internalBeta": false,
     "publicRelease": true,
+    "usageStatsEnabled": true,
     "disabledProviders": [
       "qishui"
     ],

@@ -1,7 +1,10 @@
 // 匿名用量心跳（opt-in）。
 //
-// 正式版（mineradio.internalBeta 非 true）：完全不启动，不发任何请求。
-// 测试版：首启弹窗询问用户是否允许匿名统计。同意后启动上报一次，之后每
+// 只有测试版（mineradio.internalBeta）或显式打开统计的构建
+// （mineradio.usageStatsEnabled）才会启动；两者都不是就完全不启动、不发任何请求。
+// 之所以不复用 internalBeta 当开关：那是发布通道标志，一并放开了凭据导入/导出
+// 并去掉了正式版的 UI 标记，不能为了收统计而翻它。
+// 启用后：首启弹窗询问用户是否允许匿名统计。同意后启动上报一次，之后每
 // HEARTBEAT_INTERVAL_MS 上报一次有界前台心跳（仅 { 随机id, 版本号, 前台毫秒数 }，
 // 无个人信息）。窗口隐藏/最小化时不计时间，机器睡眠造成的时间空洞不计入。
 // 拒绝/未询问：不发请求。用户偏好持久化在 userData/telemetry-consent。
@@ -32,6 +35,12 @@ function getPackageMetadata() {
 
 function isInternalBeta() {
   return getPackageMetadata().internalBeta === true;
+}
+
+// 统计总闸：测试版天然开启；正式版要显式打开 mineradio.usageStatsEnabled 才收。
+// 打开也只是"允许询问"，真正是否上报仍然取决于用户在弹窗里的选择。
+function usageStatsAllowed() {
+  return isInternalBeta() || getPackageMetadata().usageStatsEnabled === true;
 }
 
 function consentPath() {
@@ -132,7 +141,7 @@ function askConsent() {
       defaultId: 1,
       title: '匿名用量统计',
       message: '是否允许 Mineradio 收集匿名用量统计？',
-      detail: '我们只收集一个随机 ID、软件版本号，以及窗口在前台的使用时长，用于了解有多少人在用、用多久、用哪个版本。不会收集任何个人信息、账号、歌曲或播放行为。你可以随时在设置里改变这个决定。',
+      detail: '我们只收集一个随机 ID、软件版本号，以及窗口在前台的使用时长，用于了解有多少人在用、用多久、用哪个版本。不会收集任何个人信息、账号、歌曲或播放行为。这个选择会被记住；想改的话，删除应用数据目录里的 telemetry-consent 文件即可重新询问。',
     });
     const result = choice === 0 ? 'accepted' : 'declined';
     writeConsent(result);
@@ -144,8 +153,8 @@ function askConsent() {
 
 // 主入口：决定是否上报。
 function startTelemetry() {
-  // 正式版：完全不启动
-  if (!isInternalBeta()) {
+  // 统计没打开（正式版且未显式开启）：完全不启动
+  if (!usageStatsAllowed()) {
     return;
   }
 

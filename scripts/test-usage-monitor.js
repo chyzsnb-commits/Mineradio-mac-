@@ -9,6 +9,8 @@ const test = require('node:test');
 const root = path.resolve(__dirname, '..');
 const store = require(path.join(root, 'tools/usage-monitor/store.js'));
 const telemetry = fs.readFileSync(path.join(root, 'desktop/telemetry.js'), 'utf8');
+const pkg = require(path.join(root, 'package.json'));
+const privacy = fs.readFileSync(path.join(root, 'PRIVACY.md'), 'utf8');
 
 const ID_A = 'a'.repeat(32);
 const ID_B = 'b'.repeat(32);
@@ -204,7 +206,7 @@ test('监视器默认只绑回环；对外暴露必须带密钥', () => {
   }
 });
 
-test('客户端心跳:有界前台计时、正式版仍不上报、只发匿名字段', () => {
+test('客户端心跳:有界前台计时、统计需显式开启、只发匿名字段', () => {
   // 心跳间隔必须明显小于在线窗口，否则"正在使用"会漏人
   assert.match(telemetry, /HEARTBEAT_INTERVAL_MS\s*=\s*120\s*\*\s*1000/);
   assert.ok(120 * 1000 < store.ONLINE_WINDOW_MS, '心跳间隔 < 在线窗口');
@@ -216,10 +218,15 @@ test('客户端心跳:有界前台计时、正式版仍不上报、只发匿名�
   assert.match(telemetry, /elapsed > HEARTBEAT_INTERVAL_MS \* 2/);
   assert.match(telemetry, /if \(!isForeground\(\)\) return;/);
 
-  // 正式版依旧完全不启动
-  assert.match(telemetry, /if \(!isInternalBeta\(\)\) \{\s*\n\s*return;/);
+  // 统计总闸没开就完全不启动
+  assert.match(telemetry, /if \(!usageStatsAllowed\(\)\) \{\s*\n\s*return;/);
+  // 总闸 = 测试版 或 显式打开；不能靠翻 internalBeta（那会一并放开凭据导入/导出）
+  assert.match(telemetry, /function usageStatsAllowed\(\)[\s\S]{0,160}?isInternalBeta\(\) \|\| getPackageMetadata\(\)\.usageStatsEnabled === true/);
   // opt-in 默认拒绝
   assert.match(telemetry, /defaultId:\s*1/);
+  // 同意弹窗不能承诺一个并不存在的设置项
+  assert.doesNotMatch(telemetry, /在设置里改变这个决定/);
+  assert.match(telemetry, /telemetry-consent 文件/);
   // 上报体只有随机 id、版本号、毫秒数
   const body = telemetry.match(/body:\s*JSON\.stringify\(\{([^}]*)\}\)/);
   assert.ok(body, '找得到上报体');
@@ -228,4 +235,26 @@ test('客户端心跳:有界前台计时、正式版仍不上报、只发匿名�
     ['id', 'v', 'ms'],
   );
   assert.doesNotMatch(telemetry, /cookie|token|playlist|song|track/i);
+});
+
+test('分发的构建确实打开了统计，且没有借翻发布通道来实现', () => {
+  // 总闸打开，监视器才收得到数据
+  assert.equal(pkg.mineradio.usageStatsEnabled, true);
+  // 发布通道标志保持不动：翻 internalBeta 会一并放开凭据导入/导出
+  assert.equal(pkg.mineradio.internalBeta, false);
+  assert.equal(pkg.mineradio.publicRelease, true);
+  const policy = require(path.join(root, 'desktop/release-policy.js'));
+  assert.equal(policy.allowCredentialImport, false);
+  assert.equal(policy.allowCredentialExport, false);
+});
+
+test('隐私说明与实际收集行为一致', () => {
+  // 不能再宣称"正式版遥测关闭"——现在打开了，只是要用户同意
+  assert.doesNotMatch(privacy, /正式版匿名遥测关闭/);
+  assert.doesNotMatch(privacy, /公开正式版默认不启用匿名遥测/);
+  // 必须如实披露三项内容和 opt-in 默认拒绝
+  assert.match(privacy, /默认不同意/);
+  assert.match(privacy, /随机安装 ID/);
+  assert.match(privacy, /使用时长/);
+  assert.match(privacy, /telemetry-consent/);
 });
