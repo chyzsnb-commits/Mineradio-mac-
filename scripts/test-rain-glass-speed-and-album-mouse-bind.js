@@ -27,8 +27,11 @@ test('封面背景鼠标视角绑定默认关闭，使用共享画布指针且�
   const css = read('public/css/index.css');
 
   assert.match(defaults, /albumBackgroundMouseBind:\s*false/);
-  assert.match(html, /id="t-albumBackgroundMouseBind"[\s\S]*toggleFx\('albumBackgroundMouseBind'\)/);
-  assert.match(layout, /fxConsoleItem\('t-albumBackgroundMouseBind', '封面鼠标视角'/);
+  // 封面鼠标视角入口已按产品要求从面板下架(引擎与持久化保留),背景开关由壁纸鼠标视差接管
+  assert.doesNotMatch(html, /t-albumBackgroundMouseBind/);
+  assert.doesNotMatch(layout, /t-albumBackgroundMouseBind/);
+  assert.match(html, /id="t-wallpaperMouseParallax"[\s\S]*toggleFx\('wallpaperMouseParallax'\)/);
+  assert.match(layout, /fxConsoleItem\('t-wallpaperMouseParallax', '壁纸鼠标视差'/);
   assert.match(pointer, /updateAlbumBackgroundMouseView\(mx, my\)/);
   assert.match(cover, /function updateAlbumBackgroundMouseView\(ndcX, ndcY\)/);
   assert.match(cover, /albumBackgroundMouseBind/);
@@ -55,13 +58,11 @@ test('封面背景绑定覆盖 UI 区域，并在封面模式移动可见背景�
 test('开启封面鼠标视角时会自动启用当前封面，不会对上传媒体误启用视差', () => {
   const bindings = read('public/js/modules/07-fx/07-bindings-shelf-immersive.js');
   const background = read('public/js/modules/07-fx/02-accent-background-controls.js');
-  const html = read('public/index.html');
 
   assert.match(bindings, /key === 'albumBackgroundMouseBind'[\s\S]*customBackgroundUsesAlbumCover/);
   assert.match(bindings, /setCustomBackgroundAlbumCover\(true/);
   assert.match(bindings, /customBackgroundActiveMedia\(\)[\s\S]*type !== 'album'/);
   assert.match(background, /function customBackgroundAlbumCoverSource\(\)[\s\S]*album-bg/);
-  assert.match(html, /id="t-albumBackgroundMouseBind"[^>]*role="switch"/);
 });
 
 test('没有可用封面时封面按钮不会启用空背景模式', () => {

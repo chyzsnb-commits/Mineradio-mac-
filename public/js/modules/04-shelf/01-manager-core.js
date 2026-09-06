@@ -29,6 +29,10 @@ function makeShelfManager() {
   var contentList = null;     // 二级 PSP 滚动列表 manager
   var connectorParticles = null;
   var floorMirror = null;
+  var p10RootPoseEuler = null;   // P10 歌架朝向合成的复用临时对象, 避免每帧分配
+  var p10RootPoseQuatA = null;
+  var p10RootPoseQuatB = null;
+  var p10FocusMix = 0;           // P10 歌架常驻(0)/呼出(1)相机相对位姿混合系数
 
   // 一次性返回完整 items 数组 (不只 5 张, 全部参与 PSP 滚动)
   function splitPlaylists() {
@@ -832,6 +836,77 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
     return null;
   }
 
+  // 侧栏歌架的整组位姿(锚定/封面跟随/竖屏回退)。update() 里每帧调一次;
+  // 主循环在相机(含体素机位)全部定稿后再调一次(dt=0), 否则歌架锚的是上一帧相机,
+  // 拖拽旋转时歌单会晚一帧甩动(用户要求歌单对鼠标零反应、只有场景本体转)。
+  function applySideShelfRootPose(dt, lateFrame) {
+    if (!group) return;
+    var px = pointerParallax.x, py = pointerParallax.y;
+    if (mode === 'side') {
+      var passiveAlwaysGroup = shelfAlwaysVisible() && !shelfPinnedOpen && !(contentList && contentList.isOpen());
+      var liftedCardActive = passiveAlwaysGroup && cards.some(function (c) { return c.selected || (c.floatMix || 0) > 0.025; });
+      group.renderOrder = passiveAlwaysGroup && !liftedCardActive ? 30 : 50;
+      var p10ShelfActive = typeof voxelCityActive === 'function' && voxelCityActive();
+      // 全预设统一: 常驻贴右缘、呼出(focus 镜头激活)推近居中, 开关和缓动都跟随电影镜头。
+      // 位姿常数按桌面横屏实测, 竖屏窄窗保留原世界摆位。
+      var p10Summon = shelfSummonSettings();
+      var p10FocusWanted = !!(typeof orbit !== 'undefined' && orbit && orbit.focus && orbit.focus.active && /^shelf-/.test(String(orbit.focus.type || '')));
+      var p10WorldFallback = !p10ShelfActive && typeof shelfLayoutProfile === 'function' && !!shelfLayoutProfile().portrait;
+      if (!p10WorldFallback) {
+        var p10MixRate = clampRange(p10FocusWanted ? 0.16 * p10Summon.cameraEnterSpeed : 0.10 * p10Summon.cameraExitSpeed, 0.018, 0.42);
+        p10FocusMix += ((p10FocusWanted ? 1 : 0) - p10FocusMix) * Math.min(1, p10MixRate * Math.max(1, dt * 60));
+      } else {
+        p10FocusMix = 0;
+      }
+      var p10Anchor = p10ShelfCameraAnchor(camera, p10FocusMix);
+      // 常驻与呼出都锚在相机前方, 只在两套相机相对位姿间过渡
+      var p10AnchorActive = !p10WorldFallback && !!p10Anchor;
+      if (p10AnchorActive) group.position.set(p10Anchor.x, p10Anchor.y, p10Anchor.z);
+      else group.position.set(0, 0, 0);
+      var shelfFrameYaw = (p10ShelfActive && typeof voxelShelfFocusFrameYaw === 'function') ? voxelShelfFocusFrameYaw() : 0;
+      var bindToCover = (shelfAlwaysVisible() || shelfPinnedOpen || shelfVisibility > 0.06) && particles && particles.rotation && !(contentList && contentList.isOpen());
+      if (p10AnchorActive) {
+        if (!p10RootPoseEuler && typeof THREE !== 'undefined') {
+          p10RootPoseEuler = new THREE.Euler();
+          p10RootPoseQuatA = new THREE.Quaternion();
+          p10RootPoseQuatB = new THREE.Quaternion();
+        }
+        var p10RootPose = p10ShelfRootPose(p10FocusMix);
+        p10RootPoseEuler.set(p10RootPose.x, p10RootPose.y, p10RootPose.z);
+        p10RootPoseQuatA.setFromEuler(p10RootPoseEuler);
+        p10RootPoseQuatB.copy(camera.quaternion).multiply(p10RootPoseQuatA);
+        // 相机相对锚定下目标在屏幕上是静止的: 姿态不在过渡期就把四元数锁死,
+        // 拖拽转场不残留 slerp 追赶(用户描述的"反方向的力拖回去"); 过渡期才保留电影缓动。
+        var p10Transitioning = Math.abs(p10FocusMix - (p10FocusWanted ? 1 : 0)) > 0.001;
+        if (p10Transitioning) {
+          if (!lateFrame) group.quaternion.slerp(p10RootPoseQuatB, 0.12);
+        } else {
+          group.quaternion.copy(p10RootPoseQuatB);
+        }
+      } else if (bindToCover) {
+        var bindEase = uniforms.uTime.value < coverBindResumeUntil ? 0.18 : 0.075;
+        // 跟随封面旋转,但钳到可点击的角度范围内:否则封面大幅旋转时歌架被带得侧过去、
+        // 卡片转出屏幕右缘就点不到了(光标放不到屏外的卡片上,不是命中判定的问题)。
+        var tgtRX = clampRange(particles.rotation.x * 0.5 - py * 0.010, -0.22, 0.22);
+        var tgtRY = shelfFrameYaw + clampRange(particles.rotation.y * 0.5 + px * 0.018, -0.32, 0.32);
+        group.rotation.x += (tgtRX - group.rotation.x) * bindEase;
+        group.rotation.y += (tgtRY - group.rotation.y) * bindEase;
+        group.rotation.z += (particles.rotation.z * 0.3 - group.rotation.z) * bindEase;
+      } else {
+        group.rotation.y += ((shelfFrameYaw + px * 0.018) - group.rotation.y) * 0.045;
+        group.rotation.x += ((-py * 0.010) - group.rotation.x) * 0.045;
+        group.rotation.z += (0 - group.rotation.z) * 0.045;
+      }
+    } else {
+      group.renderOrder = 50;
+      var t = uniforms.uTime.value;
+      group.position.y = Math.sin(t * 0.3) * 0.04;
+      group.position.x = px * 0.10;
+      group.rotation.y = px * 0.025;
+      group.rotation.x = -py * 0.012;
+    }
+  }
+
   return {
     setMode: function (m) {
       if (m === 'stage') m = 'side';   // 底部横向歌单已删,舞台请求一律按右侧歌架呈现
@@ -869,7 +944,6 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       // PSP 滚动平滑
       centerSmooth += (centerTarget - centerSmooth) * 0.16;
       if (Math.abs(centerSmooth - centerTarget) < 0.001) centerSmooth = centerTarget;
-      var px = pointerParallax.x, py = pointerParallax.y;
       var appRevealed = !document.body.classList.contains('splash-active');
       var cueVis = tickShelfHoverCue(dt);
       // v8: shelf 自动可见度 — 启动页期间不显示；侧栏只在右侧停留时淡入。
@@ -902,52 +976,9 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
         lastUpdate = uniforms.uTime.value;
         if (!syncQueueCurrent(currentIdx, true)) rebuild(true);
       }
-          if (mode === 'side') {
-            var passiveAlwaysGroup = shelfAlwaysVisible() && !shelfPinnedOpen && !(contentList && contentList.isOpen());
-            var liftedCardActive = passiveAlwaysGroup && cards.some(function (c) { return c.selected || (c.floatMix || 0) > 0.025; });
-            group.renderOrder = passiveAlwaysGroup && !liftedCardActive ? 30 : 50;
-            var p10CompositionMix = typeof voxelShelfCompositionMixValue === 'function' ? voxelShelfCompositionMixValue() : 0;
-            var p10ShelfScale = typeof voxelShelfWorldScale === 'function' && typeof voxelCityActive === 'function' && voxelCityActive()
-              ? voxelShelfWorldScale() * (typeof voxelShelfCompositionScale === 'function' ? voxelShelfCompositionScale() : 1)
-              : 1;
-            group.scale.setScalar(p10ShelfScale);
-            var p10ShelfActive = typeof voxelCityActive === 'function' && voxelCityActive();
-            var p10Anchor = p10ShelfCameraAnchor(camera);
-            var p10AnchorActive = p10ShelfActive && p10Anchor && (shelfPinnedOpen || (contentList && contentList.isOpen()));
-            if (p10AnchorActive) group.position.set(p10Anchor.x, p10Anchor.y, p10Anchor.z);
-            else group.position.set(0, 0, 0);
-            var shelfFrameYaw = (p10ShelfActive && typeof voxelShelfFocusFrameYaw === 'function') ? voxelShelfFocusFrameYaw() : 0;
-            var bindToCover = (shelfAlwaysVisible() || shelfPinnedOpen || shelfVisibility > 0.06) && particles && particles.rotation && !(contentList && contentList.isOpen());
-            if (p10ShelfActive) {
-              var p10RootPose = p10ShelfRootPose(shelfFrameYaw, px, py);
-              group.rotation.x += (p10RootPose.x - group.rotation.x) * 0.12;
-              group.rotation.y += (p10RootPose.y - group.rotation.y) * 0.12;
-              group.rotation.z += (p10RootPose.z - group.rotation.z) * 0.12;
-            } else if (bindToCover) {
-          var bindEase = uniforms.uTime.value < coverBindResumeUntil ? 0.18 : 0.075;
-          // 跟随封面旋转,但钳到可点击的角度范围内:否则封面大幅旋转时歌架被带得侧过去、
-          // 卡片转出屏幕右缘就点不到了(光标放不到屏外的卡片上,不是命中判定的问题)。
-          var tgtRX = clampRange(particles.rotation.x * 0.5 - py * 0.010, -0.22, 0.22);
-              var tgtRY = shelfFrameYaw + clampRange(particles.rotation.y * 0.5 + px * 0.018, -0.32, 0.32);
-          group.rotation.x += (tgtRX - group.rotation.x) * bindEase;
-          group.rotation.y += (tgtRY - group.rotation.y) * bindEase;
-          group.rotation.z += (particles.rotation.z * 0.3 - group.rotation.z) * bindEase;
-            } else {
-              group.rotation.y += ((shelfFrameYaw + px * 0.018) - group.rotation.y) * 0.045;
-          group.rotation.x += ((-py * 0.010) - group.rotation.x) * 0.045;
-          group.rotation.z += (0 - group.rotation.z) * 0.045;
-        }
-      } else {
-        group.renderOrder = 50;
-        var t = uniforms.uTime.value;
-        group.position.y = Math.sin(t * 0.3) * 0.04;
-        group.position.x = px * 0.10;
-        group.rotation.y = px * 0.025;
-        group.rotation.x = -py * 0.012;
-      }
+      applySideShelfRootPose(dt);
       // 每帧只算一次:三个 profile 对帧内每张卡都相同,原先在 placeCard 里逐卡重建 ~50 个临时对象/帧
       var frameLayout = shelfLayoutProfile();
-      if (mode === 'side' && typeof voxelCityActive === 'function' && voxelCityActive()) frameLayout = p10ShelfSideLayout(frameLayout);
       var frameShelfLook = shelfSettings();
       var frameSummon = shelfSummonSettings();
       for (var i = 0; i < cards.length; i++) {
@@ -978,10 +1009,16 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       // 二级内容框 update
       if (contentList) contentList.update(dt);
     },
+    syncCameraAnchor: function () {
+      // 相机定稿后的二次锚定(dt=0 不推进缓动; lateFrame=true 过渡期不重复应用 slerp)
+      if (group && mode === 'side') applySideShelfRootPose(0, true);
+    },
     onCoverChange: function () {
       coverBindResumeUntil = uniforms && uniforms.uTime ? uniforms.uTime.value + 1.2 : coverBindResumeUntil;
       var p10ShelfActiveOnCover = typeof voxelCityActive === 'function' && voxelCityActive();
-      if (group && mode === 'side' && !p10ShelfActiveOnCover && (shelfAlwaysVisible() || shelfPinnedOpen || shelfVisibility > 0.06) && particles && particles.rotation && !(contentList && contentList.isOpen())) {
+      var p10WorldFallbackOnCover = !p10ShelfActiveOnCover && typeof shelfLayoutProfile === 'function' && !!shelfLayoutProfile().portrait;
+      // 相机相对锚定(横屏)时朝向由锚定四元数驱动, 封面跟随只在竖屏世界摆位下生效
+      if (group && mode === 'side' && p10WorldFallbackOnCover && (shelfAlwaysVisible() || shelfPinnedOpen || shelfVisibility > 0.06) && particles && particles.rotation && !(contentList && contentList.isOpen())) {
         group.rotation.x += (particles.rotation.x - group.rotation.x) * 0.28;
         group.rotation.y += (particles.rotation.y - group.rotation.y) * 0.28;
         group.rotation.z += (particles.rotation.z - group.rotation.z) * 0.28;

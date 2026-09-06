@@ -18,6 +18,8 @@ const contentList = fs.readFileSync(path.join(root, 'public/js/modules/04-shelf/
 const consoleWorkspace = fs.readFileSync(path.join(root, 'public/js/modules/07-fx/09-console-workspace.js'), 'utf8');
 const peekPanels = fs.readFileSync(path.join(root, 'public/js/modules/10-shell/02-peek-panels-upload.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/css/index.css'), 'utf8');
+const focusCinema = fs.readFileSync(path.join(root, 'public/js/modules/01-scene/03-focus-cinema-camera.js'), 'utf8');
+const skullBackcover = fs.readFileSync(path.join(root, 'public/js/modules/02-visual/01-float-skull-backcover.js'), 'utf8');
 
 function readFunction(source, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -103,38 +105,57 @@ test('p10 歌架根节点必须与焦点相机方位同向旋转', () => {
   assert.match(shelfManager, /shelfFrameYaw \+ px \* 0\.018/);
 });
 
-test('p10 一级歌架使用图一的右侧纵向构图，不被推到画面边缘', () => {
+test('p10 一级歌架与其他预设共用同一布局与屏幕姿态', () => {
   assert.match(voxel, /function voxelShelfFocusFrameYaw\(/);
-  assert.match(shelfManager, /voxelShelfFocusFrameYaw\(\)/);
-  assert.match(shelfLayoutHover, /function p10ShelfSideLayout\(/);
-  assert.match(shelfLayoutHover, /function p10ShelfRootPose\(/);
-  assert.match(shelfManager, /p10ShelfSideLayout\(frameLayout\)/);
-  assert.match(shelfManager, /var p10RootPose = p10ShelfRootPose\(shelfFrameYaw, px, py\)/);
-  assert.match(shelfManager, /if \(p10ShelfActive\)[\s\S]*else if \(bindToCover\)/);
+  assert.doesNotMatch(shelfLayoutHover, /function p10ShelfSideLayout\(/, 'P10 不得再改编布局, 必须与普通预设 1:1');
+  assert.doesNotMatch(shelfManager, /p10ShelfSideLayout\(/, 'P10 不得再把布局缩进体素比例');
+  assert.doesNotMatch(shelfManager, /voxelShelfWorldScale|p10ShelfScale/, 'P10 歌架不得再按体素世界比例放大');
+  assert.doesNotMatch(voxel, /voxelShelfWorldScale/, '体素世界比例函数已随歌架同步下线');
+  assert.match(shelfManager, /var frameLayout = shelfLayoutProfile\(\)/);
+  assert.match(shelfManager, /var p10FocusMix = 0/, 'P10 必须维护常驻/呼出位姿混合系数');
+  assert.match(shelfManager, /p10FocusWanted = !!\(typeof orbit !== 'undefined' && orbit && orbit\.focus && orbit\.focus\.active && \/\^shelf-\//, 'P10 必须跟随电影镜头的 focus 状态切换位姿');
+  assert.match(shelfManager, /var p10Anchor = p10ShelfCameraAnchor\(camera, p10FocusMix\)/, 'P10 常驻与呼出共用锚点函数, 只过渡位姿');
+  assert.match(shelfManager, /var p10RootPose = p10ShelfRootPose\(p10FocusMix\)/, 'P10 常驻与呼出共用朝向函数, 不得再传入鼠标指针');
+  assert.match(shelfManager, /p10RootPoseQuatB\.copy\(camera\.quaternion\)\.multiply\(p10RootPoseQuatA\)/, 'P10 朝向必须由相机四元数合成, 才能与其他预设同姿态');
+  assert.match(shelfManager, /var p10AnchorActive = !p10WorldFallback && !!p10Anchor/, '锚点激活不再限于 P10: 全预设(横屏)共用同一相机相对锚点');
+  assert.match(shelfManager, /var p10WorldFallback = !p10ShelfActive && typeof shelfLayoutProfile === 'function' && !!shelfLayoutProfile\(\)\.portrait/, '只有竖屏窄窗回退世界摆位, 横屏全预设锚定');
+  assert.match(shelfManager, /if \(p10AnchorActive\)[\s\S]*else if \(bindToCover\)/, '锚定激活时朝向必须由相机四元数驱动, 不得落到封面跟随分支');
+  assert.match(shelfManager, /onCoverChange:[\s\S]*p10WorldFallbackOnCover && /, '换封面旋转只在竖屏世界摆位下生效, 锚定预设不得被瞬间套用封面旋转');
 
-  const adapt = readFunction(shelfLayoutHover, 'p10ShelfSideLayout');
   const rootPose = readFunction(shelfLayoutHover, 'p10ShelfRootPose');
-  const base = {
-    sideX: 3.18, sideY: 0, sideZ: 0.86,
-    sideXStep: 0.04, sideYStep: 0.68, sideZStep: 0.17,
-    sideEntryX: 0.82, sideDetailShift: 0.82,
-    sideScale: 1, sideRotY: 0.28, sideRotX: 0.042
-  };
-  const context = {};
-  vm.runInNewContext(`${adapt}; ${rootPose}; this.p10ShelfSideLayout = p10ShelfSideLayout; this.p10ShelfRootPose = p10ShelfRootPose;`, context);
-  assert.equal(context.p10ShelfSideLayout(base, false), base, '普通预设必须保持原布局对象');
-  const p10 = context.p10ShelfSideLayout(base, true);
-  assert.ok(p10.sideX > 1.0 && p10.sideX < 1.2, 'P10 缩短相机距离后必须同步收窄局部横向量，中心卡才能回到图一中部');
-  assert.ok(Math.abs(p10.sideY) < 0.2, '中心卡必须保持垂直居中，不能被推到右上角');
-  assert.ok(p10.sideYStep >= 0.66, '必须保留图一完整的纵向卡片间距');
-  assert.ok(p10.sideScale > 0.78 && p10.sideScale < 0.86, 'P10 必须使用图一的局部缩放，不能直接套普通预设比例后投到远景');
-  assert.ok(p10.sideRotY > 0.25 && p10.sideRotY < 0.31, '一级卡片必须保留图一的卡面斜切');
+  const poseMix = readFunction(shelfLayoutHover, 'p10ShelfPoseMix');
+  const restPose = shelfLayoutHover.match(/var P10_SHELF_POSE_REST = \{[^}]*\}/)[0];
+  const focusPose = shelfLayoutHover.match(/var P10_SHELF_POSE_FOCUS = \{[^}]*\}/)[0];
+  const context = { clampRange: (v, min, max) => Math.max(min, Math.min(max, v)) };
+  vm.runInNewContext(`${restPose}; ${focusPose}; ${poseMix}; ${rootPose}; this.p10ShelfRootPose = p10ShelfRootPose; this.p10ShelfPoseMix = p10ShelfPoseMix;`, context);
+  const rest = context.p10ShelfRootPose(0);
+  assert.ok(Math.abs(rest.x - 0.084) < 0.005 && Math.abs(rest.y) < 0.005 && rest.z === 0, '常驻基础角必须是普通预设常驻机位朝向的逆(0.084, 0, 0), 保证贴右缘');
+  const focus = context.p10ShelfRootPose(1);
+  assert.ok(Math.abs(focus.x + 0.12) < 0.005 && Math.abs(focus.y + 0.42) < 0.005, '呼出基础角必须是普通预设呼出机位朝向的逆(-0.12, -0.42)');
+  assert.doesNotMatch(rootPose, /pointer|0\.018|0\.010/, '歌单架朝向不得混入鼠标指针视差: 歌单固定, 能转动的只有场景本体');
+  const half = context.p10ShelfPoseMix(0.5);
+  assert.ok(Math.abs(half.d - (6.553 + 5.804) / 2) < 1e-9 && Math.abs(half.r - -0.9125 < 1e-9), '常驻/呼出两套位姿必须按混合系数线性过渡');
 
-  const pose = context.p10ShelfRootPose(-Math.PI / 4, 0, 0);
-  assert.ok(Math.abs(pose.x) < 0.08, 'P10 根组俯仰只能是图一所需的轻微固定值');
-  assert.ok(Math.abs(pose.y + Math.PI / 4) < 0.12, 'P10 根组必须稳定朝向焦点相机');
-  assert.ok(Math.abs(pose.z) < 0.08, 'P10 根组不能继承封面的大幅滚转');
-  assert.match(shelfManager, /onCoverChange:[\s\S]*!p10ShelfActiveOnCover/, 'P10 换封面时不得瞬间套用普通封面旋转');
+  const mainLoop = fs.readFileSync(path.join(root, 'public/js/modules/11-main-loop.js'), 'utf8');
+  assert.match(shelfManager, /applySideShelfRootPose\(dt\);\n/, 'update() 里必须经 applySideShelfRootPose 应用整组位姿');
+  assert.match(shelfManager, /syncCameraAnchor: function \(\) \{[\s\S]*?applySideShelfRootPose\(0, true\)/, '必须暴露 syncCameraAnchor 供相机定稿后二次锚定');
+  assert.match(shelfManager, /var p10Transitioning = Math\.abs\(p10FocusMix[\s\S]*?if \(p10Transitioning\) \{\n          if \(!lateFrame\) group\.quaternion\.slerp\(p10RootPoseQuatB, 0\.12\);\n        \} else \{\n          group\.quaternion\.copy\(p10RootPoseQuatB\);/, '姿态稳定期必须锁死四元数, 只在呼出过渡期保留 slerp 缓动, 拖拽不得残留橡皮筋追赶');
+  const afterVoxel = mainLoop.indexOf('updateVoxelCity(dt)');
+  const anchorCall = mainLoop.indexOf('shelfManager.syncCameraAnchor()');
+  const renderCall = mainLoop.lastIndexOf('renderMainSceneWithGpuSample(scene, camera)');
+  assert.ok(afterVoxel > -1 && anchorCall > afterVoxel, '二次锚定必须发生在体素机位写入之后');
+  assert.ok(renderCall > anchorCall, '渲染必须在二次锚定之后, 歌单才能零滞后贴住相机');
+});
+
+test('全预设歌单架统一: 壁纸/安魂不再有专用呼出机位, 安魂相机在呼出期间让位', () => {
+  assert.match(focusCinema, /function shouldUseWallpaperSafeShelfCamera\(\) \{[\s\S]*?return false;/, '壁纸预设不得再走专用浅推近机位');
+  assert.match(focusCinema, /function shouldDimWallpaperForShelf\(\) \{[\s\S]*?Number\(fx\.preset\) === 5/, '壁纸压暗行为保留, 不得因机位统一而丢失');
+  const skullPose = readFunction(skullBackcover, 'applySkullCameraPose');
+  assert.match(skullPose, /orbit\.focus && orbit\.focus\.active && \/\^shelf-\//, '安魂相机必须在歌单架呼出时让位给标准电影镜头');
+  assert.match(skullPose, /skullCameraResume = 0/, '让位时必须清零恢复斜坡');
+  assert.match(skullPose, /skullCameraResume \+= \(1 - skullCameraResume\)/, '呼出结束后按斜坡平滑接管, 不得硬切');
+  assert.match(skullPose, /camera\.position\.lerp\(skullCameraTargetPos, poseBlend\)/, '接管强度必须乘恢复斜坡');
+  assert.match(skullBackcover, /var skullCameraResume = 1/, '恢复斜坡默认值必须是 1, 不影响无呼出的日常帧');
 });
 
 test('p10 一级卡使用带上限的冷色玻璃表面，不直接拿用户背景透明度绘制纯黑', () => {
@@ -148,6 +169,14 @@ test('p10 一级卡使用带上限的冷色玻璃表面，不直接拿用户背�
     /ctx\.fillStyle = 'rgba\(0,0,0,' \+ shelfLook\.bgOpacity\.toFixed\(3\) \+ '\)'\s*;\s*ctx\.fill\(\)/,
     '一级卡不得直接以高不透明纯黑作为最终卡面'
   );
+});
+
+test('拖拽状态机防卡死: 松手事件丢失时用按钮状态兜底, up/cancel 挂 window', () => {
+  assert.match(pointer, /if \(!_voxDrag\.active\) return;\n  if \(!\(e\.buttons & 1\)\) \{ _voxDragEnd\(e\); return; \}/, '体素拖拽中左键已松开必须立即结束, 不得等可能丢失的 pointerup');
+  assert.match(pointer, /window\.addEventListener\('pointerup', _voxDragEnd\)/, 'pointerup 必须挂 window, 松手落在歌单详情等悬浮层上也要能收到');
+  assert.match(pointer, /window\.addEventListener\('pointercancel', _voxDragEnd\)/, 'pointercancel 必须挂 window');
+  assert.doesNotMatch(pointer, /renderer\.domElement\.addEventListener\('pointerup', _voxDragEnd\)/, '不得再只挂 canvas: 松手在悬浮层上会把 _voxDrag 卡成 true, 之后鼠标到哪转到哪');
+  assert.match(pointer, /if \(orbit\.rotating && !\(e\.buttons & 1\)\)/, '封面旋转拖拽同样需要按钮状态兜底, 防止无按键继续转');
 });
 
 test('p10 一级卡面在正常歌架状态必须保持可读的玻璃底色', () => {
@@ -175,43 +204,39 @@ test('p10 一级卡面在正常歌架状态必须保持可读的玻璃底色', (
   assert.ok(alpha >= 0.42 && alpha <= 0.58, '一级卡面透明度必须在可读范围内');
 });
 
-test('p10 一级歌架锚在图一所需的近景安全空间，不留在体素地形原点', () => {
+test('p10 一级歌架锚在与普通预设相同的相机相对位姿', () => {
   assert.match(shelfLayoutHover, /function p10ShelfCameraAnchor\(/);
-  assert.match(shelfManager, /var p10Anchor = p10ShelfCameraAnchor\(camera\)/);
+  assert.match(shelfManager, /var p10Anchor = p10ShelfCameraAnchor\(camera, p10FocusMix\)/);
   assert.match(shelfManager, /group\.position\.set\(p10Anchor\.x, p10Anchor\.y, p10Anchor\.z\)/);
 
   const anchor = readFunction(shelfLayoutHover, 'p10ShelfCameraAnchor');
+  const poseMix = readFunction(shelfLayoutHover, 'p10ShelfPoseMix');
+  const restPose = shelfLayoutHover.match(/var P10_SHELF_POSE_REST = \{[^}]*\}/)[0];
+  const focusPose = shelfLayoutHover.match(/var P10_SHELF_POSE_FOCUS = \{[^}]*\}/)[0];
   class Vector3 {
     constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
     set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
     applyQuaternion() { return this; }
   }
-  const context = { THREE: { Vector3 } };
-  vm.runInNewContext(`${anchor}; this.p10ShelfCameraAnchor = p10ShelfCameraAnchor;`, context);
+  const context = { THREE: { Vector3 }, clampRange: (v, min, max) => Math.max(min, Math.min(max, v)) };
+  vm.runInNewContext(`${restPose}; ${focusPose}; ${poseMix}; ${anchor}; this.p10ShelfCameraAnchor = p10ShelfCameraAnchor;`, context);
   const camera = {
     position: { x: 10, y: 20, z: 30 },
     quaternion: {},
     getWorldDirection(vector) { return vector.set(0, 0, -1); }
   };
-  const result = context.p10ShelfCameraAnchor(camera);
-  assert.ok(result, 'p10 可用相机必须给一级歌架提供锚点');
-  assert.ok(result.x > camera.position.x - 2, '歌架必须处在相机前方的有效横向范围，而不是世界原点');
-  assert.ok(result.x < camera.position.x + 1, '歌架不能被横向锚点推到屏幕最右侧');
-  assert.ok(Math.abs(result.z - (camera.position.z - 10)) < 0.01, '图一所需的卡片面积要求歌架进入相机前方约 10 个世界单位');
-  assert.ok(Math.abs(result.y - (camera.position.y + 0.4)) < 0.01, '歌架必须沿相机上方向上抬，避免落到图二右下角');
-  assert.equal(context.p10ShelfCameraAnchor(null), null, '没有相机时不得生成错误世界坐标');
-});
-
-test('p10 歌架世界比例不读取会在预设初始化中变化的普通 orbit 基准', () => {
-  const worldScale = readFunction(voxel, 'voxelShelfWorldScale');
-  const context = { VOX_CAM_DEF_RADIUS: 128, VOX_SHELF_REFERENCE_RADIUS: 50 };
-  vm.runInNewContext(`${worldScale}; this.voxelShelfWorldScale = voxelShelfWorldScale;`, context);
-  context.orbit = { baselineRadius: 6.6 };
-  const beforePresetInit = context.voxelShelfWorldScale();
-  context.orbit = { baselineRadius: 50 };
-  const afterPresetInit = context.voxelShelfWorldScale();
-  assert.ok(Math.abs(beforePresetInit - afterPresetInit) < 0.0001, 'P10 预设初始化前后一级歌架比例必须稳定');
-  assert.ok(afterPresetInit > 2 && afterPresetInit < 3, 'P10 歌架应保持适合相机前方锚点的中等比例，不能放大钻进音柱');
+  const restAnchor = context.p10ShelfCameraAnchor(camera, 0);
+  assert.ok(restAnchor, 'p10 可用相机必须给一级歌架提供锚点');
+  // 常驻常数 = 普通预设常驻机位组原点的相机相对位姿(前 6.553 / 右 0 / 上 0, 实测)
+  assert.ok(Math.abs(restAnchor.x - camera.position.x) < 0.01, '常驻锚点必须横向对齐普通预设常驻机位');
+  assert.ok(Math.abs(restAnchor.y - camera.position.y) < 0.01, '常驻锚点必须纵向对齐普通预设常驻机位');
+  assert.ok(Math.abs(restAnchor.z - (camera.position.z - 6.553)) < 0.01, '常驻锚点必须落在相机前方与普通预设相同的深度');
+  const focusAnchor = context.p10ShelfCameraAnchor(camera, 1);
+  // 呼出常数 = 普通预设呼出机位组原点的相机相对位姿(前 5.804 / 右 -1.825 / 上 -0.093, 实测)
+  assert.ok(Math.abs(focusAnchor.x - (camera.position.x - 1.825)) < 0.01, '呼出锚点右移量必须等于普通预设呼出机位');
+  assert.ok(Math.abs(focusAnchor.y - (camera.position.y - 0.093)) < 0.01, '呼出锚点抬升量必须等于普通预设呼出机位');
+  assert.ok(Math.abs(focusAnchor.z - (camera.position.z - 5.804)) < 0.01, '呼出锚点必须落在相机前方与普通预设相同的深度');
+  assert.equal(context.p10ShelfCameraAnchor(null, 0), null, '没有相机时不得生成错误世界坐标');
 });
 
 test('四档拖动缓冲必须在动效基础画面中直接可见', () => {

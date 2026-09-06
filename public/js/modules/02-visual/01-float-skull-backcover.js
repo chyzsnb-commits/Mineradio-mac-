@@ -127,6 +127,7 @@ var skullAmpPulse = 0;
 var skullBeatFlash = 0;
 var skullJawOpen = 0;
 var skullCameraBlend = 0;
+var skullCameraResume = 1;   // 歌单架呼出让位后的恢复斜坡(0→1), 避免从 focus 机位硬切回骷髅机位
 var skullWheelZoom = 0;
 var skullWheelZoomTarget = 0;
 var skullCameraTargetPos = new THREE.Vector3();
@@ -611,6 +612,13 @@ function applySkullCameraPose(dt) {
   var active = fx && fx.preset === SKULL_PRESET_INDEX;
   skullCameraBlend += ((active ? 1 : 0) - skullCameraBlend) * Math.min(1, dt * (active ? 4.8 : 7.2));
   if (skullCameraBlend < 0.002) return;
+  // 歌单架呼出(focus 镜头)期间让位给标准电影镜头推近, 与其他预设同一套机位; 结束后按恢复斜坡平滑接管回来
+  if (orbit && orbit.focus && orbit.focus.active && /^shelf-/.test(String(orbit.focus.type || ''))) {
+    skullCameraResume = 0;
+    return;
+  }
+  skullCameraResume += (1 - skullCameraResume) * Math.min(1, dt * 3.4);
+  var poseBlend = skullCameraBlend * skullCameraResume;
   skullWheelZoom += (skullWheelZoomTarget - skullWheelZoom) * Math.min(1, dt * 8.0);
   var portrait = innerHeight > innerWidth * 1.08;
   var shelfComposition = isSkullShelfCompositionActive();
@@ -621,8 +629,8 @@ function applySkullCameraPose(dt) {
   setSkullCameraTargetVectors(skullCameraShelfPos, skullCameraShelfLook, portrait, true, skullWheelZoom);
   skullCameraTargetPos.copy(skullCameraBasePos).lerp(skullCameraShelfPos, skullShelfCameraMix);
   skullCameraTargetLook.copy(skullCameraBaseLook).lerp(skullCameraShelfLook, skullShelfCameraMix);
-  camera.position.lerp(skullCameraTargetPos, skullCameraBlend);
-  skullCameraMixedLook.set(orbit.lookAt.x, orbit.lookAt.y, orbit.lookAt.z).lerp(skullCameraTargetLook, skullCameraBlend);
+  camera.position.lerp(skullCameraTargetPos, poseBlend);
+  skullCameraMixedLook.set(orbit.lookAt.x, orbit.lookAt.y, orbit.lookAt.z).lerp(skullCameraTargetLook, poseBlend);
   camera.lookAt(skullCameraMixedLook);
   camera.updateProjectionMatrix();   // 照 1.1.2 完整工程:安魂机位稳定,去掉手加的电影抖动/漂移(applySkullCameraCinemaMotion 原作没有)
 }

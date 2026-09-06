@@ -1030,7 +1030,6 @@ var VOX_CAM_DEF_X = -85.3574, VOX_CAM_DEF_Y = 48.0129, VOX_CAM_DEF_Z = 82.7578;
 var VOX_CAM_DEF_LOOKY = 18.75;   // 视线目标抬高(由用户机位 pitch -0.242 反算),0=原版看原点
 var VOX_CAM_DEF_RADIUS = Math.sqrt(VOX_CAM_DEF_X * VOX_CAM_DEF_X + VOX_CAM_DEF_Y * VOX_CAM_DEF_Y + VOX_CAM_DEF_Z * VOX_CAM_DEF_Z);
 var VOX_CAM_DEF_HEIGHT = VOX_CAM_DEF_Y;
-var VOX_SHELF_REFERENCE_RADIUS = 50;
 // 方位角不用原版 atan2(x,z)≈-22°,改 -45°:正对幽灵封面平面(挂 [110,24,-110]、朝向 -π/4),
 // 默认视角封面完整居中于地形后方(用户指定);radius/height 仍是原版低掠视,海浪条纹不会回来
 var VOX_CAM_DEF_AZIMUTH = -Math.PI / 4;
@@ -1040,10 +1039,6 @@ function voxelShelfPinnedScale() {
 }
 function voxelShelfPinnedLookAtOffset() {
   return { x: 0, y: 0, z: 0 };
-}
-function voxelShelfWorldScale() {
-  // P10 的歌架是独立世界物体，不能随着普通 orbit 在预设初始化时变更基准。
-  return VOX_CAM_DEF_RADIUS / VOX_SHELF_REFERENCE_RADIUS;
 }
 function voxelShelfWorldFrameYaw() {
   return (typeof VOX_CAM_DEF_AZIMUTH === 'number' && isFinite(VOX_CAM_DEF_AZIMUTH)) ? VOX_CAM_DEF_AZIMUTH : 0;

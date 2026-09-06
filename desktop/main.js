@@ -20,8 +20,17 @@ const { applyOfficialProviderLogin } = require('./official-login-bridge');
 const { clearDirectoryContents, safeWallpaperLibraryFileName, scanDirectoryUsage } = require('./cache-manager');
 const { createCameraPermissionController } = require('./camera-permission');
 const { registerWallpaperLibraryScheme } = require('./wallpaper-library-bridge');
+// Electron 的 registerSchemesAsPrivileged 全局只允许调用一次,后一次调用会覆盖前一次
+// (实测两次分别注册会让先注册的 mineradio-local 丢失 supportFetchAPI,
+//  渲染进程报 "URL scheme is not supported")。先收集两次注册,再合并成一次真正注册。
+const mineradioPrivilegedSchemes = [];
+const collectPrivilegedSchemes = (schemes) => { mineradioPrivilegedSchemes.push(...schemes); };
+const registerSchemesAsPrivileged = protocol.registerSchemesAsPrivileged.bind(protocol);
+protocol.registerSchemesAsPrivileged = collectPrivilegedSchemes;
 registerLocalMusicScheme(protocol);
 registerWallpaperLibraryScheme(protocol);
+protocol.registerSchemesAsPrivileged = registerSchemesAsPrivileged;
+registerSchemesAsPrivileged(mineradioPrivilegedSchemes);
 
 
 const RELEASE_POLICY = require('./release-policy');
@@ -2611,7 +2620,9 @@ let wallpaperLibraryBridge = null;
 function getWallpaperLibraryBridge() {
   if (!wallpaperLibraryBridge) {
     const bridge = require('./wallpaper-library-bridge');
-    wallpaperLibraryBridge = bridge.init({ userDataPath: app.getPath('userData') });
+    // 必须传 protocol:bridge 靠它安装 mineradio-wallpaper:// 下载协议处理器,
+    // 缺了会让"下载并应用到 Mineradio"一律报 WALLPAPER_PROTOCOL_UNAVAILABLE
+    wallpaperLibraryBridge = bridge.init({ userDataPath: app.getPath('userData'), protocol });
   }
   return wallpaperLibraryBridge;
 }
@@ -3437,6 +3448,10 @@ if (!gotSingleInstanceLock) {
     if (localMusicLibrary) {
       try { await localMusicLibrary.installProtocol(protocol); } catch (e) { console.warn('[LocalMusic] media protocol unavailable:', e && e.message || e); }
     }
+    // 壁纸库下载协议必须先于窗口创建安装:protocol.handle 若等首次 IPC 才懒安装,
+    // 页面 frame 的 URLLoaderFactory 已生成、不含该 scheme,渲染进程 fetch 临时资源
+    // 会一直报 net::ERR_UNKNOWN_URL_SCHEME(表现为"Failed to fetch"),重载页面才能恢复
+    try { getWallpaperLibraryBridge(); } catch (e) { console.warn('[WallpaperLibrary] protocol unavailable:', e && e.message || e); }
     await createWindow();
     try { require('./telemetry').startTelemetry(); } catch (e) {}
     // 软件内更新检查（自研轻量方案：无 Developer ID 证书，不做后台静默替换，

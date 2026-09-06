@@ -483,6 +483,13 @@ class WindowsWallpaperClient {
       'Cross-Origin-Resource-Policy': 'cross-origin',
       'X-Content-Type-Options': 'nosniff',
     };
+    // scheme 注册了 corsEnabled:true,页面源(如 http://127.0.0.1:3000)跨源取临时资源必须回显 ACAO,
+    // 否则渲染进程 fetch 一律 "Failed to fetch"(对齐 local-music-library.js mediaResponse 的做法)
+    const origin = request.headers && request.headers.get ? String(request.headers.get('origin') || '') : '';
+    if (/^http:\/\/127\.0\.0\.1:\d+$/i.test(origin)) {
+      headers['Access-Control-Allow-Origin'] = origin;
+      headers.Vary = 'Origin';
+    }
     if (method === 'HEAD') return new Response(null, { status: 200, headers });
     const stream = fs.createReadStream(asset.filePath);
     stream.once('close', () => { this.deleteTemporaryAsset(token); });

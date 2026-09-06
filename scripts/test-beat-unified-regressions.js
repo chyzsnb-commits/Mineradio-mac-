@@ -56,7 +56,7 @@ test('keeps custom-background voxel transparency without restoring the deferred 
   assert.match(voxel, /uniform float uBgMedia/);
   assert.match(voxel, /material\.transparent !== !!_voxMedia/);
   assert.doesNotMatch(loader, /water-membrane/);
-  assert.match(state, /MAX_VISUAL_PRESET_INDEX = 11/);   // 0-11 既有预设(声波地形/工坊已移除)
+  assert.match(state, /MAX_VISUAL_PRESET_INDEX = 13/);   // 0-11 既有预设;12=声波地形,13=声波工坊(第六批回归)
   assert.doesNotMatch(presets, /水膜共振/);
   assert.match(presets, /presetDisplayOrder = \[[^\]]*11/);
   assert.equal(fs.existsSync(path.join(root, 'public/js/modules/02-visual/18-water-membrane.js')), false);

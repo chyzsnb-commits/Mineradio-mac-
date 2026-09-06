@@ -1082,15 +1082,14 @@ body.diy-mode #fx-panel.fx-console.pinned {
 }
 .fx-head-mark {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  background:
-    radial-gradient(circle at 30% 28%, rgba(255, 255, 255, .22), transparent 48%),
-    linear-gradient(135deg, rgba(var(--fc-accent-rgb), .92), rgba(var(--fc-accent-rgb), .42));
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: url('../assets/icon.png') center / cover no-repeat;
+  border: 1px solid rgba(255, 255, 255, .18);
   box-shadow:
-    0 10px 24px rgba(var(--fc-accent-rgb), .22),
-    inset 0 1px 0 rgba(255, 255, 255, .28);
+    0 10px 26px rgba(var(--fc-accent-rgb), .26),
+    inset 0 1px 0 rgba(255, 255, 255, .3);
 }
 .fx-head-main {
   min-width: 0;
@@ -1188,7 +1187,8 @@ body.diy-mode #fx-panel.fx-console.pinned {
   min-height: 0;
   overflow: hidden;
 }
-body.diy-mode #fx-panel.fx-console .fx-panel-tabs {
+/* 以下竖排侧栏样式仅用于旧布局;task-first-v2 控制台的 tab 在 toolbar 内横排,若被这些规则命中会把内容区挤没 */
+body.diy-mode #fx-panel.fx-console:not([data-console-layout="task-first-v2"]) .fx-panel-tabs {
   position: static;
   top: auto;
   z-index: 2;
@@ -1210,10 +1210,10 @@ body.diy-mode #fx-panel.fx-console .fx-panel-tabs {
   overflow-y: auto;
   scrollbar-width: none;
 }
-body.diy-mode #fx-panel.fx-console .fx-panel-tabs::-webkit-scrollbar {
+body.diy-mode #fx-panel.fx-console:not([data-console-layout="task-first-v2"]) .fx-panel-tabs::-webkit-scrollbar {
   display: none;
 }
-body.diy-mode #fx-panel.fx-console .fx-panel-tabs button {
+body.diy-mode #fx-panel.fx-console:not([data-console-layout="task-first-v2"]) .fx-panel-tabs button {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1229,11 +1229,11 @@ body.diy-mode #fx-panel.fx-console .fx-panel-tabs button {
   color: rgba(255, 255, 255, .48);
   transition: color .18s, background .18s, box-shadow .18s;
 }
-body.diy-mode #fx-panel.fx-console .fx-panel-tabs button:hover {
+body.diy-mode #fx-panel.fx-console:not([data-console-layout="task-first-v2"]) .fx-panel-tabs button:hover {
   color: rgba(255, 255, 255, .88);
   background: rgba(255, 255, 255, .05);
 }
-body.diy-mode #fx-panel.fx-console .fx-panel-tabs button.active {
+body.diy-mode #fx-panel.fx-console:not([data-console-layout="task-first-v2"]) .fx-panel-tabs button.active {
   color: #bffcf0;
   background: rgba(var(--fc-accent-rgb), .14);
   box-shadow:
@@ -1439,7 +1439,7 @@ body.diy-mode #fx-panel.fx-console {
 .fx-console-shell {
     flex-direction: column;
   }
-body.diy-mode #fx-panel.fx-console .fx-panel-tabs {
+body.diy-mode #fx-panel.fx-console:not([data-console-layout="task-first-v2"]) .fx-panel-tabs {
     flex: 0 0 auto;
     flex-direction: row;
     width: 100%;
@@ -1451,10 +1451,10 @@ body.diy-mode #fx-panel.fx-console .fx-panel-tabs {
     border-right: 0;
     border-bottom: 1px solid rgba(255, 255, 255, .06);
   }
-body.diy-mode #fx-panel.fx-console .fx-panel-tabs::-webkit-scrollbar {
+body.diy-mode #fx-panel.fx-console:not([data-console-layout="task-first-v2"]) .fx-panel-tabs::-webkit-scrollbar {
     display: none;
   }
-body.diy-mode #fx-panel.fx-console .fx-panel-tabs button {
+body.diy-mode #fx-panel.fx-console:not([data-console-layout="task-first-v2"]) .fx-panel-tabs button {
     flex: 0 0 auto;
     min-width: 58px;
     min-height: 46px;
@@ -1481,7 +1481,7 @@ body.diy-mode #fx-panel.fx-console {
 .fx-console-pages {
     max-height: min(420px, calc(100vh - 200px));
   }
-body.diy-mode #fx-panel.fx-console .fx-panel-tabs button {
+body.diy-mode #fx-panel.fx-console:not([data-console-layout="task-first-v2"]) .fx-panel-tabs button {
     min-height: 46px;
     padding: 5px 3px;
   }

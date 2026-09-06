@@ -25,43 +25,39 @@ function markShelfPlaybackSwitchGuard(ms) {
 function isPortraitShelfViewport() {
   return innerHeight > innerWidth * 1.08;
 }
-function p10ShelfSideLayout(layout, forceActive) {
-  var p10Active = forceActive === true || (forceActive !== false && typeof voxelCityActive === 'function' && voxelCityActive());
-  if (!p10Active || !layout) return layout;
-  // P10 仍复用普通预设的竖向卡组关系，但必须补偿体素世界比例和相机前方锚点。
-  // 不补偿会把同一局部布局投到图二的右侧远景，而不是图一的画面中部。
-  var next = Object.assign({}, layout);
-  next.sideX = (Number(layout.sideX) || 0) - 2.10;
-  next.sideY = (Number(layout.sideY) || 0) + 0.08;
-  next.sideZ = (Number(layout.sideZ) || 0) - 0.10;
-  next.sideXStep = (Number(layout.sideXStep) || 0) * 1.15;
-  next.sideYStep = Number(layout.sideYStep) || 0;
-  next.sideZStep = Number(layout.sideZStep) || 0;
-  next.sideEntryX = (Number(layout.sideEntryX) || 0) * 0.90;
-  next.sideDetailShift = (Number(layout.sideDetailShift) || 0) * 0.90;
-  next.sideScale = (Number(layout.sideScale) || 1) * 0.82;
-  next.sideRotY = Number(layout.sideRotY) || 0;
-  next.sideRotX = Number(layout.sideRotX) || 0;
-  return next;
-}
-function p10ShelfRootPose(frameYaw, pointerX, pointerY) {
+// P10 歌架与其他预设同步: 普通预设的常驻(贴右缘)/呼出(推近居中)构图差异来自电影镜头推近
+// (orbit.focus), 体素相机不做这套推近, 所以歌架按同一状态在两套相机相对位姿间过渡。
+// 两套常数都取自普通预设基准机位实测: 歌架组原点的相机坐标(前/右/上) + 反向朝向欧拉(XYZ)。
+var P10_SHELF_POSE_REST = { d: 6.553, r: 0, u: 0, rx: 0.084, ry: 0, rz: 0 };
+var P10_SHELF_POSE_FOCUS = { d: 5.804, r: -1.825, u: -0.093, rx: -0.12, ry: -0.42, rz: 0 };
+function p10ShelfPoseMix(mix) {
+  var m = clampRange(Number(mix) || 0, 0, 1);
   return {
-    x: 0.035 - (Number(pointerY) || 0) * 0.006,
-    y: (Number(frameYaw) || 0) - 0.055 + (Number(pointerX) || 0) * 0.012,
-    z: 0.035
+    d: P10_SHELF_POSE_REST.d + (P10_SHELF_POSE_FOCUS.d - P10_SHELF_POSE_REST.d) * m,
+    r: P10_SHELF_POSE_REST.r + (P10_SHELF_POSE_FOCUS.r - P10_SHELF_POSE_REST.r) * m,
+    u: P10_SHELF_POSE_REST.u + (P10_SHELF_POSE_FOCUS.u - P10_SHELF_POSE_REST.u) * m,
+    rx: P10_SHELF_POSE_REST.rx + (P10_SHELF_POSE_FOCUS.rx - P10_SHELF_POSE_REST.rx) * m,
+    ry: P10_SHELF_POSE_REST.ry + (P10_SHELF_POSE_FOCUS.ry - P10_SHELF_POSE_REST.ry) * m,
+    rz: P10_SHELF_POSE_REST.rz + (P10_SHELF_POSE_FOCUS.rz - P10_SHELF_POSE_REST.rz) * m
   };
 }
-function p10ShelfCameraAnchor(cameraRef) {
+function p10ShelfRootPose(mix) {
+  // 歌单架对鼠标零反应: 拖拽只转场景本体(体素方块/封面粒子), 朝向只由常驻/呼出基础角决定。
+  var pose = p10ShelfPoseMix(mix);
+  return { x: pose.rx, y: pose.ry, z: pose.rz };
+}
+function p10ShelfCameraAnchor(cameraRef, mix) {
   if (!cameraRef || !cameraRef.position || !cameraRef.quaternion || typeof cameraRef.getWorldDirection !== 'function' || typeof THREE === 'undefined') return null;
+  var pose = p10ShelfPoseMix(mix);
   var forward = new THREE.Vector3();
   var right = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraRef.quaternion);
   var up = new THREE.Vector3(0, 1, 0).applyQuaternion(cameraRef.quaternion);
   cameraRef.getWorldDirection(forward);
-  // P10 仍保留原生远景镜头；固定歌架进入前方近景，才会拥有图一的可读面积。
+  // P10 保留原生远景镜头, 1:1 布局经此锚点落在与其他预设相同的屏幕位置。
   return {
-    x: cameraRef.position.x + forward.x * 10 + right.x * -1.2 + up.x * 0.4,
-    y: cameraRef.position.y + forward.y * 10 + up.y * 0.4,
-    z: cameraRef.position.z + forward.z * 10 + right.z * -1.2 + up.z * 0.4
+    x: cameraRef.position.x + forward.x * pose.d + right.x * pose.r + up.x * pose.u,
+    y: cameraRef.position.y + forward.y * pose.d + up.y * pose.u,
+    z: cameraRef.position.z + forward.z * pose.d + right.z * pose.r + up.z * pose.u
   };
 }
 function p10ShelfCardSurface(shelfLook) {

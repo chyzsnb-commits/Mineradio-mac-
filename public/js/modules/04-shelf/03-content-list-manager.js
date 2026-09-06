@@ -652,7 +652,7 @@ function makeContentListManager() {
         group.rotation.x = openCoverRx * 0.72 + openLayout.rx;
         group.rotation.z = openCoverRz * 0.70;
       }
-      group.scale.setScalar(openLayout.scale * 0.965 * (openDynamicDetail ? 1 : (typeof voxelShelfWorldScale === 'function' && typeof voxelCityActive === 'function' && voxelCityActive() ? voxelShelfWorldScale() : 1)));
+      group.scale.setScalar(openLayout.scale * 0.965);
       if (window.gsap) {
         window.gsap.killTweensOf(group.userData);
         window.gsap.to(group.userData, { detailIntro: 0, duration: openLayout.openDuration || 0.48, ease: 'power3.out' });
@@ -828,7 +828,7 @@ function makeContentListManager() {
         group.rotation.y += ((coverRy * 0.82 + layout.ry + introMix * 0.018 + parX * 0.014 * parallax) - group.rotation.y) * 0.16;
         group.rotation.z += ((coverRz * 0.70) - group.rotation.z) * 0.14;
       }
-      group.scale.setScalar(layout.scale * (1 - introMix * (skullDetail ? 0.020 : 0.035)) * (dynamicDetail ? 1 : (typeof voxelShelfWorldScale === 'function' && typeof voxelCityActive === 'function' && voxelCityActive() ? voxelShelfWorldScale() : 1)));
+      group.scale.setScalar(layout.scale * (1 - introMix * (skullDetail ? 0.020 : 0.035)));
       centerSmooth += (centerTarget - centerSmooth) * 0.18;
       if (Math.abs(centerSmooth - centerTarget) < 0.001) centerSmooth = centerTarget;
       syncRenderedRows(false);

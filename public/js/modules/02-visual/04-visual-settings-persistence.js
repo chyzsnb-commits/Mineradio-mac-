@@ -1064,6 +1064,8 @@ function shelfAlwaysVisible() {
 }
 function shouldUseShelfDynamicCamera(type) {
   if (!/^shelf-/.test(String(type || ''))) return true;
+  // P10 一级歌架固定相机相对锚定, 静态相机模式的世界坐标详情面板在体素预设里没有落点, 强制走动态相机。
+  if (typeof voxelCityActive === 'function' && voxelCityActive()) return true;
   return !(fx && normalizeShelfCameraMode(fx.shelfCameraMode) === 'static');
 }
 function shelfAccentHex() {

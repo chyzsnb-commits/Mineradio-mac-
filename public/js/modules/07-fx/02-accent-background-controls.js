@@ -413,7 +413,7 @@ function updateCustomBackgroundControls() {
       ? '\u5f53\u524d\uff1a\u5c01\u9762\u539f\u56fe'
       : activeMedia
         ? '\u5f53\u524d\uff1a' + (activeMedia.type === 'video' ? '\u80cc\u666f\u89c6\u9891' : '\u80cc\u666f\u56fe\u7247') + '\uff08\u56fa\u5b9a\u89c6\u89d2\uff09'
-        : '\u5f53\u524d\uff1a\u9ed8\u8ba4\u80cc\u666f\uff0c\u70b9\u51fb\u201c\u5c01\u9762\u201d\u53ef\u5207\u6362';
+        : '\u5f53\u524d\uff1a\u9ed8\u8ba4\u80cc\u666f';
   }
   updateCustomBackgroundMediaPreview(activeMedia);
   updateAlbumBackgroundMouseBindControl(activeMedia, albumMode);
@@ -559,6 +559,9 @@ function setCustomBackgroundMedia(media, silent) {
   updateCustomBackgroundControls();
   saveLyricLayout({ user: true, reason: 'backgroundMedia' });
   if (!silent) showToast(media ? (media.type === 'video' ? '背景视频已应用' : '背景图片已应用') : '背景媒体已清除');
+}
+function clearCustomBackgroundMedia(silent) {
+  setCustomBackgroundMedia(null, silent);
 }
 function readBackgroundImageFile(file) {
   if (!file || !/^image\//i.test(file.type || '')) {

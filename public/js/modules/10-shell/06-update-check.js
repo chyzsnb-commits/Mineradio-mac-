@@ -84,6 +84,7 @@ function updateCardBindEvents() {
   if (!window.desktopWindow || typeof window.desktopWindow.onUpdateEvent !== 'function') return;
   window.desktopWindow.onUpdateEvent(function (payload) {
     if (!payload) return;
+    if (payload.type === 'auto-check') return;
     if (payload.type === 'download-progress') {
       var total = Number(payload.total) || 0;
       updateCardState.progress = total > 0 ? Math.min(99, Math.round((Number(payload.loaded) / total) * 100)) : 0;
