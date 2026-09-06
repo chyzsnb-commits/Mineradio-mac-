@@ -1,6 +1,14 @@
-
-> **修复已安装 App 的 ASAR 完整性损坏（2026-09-06）：** 用户反馈当前 macOS application（应用）中的 Mineradio 已损坏。直接启动 `/Applications/Mineradio.app/Contents/MacOS/Mineradio` 复现 Electron fatal：`Integrity check failed for asar archive (184d88dd… vs 715dca24…)`；进一步确认 `184d88dd…` 是被写入 `Info.plist` 的整包 SHA-256，而 Electron 需要 ASAR header（归档头）哈希 `715dca24…`，因此应用在 bootstrap（启动入口）阶段退出。当前分支 `codex/repair-damaged-app` 已将 `package.json` 的 `mineradio.update.disabled` 固定为 `true`，阻止正式版继续访问公开仓库更新 manifest（清单）；`CHANGELOG.md` 已记录。已从干净源码构建并完整恢复历史验收包到 `/Applications/Mineradio.app`（整包替换，未单独改 `app.asar`）：app.asar SHA-256 `7dac0a781edf167689930d0ea050323fc9af38d005a83cba11f73eb40676c024`、ASAR header `c5b0f9f5361d23accb1af8a3cbe240ca937b1e82c9888ef92498b8d64d9fcc9a`、CDHash `96919e2fc469fa0ea4568bd794cdb8068633d1d7`，codesign（签名）严格校验通过。恢复后主进程、GPU、渲染和音频辅助进程正常运行；本地 `/api/qq/login/status` 返回 `loggedIn=true` 与 `playbackKeyReady=true`，更新接口返回 `configured=false` / `updateAvailable=false`。构建候选已移出桌面 `dist`，放到 `/private/tmp/mineradio-final-handoff-repair.noindex` 避免 Spotlight（聚焦搜索）重复索引；损坏包和恢复前资料已备份到 `~/Library/Application Support/Mineradio Migration/repairs.noindex/20260906-125145/`。由于安全安装器的 Safe Storage（安全存储）迁移链绑定旧/新 CDHash，本次直接恢复同一已验收包以保留现有登录密钥，未复用不匹配的迁移 controller（控制器）。本机锁屏，无法用 Computer Use（电脑操作）读取界面截图；已用实际进程、端口和完整性校验替代。Obsidian 指定路径 `/Users/chy/菜鸡的仓库/菜鸡的仓库/02 知识编译/Mineradio Mac 开发进度.md` 不存在，待仓库挂载后补记。
 # Mineradio AI Handoff
+
+> **应用启动修复的当前状态（2026-09-06）：** `/Applications/Mineradio.app` 已恢复为 **2026-08-15 的完整验收包**，实际启动和本地接口正常，QQ `loggedIn=true`、`playbackKeyReady=true`，更新接口 `configured=false`、`updateAvailable=false`。这是从原始备份恢复的既有包；**本轮新构建没有安装，8 月 15 日之后的界面与功能改动尚未重新实装**。
+>
+> **根因与恢复：** 损坏包 `Info.plist` 错将整个 `app.asar` 的 SHA-256 `184d88dd…` 写入 Electron 的归档头校验字段；该归档的正确头哈希为 `715dca24…`，所以启动报完整性错误。严格代码签名检查单独通过不能证明该字段正确。目前没有证据确定是哪个工具写错了字段，不能将自动更新认定为已证实根因。恢复采用完整历史包，未更改归档字节、重签名或重新迁移钥匙串。
+>
+> **恢复包身份：** `app.asar` SHA-256 `7dac0a781edf167689930d0ea050323fc9af38d005a83cba11f73eb40676c024`；归档头 SHA-256 `c5b0f9f5361d23accb1af8a3cbe240ca937b1e82c9888ef92498b8d64d9fcc9a`；CDHash `96919e2fc469fa0ea4568bd794cdb8068633d1d7`。严格签名、归档头与 `Info.plist` 一致、实际进程与本地接口检查通过。Spotlight（聚焦搜索）只索引 `/Applications/Mineradio.app`。损坏包与恢复前用户资料备份位于 `/Users/allenli/Library/Application Support/Mineradio Migration/repairs.noindex/20260906-125145/`；候选构建移至 `/private/tmp/mineradio-final-handoff-repair.noindex/`，不在桌面留下第二份应用。冻结迁移控制器保持原样，禁止直接拿它安装新候选。
+>
+> **源码与审查：** `codex/repair-damaged-app` 分支按项目规定恢复 `mineradio.update.disabled=true` 并加断言，存档点 `60d5932`；私有仓库 [PR #127（合并请求）](https://github.com/chyzsnb-commits/mr/pull/127) 的比较基线改为 `bugfix/web-art-four-issues`，避免把尚未合并到 main（主分支）的历史功能一并纳入本次修复。未合并，未修改独立公开仓库。
+>
+> **验证边界：** 三项必需语法检查和正式身份/禁用更新专项测试通过。完整 `npm run check` 为 **282/287，5 项失败**，与修改前相同：3 项 macOS 构建工作流断言、2 项汽水公开目录策略断言。不能声称完整自动门禁已通过。继续验收时发现旧进程白屏，结束该进程并重新启动完整恢复包后，已通过电脑操作截图看到《稻香》的封面、歌词、粒子舞台及播放控制条。真实音频持续输出、长时间稳定性和摄像头未完成验证。Obsidian 指定库 `/Users/chy/菜鸡的仓库/菜鸡的仓库` 不存在；待同步内容已保存到 `docs/obsidian-sync/2026-09-06-app-repair.md`，该文件不代表已同步 Obsidian。
 
 > **选择性融合已安全同步到本机 App（2026-08-15，当前权威状态）：** 当前分支为 `codex/camera-hand-models`，基线 `effe817f38f004abb9efb7c8905a738dc2c2d550`；本轮已在该分支保存为安全实现 `ea15d81`、CI `1db4dff` 与当前文档三个 commit（存档点），未改 main、未推送或合并。P11“词境穿行”现为 16 套编排 / 12 类 motion，新增景深接力、近景回卷、折页展开、坠落回弹；运行态确认只创建 5 张歌词卡，固定五层时行数滑杆禁用，字号/字重/字距/翻译仍可用，逐字流光默认开启，360° 开关可即时切换，P11 歌单已停靠到普通 DOM host 且 3D 歌单架被抑制。QQ 搜索《手写的从前》返回官方专辑 MID 封面 `001uqejs3d6EID`，不再是 MR 图标；All 搜索同时返回 QQ 与不可直放的汽水目录结果，汽水 `playable=false`。最终本机候选已通过可断电恢复的 Safe Storage 迁移安装到唯一 `/Applications/Mineradio.app`：`app.asar` SHA-256 `7dac0a781edf167689930d0ea050323fc9af38d005a83cba11f73eb40676c024`，CDHash `96919e2fc469fa0ea4568bd794cdb8068633d1d7`，journal 为 `complete/new`，guard/pending/completed/recovery 均清空，QQ `loggedIn=true` 且 `playbackKeyReady=true`，四 provider 状态与迁移前一致。Spotlight 与 `/Applications` 只剩当前 App；另外 17 条历史备份/临时构建的 LaunchServices 注册已逐路径注销，文件本身未删除。完整 `npm run check` 当前 **274/274**，严格签名、9 项 Electron fuse、ASAR integrity、packed Safe Storage helper、universal/minOS12 handpose helper 与 Node 24 release-diff 工作流门禁通过。该包仍是 ad-hoc、无 TeamIdentifier、未公证且版本仍为 2.0.0，只允许本机融合验收，不得作为公开发布版；一次性安装 controller 绑定旧/新包哈希，未来候选严禁复用。迁移验证日志中的一次 `ERR_FAILED (-2)` 是 controller 在 provider 就绪后主动结束仍在 `loadURL` 的验证窗口产生的未处理 Promise 噪音，不影响最终正常 App；下一版应等待 `did-finish-load` 再停止验证进程，并只吞掉退出期间的预期 loadURL 拒绝。真实 App 的歌词、四种新动画、透视亮度、双手直缩与用户手模导入仍需解锁 Mac 后人工走查；验收过程中误执行了 `tccutil reset Camera com.mineradio.desktop`，当前摄像头授权回到 not determined，必须由用户在 App 内重新开启手势/透视并点系统“允许”，禁止脚本直接改 TCC。成功恢复点位于 `/Users/allenli/Library/Application Support/Mineradio Migration/backups.noindex/before-final-fusion-1786806422522-777d8c56e4db`，稳定的 `.safe-storage-handoff.lock` 必须保留。Obsidian 指定路径 `/Users/chy/菜鸡的仓库/菜鸡的仓库` 及本机备选路径均不存在，因此尚未同步 Obsidian。
 
@@ -138,6 +146,13 @@
 
 ## 待办清单
 
+- [x] **修复本机应用启动失败**：恢复 8 月 15 日完整验收包，签名、归档头、运行进程、QQ 登录与更新关闭状态已核验。
+- [x] **收窄本次审查范围**：PR #127（合并请求）对照现有开发分支，不将历史功能一起提交给主分支审查。
+- [x] **修复后窗口验收**：重新启动后看到真实页面、封面、歌词、粒子和播放控制条；未在真实资料上自动改封面或登录态。
+- [ ] **音频与摄像头人工验收**：确认持续音频输出和长时间稳定性；摄像头权限由用户按需开启。
+- [ ] **新版本实装**：当前为历史验收包，后续若安装最近界面变更，必须冻结并复核与新候选匹配的完整安全存储迁移链。
+- [ ] **现有完整门禁失败**：核对并修复 3 项 macOS 工作流和 2 项汽水策略断言，保留正式版汽水禁用边界。
+- [ ] **补同步 Obsidian**：挂载真实库后，将 `docs/obsidian-sync/2026-09-06-app-repair.md` 追加到开发进度笔记，不创建冒充原库的目录。
 - [x] **全局透视模式与共享摄像头**：摄像头作为所有预设通用底图，默认歌词/封面、粒子、P10/P11 保持前景；手势与透视使用单流 owner 管理，隐藏/最小化/遮挡时暂停，假摄像头隔离验收通过。
 - [x] **选择性恢复 Wallpaper Engine 局域网库**：只接入验证后的发现、素材导入和 Scene 预览/导出，不整版覆盖 PR #113，不恢复已删除的背景裁切界面。
 - [x] **安全恢复汽水目录**：只提供无需登录的公开目录与歌词，并经严格匹配自动换源；直接播放、登录、会话读取和解密链路保持禁用。
