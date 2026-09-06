@@ -15,7 +15,7 @@
       "preview": false,
       "preferMirrors": false,
       "mirrors": [],
-      "disabled": false
+      "disabled": true
     },
     "internalBeta": false,
     "publicRelease": true,

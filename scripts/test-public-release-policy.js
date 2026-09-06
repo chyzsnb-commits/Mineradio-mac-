@@ -28,6 +28,7 @@ test('2.0 uses formal public identity', () => {
   assert.equal(pkg.mineradio.internalBeta, false);
   assert.equal(pkg.mineradio.publicRelease, true);
   assert.equal(pkg.mineradio.appUserModelId, 'com.mineradio.desktop');
+  assert.equal(pkg.mineradio.update && pkg.mineradio.update.disabled, true);
 });
 
 test('public package enables only the credential-free Qishui catalog', () => {

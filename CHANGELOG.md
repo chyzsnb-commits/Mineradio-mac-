@@ -2,6 +2,8 @@
 
 ## 2.0.0
 
+- 修复 macOS 安装包启动即退出：关闭正式版内置自动更新入口，避免错误 manifest（清单）或不完整下载再次替换 `app.asar`；重新构建时继续由 Electron 完整性校验保护包体。
+
 - 本机融合候选完成 Electron 包安全收口：主入口改为最小 `desktop/bootstrap.js`，关闭 RunAsNode、`NODE_OPTIONS` 与 CLI inspector，开启 ASAR integrity 与 OnlyLoadAppFromAsar；Safe Storage 原生交接模块保持 packed 并锁定哈希，手势 helper 改为 universal arm64+x64、最低 macOS 12。
 - 新增只用于本机 ad-hoc 包切换的可恢复安装链：完整 App/userData 备份、持久 journal、进程静止检查、旧/新签名 Keychain 交接、provider 前后对账和失败自动回滚均在无凭据明文落盘的前提下完成。最终 `/Applications/Mineradio.app` 的 `app.asar` 为 `7dac0a…c024`，QQ 登录与播放密钥保留，Spotlight 只索引这一份 App。
 - 清理重复图标的 LaunchServices 历史记录：对 17 个明确的旧构建、废纸篓与迁移备份路径逐一注销，再执行垃圾回收；没有删除备份，也没有全局重置 LaunchServices。
