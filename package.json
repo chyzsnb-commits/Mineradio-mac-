@@ -8,17 +8,14 @@
   "private": true,
   "mineradio": {
     "update": {
-      "provider": "none",
-      "owner": "XxHuberrr",
-      "repo": "Mineradio",
+      "provider": "manifest",
+      "owner": "chyzsnb-commits",
+      "repo": "Mineradio-mac-",
+      "updateManifestUrl": "https://raw.githubusercontent.com/chyzsnb-commits/Mineradio-mac-/main/version.json",
       "preview": false,
       "preferMirrors": false,
-      "mirrors": [
-        "https://gh.llkk.cc/",
-        "https://ghfast.top/",
-        "https://gh-proxy.com/"
-      ],
-      "disabled": true
+      "mirrors": [],
+      "disabled": false
     },
     "internalBeta": false,
     "publicRelease": true,
@@ -26,7 +23,7 @@
     "disabledProviders": [
       "qishui"
     ],
-    "qishuiCatalogEnabled": true,
+    "qishuiCatalogEnabled": false,
     "allowCredentialImport": false,
     "allowCredentialExport": false,
     "runtimeName": "Mineradio",

@@ -48,7 +48,6 @@
   var HAND_MODEL_BUILTINS = [
     { id: 'builtin:aurora', name: '流光骨架', note: '经典', style: 'aurora' },
     { id: 'builtin:crystal', name: '晶体手', note: '3D', style: 'crystal' },
-    { id: 'builtin:chrome', name: '液态金属', note: 'MIT 实体手', style: 'chrome', asset: 'generic-hand' },
     { id: 'builtin:stardust', name: '星尘关节', note: '轻量', style: 'stardust' },
     { id: 'builtin:none', name: '隐藏模型', note: '仅交互', style: 'none' },
   ];

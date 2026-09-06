@@ -448,6 +448,8 @@ function readUpdateConfig(pkg) {
     manifest: process.env.MINERADIO_UPDATE_MANIFEST
       || process.env.MINERADIO_UPDATE_MANIFEST_URL
       || process.env.MINERADIO_UPDATE_MANIFEST_FILE
+      || local.updateManifestUrl
+      || local.manifest
       || '',
   };
 }

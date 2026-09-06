@@ -1687,7 +1687,58 @@ function renderHomeDashboard() {
   renderHomeDashboardHero();
   renderHomeDashboardQuickCards();
   renderHomeInsightDock();
+  decorateHomeBoardWidgets();
   scheduleHomeDashboardRefresh();
+}
+
+// Homeboard edit mode: press and hold any empty-home surface to rearrange widgets.
+var homeBoardEditState = { active: false, timer: null, dragged: null };
+var HOME_BOARD_HIDDEN_KEY = 'mineradio-home-board-hidden-v1';
+function homeBoardHidden() { try { return JSON.parse(localStorage.getItem(HOME_BOARD_HIDDEN_KEY) || '[]'); } catch (_) { return []; } }
+function homeBoardSetHidden(list) { try { localStorage.setItem(HOME_BOARD_HIDDEN_KEY, JSON.stringify(list)); } catch (_) {} }
+function homeBoardWidgets() {
+  var root = document.getElementById('empty-home'); if (!root) return [];
+  return Array.prototype.slice.call(root.querySelectorAll('.home-card, .home-insight-card, .home-discovery-strip, .daily-review-card'));
+}
+function homeBoardWidgetId(node, index) {
+  if (!node.dataset.homeWidgetId) node.dataset.homeWidgetId = node.id || ('widget-' + index);
+  return node.dataset.homeWidgetId;
+}
+function homeBoardApplyHidden() {
+  var hidden = homeBoardHidden();
+  homeBoardWidgets().forEach(function (node, index) { node.classList.toggle('home-widget-hidden', hidden.indexOf(homeBoardWidgetId(node, index)) >= 0); });
+}
+function homeBoardExit() { homeBoardEditState.active = false; var root = document.getElementById('empty-home'); if (root) root.classList.remove('home-board-editing'); }
+function homeBoardDelete(node) {
+  var id = node.dataset.homeWidgetId; var hidden = homeBoardHidden(); if (hidden.indexOf(id) < 0) hidden.push(id); homeBoardSetHidden(hidden); homeBoardApplyHidden();
+}
+function homeBoardRestore() { homeBoardSetHidden([]); homeBoardApplyHidden(); }
+function homeBoardResize(node) { if (!node) return; var size = Number(node.dataset.homeWidgetSize || 1); size = size >= 3 ? 1 : size + 1; node.dataset.homeWidgetSize = String(size); node.classList.remove('home-widget-size-2', 'home-widget-size-3'); if (size > 1) node.classList.add('home-widget-size-' + size); }
+function homeBoardEnter() {
+  var root = document.getElementById('empty-home'); if (!root) return;
+  homeBoardEditState.active = true; root.classList.add('home-board-editing'); homeBoardApplyHidden();
+  var tools = root.querySelector('.home-board-edit-tools');
+  if (!tools) { tools = document.createElement('div'); tools.className = 'home-board-edit-tools'; tools.innerHTML = '<strong>编辑首页</strong><button type="button" data-home-board-add>＋ 添加组件</button><button type="button" data-home-board-done>完成</button>'; root.appendChild(tools); }
+}
+function bindHomeBoardEditing() {
+  var root = document.getElementById('empty-home'); if (!root || root.dataset.homeBoardBound) return; root.dataset.homeBoardBound = 'true';
+  root.addEventListener('pointerdown', function (event) { if (event.target.closest('button, input, video, .home-board-edit-tools')) return; clearTimeout(homeBoardEditState.timer); homeBoardEditState.timer = setTimeout(homeBoardEnter, 620); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (name) { root.addEventListener(name, function () { clearTimeout(homeBoardEditState.timer); }); });
+  root.addEventListener('click', function (event) {
+    var target = event.target;
+    if (target.closest('[data-home-board-done]')) { homeBoardExit(); return; }
+    if (target.closest('[data-home-board-add]')) { homeBoardRestore(); return; }
+    if (!homeBoardEditState.active) return;
+    var remove = target.closest('[data-home-widget-delete]'); if (remove) { event.preventDefault(); event.stopPropagation(); homeBoardDelete(remove.closest('[data-home-widget]')); }
+    var resize = target.closest('[data-home-widget-resize]'); if (resize) { event.preventDefault(); event.stopPropagation(); homeBoardResize(resize.closest('[data-home-widget]')); }
+  });
+  root.addEventListener('dragstart', function (event) { var item = event.target.closest('[data-home-widget]'); if (homeBoardEditState.active && item) homeBoardEditState.dragged = item; });
+  root.addEventListener('dragover', function (event) { if (homeBoardEditState.active && event.target.closest('[data-home-widget]')) event.preventDefault(); });
+  root.addEventListener('drop', function (event) { var target = event.target.closest('[data-home-widget]'); if (!homeBoardEditState.active || !target || !homeBoardEditState.dragged || target === homeBoardEditState.dragged) return; event.preventDefault(); target.parentNode.insertBefore(homeBoardEditState.dragged, target); homeBoardEditState.dragged = null; });
+}
+function decorateHomeBoardWidgets() {
+  homeBoardWidgets().forEach(function (node, index) { node.dataset.homeWidget = 'true'; node.dataset.homeWidgetId = homeBoardWidgetId(node, index); node.setAttribute('data-home-widget', 'true'); node.draggable = true; if (!node.querySelector('[data-home-widget-delete]')) { var button = document.createElement('button'); button.type = 'button'; button.className = 'home-widget-delete'; button.dataset.homeWidgetDelete = 'true'; button.setAttribute('aria-label', '删除组件'); button.textContent = '−'; node.appendChild(button); } if (!node.querySelector('[data-home-widget-resize]')) { var resize = document.createElement('button'); resize.type = 'button'; resize.className = 'home-widget-resize'; resize.dataset.homeWidgetResize = 'true'; resize.setAttribute('aria-label', '调整组件大小'); resize.textContent = '↗'; node.appendChild(resize); } });
+  homeBoardApplyHidden();
 }
 
 var homeDashboardBaseRenderHomeDiscover = typeof renderHomeDiscover === 'function' ? renderHomeDiscover : null;
@@ -1707,4 +1758,6 @@ document.addEventListener('visibilitychange', function () {
 
 bindHomeDashboardVideoControls();
 bindHomePlatformRecommendationControls();
+bindHomeBoardEditing();
 renderHomeDashboard();
+decorateHomeBoardWidgets();
