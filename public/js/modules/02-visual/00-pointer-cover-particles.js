@@ -118,6 +118,10 @@ window.addEventListener('mousemove', function (e) {
     return;
   }
   if (isPointerOverUi(e) && !orbit.rotating) { mouseActive = false; return; }
+  if (orbit.rotating && !(e.buttons & 1)) {   // 兜底: up 在窗外/悬浮层上丢失时防止无按键继续转封面
+    orbit.rotating = false;
+    particlePointerSpin.active = false;
+  }
   if (orbit.rotating) {
     markRenderInteraction('canvas-drag', 900);
     unlockCenteredView();
@@ -198,6 +202,7 @@ renderer.domElement.addEventListener('pointerdown', function(e){
 });
 renderer.domElement.addEventListener('pointermove', function(e){
   if (!_voxDrag.active) return;
+  if (!(e.buttons & 1)) { _voxDragEnd(e); return; }   // 左键已松开但 up 被悬浮层/窗外吞掉: 兜底结束拖拽, 防止无按键乱转(用户踩过的卡死)
   var dx = e.clientX - _voxDrag.x, dy = e.clientY - _voxDrag.y;
   _voxDrag.x = e.clientX; _voxDrag.y = e.clientY;
   markRenderInteraction('vox-drag', 900);
@@ -211,8 +216,9 @@ renderer.domElement.addEventListener('pointermove', function(e){
   _voxCam.height = clampRange(_voxCam.height + dy * 0.22, 0.10 * _voxCam.radius, 0.995 * _voxCam.radius);
 });
 function _voxDragEnd(e){ if (_voxDrag.active) { _voxDrag.active = false; try { renderer.domElement.releasePointerCapture(e.pointerId); } catch (_) {} } }
-renderer.domElement.addEventListener('pointerup', _voxDragEnd);
-renderer.domElement.addEventListener('pointercancel', _voxDragEnd);
+// up/cancel 必须挂 window: 松手落在歌单详情等悬浮层上时画布收不到 up, 挂 canvas 会把 _voxDrag 卡成 true(之后鼠标到哪转到哪)
+window.addEventListener('pointerup', _voxDragEnd);
+window.addEventListener('pointercancel', _voxDragEnd);
 
 // 双击屏幕回正 — 不命中卡片时
 renderer.domElement.addEventListener('dblclick', function (e) {

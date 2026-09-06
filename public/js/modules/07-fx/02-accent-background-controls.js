@@ -369,6 +369,9 @@ function setCustomBackgroundMedia(media, silent) {
   saveLyricLayout({ user: true, reason: 'backgroundMedia' });
   if (!silent) showToast(media ? (media.type === 'video' ? '背景视频已应用' : '背景图片已应用') : '背景媒体已清除');
 }
+function clearCustomBackgroundMedia(silent) {
+  setCustomBackgroundMedia(null, silent);
+}
 function readBackgroundImageFile(file) {
   if (!file || !/^image\//i.test(file.type || '')) {
     showToast('请选择图片文件');

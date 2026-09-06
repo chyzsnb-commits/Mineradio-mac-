@@ -738,6 +738,7 @@ function animate() {
   var voxelEchoPerfStart = performance.now();
   if (typeof updateVoxelCity === 'function') updateVoxelCity(dt);   // 音域回响每帧更新(内部按预设显隐);须在舞台歌词之前,避免歌词用上一帧体素相机而滞后抖动
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.voxel-echo', voxelEchoPerfStart);
+  if (shelfManager && typeof shelfManager.syncCameraAnchor === 'function') shelfManager.syncCameraAnchor();   // 相机(含体素机位)本帧定稿后再锚一次歌架, 拖拽转场时歌单零滞后、屏幕位置纹丝不动
   var skullPerfStart = performance.now();
   var skullStepDt = consumeFrameGate(mainFrameGates.skullParticles, now, dt, targetMainSkullParticleFps(now), false, 'skull-particles');
   if (skullStepDt > 0) updateSkullParticleLayer(skullStepDt);

@@ -19,6 +19,7 @@ const { applyOfficialProviderLogin } = require('./official-login-bridge');
 const { createCameraPermissionController } = require('./camera-permission');
 const { registerWallpaperLibraryScheme } = require('./wallpaper-library-bridge');
 registerWallpaperLibraryScheme(protocol);
+
 const RELEASE_POLICY = require('./release-policy');
 const cameraPermissionController = createCameraPermissionController({
   platform: process.platform,
@@ -2996,6 +2997,10 @@ if (!gotSingleInstanceLock) {
     screen.on('display-metrics-changed', handleDisplayLayoutChanged);
     screen.on('display-added', handleDisplayLayoutChanged);
     screen.on('display-removed', handleDisplayLayoutChanged);
+    // 壁纸库下载协议必须先于窗口创建安装:protocol.handle 若等首次 IPC 才懒安装,
+    // 页面 frame 的 URLLoaderFactory 已生成、不含该 scheme,渲染进程 fetch 临时资源
+    // 会一直报 net::ERR_UNKNOWN_URL_SCHEME(表现为"Failed to fetch"),重载页面才能恢复
+    try { getWallpaperLibraryBridge(); } catch (e) { console.warn('[WallpaperLibrary] protocol unavailable:', e && e.message || e); }
     await createWindow();
     try { require('./telemetry').startTelemetry(); } catch (e) {}
   });

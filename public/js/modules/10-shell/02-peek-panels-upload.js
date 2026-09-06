@@ -1,5 +1,7 @@
 // ============================================================
 var PEEK_HIDE_DELAY = 170;
+// DIY 控制台(fx)要求"鼠标一离开就收起"，隐藏延迟要比搜索/歌单更短
+var FX_PEEK_HIDE_DELAY = 100;
 var peekTimers = { search: null, fx: null, pl: null };
 var PLAYLIST_PANEL_MOTION_MS = 360;
 var PLAYLIST_PANEL_OPEN_ANIM_COOLDOWN = 520;
@@ -75,7 +77,7 @@ function setPeek(el, on, key) {
         if (fabOff && !el.classList.contains('show')) fabOff.classList.remove('active');
       }
       peekTimers[key] = null;
-    }, PEEK_HIDE_DELAY);
+    }, key === 'fx' ? FX_PEEK_HIDE_DELAY : PEEK_HIDE_DELAY);
   }
 }
 function uploadTipWasSeen() {

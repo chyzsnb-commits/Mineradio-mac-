@@ -1034,6 +1034,24 @@ var VOX_CAM_DEF_HEIGHT = VOX_CAM_DEF_Y;
 // 默认视角封面完整居中于地形后方(用户指定);radius/height 仍是原版低掠视,海浪条纹不会回来
 var VOX_CAM_DEF_AZIMUTH = -Math.PI / 4;
 var _voxCam = { radius: VOX_CAM_DEF_RADIUS, height: VOX_CAM_DEF_HEIGHT, azimuth: VOX_CAM_DEF_AZIMUTH, autoRotate: false, rotateSpeed: 0.5 };
+function voxelShelfPinnedScale() {
+  return 1;
+}
+function voxelShelfPinnedLookAtOffset() {
+  return { x: 0, y: 0, z: 0 };
+}
+function voxelShelfWorldFrameYaw() {
+  return (typeof VOX_CAM_DEF_AZIMUTH === 'number' && isFinite(VOX_CAM_DEF_AZIMUTH)) ? VOX_CAM_DEF_AZIMUTH : 0;
+}
+function voxelShelfFocusFrameYaw() {
+  return voxelShelfWorldFrameYaw();
+}
+function shortestVoxelAzimuthDelta(from, to) {
+  var delta = (to || 0) - (from || 0);
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  return delta;
+}
 function voxRecenterCamera() {   // 回正/K:_voxCam 归位到原作默认机位
   _voxCam.radius = VOX_CAM_DEF_RADIUS; _voxCam.height = VOX_CAM_DEF_HEIGHT; _voxCam.azimuth = VOX_CAM_DEF_AZIMUTH;
 }

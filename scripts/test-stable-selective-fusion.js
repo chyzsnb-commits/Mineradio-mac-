@@ -31,9 +31,8 @@ test('音域回响只增加悬浮方块尺寸，不引入移植版模式', () =>
   assert.match(voxel, /var _floatBlockScale = voxFloatBlockScaleValue\(fx && fx\.voxFloatBlockScale\)/);
   assert.match(voxel, /_blk\.baseScale \* _pulseScale \* _floatBlockScale/);
   assert.match(voxel, /floatBlockScale:\s*voxFloatBlockScaleValue\(fx\.voxFloatBlockScale\)/);
-  assert.doesNotMatch(index, /音域地形|音域回响·WE|sonicGround|sonicWorkshop/);
-  assert.equal(fs.existsSync(path.join(root, 'public/sonic-topography-preset.js')), false);
-  assert.equal(fs.existsSync(path.join(root, 'public/sonic-workshop-preset.js')), false);
+  // 声波地形/工坊(预设 12/13)已按第六批完整迁移回归(见 test-sonic-series-migration.js),
+  // 此处不再断言"不引入移植版模式";悬浮方块尺寸滑杆仍是体素专属。
 });
 
 test('音域回响双手张合直接缩放内容，不复用滚轮相机半径', () => {
