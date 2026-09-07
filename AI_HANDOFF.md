@@ -1,5 +1,8 @@
 # Mineradio AI Handoff
 
+> 状态更新（2026-09-07，追加到 PR #126）：新增 `public/js/i18n.js` 中英文切换层，顶部语言按钮持久化 `mineradio-language`，覆盖主页、搜索、播放器、队列、视觉控制台、登录和壁纸控制的常见界面文案；动态节点通过低开销 `MutationObserver`（仅 childList/subtree）补译，歌曲/歌手/歌词/用户内容节点保留原文。`public/wallpaper-control.html` 同步加入语言按钮。新增 `scripts/test-i18n.js` 并接入 `npm run check`；已通过语法和专项测试。完整应用安装仍需从本提交构建候选包并重新冻结 Safe Storage 迁移链，禁止直接替换已安装包内的 app.asar。
+
+
 > 状态更新（2026-09-07，追加到 PR #126）：沿用现有 `usageStatsEnabled=true` 的匿名活跃度统计闸门与首启同意机制；本次只移除前端汽水搜索/音源切换/主页推荐入口，不关闭统计功能。主页玻璃和渲染调度优化已同步到本分支，待用户审查。
 
 > 状态更新（2026-08-30 续 3，对齐 Win 2.1.0 社交与订阅收藏）：对比 XxHuberrr/Mineradio（Win 2.1.0）后补齐 Mac 缺失的后端能力——17 个端点（汽水点赞/评论/歌单收藏/加歌/专辑收藏/最近上报、专辑与歌单订阅检查、Spotify 专辑喜欢、平台能力声明）。合并方向教训：qishui-api/spotify-api 以 **Mac 版为基底**追加 Win 独有函数（反向会覆盖 Mac 的取流诊断契约/多基座，两个汽水契约测试立刻红）；Mac 的扫码 PcQr 段与 Spotify 单曲 like 函数为 Mac 独有，已保留。Win 侧 `/api/cuefield/feedback|transition` 为半成品（调用的函数 Win 源码也不存在），未移植并已注释说明。汽水红心接入现有喜欢按钮（isQishuiWritableSong + 登录引导 + /api/qishui/song/like）。`npm run check` 5/5+39/39+333/333；17 端点冒烟 7/7（未登录返回 LOGIN_REQUIRED/COOKIE_REQUIRED）。前端 UI 边界：评论面板与订阅收藏按钮的完整 UI 为后续迭代，当前 API 已就绪（desktopWindow 桥可直调）。
