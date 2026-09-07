@@ -35,10 +35,12 @@
   .exit{height:36px;border-radius:12px;display:grid;place-items:center;cursor:pointer;font-size:13px;font-weight:600;
     color:#ff8a8a;background:rgba(255,90,90,.12);border:1px solid rgba(255,90,90,.28);transition:.15s}
   .exit:hover{background:rgba(255,90,90,.22);color:#fff}
+  .lang{position:absolute;right:14px;top:12px;border:1px solid rgba(255,255,255,.2);border-radius:8px;background:rgba(255,255,255,.08);color:#fff;padding:4px 8px;cursor:pointer;font-size:11px}
 </style>
 </head>
 <body>
   <div class="glass">
+    <button id="language-toggle" class="lang" type="button" onclick="toggleMineradioLanguage()" title="切换语言" aria-label="切换语言">EN</button>
     <div class="hd"><span class="dot"></span>MINERADIO · 壁纸</div>
     <div class="transport">
       <div class="tbtn" data-act="prevTrack" title="上一首"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></div>
@@ -76,5 +78,6 @@
     } catch(e){}
   });
 </script>
+<script src="js/i18n.js"></script>
 </body>
 </html>
