@@ -1,5 +1,8 @@
 # Mineradio AI Handoff
 
+> 安装验证（2026-09-07，PR #126 国际化候选）：从提交 `36d74ef` 构建并整体 ad-hoc 签名候选包，ASAR `b55bb63d…77ed`、CDHash `deb77952…278`，`--preflight` 通过。正式安装在 Safe Storage `prepare` 前失败：旧 Electron recovery 调用缺少 `MINERADIO_MIGRATION_VERIFY_NONCE`，导致 guard 拒绝并短暂留下候选包。已从 journal 完整备份恢复 `/Applications/Mineradio.app`，保留旧 ASAR `7dac0a78…c024`/CDHash `96919e…d1d7`，严格签名和 `127.0.0.1:3000` HTTP 200 复核通过；未删除钥匙串、未要求密码。安装器已修复 recovery 环境传递 nonce（提交 `4007111`），但本轮不再重试安装，待后续从最新提交重新构建并完整演练。
+
+
 > 状态更新（2026-09-07，追加到 PR #126）：新增 `public/js/i18n.js` 中英文切换层，顶部语言按钮持久化 `mineradio-language`，覆盖主页、搜索、播放器、队列、视觉控制台、登录和壁纸控制的常见界面文案；动态节点通过低开销 `MutationObserver`（仅 childList/subtree）补译，歌曲/歌手/歌词/用户内容节点保留原文。`public/wallpaper-control.html` 同步加入语言按钮。新增 `scripts/test-i18n.js` 并接入 `npm run check`；已通过语法和专项测试。完整应用安装仍需从本提交构建候选包并重新冻结 Safe Storage 迁移链，禁止直接替换已安装包内的 app.asar。
 
 
