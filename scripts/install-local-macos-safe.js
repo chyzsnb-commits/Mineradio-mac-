@@ -715,7 +715,10 @@ function assertMigrationQuiescent() {
 }
 
 function recoveryEnvironment() {
-  return cleanEnvironment({ ELECTRON_RUN_AS_NODE: '1' });
+  return cleanEnvironment({
+    ELECTRON_RUN_AS_NODE: '1',
+    MINERADIO_MIGRATION_VERIFY_NONCE: activeJournal && activeJournal.guardNonce,
+  });
 }
 
 function runRecovery(action, args = []) {
