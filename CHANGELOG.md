@@ -2,6 +2,8 @@
 
 ## 2.0.0
 
+- 移除搜索栏与音源切换器中的汽水（QS）适配入口；主页磨砂玻璃改为中性黑灰，保留封面原色。降低玻璃模糊与饱和度合成开销，并修正限帧余量与空闲降帧误判，减少前台卡顿。
+
 - 本机启动故障确认为安装包把 ASAR 整包哈希误填到归档头校验字段；已整体恢复 8 月 15 日验收包并保留 QQ 登录。源码按 Mac 项目规定重新关闭内置更新并添加配置断言；本次未安装最近界面改动。
 
 - 本机融合候选完成 Electron 包安全收口：主入口改为最小 `desktop/bootstrap.js`，关闭 RunAsNode、`NODE_OPTIONS` 与 CLI inspector，开启 ASAR integrity 与 OnlyLoadAppFromAsar；Safe Storage 原生交接模块保持 packed 并锁定哈希，手势 helper 改为 universal arm64+x64、最低 macOS 12。

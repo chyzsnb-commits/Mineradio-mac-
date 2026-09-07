@@ -31,11 +31,11 @@ test('2.0 uses formal public identity', () => {
   assert.equal(pkg.mineradio.update && pkg.mineradio.update.disabled, true);
 });
 
-test('public package enables only the credential-free Qishui catalog', () => {
+test('public package keeps Qishui disabled', () => {
   const files = JSON.stringify(pkg.build.files || []);
   assert.doesNotMatch(files, /qishui-audio-decryptor/i);
   assert.match(files, /qishui-catalog-api\.js/);
-  assert.equal(policy.qishuiCatalogEnabled, true);
+  assert.equal(policy.qishuiCatalogEnabled, false);
   assert.equal(policy.qishuiEnabled, false);
   assert.equal(policy.allowCredentialImport, false);
   assert.equal(policy.allowCredentialExport, false);
@@ -71,9 +71,9 @@ test('public renderer and server enforce release boundary', () => {
   assert.match(server, /UNTRUSTED_ORIGIN/);
   assert.match(server, /sec-fetch-site/);
   assert.match(server, /mineradio-safe-storage-v1/);
-  assert.match(index, /search-mode-qishui/);
+  assert.doesNotMatch(index, /search-mode-qishui/);
   assert.match(server, /\/api\/qishui\/search/);
-  assert.match(rendererModules, /\/api\/qishui\/search/);
+  assert.doesNotMatch(rendererModules, /\/api\/qishui\/search/);
   assert.doesNotMatch(preload, /openQishuiMusicLogin|clearQishuiMusicLogin|qishui.*(?:cookie|token|decrypt)/i);
   assert.doesNotMatch(server, /qishui.*(?:cookie|token|decrypt|sessionid)/i);
 });

@@ -61,6 +61,11 @@ test('交互会取消休眠定时器并立即请求一帧', () => {
   assert.match(mainLoop, /audio\.addEventListener\(['"]play['"],\s*wakeMainLoopFromBackground\)/);
 });
 
+test('自动性能治理跳过主动空闲降帧', () => {
+  const source = read('public/js/modules/00-state/08-desktop-render-power.js');
+  assert.match(source, /isForegroundIdleForRender\(now\)[\s\S]{0,240}autoGov\.jankVotes = 0/);
+});
+
 test('主循环调度会执行定时帧且唤醒时取消等待', () => {
   const source = read('public/js/modules/11-main-loop.js');
   let delay = 500;

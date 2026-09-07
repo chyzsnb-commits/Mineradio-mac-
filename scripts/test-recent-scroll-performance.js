@@ -62,6 +62,7 @@ test('最近播放滚动时 3D 上限 30 FPS 且不抬高用户 24 FPS 设置', 
   vm.runInNewContext('fixedScrollFps = applyMaxFpsCap(getAdaptiveRenderFps(1000));', sandbox);
   assert.equal(sandbox.fixedScrollFps, 24);
   assert.match(readFunction(loop, 'shouldSkipAdaptiveRenderFrame'), /applyMaxFpsCap\(cadence \? cadence\.fps : getAdaptiveRenderFps\(now\)\)/);
+  assert.match(readFunction(loop, 'shouldSkipAdaptiveRenderFrame'), /Math\.max\(elapsed, minGap\) % minGap/);
 });
 
 test('最近播放滚动层独立合成且滚动时停用卡片重阴影', () => {
