@@ -6,7 +6,7 @@
 >
 > **恢复包身份：** `app.asar` SHA-256 `7dac0a781edf167689930d0ea050323fc9af38d005a83cba11f73eb40676c024`；归档头 SHA-256 `c5b0f9f5361d23accb1af8a3cbe240ca937b1e82c9888ef92498b8d64d9fcc9a`；CDHash `96919e2fc469fa0ea4568bd794cdb8068633d1d7`。严格签名、归档头与 `Info.plist` 一致、实际进程与本地接口检查通过。Spotlight（聚焦搜索）只索引 `/Applications/Mineradio.app`。损坏包与恢复前用户资料备份位于 `/Users/allenli/Library/Application Support/Mineradio Migration/repairs.noindex/20260906-125145/`；候选构建移至 `/private/tmp/mineradio-final-handoff-repair.noindex/`，不在桌面留下第二份应用。冻结迁移控制器保持原样，禁止直接拿它安装新候选。
 >
-> **源码与审查：** `codex/repair-damaged-app` 分支按项目规定恢复 `mineradio.update.disabled=true` 并加断言，存档点 `60d5932`；私有仓库 [PR #127（合并请求）](https://github.com/chyzsnb-commits/mr/pull/127) 的比较基线改为 `bugfix/web-art-four-issues`，避免把尚未合并到 main（主分支）的历史功能一并纳入本次修复。未合并，未修改独立公开仓库。
+> **源码与审查（用户已明确指定 PR #125）：** 修复已直接推送到 `bugfix/web-art-four-issues` 分支，现有 [PR #125（合并请求）](https://github.com/chyzsnb-commits/mr/pull/125) 包含 `f4b0339`（同一 2.0.0 安装包不再宣称为 2.0.1）、`60d5932`（恢复 `mineradio.update.disabled=true` 并加入断言）、`9c8648e`（实际窗口验收与版本边界记录）。首次推送范围为 `e19a00a..9c8648e`，未使用强制推送。#125 的目标分支保持 `codex/perspective-wallpaper-qishui`，仍由仓库主人审查；未合并到 main（主分支）。#127 的修复内容已全部进入它的目标开发分支，GitHub 在尝试关闭重复入口时报告 #127 已合并，因此后续统一跟进 #125，不再创建重复合并请求。未修改独立公开仓库。
 >
 > **验证边界：** 三项必需语法检查和正式身份/禁用更新专项测试通过。完整 `npm run check` 为 **282/287，5 项失败**，与修改前相同：3 项 macOS 构建工作流断言、2 项汽水公开目录策略断言。不能声称完整自动门禁已通过。继续验收时发现旧进程白屏，结束该进程并重新启动完整恢复包后，已通过电脑操作截图看到《稻香》的封面、歌词、粒子舞台及播放控制条。真实音频持续输出、长时间稳定性和摄像头未完成验证。Obsidian 指定库 `/Users/chy/菜鸡的仓库/菜鸡的仓库` 不存在；待同步内容已保存到 `docs/obsidian-sync/2026-09-06-app-repair.md`，该文件不代表已同步 Obsidian。
 
@@ -147,7 +147,8 @@
 ## 待办清单
 
 - [x] **修复本机应用启动失败**：恢复 8 月 15 日完整验收包，签名、归档头、运行进程、QQ 登录与更新关闭状态已核验。
-- [x] **收窄本次审查范围**：PR #127（合并请求）对照现有开发分支，不将历史功能一起提交给主分支审查。
+- [x] **按用户要求追加到 PR #125（合并请求）**：版本清单修正、禁用更新配置及窗口验收记录已推送到 `bugfix/web-art-four-issues`，后续统一在 #125 审查。
+- [ ] **主人审查 PR #125（合并请求）**：保持现有目标分支，未经主人明确同意不执行合并。
 - [x] **修复后窗口验收**：重新启动后看到真实页面、封面、歌词、粒子和播放控制条；未在真实资料上自动改封面或登录态。
 - [ ] **音频与摄像头人工验收**：确认持续音频输出和长时间稳定性；摄像头权限由用户按需开启。
 - [ ] **新版本实装**：当前为历史验收包，后续若安装最近界面变更，必须冻结并复核与新候选匹配的完整安全存储迁移链。

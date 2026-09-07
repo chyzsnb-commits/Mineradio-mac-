@@ -16,7 +16,8 @@
 - [ ] 人工确认持续音频输出、长时间稳定性与摄像头。
 - [ ] 后续安装最近界面改动时，重新冻结并验证安全存储迁移链；本轮恢复的是历史包。
 - [ ] 处理源码完整自动门禁已有的 5 个失败（282/287）：3 个 macOS 工作流、2 个汽水策略断言；不为通过测试重新开启汽水。
-- [ ] 审查私有仓库 PR #127（合并请求），未经主人同意不合并。
+- [x] 按用户明确要求，将 f4b0339、60d5932、9c8648e 推送到 bugfix/web-art-four-issues 分支，追加至现有 PR #125（合并请求）。
+- [ ] 审查私有仓库 PR #125（合并请求），未经主人同意不合并。
 
 ## 重要发现
 
@@ -24,4 +25,4 @@
 
 损坏包和恢复前资料备份：`/Users/allenli/Library/Application Support/Mineradio Migration/repairs.noindex/20260906-125145/`。
 当前恢复包 app.asar SHA-256：`7dac0a781edf167689930d0ea050323fc9af38d005a83cba11f73eb40676c024`。
-PR：https://github.com/chyzsnb-commits/mr/pull/127 （比较基线为现有开发分支，避免混入历史功能）。
+PR：https://github.com/chyzsnb-commits/mr/pull/125 （按用户要求直接追加到现有开发分支；#127 已不再作为独立修复入口）。
