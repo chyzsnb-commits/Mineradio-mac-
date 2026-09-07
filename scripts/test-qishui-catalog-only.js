@@ -130,10 +130,14 @@ test('汽水目录能力仅保留后端兼容与自动换源保护，前端不�
   const playback = read('public/js/modules/05-playback/00-api-quality-output.js');
   const start = read('public/js/modules/05-playback/13-playback-start-audio.js');
   const lyrics = read('public/js/modules/06-lyrics/00-lyrics-fetch-parse.js');
+  const home = read('public/js/modules/12-home-dashboard.js');
+  const homeDiscover = read('public/js/modules/05-playback/03-home-discover-weather.js');
 
   assert.match(state, /MINERADIO_QISHUI_CATALOG_ENABLED/);
   assert.match(search, /function searchProviderCanSearch\(provider\)/);
   assert.doesNotMatch(search, /provider === 'qishui'\) return '\/api\/qishui\/search/);
+  assert.doesNotMatch(home, /api\/qishui|汽水推荐|loadHomePlatformQishui/);
+  assert.doesNotMatch(homeDiscover, /qishuiFeed|汽水推荐/);
   assert.match(playback, /QISHUI_CATALOG_ONLY/);
   assert.match(playback, /MINERADIO_DISABLED_PROVIDERS\.indexOf\(provider\) >= 0/);
   assert.match(start, /catalogOnlyFallback[\s\S]{0,180}opts\.startupAutoplay && !catalogOnlyFallback/);
