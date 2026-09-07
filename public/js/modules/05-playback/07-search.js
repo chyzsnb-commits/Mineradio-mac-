@@ -55,7 +55,7 @@ function rememberSearchQuery(q) {
   writeSearchHistory(items);
 }
 function renderSearchHistory() {
-  if (!isMusicSearchMode(searchMode)) return false;
+  if (searchMode !== 'song') return false;
   var items = readSearchHistory();
   if (!items.length) {
     $results.innerHTML = '';
@@ -91,7 +91,6 @@ function updateSearchModeTabs() {
   var neteaseBtn = document.getElementById('search-mode-netease');
   var qqBtn = document.getElementById('search-mode-qq');
   var kugouBtn = document.getElementById('search-mode-kugou');
-  var qishuiBtn = document.getElementById('search-mode-qishui');
   var spotifyBtn = document.getElementById('search-mode-spotify');
   var ytmusicBtn = document.getElementById('search-mode-ytmusic');
   var podcastBtn = document.getElementById('search-mode-podcast');
@@ -111,10 +110,6 @@ function updateSearchModeTabs() {
     kugouBtn.classList.toggle('active', searchMode === 'kugou');
     kugouBtn.setAttribute('aria-selected', searchMode === 'kugou' ? 'true' : 'false');
   }
-  if (qishuiBtn) {
-    qishuiBtn.classList.toggle('active', searchMode === 'qishui');
-    qishuiBtn.setAttribute('aria-selected', searchMode === 'qishui' ? 'true' : 'false');
-  }
   if (spotifyBtn) {
     spotifyBtn.classList.toggle('active', searchMode === 'spotify');
     spotifyBtn.setAttribute('aria-selected', searchMode === 'spotify' ? 'true' : 'false');
@@ -132,14 +127,12 @@ function updateSearchModeTabs() {
       ? '搜索播客、电台...'
       : (searchMode === 'kugou' ? '搜索酷狗音乐...' : (searchMode === 'qq' ? '搜索 QQ 音乐...' : (searchMode === 'netease' ? '搜索网易云音乐...' : '搜索歌曲、歌手...')));
   }
-  if ($input && searchMode === 'qishui') $input.placeholder = '搜索汽水音乐匹配源...';
   if ($input && searchMode === 'spotify') $input.placeholder = '搜索 Spotify 匹配源...';
   if ($input && searchMode === 'ytmusic') $input.placeholder = '搜索 YouTube Music...';
   requestAnimationFrame(updateSearchPillGlassDisplacementMap);
 }
 function setSearchMode(mode) {
-  if (mode === 'qishui' && !MINERADIO_QISHUI_CATALOG_ENABLED) mode = 'song';
-  mode = (mode === 'podcast' || mode === 'netease' || mode === 'qq' || mode === 'kugou' || mode === 'qishui' || mode === 'spotify' || mode === 'ytmusic') ? mode : 'song';
+  mode = (mode === 'podcast' || mode === 'netease' || mode === 'qq' || mode === 'kugou' || mode === 'spotify' || mode === 'ytmusic') ? mode : 'song';
   if (searchMode === mode) return;
   searchMode = mode;
   updateSearchModeTabs();
@@ -181,7 +174,7 @@ function programMetaText(item) {
 }
 function searchThumbHtml(src) {
   return src
-    ? '<img src="' + coverMarkupSrc(src, 80) + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
+    ? '<img src="' + coverUrlWithSize(src, 80) + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
     : '<div style="width:40px;height:40px;border-radius:6px;background:rgba(255,255,255,0.06);flex-shrink:0"></div>';
 }
 function renderPodcastRadios(items, label) {
@@ -376,19 +369,13 @@ function songSourceTagHtml(song, opts) {
   return '<span class="tag-source ' + key + '">' + label + '</span>';
 }
 var controlSourceSwitcherState = { open: false, loading: false, requestId: 0, anchor: null };
-function controlSourceProviders(song) {
+function controlSourceProviders() {
   var providers = [
     { key: 'netease', label: 'NE', title: '网易云' },
     { key: 'qq', label: 'QQ', title: 'QQ音乐' },
     { key: 'kugou', label: 'KG', title: '酷狗' },
     { key: 'spotify', label: 'SP', title: 'Spotify' }
   ];
-  if (MINERADIO_QISHUI_CATALOG_ENABLED) {
-    providers.splice(3, 0, { key: 'qishui', label: 'QS', title: '汽水音乐' });
-  }
-  var current = songProviderKey(song);
-  var currentIndex = providers.findIndex(function (provider) { return provider.key === current; });
-  if (currentIndex > 0) providers.unshift(providers.splice(currentIndex, 1)[0]);
   return providers;
 }
 function controlSourceProviderTitle(provider) {
@@ -398,7 +385,6 @@ function controlSourceProviderTitle(provider) {
 function controlSourceSearchUrl(provider, query) {
   if (provider === 'qq') return '/api/qq/search?keywords=' + encodeURIComponent(query) + '&limit=8';
   if (provider === 'kugou') return '/api/kugou/search?keywords=' + encodeURIComponent(query) + '&limit=8';
-  if (provider === 'qishui') return '/api/qishui/search?keywords=' + encodeURIComponent(query) + '&limit=8';
   if (provider === 'spotify') return '/api/spotify/search?keywords=' + encodeURIComponent(query) + '&limit=8';
   return '/api/search?keywords=' + encodeURIComponent(query) + '&limit=10';
 }
@@ -456,18 +442,16 @@ function renderControlSourceSwitcher(matches) {
   el.innerHTML =
     '<div class="control-source-switcher-head"><span>切换音源</span><small>' + (controlSourceSwitcherState.loading ? '正在匹配' : '保留当前进度') + '</small></div>' +
     '<div class="control-source-options">' +
-    controlSourceProviders(song).map(function (provider) {
+    controlSourceProviders().map(function (provider) {
       var entry = matches[provider.key];
       var match = controlSourceMatchSong(entry);
       var issue = controlSourceMatchIssue(entry);
       var active = provider.key === current;
+      var ready = active || !!match;
       var providerLimited = !!(match && provider.key === 'spotify' && match.playable === false);
-      var providerDisabled = provider.key === 'qishui' && typeof MINERADIO_QISHUI_ENABLED !== 'undefined' && !MINERADIO_QISHUI_ENABLED;
-      var ready = active || (!!match && !providerLimited && !providerDisabled);
-      var unavailable = providerLimited || providerDisabled;
-      var cleanStatus = active ? '当前' : (unavailable ? '不可用' : (match ? '可切换' : (controlSourceSwitcherState.loading ? '检测中' : controlSourceIssueLabel(issue))));
-      var title = active ? '当前音源' : (providerLimited ? 'Spotify 没有官方可播源' : (providerDisabled ? '汽水音乐当前不可用' : (match ? ('切换到 ' + provider.title) : (provider.title + ': ' + controlSourceIssueLabel(issue)))));
-      var status = active ? '当前' : (unavailable ? '不可用' : (match ? '可切换' : (controlSourceSwitcherState.loading ? '检测中' : '无匹配')));
+      var cleanStatus = active ? '当前' : (providerLimited ? '匹配源' : (match ? '可切换' : (controlSourceSwitcherState.loading ? '检测中' : controlSourceIssueLabel(issue))));
+      var title = active ? '当前音源' : (providerLimited ? (provider.title + ': 播放将自动换源') : (match ? ('切换到 ' + provider.title) : (provider.title + ': ' + controlSourceIssueLabel(issue))));
+      var status = active ? '当前' : (providerLimited ? '匹配源' : (match ? '可切换' : (controlSourceSwitcherState.loading ? '检测中' : '无匹配')));
       return '<button type="button" class="control-source-option' + (active ? ' active' : '') + (!ready ? ' disabled' : '') + '" data-source-provider="' + provider.key + '" title="' + escHtml(title) + '" ' + (!ready ? 'disabled ' : '') + 'onclick="switchCurrentSongSource(\'' + provider.key + '\')">' +
         '<span class="tag-source ' + provider.key + '">' + provider.label + '</span>' +
         '<span class="control-source-option-title">' + provider.title + '</span>' +
@@ -509,7 +493,7 @@ async function findControlSourceMatch(song, provider) {
 }
 async function loadControlSourceMatches(song, requestId) {
   var matches = {};
-  var providers = controlSourceProviders(song);
+  var providers = controlSourceProviders();
   await Promise.all(providers.map(async function (provider) {
     if (songProviderKey(song) === provider.key) {
       matches[provider.key] = { song: song, issue: '' };
@@ -577,16 +561,9 @@ async function switchCurrentSongSource(provider) {
       if (controlSourceSwitcherState.matches) controlSourceSwitcherState.matches[provider] = lookup || { song: null, issue: issue || 'no_source' };
     }
     if (requestId !== controlSourceSwitcherState.requestId) return;
-    // 竞态保护: await 期间用户可能已切歌(currentIdx 改变),此时中止切换,避免覆盖新歌
-    var stillSameSong = currentControlSong() === song
-      || (playQueue && currentIdx >= 0 && currentIdx < playQueue.length && playQueue[currentIdx] === song);
-    if (!stillSameSong) {
-      controlSourceSwitcherState.loading = false;
-      renderControlSourceSwitcher(controlSourceSwitcherState.matches || {});
-      return;
-    }
     if (!match) {
       showSourceFallbackNotice('未找到可切换音源', controlSourceProviderTitle(provider) + ' 暂时没有匹配到同名同歌手版本。');
+      showSourceFallbackNotice('该平台无正版音源', controlSourceProviderTitle(provider) + ': ' + controlSourceIssueLabel(issue));
       controlSourceSwitcherState.loading = false;
       renderControlSourceSwitcher(controlSourceSwitcherState.matches || {});
       return;
@@ -597,7 +574,7 @@ async function switchCurrentSongSource(provider) {
     closeControlSourceSwitcher();
     safeRenderQueuePanel('manual-source-switch', { scrollCurrent: miniQueueOpen });
     updateControlTrackInfo(playQueue[currentIdx]);
-    showSourceSwitchNotice('正在切换音源', (song.name || '当前歌曲') + ' -> ' + controlSourceProviderTitle(provider));
+    showSourceFallbackNotice('正在切换音源', (song.name || '当前歌曲') + ' -> ' + controlSourceProviderTitle(provider));
     await playQueueAt(currentIdx, {
       manual: true,
       resumeAt: currentResumeSeconds(0),
@@ -606,14 +583,12 @@ async function switchCurrentSongSource(provider) {
     });
   } catch (err) {
     console.warn('[SourceSwitch]', provider, err);
-    var stillSameOnError = currentControlSong() === song
-      || (playQueue && currentIdx >= 0 && currentIdx < playQueue.length && playQueue[currentIdx] === song);
-    if (stillSameOnError && currentIdx >= 0 && currentIdx < playQueue.length) {
+    if (currentIdx >= 0 && currentIdx < playQueue.length) {
       playQueue[currentIdx] = hydrateCustomCover(previousSong);
       safeRenderQueuePanel('manual-source-switch-restore', { scrollCurrent: miniQueueOpen });
       updateControlTrackInfo(playQueue[currentIdx]);
     }
-    showSourceSwitchNotice('音源切换失败', '已保留当前播放队列，请稍后再试。');
+    showSourceFallbackNotice('音源切换失败', '已保留当前播放队列，请稍后再试。');
   } finally {
     controlSourceSwitcherState.loading = false;
     forcePlaybackControlsInteractive();
@@ -689,9 +664,7 @@ function searchIntentPrefersQQ(q) {
   q = String(q || '').toLowerCase();
   return /(^|\s)qq($|\s)|qq音乐|qq音樂|周杰伦|周杰倫|jay\s*chou|jay/.test(q);
 }
-var MUSIC_SEARCH_PROVIDER_ORDER = ['netease', 'qq', 'kugou']
-  .concat(MINERADIO_QISHUI_CATALOG_ENABLED ? ['qishui'] : [])
-  .concat(['spotify']);
+var MUSIC_SEARCH_PROVIDER_ORDER = ['netease', 'qq', 'kugou', 'spotify'];
 function searchProviderStatus(provider) {
   if (typeof platformStatus === 'function') return platformStatus(provider);
   if (provider === 'spotify') return spotifyLoginStatus;
@@ -705,12 +678,10 @@ function searchProviderIsLoggedIn(provider) {
   return !!(st && st.loggedIn);
 }
 function searchProviderCanSearch(provider) {
-  if (provider === 'qishui') return !!MINERADIO_QISHUI_CATALOG_ENABLED;
   return searchProviderIsLoggedIn(provider);
 }
 function searchModeProvider(mode) {
-  if (mode === 'qishui' && !MINERADIO_QISHUI_CATALOG_ENABLED) return '';
-  return mode === 'netease' || mode === 'qq' || mode === 'kugou' || mode === 'qishui' || mode === 'spotify' ? mode : '';
+  return mode === 'netease' || mode === 'qq' || mode === 'kugou' || mode === 'spotify' ? mode : '';
 }
 function activeSearchProvidersForMode(mode) {
   var specific = searchModeProvider(mode);
@@ -729,7 +700,6 @@ function searchProviderLoginNotice(mode) {
 function searchProviderUrl(provider, q, limit) {
   if (provider === 'qq') return '/api/qq/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
   if (provider === 'kugou') return '/api/kugou/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
-  if (provider === 'qishui') return '/api/qishui/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
   if (provider === 'spotify') return '/api/spotify/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
   return '/api/search?keywords=' + encodeURIComponent(q) + '&limit=' + limit;
 }
@@ -954,14 +924,13 @@ async function fetchMusicSearchResults(q, mode) {
     searchProviderNotice = searchProviderLoginNotice(mode);
     return [];
   }
-  var limitByProvider = { netease: 18, qq: 12, kugou: 12, qishui: 12, spotify: 12 };
+  var limitByProvider = { netease: 18, qq: 12, kugou: 12, spotify: 12 };
   var result = await Promise.allSettled(providers.map(function (provider) {
     return apiJson(searchProviderUrl(provider, q, limitByProvider[provider] || 12));
   }));
   var neteaseSongs = [];
   var qqSongs = [];
   var kugouSongs = [];
-  var qishuiSongs = [];
   var spotifySongs = [];
   providers.forEach(function (provider, index) {
     var entry = result[index];
@@ -974,11 +943,10 @@ async function fetchMusicSearchResults(q, mode) {
     if (provider === 'netease') neteaseSongs = songs;
     if (provider === 'qq') qqSongs = songs;
     if (provider === 'kugou') kugouSongs = songs;
-    if (provider === 'qishui') qishuiSongs = songs;
     if (provider === 'spotify') spotifySongs = songs;
     if (value.message && !songs.length && !searchProviderNotice) searchProviderNotice = value.message;
   });
-  return mergeSongSearchResults(neteaseSongs, qqSongs, kugouSongs, qishuiSongs, spotifySongs, 18, q);
+  return mergeSongSearchResults(neteaseSongs, qqSongs, kugouSongs, [], spotifySongs, 18, q);
 }
 function renderSongSearchResults(songs) {
   setSearchHistorySurface(false);
@@ -989,7 +957,7 @@ function renderSongSearchResults(songs) {
     var sourceClass = songProviderKey(s) + '-source';
     var thumb = songCoverSrc(s, 80);
     var imgTag = thumb
-      ? '<img src="' + coverMarkupSrc(thumb) + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
+      ? '<img src="' + thumb + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
       : '<div style="width:40px;height:40px;border-radius:6px;background:rgba(255,255,255,0.06);flex-shrink:0"></div>';
     return '<div class="search-result ' + sourceClass + '">' +
       '<div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0" onclick="playSearchResult(' + i + ')">' +

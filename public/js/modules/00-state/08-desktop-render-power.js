@@ -554,10 +554,17 @@ function autoGovTick() {
     ? normalizePerformanceQuality(fx && fx.performanceQuality) === 'auto'
     : String(fx && fx.performanceQuality) === 'auto';
   if (!isAuto) { autoGov.lastSeenFrames = rp.longFrames || 0; return; }             // 仅治理 auto 档
+  var now = performance.now();
+  // 空闲渲染主动降到 2 FPS 是省电策略，不应被自动治理器当作卡顿继续降档。
+  if (typeof isForegroundIdleForRender === 'function' && isForegroundIdleForRender(now)) {
+    autoGov.lastSeenFrames = rp.longFrames || 0;
+    autoGov.cleanSince = 0;
+    autoGov.jankVotes = 0;
+    return;
+  }
   var effTarget = (rp.targetFps > 0) ? rp.targetFps : (rp.displayHz || 60);         // vsync(targetFps=0)用 displayHz
   if (!(effTarget > 0)) { autoGov.lastSeenFrames = rp.longFrames || 0; return; }
   if (!(rp.frames > 0)) { autoGov.lastSeenFrames = rp.longFrames || 0; return; }     // 本秒无新帧(冻结)
-  var now = performance.now();
   var curLong = rp.longFrames || 0;
   var dLong = curLong - autoGov.lastSeenFrames;                    // 每秒长帧增量(longFrames 累计不清零)
   if (dLong < 0) dLong = curLong;                                  // 计数器重置/首样本兜底

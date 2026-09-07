@@ -63,6 +63,7 @@ test('最近播放滚动时 3D 上限 20 FPS 且不抬高用户 24 FPS 设置', 
   vm.runInNewContext('fixedScrollFps = applyMaxFpsCap(getAdaptiveRenderFps(1000));', sandbox);
   assert.equal(sandbox.fixedScrollFps, 20);
   assert.match(readFunction(loop, 'shouldSkipAdaptiveRenderFrame'), /applyMaxFpsCap\(cadence \? cadence\.fps : getAdaptiveRenderFps\(now\)\)/);
+  assert.match(readFunction(loop, 'shouldSkipAdaptiveRenderFrame'), /Math\.max\(elapsed, minGap\) % minGap/);
 });
 
 test('所有滚动容器进入同一 20 FPS 渲染预算，滚轮先于 scroll 事件也会降帧', () => {

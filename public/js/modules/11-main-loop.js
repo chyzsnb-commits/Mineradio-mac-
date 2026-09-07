@@ -185,12 +185,14 @@ function shouldSkipAdaptiveRenderFrame(now) {
     return false;
   }
   var minGap = 1000 / fps;
-  if (now - renderPerfState.lastRenderAt < minGap) {
+  var elapsed = now - renderPerfState.lastRenderAt;
+  if (elapsed < minGap) {
     renderPerfState.skipped += 1;
     if (window.__mineradioPerf && window.__mineradioPerf.count) window.__mineradioPerf.count('frame.skipped');
     return true;
   }
-  renderPerfState.lastRenderAt = now;
+  // 保留帧间隔余量，避免 60Hz 屏上的 45/30/18 FPS 被取整抖动降成 30/20/15 FPS。
+  renderPerfState.lastRenderAt = now - (Math.max(elapsed, minGap) % minGap);
   return false;
 }
 function sampleRenderPerf(now, dt) {

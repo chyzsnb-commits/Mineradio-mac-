@@ -124,7 +124,7 @@ test('服务端仅暴露目录状态、搜索、歌词和不可直播端点', ()
   assert.doesNotMatch(server, /pn === '\/api\/qishui\/user\/playlists'/);
 });
 
-test('搜索与播放前端明确使用 catalog-only 能力并复用自动换源', () => {
+test('汽水目录能力仅保留后端兼容与自动换源保护，前端不再主动搜索', () => {
   const state = read('public/js/modules/00-state/00-core-stores.js');
   const search = read('public/js/modules/05-playback/07-search.js');
   const playback = read('public/js/modules/05-playback/00-api-quality-output.js');
@@ -133,7 +133,7 @@ test('搜索与播放前端明确使用 catalog-only 能力并复用自动换源
 
   assert.match(state, /MINERADIO_QISHUI_CATALOG_ENABLED/);
   assert.match(search, /function searchProviderCanSearch\(provider\)/);
-  assert.match(search, /provider === 'qishui'\) return '\/api\/qishui\/search/);
+  assert.doesNotMatch(search, /provider === 'qishui'\) return '\/api\/qishui\/search/);
   assert.match(playback, /QISHUI_CATALOG_ONLY/);
   assert.match(playback, /MINERADIO_DISABLED_PROVIDERS\.indexOf\(provider\) >= 0/);
   assert.match(start, /catalogOnlyFallback[\s\S]{0,180}opts\.startupAutoplay && !catalogOnlyFallback/);
