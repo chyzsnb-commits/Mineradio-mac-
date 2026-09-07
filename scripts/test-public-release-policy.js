@@ -31,8 +31,15 @@ test('2.0 uses formal public identity', () => {
   assert.equal(pkg.mineradio.update && pkg.mineradio.update.disabled, true);
 });
 
-test('public package keeps Qishui disabled', () => {
+test('public package respects the Qishui release mode', () => {
   const files = JSON.stringify(pkg.build.files || []);
+  if (pkg.mineradio.qishuiExperimental === true) {
+    assert.equal(policy.qishuiEnabled, true);
+    assert.equal(policy.qishuiCatalogEnabled, true);
+    assert.equal(policy.allowCredentialImport, false);
+    assert.match(files, /qishui-api|qishui-audio-decryptor/i);
+    return;
+  }
   assert.doesNotMatch(files, /qishui-audio-decryptor/i);
   assert.match(files, /qishui-catalog-api\.js/);
   assert.equal(policy.qishuiCatalogEnabled, false);
@@ -42,7 +49,12 @@ test('public package keeps Qishui disabled', () => {
   assert.deepEqual(policy.disabledProviders, ['qishui']);
 });
 
-test('Qishui direct-session backend, login bridge and decryptor stay deleted', () => {
+test('Qishui direct-session backend follows the selected release mode', () => {
+  if (pkg.mineradio.qishuiExperimental === true) {
+    assert.ok(fs.existsSync(path.join(root, 'qishui-api.js')));
+    assert.ok(fs.existsSync(path.join(root, 'qishui-audio-decryptor', 'track-decryptor.js')));
+    return;
+  }
   const removed = [
     'qishui-api.js',
     'qishui-audio-decryptor/decrypt-utils.js',

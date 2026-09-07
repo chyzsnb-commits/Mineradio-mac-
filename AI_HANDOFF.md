@@ -1,5 +1,7 @@
 # Mineradio AI Handoff
 
+> 状态更新（2026-09-07，追加到 PR #126）：沿用现有 `usageStatsEnabled=true` 的匿名活跃度统计闸门与首启同意机制；本次只移除前端汽水搜索/音源切换/主页推荐入口，不关闭统计功能。主页玻璃和渲染调度优化已同步到本分支，待用户审查。
+
 > 状态更新（2026-08-30 续 3，对齐 Win 2.1.0 社交与订阅收藏）：对比 XxHuberrr/Mineradio（Win 2.1.0）后补齐 Mac 缺失的后端能力——17 个端点（汽水点赞/评论/歌单收藏/加歌/专辑收藏/最近上报、专辑与歌单订阅检查、Spotify 专辑喜欢、平台能力声明）。合并方向教训：qishui-api/spotify-api 以 **Mac 版为基底**追加 Win 独有函数（反向会覆盖 Mac 的取流诊断契约/多基座，两个汽水契约测试立刻红）；Mac 的扫码 PcQr 段与 Spotify 单曲 like 函数为 Mac 独有，已保留。Win 侧 `/api/cuefield/feedback|transition` 为半成品（调用的函数 Win 源码也不存在），未移植并已注释说明。汽水红心接入现有喜欢按钮（isQishuiWritableSong + 登录引导 + /api/qishui/song/like）。`npm run check` 5/5+39/39+333/333；17 端点冒烟 7/7（未登录返回 LOGIN_REQUIRED/COOKIE_REQUIRED）。前端 UI 边界：评论面板与订阅收藏按钮的完整 UI 为后续迭代，当前 API 已就绪（desktopWindow 桥可直调）。
 
 > 状态更新（2026-08-30 续 2，入库 pr113 未提交工作）：功能验收审计发现三项仅存在于 pr113-cli-runtime 未提交修改（歌词切换动效+速度、多行转场首帧落位 primeLyricRowTransitionStart、封面注入防护 safeMarkupAttr/coverMarkupSrc）。已将 pr113 全部 63 文件未提交改动以 `git apply --3way` 导入本分支（7 处文件与主链交叉自动合并，冲突手工解决：package.json scripts 双边测试全保留、AI_HANDOFF/CHANGELOG 两边日志都留）。审计确认的三项缺失全部补齐（lyricTransition 9 文件、primeLyricRowTransitionStart 2 文件、safeMarkupAttr 1 文件）。额外修复：`downloadExportedFile` 目标目录不存在时自动 `mkdirSync recursive`（此前直接 WRITE_FAILED，Scene 导出超时测试因此在干净环境失败）。`npm run check` 前置 5/5+39/39、主套件 333/333 全绿。仍未验收边界不变（汽水真实播放/跨机/硬件/长期温度）。
