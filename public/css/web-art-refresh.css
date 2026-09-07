@@ -4009,6 +4009,8 @@ body.empty-home-active #empty-home {
 
 /* 性能与中性色收口：主页玻璃不再跟随封面取红色，也减少模糊合成开销。 */
 #empty-home {
+  --fc-accent: #b8bec6 !important;
+  --fc-accent-rgb: 184,190,198 !important;
   --home-accent: #b8bec6 !important;
   --home-accent-rgb: 184,190,198 !important;
 }

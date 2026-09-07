@@ -138,8 +138,7 @@ function homeDashboardNextReview() {
 }
 function homeProviderRecommendationGroups() {
   var groups = [];
-  // 独立音源入口不能再借网易登录态显隐，否则网易已登录时 QQ/汽水/酷狗推荐会被吞掉。
-  if (qishuiLoginStatus.loggedIn && homeDiscoverState.qishuiFeed.length) groups.push({ key: 'qishui', title: '汽水推荐', songs: homeDiscoverState.qishuiFeed, tone: 'daily' });
+  // 独立音源入口不能再借网易登录态显隐，否则网易已登录时 QQ/酷狗推荐会被吞掉。
   if (kugouLoginStatus.loggedIn && homeDiscoverState.kugouGuess.length) groups.push({ key: 'kugou', title: '猜你喜欢 FM', songs: homeDiscoverState.kugouGuess, tone: 'playlist' });
   if (qqLoginStatus.loggedIn && homeDiscoverState.qqDaily.length) groups.push({ key: 'qqDaily', title: 'QQ 每日 30 首', songs: homeDiscoverState.qqDaily, tone: 'search' });
   if (qqLoginStatus.loggedIn && homeDiscoverState.qqRadio.length) groups.push({ key: 'qqRadio', title: 'QQ 猜你喜欢电台', songs: homeDiscoverState.qqRadio, tone: 'podcast' });
@@ -478,7 +477,6 @@ async function loadHomeDiscover(force) {
     homeDiscoverState.personalFm = homeDiscoverState.loggedIn ? (data && data.personalFm || []).map(cloneSong) : [];
     homeDiscoverState.playlists = homeDiscoverState.loggedIn ? (data && data.playlists || []) : [];
     homeDiscoverState.podcasts = homeDiscoverState.loggedIn ? (data && data.podcasts || []) : [];
-    homeDiscoverState.qishuiFeed = [];
     homeDiscoverState.kugouGuess = kugouLoginStatus.loggedIn ? (results[1] && results[1].songs || []).map(cloneSong) : [];
     homeDiscoverState.qqDaily = qqLoginStatus.loggedIn ? (results[2] && results[2].songs || []).map(cloneSong) : [];
     homeDiscoverState.qqRadio = qqLoginStatus.loggedIn ? (results[3] && results[3].songs || []).map(cloneSong) : [];

@@ -31,7 +31,6 @@ var homePlatformRecommendationState = {
   previousFocus: null,
   neteaseLoading: false,
   feeds: {
-    qishui: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
     kugou: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
     spotify: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
   },
@@ -1267,7 +1266,6 @@ function openHomeDashboardCharts() {
 function homePlatformRecommendationSourceLabel(source) {
   return {
     netease: '网易云',
-    qishui: '汽水',
     qq: 'QQ 音乐',
     kugou: '酷狗音乐',
     spotify: 'Spotify',
@@ -1276,13 +1274,6 @@ function homePlatformRecommendationSourceLabel(source) {
 
 function homePlatformRecommendationFeedConfig(source) {
   return {
-    qishui: {
-      endpoint: '/api/qishui/feed?limit=12',
-      sectionTitle: '推荐 Feed',
-      cardLabel: '汽水推荐 Feed',
-      readyText: '来自汽水推荐 Feed',
-      playlistName: '汽水推荐 Feed',
-    },
     kugou: {
       endpoint: '/api/kugou/recommendations?limit=12',
       sectionTitle: '推荐 FM',
@@ -1464,11 +1455,7 @@ function renderHomePlatformRecommendations() {
       var sectionTitle = feedConfig.sectionTitle;
       var cardLabel = feedConfig.cardLabel;
       var readyText = feedConfig.readyText;
-      if (source === 'qishui' && feedState.fallback) {
-        sectionTitle = '你的音乐';
-        cardLabel = '汽水喜欢 / 最近播放';
-        readyText = '汽水推荐 Feed 暂不可用，当前显示你的喜欢与最近播放';
-      } else if (source === 'spotify' && feedState.mode === 'liked-affinity') {
+      if (source === 'spotify' && feedState.mode === 'liked-affinity') {
         sectionTitle = '你的喜欢';
         cardLabel = 'Spotify 喜欢的歌曲';
         readyText = '来自 Spotify Web API 的喜欢歌曲';
@@ -1516,10 +1503,6 @@ async function loadHomePlatformNeteaseRecommendations(force) {
     homePlatformRecommendationState.neteaseLoading = false;
     renderHomePlatformRecommendations();
   }
-}
-
-async function loadHomePlatformQishuiRecommendations(force) {
-  return loadHomePlatformFeedRecommendations('qishui', force);
 }
 
 async function loadHomePlatformFeedRecommendations(source, force) {
@@ -1624,7 +1607,7 @@ function bindHomePlatformRecommendationControls() {
     closeHomePlatformRecommendations();
     if (kind === 'netease-playlist' && typeof openHomePlaylist === 'function') openHomePlaylist(index);
     else if (kind === 'netease-song' && typeof playHomeSong === 'function') playHomeSong(index);
-    else if (/^(qishui|kugou|spotify)-song$/.test(kind)) playHomePlatformFeedSong(kind.replace(/-song$/, ''), index);
+    else if (/^(kugou|spotify)-song$/.test(kind)) playHomePlatformFeedSong(kind.replace(/-song$/, ''), index);
   });
   if (list) list.addEventListener('scroll', scheduleHomePlatformDailyWindowRender, { passive: true });
   window.addEventListener('resize', scheduleHomePlatformDailyWindowRender, { passive: true });
@@ -1651,12 +1634,10 @@ function openHomePlatformRecommendations(preferredSource) {
   mask.setAttribute('aria-hidden', 'false');
   var defaultSource = loginStatus && loginStatus.loggedIn
     ? 'netease'
-    : (qishuiLoginStatus && (qishuiLoginStatus.loggedIn || qishuiLoginStatus.configured)
-      ? 'qishui'
-      : (kugouLoginStatus && kugouLoginStatus.loggedIn
+    : (kugouLoginStatus && kugouLoginStatus.loggedIn
         ? 'kugou'
-        : (spotifyLoginStatus && (spotifyLoginStatus.loggedIn || spotifyLoginStatus.configured) ? 'spotify' : 'netease')));
-  var source = /^(netease|qishui|qq|kugou|spotify)$/.test(String(preferredSource || '')) ? preferredSource : defaultSource;
+        : (spotifyLoginStatus && (spotifyLoginStatus.loggedIn || spotifyLoginStatus.configured) ? 'spotify' : 'netease'));
+  var source = /^(netease|qq|kugou|spotify)$/.test(String(preferredSource || '')) ? preferredSource : defaultSource;
   loadHomePlatformRecommendations(source, false);
   setTimeout(function () {
     var activeTab = mask.querySelector('[data-home-recommend-source="' + source + '"]');
