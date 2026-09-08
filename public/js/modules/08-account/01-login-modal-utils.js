@@ -2,6 +2,7 @@
 function openGsapModal(mask) {
   if (!mask) return;
   var panel = mask.querySelector('.modal');
+  var isLoginPanel = panel && panel.classList.contains('dual-login-modal');
   mask.classList.add('show');
   if (window.gsap) {
     window.gsap.killTweensOf(mask);
@@ -13,8 +14,10 @@ function openGsapModal(mask) {
     );
     if (panel) {
       window.gsap.fromTo(panel,
-        { autoAlpha: 0, y: 26, scale: 0.965, filter: 'blur(12px)' },
-        { autoAlpha: 1, y: 0, scale: 1, filter: 'blur(0px)', duration: 0.68, ease: 'expo.out', overwrite: true }
+        isLoginPanel
+          ? { autoAlpha: 0, y: 18, scale: 0.985, filter: 'none' }
+          : { autoAlpha: 0, y: 26, scale: 0.965, filter: 'blur(12px)' },
+        { autoAlpha: 1, y: 0, scale: 1, filter: isLoginPanel ? 'none' : 'blur(0px)', duration: isLoginPanel ? 0.42 : 0.68, ease: 'expo.out', overwrite: true }
       );
     }
   } else {
@@ -75,9 +78,11 @@ function onUserBtnClick() {
     topAccountPillClickSuppressed = false;
     return;
   }
-  showLoginModal({ provider: hasAnyPlatformLogin() ? firstLoggedProvider() : loginProvider, source: 'top-account' });
+  showLoginModal({ provider: preferredAccountLoginProvider(), source: 'top-account' });
 }
-var ACCOUNT_PROVIDER_KEYS = ['netease', 'qq', 'kugou', 'qishui', 'spotify'];
+var ACCOUNT_PROVIDER_KEYS = ['netease', 'qq', 'kugou']
+  .concat(MINERADIO_QISHUI_ENABLED ? ['qishui'] : [])
+  .concat(['spotify']);
 var ACCOUNT_PROVIDER_ORDER_STORE_KEY = 'mineradio-account-provider-order-v1';
 var ACCOUNT_PROVIDER_VISIBLE_STORE_KEY = 'mineradio-account-provider-visible-v1';
 var topAccountPillDrag = null;
@@ -226,6 +231,7 @@ function platformMeta(provider) {
 }
 function platformStatus(provider) {
   if (provider === 'spotify') return spotifyLoginStatus;
+  if (provider === 'qishui' && !MINERADIO_QISHUI_ENABLED) return { provider: 'qishui', loggedIn: false, enabled: false };
   if (provider === 'qishui') return qishuiLoginStatus;
   if (provider === 'kugou') return kugouLoginStatus;
   return provider === 'qq' ? qqLoginStatus : loginStatus;
@@ -280,7 +286,7 @@ function hasPlatformLogin(provider) {
   return !!(st && st.loggedIn);
 }
 function hasAnyPlatformLogin() {
-  return hasPlatformLogin('netease') || hasPlatformLogin('qq') || hasPlatformLogin('kugou') || hasPlatformLogin('qishui') || hasPlatformLogin('spotify');
+  return hasPlatformLogin('netease') || hasPlatformLogin('qq') || hasPlatformLogin('kugou') || (MINERADIO_QISHUI_ENABLED && hasPlatformLogin('qishui')) || hasPlatformLogin('spotify');
 }
 function firstLoggedProvider() {
   if (hasPlatformLogin(activeAccountProvider)) return activeAccountProvider;
@@ -289,6 +295,10 @@ function firstLoggedProvider() {
     if (hasPlatformLogin(ordered[i])) return ordered[i];
   }
   return 'netease';
+}
+function preferredAccountLoginProvider() {
+  if (MINERADIO_QISHUI_ENABLED && typeof searchMode !== 'undefined' && searchMode === 'qishui') return 'qishui';
+  return hasAnyPlatformLogin() ? firstLoggedProvider() : loginProvider;
 }
 function providerAvatarSrc(provider, status) {
   status = status || platformStatus(provider) || {};
@@ -300,16 +310,8 @@ function providerAvatarSrc(provider, status) {
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
 }
 function providerVipBadge(provider, status, idAttr, includeNormal) {
-  status = status || platformStatus(provider) || {};
-  if (!status.loggedIn) return '';
-  var pendingQQSync = provider === 'qq' && typeof qqLoginNeedsAuthorizationRefresh === 'function' && qqLoginNeedsAuthorizationRefresh(status);
-  var level = providerVipLevel(provider, status);
-  if (level === 'none' && !includeNormal && !pendingQQSync) return '';
-  var id = idAttr ? ' id="' + idAttr + '"' : '';
-  var badgeLevel = pendingQQSync ? 'pending' : (level === 'none' ? 'normal' : level);
-  var cls = 'top-account-vip ' + escHtml(provider || 'netease') + ' ' + badgeLevel;
-  var label = pendingQQSync ? '待同步' : (level === 'svip' ? 'SVIP' : (level === 'vip' ? 'VIP' : '普通'));
-  return '<span' + id + ' class="' + cls + '">' + label + '</span>';
+  // 平台会员字段经常缺失或延迟,只用于后台播放能力判断,不再作为用户身份徽标展示。
+  return '';
 }
 function renderTopAccountPill(provider, opts) {
   opts = opts || {};
@@ -319,11 +321,9 @@ function renderTopAccountPill(provider, opts) {
   var meta = platformMeta(provider);
   st = st || {};
   var displayName = loggedIn ? ((provider === 'qq' && st.preview) ? '待接入' : (st.nickname || meta.label)) : meta.label;
-  var vipTag = providerVipBadge(provider, st, '', true);
   return '<span class="top-account-pill ' + (loggedIn ? 'online' : 'offline') + '" data-account-provider="' + escHtml(provider) + '">' +
     '<img src="' + providerAvatarSrc(provider, st) + '" alt="">' +
     '<span class="top-account-name">' + escHtml(displayName) + '</span>' +
-    vipTag +
     '</span>';
 }
 function bindTopAccountPillSorting() {

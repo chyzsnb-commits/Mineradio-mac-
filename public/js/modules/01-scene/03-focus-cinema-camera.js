@@ -141,7 +141,9 @@ function updateCamera() {
 // 焦点跟拍 (hover 0.5s 后镜头移到目标)
 var focusHover = { wantType: null, pendingTimer: null, exitTimer: null };
 function shouldUseWallpaperSafeShelfCamera() {
-  return !!(fx && Number(fx.preset) === 5);
+  // 用户要歌单架所有预设统一(呼出机位/卡片姿态与 emily 预设一致): 壁纸预设不再用专用的浅推近机位,
+  // 返回 false = focus/卡片布局全走普通预设分支。壁纸背景在歌架呼出时的压暗仍保留(shouldDimWallpaperForShelf)。
+  return false;
 }
 function shouldUseSkullSafeShelfCamera() {
   // 用户要安魂的 3D 歌单架「跟别的预设一样」:骷髅机位已拉远(z6.7),右侧正常摆位(sideX 3.18)可视,
@@ -156,7 +158,7 @@ function requestStageLyricCameraSnap(frames) {
   stageLyrics.snapCameraLockFrames = Math.max(stageLyrics.snapCameraLockFrames || 0, frames || 8);
 }
 function shouldDimWallpaperForShelf() {
-  if (!shouldUseWallpaperSafeShelfCamera()) return false;
+  if (!(fx && Number(fx.preset) === 5)) return false;
   if (!shelfManager || !shelfManager.getMode || shelfManager.getMode() !== 'side') return false;
   if (shelfPinnedOpen) return true;
   return !!(shelfManager.hasOpenContent && shelfManager.hasOpenContent());
@@ -306,4 +308,3 @@ function recenterCamera() {
   if (!(fx && fx.preset === SKULL_PRESET_INDEX) && ((fx && fx.lyricCameraLock) || shouldUseWallpaperLyricCameraLock())) requestStageLyricCameraSnap(14);
   showToast('视角回正');
 }
-

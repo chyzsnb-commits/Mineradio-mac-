@@ -329,7 +329,83 @@ function initControlGlassSurface() {
   });
 }
 
+var _controlHelpTooltipTimer = 0;
+var _controlHelpTooltip = null;
+var _controlHelpTooltipOwner = null;
+function ensureControlHelpTooltip() {
+  if (_controlHelpTooltip && _controlHelpTooltip.isConnected) return _controlHelpTooltip;
+  _controlHelpTooltip = document.createElement('div');
+  _controlHelpTooltip.id = 'control-help-tooltip';
+  _controlHelpTooltip.className = 'control-help-tooltip';
+  _controlHelpTooltip.setAttribute('role', 'tooltip');
+  _controlHelpTooltip.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(_controlHelpTooltip);
+  return _controlHelpTooltip;
+}
+function hideControlHelpTooltip() {
+  if (_controlHelpTooltipTimer) {
+    clearTimeout(_controlHelpTooltipTimer);
+    _controlHelpTooltipTimer = 0;
+  }
+  _controlHelpTooltipOwner = null;
+  if (!_controlHelpTooltip) return;
+  _controlHelpTooltip.classList.remove('visible');
+  _controlHelpTooltip.setAttribute('aria-hidden', 'true');
+}
+function showControlHelpTooltip(btn) {
+  if (!btn || btn.disabled || btn.classList.contains('busy')) return;
+  var text = btn.dataset.controlTip || btn.getAttribute('aria-label') || btn.getAttribute('title');
+  if (!text) return;
+  var tooltip = ensureControlHelpTooltip();
+  _controlHelpTooltipOwner = btn;
+  tooltip.textContent = text;
+  tooltip.classList.add('visible');
+  tooltip.setAttribute('aria-hidden', 'false');
+  var buttonRect = btn.getBoundingClientRect();
+  var tooltipRect = tooltip.getBoundingClientRect();
+  var left = buttonRect.left + (buttonRect.width - tooltipRect.width) / 2;
+  left = Math.max(12, Math.min(left, innerWidth - tooltipRect.width - 12));
+  var top = buttonRect.top - tooltipRect.height - 12;
+  if (top < 12) top = buttonRect.bottom + 12;
+  tooltip.style.left = Math.round(left) + 'px';
+  tooltip.style.top = Math.round(top) + 'px';
+}
+function queueControlHelpTooltip(btn, delay) {
+  hideControlHelpTooltip();
+  // 音质、红心和歌架状态更新会重新写入 title;悬浮时立即移除,避免原生慢提示盖住自定义说明。
+  if (btn && btn.hasAttribute('title')) btn.removeAttribute('title');
+  _controlHelpTooltipTimer = setTimeout(function () {
+    _controlHelpTooltipTimer = 0;
+    showControlHelpTooltip(btn);
+  }, delay == null ? 260 : delay);
+}
+function bindControlHelpTooltips() {
+  document.querySelectorAll('#bottom-bar .ctrl-btn').forEach(function (btn) {
+    if (!btn || btn.dataset.controlTipBound === '1') return;
+    var text = btn.dataset.controlTip || btn.getAttribute('title') || btn.getAttribute('aria-label');
+    if (!text) return;
+    btn.dataset.controlTip = text;
+    btn.dataset.controlTipBound = '1';
+    if (!btn.getAttribute('aria-label')) btn.setAttribute('aria-label', text);
+    // 保留 HTML 的 title 作为无脚本降级;绑定后移除,避免系统慢提示与即时提示重叠。
+    btn.removeAttribute('title');
+    btn.addEventListener('pointerenter', function (e) {
+      if (e && e.pointerType === 'touch') return;
+      queueControlHelpTooltip(btn, 260);
+    });
+    btn.addEventListener('pointerleave', hideControlHelpTooltip);
+    btn.addEventListener('pointercancel', hideControlHelpTooltip);
+    btn.addEventListener('pointerdown', hideControlHelpTooltip);
+    btn.addEventListener('focus', function () { queueControlHelpTooltip(btn, 80); });
+    btn.addEventListener('blur', hideControlHelpTooltip);
+  });
+  window.addEventListener('resize', hideControlHelpTooltip);
+  window.addEventListener('blur', hideControlHelpTooltip);
+  document.addEventListener('scroll', hideControlHelpTooltip, true);
+}
+
 function bindPlayerControlAnimations() {
+  bindControlHelpTooltips();
   if (!window.gsap) return;
   document.querySelectorAll('#bottom-bar .ctrl-btn').forEach(function (btn) {
     if (!btn || btn.dataset.controlAnimBound === '1') return;
@@ -384,6 +460,7 @@ function bindPlayerControlAnimations() {
 
 function clearPlayerControlFocusState(reason) {
   try {
+    hideControlHelpTooltip();
     document.querySelectorAll('#bottom-bar .ctrl-btn').forEach(function (btn) {
       if (!btn) return;
       if (document.activeElement === btn) btn.blur();

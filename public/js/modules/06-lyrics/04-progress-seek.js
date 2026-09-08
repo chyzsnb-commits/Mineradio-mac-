@@ -12,7 +12,11 @@ var progressDragState = {
   previewClockBase: 0,
   previewClockStartedAt: 0,
   previewClockRunning: false,
-  resumePlaySerial: 0
+  resumePlaySerial: 0,
+  seekInFlight: false,
+  pendingSeek: null,
+  seekPromise: null,
+  resumePlaybackAfterSeek: false
 };
 var progressVisualState = {
   bar: null,
@@ -154,18 +158,80 @@ function updatePlaybackProgressUi() {
   var timeDisplay = document.getElementById('time-display');
   if (timeDisplay) timeDisplay.textContent = formatProgramTime(currentSec) + ' / ' + (durationSec > 0 ? formatProgramTime(durationSec) : '0:00');
 }
+var PLAYBACK_PROGRESS_TICK_MS = 200;
+var playbackProgressTimer = 0;
+var playbackProgressTimerMedia = null;
+function shouldRunPlaybackProgressTimer(media) {
+  return !!(media && media === audio && media.src && !media.paused && !media.ended);
+}
+function stopPlaybackProgressTimer(media) {
+  if (media && playbackProgressTimerMedia && media !== playbackProgressTimerMedia) return false;
+  if (playbackProgressTimer) clearTimeout(playbackProgressTimer);
+  playbackProgressTimer = 0;
+  if (!media || playbackProgressTimerMedia === media) playbackProgressTimerMedia = null;
+  return true;
+}
+function runPlaybackProgressTimerTick(media) {
+  playbackProgressTimer = 0;
+  if (!shouldRunPlaybackProgressTimer(media)) {
+    if (playbackProgressTimerMedia === media) playbackProgressTimerMedia = null;
+    return false;
+  }
+  updateListenStatsTick(false);
+  updatePlaybackProgressUi();
+  saveLastPlaybackSnapshot(false, 'tick');
+  playbackProgressTimer = setTimeout(function () {
+    runPlaybackProgressTimerTick(media);
+  }, PLAYBACK_PROGRESS_TICK_MS);
+  return true;
+}
+function startPlaybackProgressTimer(media) {
+  if (!shouldRunPlaybackProgressTimer(media)) return false;
+  if (playbackProgressTimer && playbackProgressTimerMedia === media) return true;
+  stopPlaybackProgressTimer();
+  playbackProgressTimerMedia = media;
+  playbackProgressTimer = setTimeout(function () {
+    runPlaybackProgressTimerTick(media);
+  }, PLAYBACK_PROGRESS_TICK_MS);
+  return true;
+}
+function syncPlaybackProgressTimerForCurrentMedia(media) {
+  return shouldRunPlaybackProgressTimer(media) ? startPlaybackProgressTimer(media) : stopPlaybackProgressTimer(media);
+}
+function syncPlaybackProgressTimerForEvent(media, name) {
+  if (name === 'play' || name === 'playing') return startPlaybackProgressTimer(media);
+  if (name === 'pause' || name === 'ended' || name === 'emptied' || name === 'abort' || name === 'error') {
+    return stopPlaybackProgressTimer(media);
+  }
+  return false;
+}
 function bindPlaybackProgressEvents(audioEl) {
-  if (!audioEl || audioEl._mineradioProgressBound) return;
+  if (!audioEl) return;
+  if (audioEl._mineradioProgressBound) {
+    syncPlaybackProgressTimerForCurrentMedia(audioEl);
+    return;
+  }
   audioEl._mineradioProgressBound = true;
-  ['loadedmetadata', 'durationchange', 'timeupdate', 'seeked', 'play', 'pause', 'emptied'].forEach(function (name) {
-    audioEl.addEventListener(name, updatePlaybackProgressUi);
+  ['loadedmetadata', 'durationchange', 'seeked'].forEach(function (name) {
+    audioEl.addEventListener(name, function () {
+      updatePlaybackProgressUi();
+      if (typeof syncAlbumGaplessMonitorForPlaybackEvent === 'function') syncAlbumGaplessMonitorForPlaybackEvent(audioEl, name);
+    });
   });
   ['play', 'playing', 'pause', 'ended', 'emptied', 'abort', 'error'].forEach(function (name) {
     audioEl.addEventListener(name, function () {
-      syncPlaybackStateFromAudioEvent(name);
-      saveLastPlaybackSnapshot(name === 'pause' || name === 'ended', name);
+      var internalTrackTeardown = typeof isPlaybackTrackTeardownEvent === 'function' && isPlaybackTrackTeardownEvent(audioEl, name);
+      updatePlaybackProgressUi();
+      syncPlaybackProgressTimerForEvent(audioEl, name);
+      if (typeof syncAlbumGaplessMonitorForPlaybackEvent === 'function') syncAlbumGaplessMonitorForPlaybackEvent(audioEl, name);
+      if (!internalTrackTeardown) {
+        syncPlaybackStateFromAudioEvent(name);
+        saveLastPlaybackSnapshot(name === 'pause' || name === 'ended', name);
+      }
+      if ((name === 'play' || name === 'playing') && typeof clearPlaybackTrackTeardown === 'function') clearPlaybackTrackTeardown(audioEl);
     });
   });
+  syncPlaybackProgressTimerForCurrentMedia(audioEl);
 }
 function emitProgressDragParticles(x, y) {
   var now = performance.now();
@@ -250,6 +316,8 @@ function invalidateActiveProgressSeek(reason) {
   progressDragState.resumePlaySerial = 0;
   progressDragState.previewClockRunning = false;
   progressDragState.previewHoldUntil = 0;
+  progressDragState.pendingSeek = null;
+  progressDragState.resumePlaybackAfterSeek = false;
   progressDragState.commitSerial++;
   var bar = document.getElementById('progress-bar');
   if (bar) bar.classList.remove('is-dragging');
@@ -263,42 +331,57 @@ function getActiveProgressSeekMedia() {
   return media;
 }
 function restoreProgressSeekAudio(media, mediaSrc, resumeAfterSeek, serial) {
-  if (serial !== progressDragState.commitSerial) return;
+  if (serial !== progressDragState.commitSerial) {
+    if (typeof restorePlaybackGain === 'function') restorePlaybackGain();
+    return false;
+  }
   if (!audio || audio !== media || (audio.currentSrc || audio.src || '') !== mediaSrc) {
     finishProgressPreviewHold(serial, 48);
     if (typeof restorePlaybackGain === 'function') restorePlaybackGain();
-    return;
+    return false;
   }
   if (!resumeAfterSeek) {
     progressDragState.resumePlaySerial = 0;
     finishProgressPreviewHold(serial, 96);
     try { if (media && !media.paused) media.pause(); } catch (pauseErr) { }
     if (typeof restorePlaybackGain === 'function') restorePlaybackGain();
-    return;
+    return true;
   }
+  var playResult = true;
   if (progressDragState.resumePlaySerial !== serial || (media && media.paused)) {
-    primeProgressSeekPlayback(media, mediaSrc, serial);
+    playResult = primeProgressSeekPlayback(media, mediaSrc, serial);
   }
   finishProgressPreviewHold(serial, 96);
+  return playResult;
 }
 function primeProgressSeekPlayback(media, mediaSrc, serial) {
   if (serial !== progressDragState.commitSerial) return false;
   if (!audio || audio !== media || (audio.currentSrc || audio.src || '') !== mediaSrc) return false;
   progressDragState.resumePlaySerial = serial;
   if (typeof attemptAudioPlay === 'function') {
-    attemptAudioPlay({ manual: true, silent: true, fade: true });
-    return true;
+    return attemptAudioPlay({
+      manual: true,
+      silent: true,
+      fade: true,
+      playRequestCurrent: function () {
+        return serial === progressDragState.commitSerial
+          && !progressDragState.active
+          && !progressDragState.pendingSeek;
+      }
+    });
   }
   try {
     var playResult = media.play();
     if (playResult && playResult.then) {
-      playResult.then(function () {
-        if (serial !== progressDragState.commitSerial) return;
+      return playResult.then(function () {
+        if (serial !== progressDragState.commitSerial) return false;
         if (typeof startPlaybackFadeIn === 'function') startPlaybackFadeIn();
         else if (typeof restorePlaybackGain === 'function') restorePlaybackGain();
+        return true;
       }).catch(function () {
-        if (serial !== progressDragState.commitSerial) return;
+        if (serial !== progressDragState.commitSerial) return false;
         if (typeof restorePlaybackGain === 'function') restorePlaybackGain();
+        return false;
       });
     }
     return true;
@@ -308,17 +391,16 @@ function primeProgressSeekPlayback(media, mediaSrc, serial) {
     return false;
   }
 }
-function commitProgressSeek(targetTime, resumeAfterSeek) {
-  var media = getActiveProgressSeekMedia();
-  if (!media) {
-    invalidateActiveProgressSeek('stale-media');
+async function runProgressSeekCommit(request) {
+  if (!request || !audio || audio !== request.media || (audio.currentSrc || audio.src || '') !== request.mediaSrc) {
     if (typeof restorePlaybackGain === 'function') restorePlaybackGain();
-    return;
+    return false;
   }
-  var durationSec = progressDragState.previewDuration || getPlaybackDurationSeconds();
-  if (!durationSec) return;
-  targetTime = clampRange(Number(targetTime) || 0, 0, durationSec);
-  var mediaSrc = progressDragState.mediaSrc || (media.currentSrc || media.src || '');
+  var media = request.media;
+  var mediaSrc = request.mediaSrc;
+  var targetTime = request.targetTime;
+  var durationSec = request.durationSec;
+  var resumeAfterSeek = request.resumeAfterSeek;
   var serial = ++progressDragState.commitSerial;
   progressDragState.previewTime = targetTime;
   progressDragState.previewDuration = durationSec;
@@ -331,15 +413,66 @@ function commitProgressSeek(targetTime, resumeAfterSeek) {
     progressDragState.previewClockRunning = false;
     finishProgressPreviewHold(serial, 48);
     restoreProgressSeekAudio(media, mediaSrc, false, serial);
-    return;
+    return false;
   }
-  if (resumeAfterSeek) primeProgressSeekPlayback(media, mediaSrc, serial);
   renderProgressPreview(targetTime, durationSec);
   syncBeatMapPlaybackCursor(targetTime, true);
   saveLastPlaybackSnapshot(true, 'seek');
-  waitForProgressSeekReady(media, 680).then(function () {
-    restoreProgressSeekAudio(media, mediaSrc, !!resumeAfterSeek, serial);
-  });
+  await waitForProgressSeekReady(media, 680);
+  var restored = await restoreProgressSeekAudio(media, mediaSrc, !!resumeAfterSeek, serial);
+  return restored !== false && serial === progressDragState.commitSerial;
+}
+async function drainProgressSeekQueue() {
+  var result = false;
+  while (progressDragState.pendingSeek) {
+    var request = progressDragState.pendingSeek;
+    progressDragState.pendingSeek = null;
+    result = await runProgressSeekCommit(request);
+  }
+  return result;
+}
+function shouldResumeProgressSeekPlayback() {
+  if (progressDragState.seekInFlight && progressDragState.resumePlaybackAfterSeek) return true;
+  return !!(audio && !audio.paused && !audio.ended && playing);
+}
+function finishProgressSeekQueueState() {
+  progressDragState.seekInFlight = false;
+  progressDragState.pendingSeek = null;
+  progressDragState.seekPromise = null;
+  if (!progressDragState.active) {
+    progressDragState.resumeAfterSeek = false;
+    progressDragState.resumePlaybackAfterSeek = false;
+  }
+}
+function commitProgressSeek(targetTime, resumeAfterSeek) {
+  var media = getActiveProgressSeekMedia();
+  if (!media) {
+    invalidateActiveProgressSeek('stale-media');
+    if (typeof restorePlaybackGain === 'function') restorePlaybackGain();
+    return Promise.resolve(false);
+  }
+  var durationSec = progressDragState.previewDuration || getPlaybackDurationSeconds();
+  if (!durationSec) {
+    if (typeof restorePlaybackGain === 'function') restorePlaybackGain();
+    return Promise.resolve(false);
+  }
+  targetTime = clampRange(Number(targetTime) || 0, 0, durationSec);
+  var mediaSrc = progressDragState.mediaSrc || (media.currentSrc || media.src || '');
+  progressDragState.resumePlaybackAfterSeek = !!resumeAfterSeek;
+  progressDragState.pendingSeek = {
+    media: media,
+    mediaSrc: mediaSrc,
+    targetTime: targetTime,
+    durationSec: durationSec,
+    resumeAfterSeek: !!resumeAfterSeek
+  };
+  if (progressDragState.seekInFlight) {
+    progressDragState.commitSerial++;
+    return progressDragState.seekPromise || Promise.resolve(false);
+  }
+  progressDragState.seekInFlight = true;
+  progressDragState.seekPromise = Promise.resolve(drainProgressSeekQueue()).finally(finishProgressSeekQueueState);
+  return progressDragState.seekPromise;
 }
 var progressBar = document.getElementById('progress-bar');
 progressBar.addEventListener('pointerdown', function (e) {
@@ -347,7 +480,8 @@ progressBar.addEventListener('pointerdown', function (e) {
   progressDragState.active = true;
   progressDragState.media = audio;
   progressDragState.mediaSrc = audio.currentSrc || audio.src || '';
-  progressDragState.resumeAfterSeek = !!(audio && !audio.paused && !audio.ended && playing);
+  progressDragState.resumeAfterSeek = shouldResumeProgressSeekPlayback();
+  progressDragState.resumePlaybackAfterSeek = progressDragState.resumeAfterSeek;
   progressDragState.previewTime = getPlaybackCurrentSeconds();
   progressDragState.previewDuration = getPlaybackDurationSeconds();
   progressBar.classList.add('is-dragging');
@@ -379,26 +513,14 @@ function endProgressDrag(e, commit) {
   }
   progressDragState.media = null;
   progressDragState.mediaSrc = '';
-  progressDragState.resumeAfterSeek = false;
+  if (!progressDragState.seekInFlight) {
+    progressDragState.resumeAfterSeek = false;
+    progressDragState.resumePlaybackAfterSeek = false;
+  }
 }
 progressBar.addEventListener('pointerup', function (e) { endProgressDrag(e, true); });
 progressBar.addEventListener('pointercancel', function (e) { endProgressDrag(e, false); });
 progressBar.addEventListener('lostpointercapture', function (e) { endProgressDrag(e, true); });
-setInterval(function () {
-  if (!audio) {
-    if (restoredLastPlaybackSnapshot && pendingPlaybackResumeAt > 0) applyRestoredPlaybackProgressUi(restoredLastPlaybackSnapshot);
-    else updatePlaybackProgressUi();
-    return;
-  }
-  if (progressDragState.active) {
-    updatePlaybackProgressUi();
-    return;
-  }
-  updateListenStatsTick(false);
-  updatePlaybackProgressUi();
-  saveLastPlaybackSnapshot(false, 'tick');
-  if (audio.currentTime) updateLyricsHighlight();
-}, 200);
 
 // ============================================================
 //  文件拖放

@@ -353,7 +353,9 @@ function createTray() {
     let img = nativeImage.createFromPath(path.join(__dirname, '..', 'build', 'icon.png'));
     if (!img.isEmpty()) img = img.resize({ width: 18, height: 18 });
     wallpaperTray = new Tray(img.isEmpty() ? nativeImage.createEmpty() : img);
-    try { wallpaperTray.setTitle(' MR'); } catch (e) {}   // 文字兜底:图标不可见时菜单栏也显示 MR
+    // macOS 没有公开的状态栏“强制高优先级”接口；标题会让状态项占用双倍宽度，
+    // 菜单栏拥挤时反而更早被系统挤掉。只保留 MR 图标，给它争取稳定可见空间。
+    try { wallpaperTray.setTitle(''); } catch (e) {}
     wallpaperTray.setToolTip('Mineradio 壁纸运行中 · 点此控制');
     console.log('[WP] Tray created OK, isEmpty检查通过, 设菜单');
     wallpaperTray.on('click', () => togglePanel());

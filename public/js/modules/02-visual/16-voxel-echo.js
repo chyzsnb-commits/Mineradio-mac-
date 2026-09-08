@@ -196,6 +196,7 @@ var VOXEL_FRAG = `
     uniform float uBrightness;
     uniform float uSharpness;
     uniform float uShimmer;
+    uniform float uBgMedia;
     uniform vec3 uBaseColor1;
     uniform vec3 uBaseColor2;
     uniform vec3 uFogColor;
@@ -316,7 +317,9 @@ var VOXEL_FRAG = `
       float fogKeep = (1.0 - aerialFog * 0.35) * (1.0 - alphaBlend * 0.45);   // 未被两次雾化染黑的保留比例
       float outA = alphaFade * mix(1.0, fogKeep, uBgLight);
 
-      gl_FragColor = vec4(finalColor, outA);
+      // 优化:地形改不透明(开早期深度剔除,砍掉半透明叠画 overdraw,原生高分辨率下最大头)。
+      // 默认黑底保持不透明；自定义图片、视频或纯色背景时恢复远端透明，避免整块方形体素遮住壁纸。
+      gl_FragColor = vec4(mix(uFogColor, finalColor, outA), mix(1.0, outA, uBgMedia));
     }
 `;
 
@@ -990,6 +993,25 @@ var VOX_FB_MAX = Math.max(VOX_FB_MIN + 0.05, 0.45 + (3.2 - 0.45) * (26 / 100)); 
 var VOX_FB_SPEED_RATE = 3.0 + (36.0 - 3.0) * (77 / 100);            // speed 77 → 28.41(MapScene.tsx:470)
 var _voxFbMesh = null, _voxFbUniforms = null, _voxFbBlocks = null, _voxFbPulse = 0;
 var _voxFbEuler = null, _voxFbQuat = null;
+// 双手张合只缩放音域内容，不改相机 radius；输入距离已在手势层去抖，这里立即应用，避免滚轮式推拉和二次惯性。
+var _voxGestureContentScale = 1;
+function getVoxelGestureContentScale() {
+  return _voxGestureContentScale;
+}
+function setVoxelGestureContentScale(value) {
+  var next = Number(value);
+  if (!isFinite(next)) next = 1;
+  _voxGestureContentScale = Math.max(0.55, Math.min(1.9, next));
+  if (voxelCity && voxelCity.contentRoot && voxelCity.contentRoot.scale) {
+    voxelCity.contentRoot.scale.setScalar(_voxGestureContentScale);
+  }
+  return _voxGestureContentScale;
+}
+function voxFloatBlockScaleValue(value) {
+  var scale = Number(value);
+  if (!isFinite(scale)) scale = 1;
+  return Math.max(1, Math.min(2, scale));
+}
 
 // ── 流星 + 拖尾粒子(原作 MapScene.tsx 的 meteor/particle 系统逐行移植)──
 var MAX_VOX_METEORS = 20, MAX_VOX_PARTICLES = 200;
@@ -1012,6 +1034,24 @@ var VOX_CAM_DEF_HEIGHT = VOX_CAM_DEF_Y;
 // 默认视角封面完整居中于地形后方(用户指定);radius/height 仍是原版低掠视,海浪条纹不会回来
 var VOX_CAM_DEF_AZIMUTH = -Math.PI / 4;
 var _voxCam = { radius: VOX_CAM_DEF_RADIUS, height: VOX_CAM_DEF_HEIGHT, azimuth: VOX_CAM_DEF_AZIMUTH, autoRotate: false, rotateSpeed: 0.5 };
+function voxelShelfPinnedScale() {
+  return 1;
+}
+function voxelShelfPinnedLookAtOffset() {
+  return { x: 0, y: 0, z: 0 };
+}
+function voxelShelfWorldFrameYaw() {
+  return (typeof VOX_CAM_DEF_AZIMUTH === 'number' && isFinite(VOX_CAM_DEF_AZIMUTH)) ? VOX_CAM_DEF_AZIMUTH : 0;
+}
+function voxelShelfFocusFrameYaw() {
+  return voxelShelfWorldFrameYaw();
+}
+function shortestVoxelAzimuthDelta(from, to) {
+  var delta = (to || 0) - (from || 0);
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  return delta;
+}
 function voxRecenterCamera() {   // 回正/K:_voxCam 归位到原作默认机位
   _voxCam.radius = VOX_CAM_DEF_RADIUS; _voxCam.height = VOX_CAM_DEF_HEIGHT; _voxCam.azimuth = VOX_CAM_DEF_AZIMUTH;
 }
@@ -1121,8 +1161,12 @@ function _voxUpdateCamera(dt) {                            // 原作机位:对�
   var _vsc = (voxelCity && voxelCity.scale) ? voxelCity.scale : 1.0;
   var horiz = Math.sqrt(Math.max(0, _voxCam.radius * _voxCam.radius - _voxCam.height * _voxCam.height));
   camera.up.set(0, 1, 0);
-  camera.position.set(horiz * Math.sin(_voxCam.azimuth) * _vsc, _voxCam.height * _vsc, horiz * Math.cos(_voxCam.azimuth) * _vsc);
-  camera.lookAt(0, VOX_CAM_DEF_LOOKY * _vsc, 0);   // 看向中心上方(用户机位构图:地形居下、封面居中)
+  camera.position.set(
+    horiz * Math.sin(_voxCam.azimuth) * _vsc,
+    _voxCam.height * _vsc,
+    horiz * Math.cos(_voxCam.azimuth) * _vsc
+  );
+  camera.lookAt(0, 0, 0);
   camera.fov = clampRange(45 + pinchFovDelta, 20, 75);
   camera.updateProjectionMatrix();
 }
@@ -1209,11 +1253,14 @@ function _voxResolveRipple(t) {
 
 // 体素城市:背景(色/图)+ 自定义颜色 的应用(供控制台 UI 内联调用)
 var _appBgTexLoader = null, _appBgToken = 0;
+function _voxPerspectiveBackgroundActive() {
+  return typeof perspectiveCameraBackgroundActive === 'function' && perspectiveCameraBackgroundActive();
+}
 function _voxApplyBg() {
   if (typeof scene === 'undefined' || !scene) return;
   // app 级「背景媒体」(mp4/图片,DOM 层)优先级最高:scene.background 必须为 null 让 canvas 透明,
   // 否则体素纯色/退出体素时把黑色糊回 scene,其它预设的视频背景全被挡死(用户实测)
-  if (fx.backgroundMedia || fx.backgroundImage) { scene.background = null; _appBgToken++; return; }
+  if (_voxPerspectiveBackgroundActive() || fx.backgroundMedia || fx.backgroundImage) { scene.background = null; _appBgToken++; return; }
   var tok = ++_appBgToken;
   if (fx.voxBgImage) {
     var _bgImg = new Image();
@@ -1251,6 +1298,7 @@ var _voxGlobalBgKey = '', _voxGlobalBgTex = null;
 function _voxIsGlobalMirrorTex(bg) { return !!(bg && bg.isTexture && bg.userData && bg.userData.voxGlobalMirror); }
 function _voxApplyGlobalImageBg() {
   if (typeof scene === 'undefined' || !scene) return;
+  if (_voxPerspectiveBackgroundActive()) return;
   if (!fx.backgroundImage || fx.backgroundMedia) return;
   if (_voxGlobalBgKey === fx.backgroundImage) {
     // 同一张图: 加载中或已就绪, 绝不重启(每帧重启会不停作废上一次加载, 镜像永远挂不上);
@@ -1359,12 +1407,78 @@ var VOX_BG_STORE_KEY = 'mineradio-app-bg-v1';
 function saveVoxBg() { try { localStorage.setItem(VOX_BG_STORE_KEY, JSON.stringify({ image: fx.voxBgImage || '', color: fx.voxBgColor || '', playlist: fx.voxPlaylistColor || '' })); } catch (e) {} }
 var VOX_TOGGLE_STORE_KEY = 'mineradio-vox-toggles-v1';
 // 体素/侧边歌词布尔开关独立持久化(fx 自动存档是字段白名单制,这些键不在其中;镜像 saveVoxBg 模式)
-function saveVoxToggles() { try { localStorage.setItem(VOX_TOGGLE_STORE_KEY, JSON.stringify({ autoRotate: fx.voxAutoRotate !== false, coverColor: fx.voxCoverColor !== false, meteors: fx.voxMeteors !== false, ghostCover: fx.voxGhostCover !== false, floatBlocks: fx.voxFloatBlocks !== false, shimmer: fx.voxShimmer !== false, res: fx.voxRes || 'mid' })); } catch (e) {} }
-function loadVoxToggles() { try { var raw = JSON.parse(localStorage.getItem(VOX_TOGGLE_STORE_KEY) || '{}') || {}; if ('autoRotate' in raw) fx.voxAutoRotate = !!raw.autoRotate; if ('coverColor' in raw) fx.voxCoverColor = !!raw.coverColor; if ('meteors' in raw) fx.voxMeteors = !!raw.meteors; if ('ghostCover' in raw) fx.voxGhostCover = !!raw.ghostCover; if ('floatBlocks' in raw) fx.voxFloatBlocks = !!raw.floatBlocks; if ('shimmer' in raw) fx.voxShimmer = !!raw.shimmer; if (raw.res && /^(low|mid|high)$/.test(raw.res)) fx.voxRes = raw.res; } catch (e) {} }
+function saveVoxToggles() {
+  try {
+    localStorage.setItem(VOX_TOGGLE_STORE_KEY, JSON.stringify({
+      autoRotate: fx.voxAutoRotate !== false,
+      coverColor: fx.voxCoverColor !== false,
+      meteors: fx.voxMeteors !== false,
+      ghostCover: fx.voxGhostCover !== false,
+      floatBlocks: fx.voxFloatBlocks !== false,
+      floatBlockScale: voxFloatBlockScaleValue(fx.voxFloatBlockScale),
+      shimmer: fx.voxShimmer !== false,
+      res: fx.voxRes || 'mid'
+    }));
+  } catch (e) {}
+}
+function loadVoxToggles() {
+  try {
+    var raw = JSON.parse(localStorage.getItem(VOX_TOGGLE_STORE_KEY) || '{}') || {};
+    if ('autoRotate' in raw) fx.voxAutoRotate = !!raw.autoRotate;
+    if ('coverColor' in raw) fx.voxCoverColor = !!raw.coverColor;
+    if ('meteors' in raw) fx.voxMeteors = !!raw.meteors;
+    if ('ghostCover' in raw) fx.voxGhostCover = !!raw.ghostCover;
+    if ('floatBlocks' in raw) fx.voxFloatBlocks = !!raw.floatBlocks;
+    if ('floatBlockScale' in raw) fx.voxFloatBlockScale = voxFloatBlockScaleValue(raw.floatBlockScale);
+    if ('shimmer' in raw) fx.voxShimmer = !!raw.shimmer;
+    if (raw.res && /^(low|mid|high)$/.test(raw.res)) fx.voxRes = raw.res;
+  } catch (e) {}
+}
 function loadVoxBg() { try { var raw = JSON.parse(localStorage.getItem(VOX_BG_STORE_KEY) || '{}') || {}; if (raw.image) fx.voxBgImage = raw.image; if (raw.color) fx.voxBgColor = raw.color; if (raw.playlist) fx.voxPlaylistColor = raw.playlist; } catch (e) {} }
 
+// p10 保留与其它预设一致的左边缘歌单面板；3D 歌架仍由统一 shelf 事件处理。
+// 旧版把 #playlist-panel 迁进控制台，导致左边缘触发失效且无法同时使用右键 3D 歌架。
+// P10/P11 共用同一张普通 DOM 歌单。原宿主和当前接管者只能有一份状态，
+// 避免预设直接切换时把另一个视觉预设的临时 host 误记为“原位置”。
+var _visualPlaylistDockState = { owner: '', home: null };
+function _visualPlaylistDesiredOwner() {
+  if (voxelCityActive()) return 'voxel';
+  if (typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive()) return 'lyric-depth';
+  return '';
+}
+function _dockVisualPlaylist(owner, host, dock) {
+  var panel = document.getElementById('playlist-panel');
+  if (!panel) return false;
+
+  if (dock) {
+    if (!host) return false;
+    if (!_visualPlaylistDockState.home) {
+      _visualPlaylistDockState.home = { parent: panel.parentElement, next: panel.nextSibling };
+    }
+    _visualPlaylistDockState.owner = owner;
+    if (panel.parentElement !== host) host.appendChild(panel);
+    panel.classList.add('show');
+    return true;
+  }
+
+  // 同一帧里新预设可能已经接管；旧预设随后退出时不能再把面板拉走。
+  if (_visualPlaylistDockState.owner !== owner) return false;
+  // 旧预设也可能先执行退出；若目标仍是另一个共用歌单的预设，保留原宿主记录与当前页签，
+  // 等新预设在同一帧接管，避免中途回原位并误切回「预设」页。
+  var pendingOwner = _visualPlaylistDesiredOwner();
+  if (pendingOwner && pendingOwner !== owner) return false;
+  var home = _visualPlaylistDockState.home;
+  _visualPlaylistDockState.owner = '';
+  _visualPlaylistDockState.home = null;
+  if (!home || !home.parent) return false;
+  if (typeof fxPanelTab !== 'undefined' && fxPanelTab === 'playlist' && typeof setFxPanelTab === 'function') setFxPanelTab('presets');
+  panel.classList.remove('show');
+  if (home.next && home.next.parentElement === home.parent) home.parent.insertBefore(panel, home.next);
+  else home.parent.appendChild(panel);
+  return true;
+}
+
 // 体素城市:把歌单面板整个 DOM 迁进视觉控制台(#fx-panel),退出体素再移回原位(只体素生效)
-var _voxPlaylistHome = null;
 // 粒子高级参数滑块在体素下隐藏(JS 兜底:巨型样式表里 :has 规则实测有失效情况)
 function _voxToggleParticleSliders(hide) {
   ['fx-point','fx-speed','fx-twist','fx-color','fx-bloom','fx-bgfade','fx-scatter','fx-cineshake'].forEach(function (id) {
@@ -1377,35 +1491,6 @@ function _voxToggleParticleSliders(hide) {
   var label = firstRow ? firstRow.previousElementSibling : null;
   if (label && label.classList && label.classList.contains('fx-section-label')) label.style.display = hide ? 'none' : '';
 }
-function _voxDockPlaylist(dock) {
-  var pl = document.getElementById('playlist-panel');
-  var fxp = document.getElementById('fx-panel');
-  if (!pl || !fxp) return;
-  if (dock) {
-    if (typeof organizeFxPanel === 'function') organizeFxPanel();
-    var host = document.getElementById('vox-playlist-host');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'vox-playlist-host';
-      var firstPage = fxp.querySelector('[data-fx-page="playlist"]');
-      if (firstPage) firstPage.appendChild(host); else fxp.appendChild(host);
-    }
-    if (pl.parentElement !== host) {
-      _voxPlaylistHome = { parent: pl.parentElement, next: pl.nextSibling };
-      host.appendChild(pl);
-      _voxApplyPlaylistColor();   // 应用自定义歌单颜色(若设)
-      pl.classList.add('show');   // 触发面板内容渲染 + 配合 docked CSS 常显
-    }
-  } else if (_voxPlaylistHome) {
-    var home = _voxPlaylistHome; _voxPlaylistHome = null;
-    if (typeof fxPanelTab !== 'undefined' && fxPanelTab === 'playlist' && typeof setFxPanelTab === 'function') setFxPanelTab('presets');
-    if (pl.parentElement && pl.parentElement.id === 'vox-playlist-host') {
-      pl.classList.remove('show');
-      if (home.next && home.next.parentElement === home.parent) home.parent.insertBefore(pl, home.next);
-      else home.parent.appendChild(pl);
-    }
-  }
-}
 
 function voxResDims() {
   var r = (fx && fx.voxRes) || 'mid';
@@ -1415,10 +1500,11 @@ function voxResDims() {
   return { grid: g, spacing: 1.05 };
 }
 function rebuildVoxelCity() {
+  if (voxelCity && voxelCity.contentRoot) scene.remove(voxelCity.contentRoot);
   [ (voxelCity && voxelCity.mesh), _voxFbMesh, _voxMeteorMesh, _voxParticleMesh, _voxBackdrop, _voxSeamFloor, (voxelCity && voxelCity.coverPlane) ].forEach(function(m){
     if (m) { if (m.parent) m.parent.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); }
   });
-  if (voxelCity && voxelCity.platter) scene.remove(voxelCity.platter);   // 转盘组一并移除
+  if (voxelCity && !voxelCity.contentRoot && voxelCity.platter) scene.remove(voxelCity.platter);   // 兼容旧结构:转盘组一并移除
   _voxMeteorMesh = null; _voxParticleMesh = null; _voxFbMesh = null; _voxBackdrop = null; _voxSeamFloor = null; voxelCity = null;   // 下帧按新数量重建
 }
 function ensureVoxelCity() {
@@ -1441,12 +1527,15 @@ function ensureVoxelCity() {
     uWarmCore: { value: new C(1.0, 0.2, 0.1) }, uWarmEdge: { value: new C(1.0, 0.6, 0.0) },
     uRippleColor: { value: new C(0.2, 0.9, 1.0) }, uRippleColorHot: { value: new C(1, 1, 1) }, uGlowIntensity: { value: 1.0 }, uScale: { value: _vscale },
     uBgLight: { value: 0 },
+    uBgMedia: { value: 0 },
     // v9 手势:两只手的掌浪场(柱体局部 xz + 强度)+ 握拳压城
     uHandA: { value: new THREE.Vector2(0, 0) }, uHandAAmt: { value: 0 },
     uHandB: { value: new THREE.Vector2(0, 0) }, uHandBAmt: { value: 0 },
     uVoxGrip: { value: 0 }
   };
-  var mat = new THREE.ShaderMaterial({ uniforms: uniforms, vertexShader: VOXEL_VERT, fragmentShader: VOXEL_FRAG, transparent: true });
+  // 不透明(去掉 transparent:true)→ 渲进不透明批次、写深度、开早期 Z 剔除,砍掉体素重叠的 overdraw。
+  // depthWrite/depthTest 默认即为 true。远端雾感由片元里 mix(uFogColor,...) 承接。
+  var mat = new THREE.ShaderMaterial({ uniforms: uniforms, vertexShader: VOXEL_VERT, fragmentShader: VOXEL_FRAG });
   var mesh = new THREE.InstancedMesh(geo, mat, count);
   mesh.frustumCulled = false;
   mesh.renderOrder = 4;
@@ -1472,7 +1561,7 @@ function ensureVoxelCity() {
     uRippleColor: { value: new C(0.2, 0.9, 1.0) }, uRippleColorHot: { value: new C(1, 1, 1) }, uGlowIntensity: { value: 1.0 },
     uBgLight: { value: 0 }
   };
-  var fbMat = new THREE.ShaderMaterial({ uniforms: _voxFbUniforms, vertexShader: VOX_FB_VERT, fragmentShader: VOX_FB_FRAG, transparent: true });
+  var fbMat = new THREE.ShaderMaterial({ uniforms: _voxFbUniforms, vertexShader: VOX_FB_VERT, fragmentShader: VOX_FB_FRAG, transparent: true, depthWrite: false });   // 透明发光块不写深度(标准做法):省带宽 + 被前面不透明地形正确遮挡(depthTest 仍开)
   _voxFbMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), fbMat, VOX_FB_COUNT);
   _voxFbMesh.frustumCulled = false; _voxFbMesh.renderOrder = 4; _voxFbMesh.visible = false;
   _voxFbBlocks = [];
@@ -1496,7 +1585,7 @@ function ensureVoxelCity() {
   _voxMeteorMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   _voxMeteorMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.4, 1.2, 0.4), _voxMeteorMat, MAX_VOX_METEORS);
   _voxMeteorMesh.frustumCulled = false; _voxMeteorMesh.renderOrder = 5; _voxMeteorMesh.visible = false;
-  _voxParticleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.6 });
+  _voxParticleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.6, depthWrite: false });   // 拖尾粒子不写深度(标准):省带宽,depthTest 仍开、被地形正确遮挡
   _voxParticleMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), _voxParticleMat, MAX_VOX_PARTICLES);
   _voxParticleMesh.frustumCulled = false; _voxParticleMesh.renderOrder = 5; _voxParticleMesh.visible = false;
 
@@ -1529,12 +1618,11 @@ function ensureVoxelCity() {
   _voxBackdrop.position.y = 0.35;
   _voxBackdrop.frustumCulled = false; _voxBackdrop.renderOrder = 2; _voxBackdrop.visible = false;   // 在地形(renderOrder 4)之下;仅自定义背景显示
   platter.add(_voxBackdrop);
-  // 缝隙封底盘:不透明、颜色跟随调色板(uBaseColor1/2 共享引用), 核心区 alpha=1 彻底堵住柱缝漏光,
-  // 边缘按柱体同款 55→78 衰减淡出无硬边;柱体/缝隙几何一根不动, 默认黑底不显示(观感逐位不变)
+  // 缝隙封底盘默认堵住柱缝；图片/视频背景时降到近透明，避免形成遮挡壁纸的黑方块。
   var _sfMat = new THREE.ShaderMaterial({
-    uniforms: { uC1: uniforms.uBaseColor1, uC2: uniforms.uBaseColor2, uScale: uniforms.uScale },
+    uniforms: { uC1: uniforms.uBaseColor1, uC2: uniforms.uBaseColor2, uScale: uniforms.uScale, uBgLight: { value: 0 } },
     vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: 'varying vec2 vP; uniform vec3 uC1, uC2; uniform float uScale; void main(){ float d = length(vP) / max(uScale, 0.001); float a = 1.0 - smoothstep(55.0, 78.0, d); gl_FragColor = vec4(mix(uC1, uC2, 0.35), a); }',
+    fragmentShader: 'varying vec2 vP; uniform vec3 uC1, uC2; uniform float uScale, uBgLight; void main(){ float d = length(vP) / max(uScale, 0.001); float a = (1.0 - smoothstep(55.0, 78.0, d)) * mix(1.0, 0.14, uBgLight); gl_FragColor = vec4(mix(uC1, uC2, 0.35), a); }',
     transparent: true, depthWrite: false });
   _voxSeamFloor = new THREE.Mesh(new THREE.CircleGeometry(82 * _vscale, 64), _sfMat);
   _voxSeamFloor.rotation.x = -Math.PI / 2;
@@ -1542,7 +1630,11 @@ function ensureVoxelCity() {
   _voxSeamFloor.frustumCulled = false; _voxSeamFloor.renderOrder = 1; _voxSeamFloor.visible = false;
   platter.add(_voxSeamFloor);
   platter.add(mesh); platter.add(_voxFbMesh); platter.add(_voxMeteorMesh); platter.add(_voxParticleMesh);
-  scene.add(platter);
+  // 内容根组只承接双手直接缩放；转盘仍在其内部独立自转，不让缩放复用相机滚轮参数。
+  var contentRoot = new THREE.Group();
+  contentRoot.scale.setScalar(_voxGestureContentScale);
+  contentRoot.add(platter);
+  scene.add(contentRoot);
 
   // 幽灵封面 3D 层(原作 MapScene.tsx:678-696):独立平面,挂 scene(不进转盘组 → 不随转盘自转)。
   //   位置/朝向 = 原作 COVER_SCREEN_POSITION[110,24,-110] / COVER_SCREEN_ROTATION[0,-π/4,0];尺寸 140×140。
@@ -1554,15 +1646,17 @@ function ensureVoxelCity() {
     uTextureSize: { value: new THREE.Vector2(512.0, 512.0) },
     uTime: { value: 0 }, uPulse: { value: 0 }, uBgLight: { value: 0 }
   };
-  var _coverMat = new THREE.ShaderMaterial({ uniforms: _coverUniforms, vertexShader: VOX_COVER_VERT, fragmentShader: VOX_COVER_FRAG, transparent: true, depthWrite: false });
+  // 地形改不透明写深度后(b8c557e),远端柱体把远景 z 全写满 → 封面平面(110,24,-110)
+  // 若仍开 depthTest 会被整块剔除。幽灵封面本就是叠层氛围,不参与物理遮挡。
+  var _coverMat = new THREE.ShaderMaterial({ uniforms: _coverUniforms, vertexShader: VOX_COVER_VERT, fragmentShader: VOX_COVER_FRAG, transparent: true, depthWrite: false, depthTest: false });
   var _coverPlane = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), _coverMat);
   _coverPlane.position.set(110, 24, -110);
   _coverPlane.rotation.set(0, -Math.PI / 4, 0);
-  _coverPlane.frustumCulled = false; _coverPlane.renderOrder = 3; _coverPlane.visible = false;
-  scene.add(_coverPlane);
+  _coverPlane.frustumCulled = false; _coverPlane.renderOrder = 6; _coverPlane.visible = false;
+  contentRoot.add(_coverPlane);   // 进 contentRoot 承接双手直缩;仍不入转盘组 → 不随转盘自转
 
   // 原作无地板:柱体透明处直接露出 app 背景(voxBg 系统 / scene.background),行为等同原作叠 HTML 背景。
-  voxelCity = { mesh: mesh, uniforms: uniforms, scale: _vscale, grid: gridSize, platter: platter, coverPlane: _coverPlane, coverUniforms: _coverUniforms };
+  voxelCity = { mesh: mesh, uniforms: uniforms, scale: _vscale, grid: gridSize, contentRoot: contentRoot, platter: platter, coverPlane: _coverPlane, coverUniforms: _coverUniforms };
   return voxelCity;
 }
 
@@ -1601,7 +1695,7 @@ function updateVoxelCity(dt) {
     if (_voxSeamFloor) _voxSeamFloor.visible = false; // 缝隙封底盘同理
     if (voxelCity && voxelCity.coverPlane) voxelCity.coverPlane.visible = false;
     if (_voxFogSet) { scene.fog = _voxPrevFog; _voxFogSet = false; _voxApplyBg(); if (_voxPrevFar && camera) { camera.far = _voxPrevFar; camera.updateProjectionMatrix(); _voxPrevFar = 0; } }   // 还原雾+far;背景按自定义重设
-    if (document.body && document.body.classList.contains('vox-on')) { document.body.classList.remove('vox-on'); _voxDockPlaylist(false); _voxToggleParticleSliders(false); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); }   // 退出体素:歌单移回原位 + 恢复 DPR/帧率
+    if (document.body && document.body.classList.contains('vox-on')) { document.body.classList.remove('vox-on'); _voxToggleParticleSliders(false); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); _dockVisualPlaylist('voxel', null, false); }   // 退出体素:恢复通用歌单入口、DPR和帧率
     return;
   }
   // voxRes 可经预设快照直写(applyFxArchiveSnapshot 直改 fx.voxRes,不走 setVoxRes/rebuild)变更:与已建网格不一致时重建
@@ -1609,7 +1703,7 @@ function updateVoxelCity(dt) {
   var vc = ensureVoxelCity(); if (!vc) return;
   vc.mesh.visible = true;
   if (_voxFbMesh) _voxFbMesh.visible = !(fx && fx.voxFloatBlocks === false);   // 「悬浮方块」开关(蓝色方块+白色线框方块)
-  if (document.body && !document.body.classList.contains('vox-on')) { document.body.classList.add('vox-on'); _voxDockPlaylist(true); _voxToggleParticleSliders(true); _voxApplyBg(); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); }   // 体素预设:歌单迁进视觉控制台 + 应用自定义背景 + 触发 DPR/限帧重算
+  if (document.body && !document.body.classList.contains('vox-on')) { document.body.classList.add('vox-on'); _voxToggleParticleSliders(true); _voxApplyBg(); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); var host = document.getElementById('vox-playlist-host'); if (host) _dockVisualPlaylist('voxel', host, true); }   // 体素预设:应用专属控件、背景和性能策略
   var fdt = dt || 0.016;
   _voxClock += fdt;     // 原作:时钟始终推进(暂停时 idle 海面继续起伏,不冻结)
   // 转盘自转(原作 MapScene.tsx:366-369 + sceneDefaults.ts:19-21 rotationSpeed 0.15):旋转整组(地形+悬浮块+流星+粒子),涟漪/流星局部坐标不受影响。
@@ -1637,16 +1731,29 @@ function updateVoxelCity(dt) {
   var s = _voxSmooth, u = vc.uniforms;
   u.uTime.value = _voxClock;
   // 是否自定义亮背景:体素专属背景(voxBg*)或全局背景系统(纯色/图片/视频)——此前漏了全局路径, 亮图当底时城区糊成大黑块
-  var _voxBg = !!(fx && (fx.voxBgColor || fx.voxBgImage || fx.backgroundColorCustom || fx.backgroundImage || fx.backgroundMedia));
+  var _voxPerspective = _voxPerspectiveBackgroundActive();
+  var _voxBg = !!(fx && (fx.voxBgColor || fx.voxBgImage || fx.backgroundColorCustom || fx.backgroundImage || fx.backgroundMedia)) || _voxPerspective;
   if (u.uBgLight) u.uBgLight.value = _voxBg ? 1 : 0;   // 地形:亮背景时远端雾染黑改融向透明,消除右侧竖向暗噪
+  var _voxMedia = _voxBg ? 1 : 0;
+  if (u.uBgMedia) u.uBgMedia.value = _voxMedia;
+  if (vc.mesh && vc.mesh.material && vc.mesh.material.transparent !== !!_voxMedia) {
+    vc.mesh.material.transparent = !!_voxMedia;
+  }
   if (_voxBackdrop) {
     _voxBackdrop.visible = _voxBg;   // 暗底盘仅自定义亮背景时显示,消除露底漏条;黑底隐藏(观感逐位不变)
-    if (_voxSeamFloor) _voxSeamFloor.visible = _voxBg;   // 缝隙封底盘同门槛:柱缝露地面不露背景, 转动不再扫出亮线
+    if (_voxSeamFloor) {
+      _voxSeamFloor.visible = _voxBg;
+      var _sfu = _voxSeamFloor.material && _voxSeamFloor.material.uniforms;
+      if (_sfu && _sfu.uBgLight) {
+        _sfu.uBgLight.value = (_voxPerspective || (fx && (fx.backgroundMedia || fx.backgroundImage || fx.voxBgImage))) ? 1 : 0;
+      }
+    }
     var _bdu = _voxBackdrop.material && _voxBackdrop.material.uniforms;
     if (_bdu && _bdu.uBgLight) {
       _bdu.uBgLight.value = _voxBg ? 1 : 0;   // 亮背景时暗盘不再是黑块(避免在亮底现成大黑碗)
-      if (fx && fx.voxBgColor) { _bdu.uBgColor.value.set(fx.voxBgColor); }   // 纯色背景:暗盘融向该色 → 缝隙露盘=露背景,无黑块无缝
-      else { _bdu.uBgColor.value.setRGB(0.6, 0.66, 0.74); }                  // 图片背景无单色:取中性浅色兜底,低 alpha 软垫
+      if (_voxPerspective || (fx && (fx.backgroundMedia || fx.backgroundImage || fx.voxBgImage))) { _bdu.uBgColor.value.setRGB(0.6, 0.66, 0.74); }
+      else if (fx && fx.voxBgColor) { _bdu.uBgColor.value.set(fx.voxBgColor); }
+      else { _bdu.uBgColor.value.setRGB(0.6, 0.66, 0.74); }
     }
   }
 
@@ -1762,6 +1869,7 @@ function updateVoxelCity(dt) {
     fu.uWarmCore.value.copy(u.uWarmCore.value); fu.uWarmEdge.value.copy(u.uWarmEdge.value);
     fu.uRippleColor.value.copy(u.uRippleColor.value);
     if (fu.uRippleColorHot && u.uRippleColorHot) fu.uRippleColorHot.value.copy(u.uRippleColorHot.value);
+    var _floatBlockScale = voxFloatBlockScaleValue(fx && fx.voxFloatBlockScale);               // 一帧只归一化一次，80 个实例复用
     if (_voxFbMesh.visible) for (var _bi = 0; _bi < VOX_FB_COUNT; _bi++) {
       var _blk = _voxFbBlocks[_bi];
       var _bob = Math.sin(_voxClock * (0.55 + _blk.rotationSpeed) + _blk.phase) * 0.45;    // 原作 506
@@ -1772,7 +1880,7 @@ function updateVoxelCity(dt) {
         _voxClock * _blk.rotationSpeed * 0.45
       );                                                                                   // 原作 508-512
       _voxFbQuat.setFromEuler(_voxFbEuler);
-      var _scl = _blk.baseScale * _pulseScale;                                             // 原作 514
+      var _scl = _blk.baseScale * _pulseScale * _floatBlockScale;                             // 100%=原版，200%=移植版大方块观感
       _voxDummyScale.set(_scl, _scl, _scl);
       _voxDummyMat.compose(_voxDummyPos, _voxFbQuat, _voxDummyScale);
       _voxFbMesh.setMatrixAt(_bi, _voxDummyMat);
@@ -1794,26 +1902,40 @@ function updateVoxelCity(dt) {
     var _b2 = u.uBaseColor2.value;
     // app 级「背景媒体」(mp4视频/图片,DOM 层)也算自定义背景:scene.background 必须留 null 让 canvas 透明,
     // 否则进体素预设时大气色把视频盖死(用户实测:开机视频显示几秒→预设恢复→被顶下去)
-    if (fx.voxBgColor || fx.voxBgImage) { _voxApplyBg(); }  // 体素专属自定义背景优先,体素让位
+    if (_voxPerspectiveBackgroundActive()) { scene.background = null; } // 透视摄像头在 DOM 底层，canvas 必须透明
+    else if (fx.voxBgColor || fx.voxBgImage) { _voxApplyBg(); }  // 体素专属自定义背景优先,体素让位
     else if (fx.backgroundMedia) { scene.background = null; }      // 视频背景让位:canvas 透明透出 DOM 视频层
     else if (fx.backgroundImage) { scene.background = null; _voxApplyGlobalImageBg(); }   // 全局图片背景:镜像进场景, 柱缝露图不漏光(加载完成前保持透明)
+    else if (fx.backgroundColorCustom) { scene.background = null; } // 纯色也是 DOM 背景，体素 canvas 让位
     else scene.background = new THREE.Color(bc.r * 0.6 + _b2.r * 0.4, bc.g * 0.6 + _b2.g * 0.4, bc.b * 0.6 + _b2.b * 0.4);
     _voxFogSet = true;
   } else if (scene.fog && scene.fog.color) {
     scene.fog.color.lerp(u.uBaseColor1.value, 3.0 * fdt);   // 原作 fog.color lerp uBaseColor1
-    if (fx.backgroundMedia && scene.background) { scene.background = null; }   // 运行中途设了视频背景:立即让位
-    else if (!fx.voxBgColor && !fx.voxBgImage && fx.backgroundImage) { _voxApplyGlobalImageBg(); _voxSyncGlobalBgAspect(); }   // 全局图片:确保已镜像 + 跟随窗口宽高比(中途设图也生效)
+    var _voxPerspectiveRuntime = _voxPerspectiveBackgroundActive();
+    if ((_voxPerspectiveRuntime || fx.backgroundMedia || fx.backgroundColorCustom) && scene.background) { scene.background = null; }   // DOM 背景:运行中立即让位
+    else if (!_voxPerspectiveRuntime && !fx.voxBgColor && !fx.voxBgImage && fx.backgroundImage) { _voxApplyGlobalImageBg(); _voxSyncGlobalBgAspect(); }   // 全局图片:确保已镜像 + 跟随窗口宽高比(中途设图也生效)
     else if (!fx.voxBgColor && !fx.voxBgImage && !fx.backgroundImage && _voxIsGlobalMirrorTex(scene.background)) {
       var _bbr1 = u.uBaseColor1.value, _bbr2 = u.uBaseColor2.value;   // 中途删了全局图片:镜像退场, 恢复大气色
       _voxGlobalBgKey = '';
       scene.background = new THREE.Color(_bbr1.r * 0.6 + _bbr2.r * 0.4, _bbr1.g * 0.6 + _bbr2.g * 0.4, _bbr1.b * 0.6 + _bbr2.b * 0.4);
     }
-    if (!fx.voxBgColor && !fx.voxBgImage && scene.background && scene.background.isColor) {      // 无自定义背景时:大气色跟随 base1/base2
+    if (!_voxPerspectiveRuntime && !fx.backgroundMedia && !fx.backgroundImage && !fx.backgroundColorCustom && !fx.voxBgColor && !fx.voxBgImage && !scene.background) {
+      var _restoreBg1 = u.uBaseColor1.value, _restoreBg2 = u.uBaseColor2.value;
+      scene.background = new THREE.Color(
+        _restoreBg1.r * 0.6 + _restoreBg2.r * 0.4,
+        _restoreBg1.g * 0.6 + _restoreBg2.g * 0.4,
+        _restoreBg1.b * 0.6 + _restoreBg2.b * 0.4
+      );
+    }
+    if (!fx.backgroundColorCustom && !fx.voxBgColor && !fx.voxBgImage && scene.background && scene.background.isColor) {      // 无自定义背景时:大气色跟随 base1/base2
       var _bb1 = u.uBaseColor1.value, _bb2 = u.uBaseColor2.value;
       scene.background.setRGB(_bb1.r * 0.6 + _bb2.r * 0.4, _bb1.g * 0.6 + _bb2.g * 0.4, _bb1.b * 0.6 + _bb2.b * 0.4);
     }
   }
   _voxUpdateMeteors(fdt, u.uWarmCore.value);
   _voxUpdateParticles(fdt);
+  if (typeof _voxDrag !== 'undefined' && typeof tickVoxelPointerDragState === 'function') {
+    tickVoxelPointerDragState(_voxCam, fdt, _voxCam.radius, _voxDrag);
+  }
   _voxUpdateCamera(fdt);
 }

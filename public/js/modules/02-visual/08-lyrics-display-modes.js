@@ -2,6 +2,7 @@ var STAGE_LYRIC_MAX_LINES = 1;
 var STAGE_LYRIC_DISPLAY_MODES = { single: 1, dual: 1, triple: 1, cinema: 1, custom: 1 };
 var STAGE_LYRIC_TRANSLATION_MODES = { off: 1, current: 1, dual: 1, multi: 1 };
 var STAGE_LYRIC_MOTION_STYLES = { glass: 1, smooth: 1, float: 1, quick: 1, shine: 1, glitch: 1 };
+var STAGE_LYRIC_TRANSITION_STYLES = { original: 1, crossfade: 1, rise: 1, slide: 1, focus: 1 };
 
 function normalizeLyricDisplayMode(mode) {
   mode = String(mode || 'single');
@@ -38,11 +39,44 @@ function normalizeLyricMotionStyle(style) {
   style = String(style || 'float');
   return STAGE_LYRIC_MOTION_STYLES[style] ? style : 'float';
 }
+function normalizeLyricTransitionStyle(style) {
+  style = String(style || 'original');
+  if (style === 'quick') style = 'crossfade';
+  if (style === 'scale') style = 'focus';
+  return STAGE_LYRIC_TRANSITION_STYLES[style] ? style : 'original';
+}
+function lyricTransitionSpeedValue() {
+  return clampRange(fx && fx.lyricTransitionSpeed == null ? fxDefaults.lyricTransitionSpeed : Number(fx && fx.lyricTransitionSpeed), 0.55, 1.65);
+}
+function lyricReduceMotionPreferred() {
+  try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { return false; }
+}
+function lyricTransitionProfile(motion) {
+  var style = normalizeLyricTransitionStyle(fx && fx.lyricTransitionStyle);
+  var speed = lyricTransitionSpeedValue();
+  var reduced = lyricReduceMotionPreferred();
+  if (style === 'original' || style === 'crossfade') {
+    motion = motion || lyricMotionProfile();
+    if (!reduced) return { style: style, enter: motion.enter / speed, exit: motion.exit / speed, reduced: false };
+    return { style: style, enter: 0.22, exit: 0.22, reduced: true };
+  }
+  var duration = reduced ? 0.22 : 0.46;
+  if (style === 'rise') duration = reduced ? 0.22 : 0.52;
+  else if (style === 'slide') duration = reduced ? 0.22 : 0.48;
+  else if (style === 'focus') duration = reduced ? 0.24 : 0.56;
+  duration /= speed;
+  return { style: style, enter: duration * 1.12, exit: duration, reduced: reduced };
+}
 function lyricContextOpacityValue() {
   return clampRange(fx && fx.lyricContextOpacity == null ? fxDefaults.lyricContextOpacity : Number(fx && fx.lyricContextOpacity), 0.25, 1);
 }
 function lyricContextSpreadValue() {
   return clampRange(fx && fx.lyricContextSpread == null ? fxDefaults.lyricContextSpread : Number(fx && fx.lyricContextSpread), 0.60, 2.40);
+}
+function lyricNonTranslationSlotStepValue() {
+  // 翻译关闭时,虚拟行距原本 = 原始整数 n(= 恰好 1 个行高)→ 双行/多行模式上下句零间隙贴死 = 用户反复截图的"他俩重叠"。
+  // 乘一个 >1 的系数给出可见行距,并让 lyricContextSpread 滑块在无翻译布局下也生效(此前 line 91 硬返回 n,spread 对它完全无效)。
+  return clampRange(1.24 + (lyricContextSpreadValue() - 1) * 0.16, 1.12, 1.66);
 }
 function lyricTranslationGapValue() {
   return clampRange(fx && fx.lyricTranslationGap == null ? fxDefaults.lyricTranslationGap : Number(fx && fx.lyricTranslationGap), 0.28, 2.20);
@@ -88,7 +122,7 @@ function lyricPrimaryVirtualPrefixKey() {
 function lyricPrimaryVirtualIndex(index) {
   var n = Math.round(Number(index) || 0);
   if (!isFinite(n) || n === 0) return 0;
-  if (!lyricTranslationLayoutActive()) return n;
+  if (!lyricTranslationLayoutActive()) return n * lyricNonTranslationSlotStepValue();
   if (n < 0) return n * lyricPrimarySlotStepValue();
   var key = lyricPrimaryVirtualPrefixKey();
   if (!lyricPrimaryVirtualPrefixCache || lyricPrimaryVirtualPrefixCache.key !== key) {
@@ -166,7 +200,7 @@ function lyricMotionProfile() {
   } else if (style === 'shine') {
     profile.enter = 0.50; profile.exit = 0.44; profile.slide = 0.34; profile.progressEase *= 1.02; profile.contextDrift = 0.052; profile.edgeBoost = 1.42; profile.sweep = 1.22; profile.shimmer = 0.34; profile.glowLift = 1.30; profile.floatAmp = 0.82;
   } else if (style === 'glitch') {
-    profile.enter = 0.40; profile.exit = 0.36; profile.slide = 0.30; profile.progressEase *= 1.24; profile.contextDrift = 0.035; profile.edgeBoost = 1.18; profile.sweep = 0.54; profile.shimmer = 0.28; profile.glitch = lyricGlitchIntensityValue(); profile.glitchSlice = lyricGlitchSliceValue(); profile.glitchChroma = lyricGlitchChromaValue(); profile.glitchRate = lyricGlitchRateValue(); profile.glitchJitter = lyricGlitchJitterValue(); profile.glitchCameraBind = !!(fx && fx.lyricGlitchCameraBind); profile.glowLift = 1.08 + profile.glitch * 0.10; profile.floatAmp = 0.70;
+    profile.enter = 0.40; profile.exit = 0.36; profile.slide = 0.38; profile.progressEase *= 1.24; profile.contextDrift = 0.058; profile.edgeBoost = 1.18; profile.sweep = 0.54; profile.shimmer = 0.28; profile.glitch = lyricGlitchIntensityValue(); profile.glitchSlice = lyricGlitchSliceValue(); profile.glitchChroma = lyricGlitchChromaValue(); profile.glitchRate = lyricGlitchRateValue(); profile.glitchJitter = lyricGlitchJitterValue(); profile.glitchCameraBind = !!(fx && fx.lyricGlitchCameraBind); profile.glowLift = 1.08 + profile.glitch * 0.10; profile.floatAmp = 0.70;
   } else if (style === 'quick') {
     profile.enter = 0.36; profile.exit = 0.32; profile.slide = 0.22; profile.progressEase *= 1.34; profile.contextDrift = 0.034; profile.edgeBoost = 0.70; profile.sweep = 0.28; profile.shimmer = 0.10; profile.glowLift = 0.86; profile.floatAmp = 0.62;
   } else {

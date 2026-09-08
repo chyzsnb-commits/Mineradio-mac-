@@ -49,6 +49,15 @@ var lyricBaseQuat = new THREE.Quaternion();
 var lyricTiltQuat = new THREE.Quaternion();
 var lyricTargetQuat = new THREE.Quaternion();
 var LYRIC_CAMERA_LOCK_MAX_SCALE = 0.80;
+var STAGE_LYRIC_REFERENCE_DISTANCE = 6.6;
+// p12/p13 远景机位让世界空间歌词缩小。只用初始机位补偿，保留滚轮变焦的屏幕缩放语义。
+function stageLyricPresetScale(preset, cameraDistance, referenceDistance, presetBaselineDistance) {
+  if (Number(preset) !== 12 && Number(preset) !== 13) return 1;
+  var reference = Math.max(0.1, Number(referenceDistance) || STAGE_LYRIC_REFERENCE_DISTANCE);
+  var fallbackDistance = Math.max(reference, Number(cameraDistance) || reference);
+  var baselineDistance = Math.max(reference, Number(presetBaselineDistance) || fallbackDistance);
+  return baselineDistance / reference;
+}
 function setStageLyricViewBasisFromCameraOrQuaternion(fallbackQuat) {
   if (fallbackQuat) {
     lyricCameraDir.set(0, 0, 1).applyQuaternion(fallbackQuat);

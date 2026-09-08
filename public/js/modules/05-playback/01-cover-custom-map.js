@@ -25,12 +25,16 @@ function saveCustomCoverMap() {
 function isInlineCoverSrc(src) {
   return typeof src === 'string' && (/^data:image\//i.test(src) || /^blob:/i.test(src));
 }
+function isLocalMediaSchemeUrl(url) {
+  return typeof url === 'string' && /^mineradio-local:\/\//i.test(url);
+}
 function isProxyableCoverUrl(url) {
   return /^https?:\/\//i.test(String(url || ''));
 }
 function coverProxySrc(url, cacheBust) {
   if (!url) return '';
   if (isInlineCoverSrc(url)) return url;
+  if (isLocalMediaSchemeUrl(url)) return url;
   if (!isProxyableCoverUrl(url)) return '';
   return '/api/cover?url=' + encodeURIComponent(url) + (cacheBust ? '&v=' + Date.now() : '');
 }
@@ -40,6 +44,19 @@ function coverUrlWithSize(url, size) {
   var param = 'param=' + size + 'y' + size;
   if (/[?&]param=\d+y\d+/i.test(url)) return url.replace(/([?&])param=\d+y\d+/i, '$1' + param);
   return url + (url.indexOf('?') >= 0 ? '&' : '?') + param;
+}
+// Dynamic cover/avatar URLs often come from remote provider JSON. Keep the
+// existing HTML rendering paths, but make the value inert before it enters a
+// quoted attribute. Runtime-created Image.src assignments remain preferred.
+function safeMarkupAttr(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+function coverMarkupSrc(url, size) {
+  return safeMarkupAttr(coverUrlWithSize(url, size));
 }
 function songCustomCoverKey(song) {
   if (!song) return '';

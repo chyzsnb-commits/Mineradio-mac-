@@ -23,6 +23,22 @@ if (window.__mineradioPerf && typeof window.__mineradioPerf.registerRenderState 
   window.__mineradioPerf = renderPerfState;
 }
 var splashWarmRenderLast = 0;
+// DOM 滚动与 Three.js 共用主线程；滚动期间把 3D 预算压到 20 FPS，滚轮事件
+// 先于实际 scroll 事件到达，因此两者都只更新时间戳，不做布局读取或 DOM 重建。
+var documentScrollActiveUntil = 0;
+var documentScrollPerf = { events: 0, lastAt: 0 };
+window.__mineradioScrollPerf = documentScrollPerf;
+function isDocumentScrollActive(now) {
+  return (Number(now) || performance.now()) < documentScrollActiveUntil;
+}
+function markDocumentScrollActivity() {
+  documentScrollActiveUntil = performance.now() + 180;
+  documentScrollPerf.events += 1;
+  documentScrollPerf.lastAt = performance.now();
+  if (window.__mineradioPerf && window.__mineradioPerf.count) window.__mineradioPerf.count('scroll.event');
+}
+document.addEventListener('wheel', markDocumentScrollActivity, { passive: true, capture: true });
+document.addEventListener('scroll', markDocumentScrollActivity, { passive: true, capture: true });
 function isMainSceneCoveredBySplash() {
   return document.body.classList.contains('splash-active') && !document.body.classList.contains('splash-revealing');
 }
@@ -36,31 +52,21 @@ function currentRenderAdaptiveContext(now) {
 }
 function resolveAdaptiveRenderCadence(now, mode) {
   if (isDeepBackgroundMode()) return null;
+  if (isDocumentScrollActive(now) || (typeof isHomeRecentScrollActive === 'function' && isHomeRecentScrollActive(now))) return null;
   mode = mode || ((typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive');
   if (mode !== 'adaptive' || RENDER_VISIBLE_VSYNC || typeof selectAdaptiveRenderCadence !== 'function') return null;
   var context = currentRenderAdaptiveContext(now);
   return selectAdaptiveRenderCadence(context.kind, context.tier);
 }
-// 前台帧率治理钩子(P1):vsync 分支不再无条件放行满帧,而是问治理器要一个上限,复用现有 minGap 跳帧机制。
-//  返回 >0 = 帧率上限(fps);返回 0 = 不设限(真 vsync)。
-//  - eco(用户显式选低配):立即硬上限 30fps,不等治理器 16s 爬坡。
-//  - auto + vsync + 未手动钉死 maxFps:治理器降档时返回 45/30;未降档时高刷屏(>62Hz)钳到 60,
-//    60Hz 屏返 0 保持真 vsync(避免 minGap 在 ~16.7ms vsync 抖动下误跳帧成半速)。
-//  - 其余(非 auto/eco、numeric 固定帧率、手动 maxFps):返回 0,完全不碰。
+// 前台可见运动默认保持显示器 VSync。只有用户显式选择 eco 时才锁 30fps，
+// 自动质量只调整实际生效的视觉预算，不能把前台运动偷偷降为 45/30fps。
 function foregroundFpsGovernorCap() {
   if (typeof fx === 'undefined' || !fx) return 0;
   var quality = (typeof normalizePerformanceQuality === 'function')
     ? normalizePerformanceQuality(fx.performanceQuality) : String(fx.performanceQuality || '');
   if (quality === 'eco') return 30;
   if (quality !== 'auto') return 0;
-  var mode = (typeof normalizeForegroundFpsMode === 'function')
-    ? normalizeForegroundFpsMode(fx.foregroundFpsMode) : String(fx.foregroundFpsMode || 'vsync');
-  if (mode !== 'vsync') return 0;
-  if (fx.maxFps > 0) return 0;
-  var gov = (typeof autoGovForegroundFps === 'function') ? autoGovForegroundFps() : 60;
-  if (gov < 60) return gov;
-  var hz = (typeof estimatedDisplayRefreshHz === 'function') ? estimatedDisplayRefreshHz() : 60;
-  return hz > 62 ? 60 : 0;
+  return 0;
 }
 function getAdaptiveRenderFps(now) {
   if (isDeepBackgroundMode()) return 1;
@@ -69,8 +75,11 @@ function getAdaptiveRenderFps(now) {
   if (typeof isVisibleBackgroundMode === 'function' && isVisibleBackgroundMode()) return 15;
   var mode = (typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive';
   var fixedFps = (typeof foregroundFixedFpsForMode === 'function') ? foregroundFixedFpsForMode(mode) : null;
+  if (isDocumentScrollActive(now) || (typeof isHomeRecentScrollActive === 'function' && isHomeRecentScrollActive(now))) {
+    return fixedFps !== null && fixedFps > 0 ? Math.min(20, fixedFps) : 20;
+  }
   if (fixedFps !== null) {
-    if (fixedFps === 0) return foregroundFpsGovernorCap();   // vsync:交给治理器决定上限(45/30/60 钳位)或 0=真 vsync
+    if (fixedFps === 0) return foregroundFpsGovernorCap();   // vsync；仅用户显式 eco 会要求 30fps
     return fixedFps;                                          // 用户显式选的固定帧率,原样返回
   }
   if (RENDER_VISIBLE_VSYNC) return foregroundFpsGovernorCap();
@@ -176,12 +185,14 @@ function shouldSkipAdaptiveRenderFrame(now) {
     return false;
   }
   var minGap = 1000 / fps;
-  if (now - renderPerfState.lastRenderAt < minGap) {
+  var elapsed = now - renderPerfState.lastRenderAt;
+  if (elapsed < minGap) {
     renderPerfState.skipped += 1;
     if (window.__mineradioPerf && window.__mineradioPerf.count) window.__mineradioPerf.count('frame.skipped');
     return true;
   }
-  renderPerfState.lastRenderAt = now;
+  // 保留帧间隔余量，避免 60Hz 屏上的 45/30/18 FPS 被取整抖动降成 30/20/15 FPS。
+  renderPerfState.lastRenderAt = now - (Math.max(elapsed, minGap) % minGap);
   return false;
 }
 function sampleRenderPerf(now, dt) {
@@ -211,18 +222,66 @@ var mainLoopAnimationRequested = false;
 
 // 判断前台是否处于"空闲"状态：不播放 + 无交互 + 歌单架未打开/预览。
 // 空闲时 renderer.render 降到极低帧率（uTime 仍累积，粒子不会冻住，只是低帧更新）。
+// 暂停后：等舞台歌词完全褪去，再等 IDLE_AFTER_LYRIC_FADE_MS 才真正进入空闲降帧，避免字幕还在淡出就掉帧。
+var IDLE_AFTER_LYRIC_FADE_MS = 3000;
+var idleLyricClearSince = 0;
+function stageLyricsStillVisible() {
+  try {
+    if (typeof fx !== 'undefined' && fx && fx.particleLyrics === false) return false;
+    if (typeof stageLyrics === 'undefined' || !stageLyrics) return false;
+    if (stageLyrics.outgoing && stageLyrics.outgoing.length) return true;
+    if (stageLyrics.current) {
+      var data = stageLyrics.current.userData;
+      var op = data && (data.globalOpacity != null
+        ? Number(data.globalOpacity)
+        : (data.textMat && data.textMat.uniforms && data.textMat.uniforms.uOpacity
+          ? Number(data.textMat.uniforms.uOpacity.value)
+          : 1));
+      if (!(op < 0.05)) return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
 function isForegroundIdleForRender(now) {
+  now = now || performance.now();
   // 正在播放 → 不算空闲（音频驱动的视觉必须跟帧）
-  if (playing && audio && !audio.paused) return false;
+  if (playing && audio && !audio.paused) {
+    idleLyricClearSince = 0;
+    return false;
+  }
   // 正在加载/换源/切歌中 → 不算空闲（避免渲染停-启搞崩 WebGL 上下文导致黑屏）
-  if (typeof playToggleBusy !== 'undefined' && playToggleBusy) return false;
+  if (typeof playToggleBusy !== 'undefined' && playToggleBusy) {
+    idleLyricClearSince = 0;
+    return false;
+  }
   // 最近有交互（鼠标/键盘）→ 不算空闲
-  if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive(now)) return false;
+  if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive(now)) {
+    idleLyricClearSince = 0;
+    return false;
+  }
   // 歌单架打开或预览中 → 歌单架有持续动效，不算空闲
-  if (typeof shelfManager !== 'undefined' && shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return false;
-  if (typeof shelfPreviewIsVisible === 'function' && shelfPreviewIsVisible()) return false;
-  // 桌面歌词/壁纸模式激活 → 这些需要持续渲染
-  if (fx && (fx.desktopLyrics || fx.wallpaperMode)) return false;
+  if (typeof shelfManager !== 'undefined' && shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) {
+    idleLyricClearSince = 0;
+    return false;
+  }
+  if (typeof shelfPreviewIsVisible === 'function' && shelfPreviewIsVisible()) {
+    idleLyricClearSince = 0;
+    return false;
+  }
+  // 桌面歌词需要持续渲染；壁纸模式允许在真正空闲后降帧省电（但绝不能误进深睡眠砍分辨率，见 isDeepBackgroundMode）
+  if (fx && fx.desktopLyrics) {
+    idleLyricClearSince = 0;
+    return false;
+  }
+  // 字幕仍在显示或淡出中 → 保持满帧；完全消失后开始计 3s 阀值
+  if (stageLyricsStillVisible()) {
+    idleLyricClearSince = 0;
+    return false;
+  }
+  if (!idleLyricClearSince) idleLyricClearSince = now;
+  if (now - idleLyricClearSince < IDLE_AFTER_LYRIC_FADE_MS) return false;
   return true;
 }
 function mainLoopDeepBackgroundSleeping() {
@@ -230,11 +289,15 @@ function mainLoopDeepBackgroundSleeping() {
     && isDeepBackgroundMode()
     && !(typeof isLiveBackgroundKeepMode === 'function' && isLiveBackgroundKeepMode());
 }
-function mainLoopBackgroundDelayMs() {
-  if (!mainLoopDeepBackgroundSleeping()) return 0;
-  if (fx && (fx.desktopLyrics || fx.wallpaperMode)) return 250;
-  if (typeof isBackgroundReleaseMode === 'function' && isBackgroundReleaseMode()) return 1500;
-  return 1000;
+function mainLoopFrameDelayMs(now) {
+  if (mainLoopDeepBackgroundSleeping()) {
+    if (fx && (fx.desktopLyrics || fx.wallpaperMode)) return 250;
+    if (typeof isBackgroundReleaseMode === 'function' && isBackgroundReleaseMode()) return 1500;
+    return 1000;
+  }
+  if (typeof isVisibleBackgroundMode === 'function' && isVisibleBackgroundMode()) return 67;
+  if (isForegroundIdleForRender(now || performance.now())) return 500;
+  return 0;
 }
 function requestMainLoopAnimationFrame() {
   if (mainLoopAnimationRequested) return;
@@ -242,7 +305,7 @@ function requestMainLoopAnimationFrame() {
   requestAnimationFrame(animate);
 }
 function scheduleNextMainLoopFrame() {
-  var delay = mainLoopBackgroundDelayMs();
+  var delay = mainLoopFrameDelayMs(performance.now());
   if (delay > 0) {
     if (mainLoopBackgroundTimer) return;
     mainLoopBackgroundTimer = setTimeout(function () {
@@ -270,6 +333,10 @@ document.addEventListener('visibilitychange', function () {
   if (!mainLoopDeepBackgroundSleeping()) wakeMainLoopFromBackground();
 });
 window.addEventListener('focus', wakeMainLoopFromBackground);
+if (typeof audio !== 'undefined' && audio && typeof audio.addEventListener === 'function') {
+  audio.addEventListener('play', wakeMainLoopFromBackground);
+  audio.addEventListener('playing', wakeMainLoopFromBackground);
+}
 function mainLoopInteractionActive(now) {
   return (typeof isRenderInteractionActive === 'function') && isRenderInteractionActive(now);
 }
@@ -298,6 +365,14 @@ function targetMainAudioFps(now) {
     return capMainLoopFpsToDisplay(Math.max(30, Math.round(base * scale)));
   }
   return mainLoopInteractionActive(now) ? 30 : 24;
+}
+function targetMainVoxelAudioFps(now) {
+  if (isDeepBackgroundMode()) return 1;
+  if (!fx || Number(fx.preset) !== 10) return 8;
+  if (!(playing && audio && !audio.paused)) return 12;
+  // P10 的专用 512-bin 分析与显示帧解耦：频谱带有自身 0.8 平滑，30Hz 足以维持节拍与涟漪，
+  // 但避免在 60/120Hz 显示器上重复跑同一套通量计算而挤占交互和热预算。
+  return 30;
 }
 function targetMainShelfFps(now) {
   if (isDeepBackgroundMode()) return 1;
@@ -354,18 +429,13 @@ function animate() {
     tickDeepBackgroundFrame(now, deepDt);
     return;
   }
-  // 音域回响:音频/节拍满帧率泵(跳帧判断之前)——检测器语义按显示器帧率,与原作 useFrame 一致。
-  // 取舍(P3):满帧喂节拍检测最准(冷却/平滑/阈值自适应都按显示器帧率标定);但治理器把前台帧率降到 ≤45
-  // (含 eco 30)= 过热降载场景,发热优先,泵也门到 ~30Hz —— 30Hz 仍够触发涟漪/流星,只是精度略降。
+  // 音域回响的专用 512-bin 分析独立于画面帧率；城市和相机仍全帧更新，只复用最近一次频谱结果。
   if (typeof pumpVoxelAudioFrame === 'function') {
-    var voxPumpCap = (typeof foregroundFpsGovernorCap === 'function') ? foregroundFpsGovernorCap() : 0;
-    if (voxPumpCap > 0 && voxPumpCap <= 45) {
-      var _vg = mainFrameGates.voxelAudio, _vgRuns = _vg.runs;
-      consumeFrameGate(_vg, now, 0, 30, false, 'voxel-audio-pump');   // dt 传 0:泵不用 stepDt,只借 gate 计时;是否运行看 runs 是否递增
-      if (_vg.runs !== _vgRuns) pumpVoxelAudioFrame();
-    } else {
-      pumpVoxelAudioFrame();   // 正常负载:满帧喂,维持原作检测精度
-    }
+    var voxelAudioPerfStart = performance.now();
+    var _vg = mainFrameGates.voxelAudio, _vgRuns = _vg.runs;
+    consumeFrameGate(mainFrameGates.voxelAudio, now, 0, targetMainVoxelAudioFps(now), false, 'voxel-audio-pump');
+    if (_vg.runs !== _vgRuns) pumpVoxelAudioFrame();
+    if (perfProbe && perfProbe.markSince) perfProbe.markSince('audio.voxel-analysis', voxelAudioPerfStart);
   }
   if (shouldSkipAdaptiveRenderFrame(now)) return;
   var dt = Math.min((now - prevTime) / 1000, 0.05);
@@ -385,10 +455,13 @@ function animate() {
   sampleRenderPerf(now, dt);
   uniforms.uTime.value += dt;
   if (isMainSceneCoveredBySplash()) {
-    if (now - splashWarmRenderLast > 520) {
+    // 开机淡入阶段(前 ~1.6s)跳过主场景热渲染:原生分辨率下每次热渲染是很重的一帧,
+    // 正好压在动画浮现上会把淡入卡出锯齿。淡入过后再热身,照样能在开机页消失前把着色器编译好,入场不掉帧。
+    var splashElapsed = (typeof splashStartedAt === 'number') ? (now - splashStartedAt) : 9999;
+    if (splashElapsed > 1600 && now - splashWarmRenderLast > 520) {
       splashWarmRenderLast = now;
       var splashRenderPerfStart = performance.now();
-      renderer.render(scene, camera);
+      renderMainSceneWithGpuSample(scene, camera);
       if (perfProbe && perfProbe.markSince) perfProbe.markSince('renderer.render.splash', splashRenderPerfStart);
     }
     var splashFrameCostMs = performance.now() - framePerfStart;
@@ -414,6 +487,9 @@ function animate() {
   var audioPerfStart = performance.now();
   beatOnsetFlag = false;
   var audioStepDt = consumeFrameGate(mainFrameGates.audio, now, dt, targetMainAudioFps(now), false, 'audio-analysis');
+  var sonicAudioFrame = fx && fx.sonicAudioMonitorEnabled !== false && typeof getSonicAudioMonitorSnapshot === 'function'
+    ? getSonicAudioMonitorSnapshot().frame
+    : null;
   if (audioStepDt > 0) {
   if (analyser && playing && audio && !audio.paused) {
     if (audioCtx && audioCtx.state === 'suspended') resumeAudioAnalysis();
@@ -523,6 +599,17 @@ function animate() {
     // scheduledBeatPulse 衰减并合并到 beatPulse
     if (scheduledBeatPulse > beatPulse) beatPulse = scheduledBeatPulse;
     scheduledBeatPulse *= Math.pow(0.32, audioStepDt);
+    if (typeof stepSonicAudioMonitor === 'function') {
+      var sonicMonitorFrame = stepSonicAudioMonitor(frequencyData, audioStepDt, {
+        fx: fx,
+        playing: true,
+        beat: beatPulse,
+        sampleRate: analysisSampleRate,
+        fftSize: analysisFftSize,
+        currentTime: audio.currentTime || 0
+      });
+      if (fx && fx.sonicAudioMonitorEnabled !== false) sonicAudioFrame = sonicMonitorFrame;
+    }
 
     function env(prev, next, attack, release) {
       var k = next > prev ? attack : release;
@@ -554,6 +641,7 @@ function animate() {
     lyricSunEnergy += (lyricSunTarget - lyricSunEnergy) * (lyricSunTarget > lyricSunEnergy ? 0.075 : 0.030);
   } else {
     var audioIdleDecay = Math.max(1, audioStepDt * 60);
+    if (typeof stepSonicAudioMonitor === 'function') stepSonicAudioMonitor(null, audioStepDt, { fx: fx, playing: false });
     smoothBass *= Math.pow(0.91, audioIdleDecay); smoothMid *= Math.pow(0.91, audioIdleDecay); smoothTreb *= Math.pow(0.91, audioIdleDecay); smoothEnergy *= Math.pow(0.91, audioIdleDecay); beatPulse *= Math.pow(0.82, audioIdleDecay);
     liveCamAvg *= Math.pow(0.94, audioIdleDecay);
     liveCamPeak = Math.max(0.28, liveCamPeak * Math.pow(0.98, audioIdleDecay));
@@ -606,7 +694,7 @@ function animate() {
   uniforms.uEnergy.value = audioEnergy;
   uniforms.uMouseXY.value.set(mouseWorld.x, mouseWorld.y);
   uniforms.uMouseActive.value = mouseActive ? 1 : 0;
-  var skullBackdropDim = fx && fx.preset === SKULL_PRESET_INDEX ? 0.58 : 1;
+  var skullBackdropDim = fx && fx.preset === SKULL_PRESET_INDEX ? 0.58 : ((window.MineradioSonicTopography && MineradioSonicTopography.isActive(fx)) || (window.MineradioSonicWorkshop && MineradioSonicWorkshop.isActive(fx)) ? 0.82 : 1);
   var shelfDimTarget = shouldDimWallpaperForShelf() ? 0.48 : skullBackdropDim;
   var shelfDimEase = shelfDimTarget < uniforms.uParticleDim.value ? 0.18 : 0.10;
   uniforms.uParticleDim.value += (shelfDimTarget - uniforms.uParticleDim.value) * Math.min(1, shelfDimEase * Math.max(1, dt * 60));
@@ -646,9 +734,13 @@ function animate() {
   tickGestureRotation(dt);
   var skullPresetActive = fx && fx.preset === SKULL_PRESET_INDEX;
   var voxelActive = typeof voxelCityActive === 'function' && voxelCityActive();
-  var presetUsesStarRiverParticles = fx && Number(fx.preset) === 5;
+  var rainActive = typeof rainMoodActive === 'function' && rainMoodActive();
+  var sonicTopoActive = window.MineradioSonicTopography && MineradioSonicTopography.isActive(fx);
+  var sonicWorkshopActive = window.MineradioSonicWorkshop && MineradioSonicWorkshop.isActive(fx);
+  var lyricDepthPresetActive = typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive();
+  var presetUsesStarRiverParticles = fx && (Number(fx.preset) === 5 || (typeof SONIC_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SONIC_PRESET_INDEX));
   var presetStarRiverMuted = presetUsesStarRiverParticles && fx.backgroundStarRiver === false;
-  var hidePoints = skullPresetActive || voxelActive;
+  var hidePoints = skullPresetActive || voxelActive || rainActive || sonicTopoActive || sonicWorkshopActive || lyricDepthPresetActive;
   particles.visible = !hidePoints && !presetStarRiverMuted;
   if (bloomParticles) bloomParticles.visible = !hidePoints && !presetStarRiverMuted && fx.bloom && fx.bloomStrength > 0.01;
   if (floatGroup) floatGroup.visible = !hidePoints;
@@ -656,9 +748,11 @@ function animate() {
   var targetRotY = orbit.centerLocked ? 0 : (headParallax.active ? headParallax.x * 0.5 : 0) + gestureRotation.y;
   var targetRotX = orbit.centerLocked ? 0 : (headParallax.active ? -headParallax.y * 0.35 : 0) + gestureRotation.x;
   var targetRotZ = orbit.centerLocked ? 0 : (gestureRotation.z || 0);   // v9 双捏旋转(roll)
-  particles.rotation.y += (targetRotY - particles.rotation.y) * 0.055;
-  particles.rotation.x += (targetRotX - particles.rotation.x) * 0.055;
-  particles.rotation.z += (targetRotZ - particles.rotation.z) * 0.055;
+  // 普通预设与 p10 统一:输入只写目标,显示每帧按拖动缓冲率靠近;释放惯性仍由 0.90 单独处理。
+  var dragFollowBlend = typeof pointerDragFollowBlend === 'function' ? pointerDragFollowBlend(dt) : 0.055;
+  particles.rotation.y += (targetRotY - particles.rotation.y) * dragFollowBlend;
+  particles.rotation.x += (targetRotX - particles.rotation.x) * dragFollowBlend;
+  particles.rotation.z += (targetRotZ - particles.rotation.z) * dragFollowBlend;
   if (bloomParticles) {
     bloomParticles.rotation.copy(particles.rotation);
   }
@@ -672,6 +766,39 @@ function animate() {
   var voxelEchoPerfStart = performance.now();
   if (typeof updateVoxelCity === 'function') updateVoxelCity(dt);   // 音域回响每帧更新(内部按预设显隐);须在舞台歌词之前,避免歌词用上一帧体素相机而滞后抖动
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.voxel-echo', voxelEchoPerfStart);
+  if (shelfManager && typeof shelfManager.syncCameraAnchor === 'function') shelfManager.syncCameraAnchor();   // 相机(含体素机位)本帧定稿后再锚一次歌架, 拖拽转场时歌单零滞后、屏幕位置纹丝不动
+  var rainMoodPerfStart = performance.now();
+  if (typeof updateRainMood === 'function') updateRainMood(dt);   // 雨境节奏雨丝(内部按预设显隐);跟随主 rAF / 空闲降帧
+  if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.rain-mood', rainMoodPerfStart);
+  var rainGlassPerfStart = performance.now();
+  if (typeof updateRainGlass === 'function') updateRainGlass(dt);
+  if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.rain-glass-update', rainGlassPerfStart);
+  var sonicPerfStart = performance.now();
+  if (window.MineradioSonicTopography) {
+    MineradioSonicTopography.update(dt, {
+      scene: scene,
+      fx: fx,
+      time: uniforms.uTime.value,
+      screenHeight: window.innerHeight,
+      dpr: renderer.getPixelRatio ? renderer.getPixelRatio() : (window.devicePixelRatio || 1),
+      visualRotation: particles && particles.rotation ? particles.rotation : null,
+      visualRotationActive: !!(orbit && orbit.rotating),
+      audio: sonicAudioFrame || { bass: bass, mid: mid, treble: treble, beat: beatPulse, energy: audioEnergy }
+    });
+  }
+  if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.sonic-topography', sonicPerfStart);
+  var sonicWorkshopPerfStart = performance.now();
+  if (window.MineradioSonicWorkshop) {
+    MineradioSonicWorkshop.update(dt, {
+      scene: scene,
+      fx: fx,
+      time: uniforms.uTime.value,
+      orbitRadius: orbit && orbit.radius,
+      orbitBaselineRadius: orbit && orbit.baselineRadius,
+      audio: { bass: bass, mid: mid, treble: treble, beat: beatPulse, energy: audioEnergy }
+    });
+  }
+  if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.sonic-workshop', sonicWorkshopPerfStart);
   var skullPerfStart = performance.now();
   var skullStepDt = consumeFrameGate(mainFrameGates.skullParticles, now, dt, targetMainSkullParticleFps(now), false, 'skull-particles');
   if (skullStepDt > 0) updateSkullParticleLayer(skullStepDt);
@@ -679,6 +806,7 @@ function animate() {
   var stageLyricsPerfStart = performance.now();
   var stageLyricsStepDt = consumeFrameGate(mainFrameGates.stageLyrics, now, dt, targetMainStageLyricsFps(now), false, 'stage-lyrics');
   if (stageLyricsStepDt > 0) updateStageLyrics3D(stageLyricsStepDt);
+  if (typeof updateLyricDepthFlight === 'function') updateLyricDepthFlight(dt);
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.stage-lyrics', stageLyricsPerfStart);
   var desktopOverlayPerfStart = performance.now();
   var desktopOverlayStepDt = consumeFrameGate(mainFrameGates.desktopOverlay, now, dt, targetMainDesktopOverlayFps(now), false, 'desktop-overlay');
@@ -696,7 +824,12 @@ function animate() {
   }
 
   var rendererPerfStart = performance.now();
-  renderer.render(scene, camera);
+  var renderedRainGlass = false;
+  if (typeof rainGlassActive === 'function' && rainGlassActive()
+      && typeof renderRainGlassScene === 'function') {
+    renderedRainGlass = renderRainGlassScene(renderer, scene, camera);
+  }
+  if (!renderedRainGlass) renderMainSceneWithGpuSample(scene, camera);
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('renderer.render', rendererPerfStart);
   var frameCostMs = performance.now() - framePerfStart;
   if (typeof sampleAdaptiveFrameCost === 'function') {

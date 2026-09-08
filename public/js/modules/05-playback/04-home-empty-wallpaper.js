@@ -156,19 +156,22 @@ function deactivateHomeWallpaperPreview(playback) {
   }
 }
 function switchPlaybackVisualToEmily() {
+  var hadHomeVisual = !!(homeVisualPresetActive || startupVisualPreviewActive || document.body.classList.contains('home-wallpaper-preview'));
+  if (!hadHomeVisual) return false;
   if (homeVisualPresetActive) {
     deactivateHomeWallpaperPreview(true);
   }
   document.body.classList.remove('home-wallpaper-preview');
-  var targetPreset = typeof playbackVisualPreset === 'number' ? playbackVisualPreset : fxDefaults.preset;
   startupVisualPreviewActive = false;
-  if (typeof setPreset === 'function' && fx.preset !== targetPreset) {
-    setPreset(targetPreset, { silent: true, preserveCamera: false, noSave: true });
-  } else if (typeof syncFxUniforms === 'function') {
+  // 播放成功只退出首页预览，不再强制切换视觉预设。此前失败歌曲没有
+  // 走到这里，所以会保留用户当前画面；成功歌曲反而跳到另一个预设。
+  // 现在成功与失败都尊重用户已经选好的视觉样式。
+  if (typeof syncFxUniforms === 'function') {
     syncFxUniforms();
   }
   if (typeof updateRenderPowerClasses === 'function') updateRenderPowerClasses();
   if (typeof recoverVisualsAfterBackground === 'function' && !isDeepBackgroundMode()) recoverVisualsAfterBackground('playback-visual');
+  return true;
 }
 function applyStartupStarfieldPreset() {
   if (playing || currentIdx >= 0 || hasRestoredPlaybackCandidate()) return;
@@ -179,12 +182,33 @@ function applyStartupStarfieldPreset() {
     syncFxUniforms();
   }
 }
+function canOpenPlaylistPanel() {
+  return !emptyHomeActive && !document.body.classList.contains('splash-active');
+}
+function hidePlaylistPanelOutsideListeningPage() {
+  if (canOpenPlaylistPanel()) return false;
+  if (typeof resetSecondaryPlaylistEdgeGuard === 'function') resetSecondaryPlaylistEdgeGuard();
+  if (typeof peekTimers !== 'undefined' && peekTimers && peekTimers.pl) {
+    clearTimeout(peekTimers.pl);
+    peekTimers.pl = null;
+  }
+  var panel = document.getElementById('playlist-panel');
+  if (!panel) return false;
+  panel.__playlistMotionUntil = 0;
+  panel.classList.remove('peek', 'show', 'playlist-panel-closing');
+  return true;
+}
 function updateEmptyHomeVisibility(opts) {
   opts = opts || {};
   var show = shouldShowEmptyHome();
   emptyHomeActive = show;
   document.body.classList.toggle('empty-home-active', show);
-  if (!show) setHomeControlsLocked(false);
+  if (show) hidePlaylistPanelOutsideListeningPage();
+  else if (playlistPanelPinned && typeof applyPlaylistPanelPinState === 'function') applyPlaylistPanelPinState(true);
+  // Home is a browsing surface, so keep the listening-page player bar out of
+  // the way until the user explicitly opens the player console.
+  if (show) setHomeControlsLocked(true);
+  else setHomeControlsLocked(false);
   if (show) activateHomeWallpaperPreview();
   else deactivateHomeWallpaperPreview(false);
   if (show) {

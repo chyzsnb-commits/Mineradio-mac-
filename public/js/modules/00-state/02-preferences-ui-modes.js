@@ -11,13 +11,19 @@ function normalizeAudioFadeMs(value, fallback) {
   if (!isFinite(ms)) ms = fallback;
   return Math.max(AUDIO_FADE_MIN_MS, Math.min(AUDIO_FADE_MAX_MS, ms));
 }
+function normalizeCrossfadeMs(value, fallback) {
+  var ms = Math.round(Number(value));
+  if (!isFinite(ms)) ms = fallback;
+  return Math.max(AUDIO_CROSSFADE_MIN_MS, Math.min(AUDIO_CROSSFADE_MAX_MS, ms));
+}
 function readAudioFadePreference() {
-  var defaults = { fadeInMs: 460, fadeOutMs: 420 };
+  var defaults = { fadeInMs: 460, fadeOutMs: 420, crossfadeMs: 6000 };
   try {
     var raw = JSON.parse(localStorage.getItem(AUDIO_FADE_STORE_KEY) || '{}') || {};
     return {
       fadeInMs: normalizeAudioFadeMs(raw.fadeInMs, defaults.fadeInMs),
-      fadeOutMs: normalizeAudioFadeMs(raw.fadeOutMs, defaults.fadeOutMs)
+      fadeOutMs: normalizeAudioFadeMs(raw.fadeOutMs, defaults.fadeOutMs),
+      crossfadeMs: normalizeCrossfadeMs(raw.crossfadeMs, defaults.crossfadeMs)
     };
   } catch (e) {
     return defaults;
@@ -27,7 +33,8 @@ function saveAudioFadePreference() {
   try {
     localStorage.setItem(AUDIO_FADE_STORE_KEY, JSON.stringify({
       fadeInMs: AUDIO_FADE_IN_MS,
-      fadeOutMs: AUDIO_FADE_OUT_MS
+      fadeOutMs: AUDIO_FADE_OUT_MS,
+      crossfadeMs: AUDIO_CROSSFADE_MS
     }));
   } catch (e) { }
 }
@@ -60,13 +67,13 @@ function savePlaylistPanelTabPreference(tab) {
   try { localStorage.setItem(PLAYLIST_PANEL_TAB_STORE_KEY, normalizePlaylistPanelTab(tab)); } catch (e) { }
 }
 function normalizeCloseBehavior(value) {
-  return value === 'tray' ? 'tray' : 'exit';
+  return 'exit';
 }
 function readCloseBehaviorPreference() {
-  try { return normalizeCloseBehavior(localStorage.getItem(CLOSE_BEHAVIOR_STORE_KEY) || 'exit'); } catch (e) { return 'exit'; }
+  return 'exit';
 }
 function saveCloseBehaviorPreference(value) {
-  try { localStorage.setItem(CLOSE_BEHAVIOR_STORE_KEY, normalizeCloseBehavior(value)); } catch (e) { }
+  try { localStorage.removeItem(CLOSE_BEHAVIOR_STORE_KEY); } catch (e) { }
 }
 function syncCloseBehaviorUi() {
   document.querySelectorAll('#close-behavior-seg [data-close-behavior]').forEach(function (btn) {
@@ -84,19 +91,10 @@ function setCloseBehaviorPreference(value, opts) {
   if (opts.toast) showToast(closeBehaviorPreference === 'tray' ? '关闭按钮将放到后台托盘' : '关闭按钮将直接退出');
 }
 function bindCloseBehaviorControls() {
-  var seg = document.getElementById('close-behavior-seg');
-  if (!seg || seg._bound) return;
-  seg._bound = true;
-  seg.addEventListener('click', function (e) {
-    var btn = e.target && e.target.closest ? e.target.closest('[data-close-behavior]') : null;
-    if (!btn) return;
-    setCloseBehaviorPreference(btn.getAttribute('data-close-behavior'), { toast: true });
-  });
   syncCloseBehaviorUi();
 }
 function initializeDesktopCloseBehavior() {
-  bindCloseBehaviorControls();
-  setCloseBehaviorPreference(closeBehaviorPreference, { toast: false });
+  setCloseBehaviorPreference('exit', { toast: false });
 }
 function normalizeStartupResumeMode(value) {
   return value === 'restart' ? 'restart' : 'resume';

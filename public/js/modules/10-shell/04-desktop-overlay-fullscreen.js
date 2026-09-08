@@ -248,8 +248,9 @@ function applyWallpaperModeState(force) {
   // 壁纸模式:隐藏全部 UI 外壳(CSS body.mw-wallpaper)+ 关负载监视器(移植自主线 fork)
   document.body.classList.toggle('mw-wallpaper', !!payload.enabled);
   try {
-    if (payload.enabled) { var _ph = document.getElementById('perf-hud'); if (_ph) _ph.style.display = 'none'; if (typeof _perfHudTimer !== 'undefined' && _perfHudTimer) { clearInterval(_perfHudTimer); _perfHudTimer = null; } }
-    else if (typeof perfHudOn === 'function' && perfHudOn() && typeof setPerfHud === 'function') setPerfHud(true);
+    if (typeof suspendPerfHudSampling === 'function' && typeof resumePerfHudSampling === 'function') {
+      payload.enabled ? suspendPerfHudSampling() : resumePerfHudSampling();
+    }
   } catch (e) {}
   if (typeof api.setWallpaperMode === 'function') {
     api.setWallpaperMode(!!payload.enabled, payload).catch(function (e) { console.warn('wallpaper state failed:', e); });
@@ -263,11 +264,17 @@ function applyWallpaperModeState(force) {
   if (typeof api.onWallpaperActive === 'function') {
     api.onWallpaperActive(function (active) {
       document.body.classList.toggle('mw-wallpaper', !!active);
+      try {
+        if (typeof suspendPerfHudSampling === 'function' && typeof resumePerfHudSampling === 'function') {
+          active ? suspendPerfHudSampling() : resumePerfHudSampling();
+        }
+      } catch (e) {}
     });
   }
   if (typeof api.onWallpaperForceOff === 'function') {
     api.onWallpaperForceOff(function () {
       document.body.classList.remove('mw-wallpaper');
+      try { if (typeof resumePerfHudSampling === 'function') resumePerfHudSampling(); } catch (e) {}
       if (fx && fx.wallpaperMode) {
         fx.wallpaperMode = false;
         var tg = document.getElementById('t-wallpaperMode'); if (tg) tg.classList.remove('on');

@@ -3,10 +3,24 @@
 // ============================================================
 //  Global State
 // ============================================================
+var MINERADIO_RELEASE_POLICY = window.desktopWindow && window.desktopWindow.releasePolicy || {};
+var MINERADIO_DISABLED_PROVIDERS = Array.isArray(MINERADIO_RELEASE_POLICY.disabledProviders)
+  ? MINERADIO_RELEASE_POLICY.disabledProviders
+  : [];
+var MINERADIO_QISHUI_ENABLED = MINERADIO_RELEASE_POLICY.qishuiEnabled === true;
+// 公开目录能力与汽水直连能力分离：即使直连被发布策略禁用，仍可安全搜索
+// 元数据并交给现有跨平台换源链播放。
+var MINERADIO_QISHUI_CATALOG_ENABLED = MINERADIO_RELEASE_POLICY.qishuiCatalogEnabled === true || MINERADIO_QISHUI_ENABLED;
+var MINERADIO_ALLOW_CREDENTIAL_IMPORT = MINERADIO_RELEASE_POLICY.allowCredentialImport === true;
+var MINERADIO_ALLOW_CREDENTIAL_EXPORT = MINERADIO_RELEASE_POLICY.allowCredentialExport === true;
 var audio = null, audioCtx = null, source = null, analyser = null, beatAnalyser = null, gainNode = null, analysisSinkNode = null, audioReady = false;
-// 唱歌模式(Apple Music Sing 式):可调原唱 dry/wet + 麦克风驱动可视化(graph 由 initAudio 按状态重建)
-// singingVocalLevel:1=原唱满,0=纯伴奏。micVisualNode:麦克风提亮后接进 beatAnalyser/_voxAnalyser(死端,不啸叫)
-var singingModeEnabled = false, singingVocalLevel = 0, vocalCutChain = null, micStream = null, micSource = null, micVisualNode = null;
+// 唱歌模式:伴奏/人声独立混音。麦克风可视化是可选的(默认关,不开麦也能唱/调伴奏人声)。
+// 默认伴奏满、人声零。micVisualNode 只进分析器死端,不进扬声器。
+var singingModeEnabled = false, singingMicEnabled = false, singingAccompanimentLevel = 1, singingVocalLevel = 0, vocalCutChain = null, micStream = null, micSource = null, micVisualNode = null;
+var singingKeyShift = 0, singingKeyShiftNode = null;
+var singingSeparationMode = 'realtime';
+var aiStemRuntime = { status: 'idle', stage: 'idle', percent: 0, trackKey: '', id: '', jobId: 0, active: false, original: null, error: '' };
+var aiStemVocalAudio = null, aiStemVocalSource = null, aiStemMixNode = null, aiStemAccompanimentGain = null, aiStemVocalGain = null;
 var uiSfxCtx = null, lastShelfSelectSfxAt = 0;
 var FFT_SIZE = 2048;
 var frequencyData = new Uint8Array(FFT_SIZE / 2);
@@ -58,6 +72,8 @@ var qishuiManualCookieOpen = false;
 var loginStatusChecked = false, loginStatusCheckFailed = false;
 var qrPollTimer = null, qrKey = null;
 var volumeTween = null, trackSwitchToken = 0;
+var trackNavigationState = { inProgress: false, scheduled: false, timer: 0, desiredIndex: -1, pendingDelta: 0, manual: false, promise: null, settle: null, serial: 0 };
+var playbackSourceRequestState = { token: 0, controller: null, request: null, timer: 0 };
 var playbackResumeRecovery = { serial: 0, pending: false, lastAttemptAt: 0, lastReason: '', pausedAt: 0, pausedSongKey: '', pausedSrc: '', pausedPosition: 0, timerIds: [] };
 var albumGaplessState = { enabled: false, defaultEnabled: true, albumKey: '', disabledAlbumKey: '', context: null, preload: null, serial: 0, monitorTimer: 0, handoff: false };
 var PLAYBACK_RESUME_STALL_DELAYS = [1600, 3600];
@@ -67,12 +83,16 @@ var audioFadeTimer = null, audioElementFadeFrame = 0, audioFadeSerial = 0;
 var AUDIO_FADE_STORE_KEY = 'mineradio-audio-fade-v1';
 var AUDIO_FADE_MIN_MS = 0;
 var AUDIO_FADE_MAX_MS = 3000;
+var AUDIO_CROSSFADE_MIN_MS = 0;
+var AUDIO_CROSSFADE_MAX_MS = 12000;
 var audioFadePreference = readAudioFadePreference();
 var AUDIO_FADE_IN_MS = audioFadePreference.fadeInMs;
 var AUDIO_FADE_OUT_MS = audioFadePreference.fadeOutMs;
+var AUDIO_CROSSFADE_MS = audioFadePreference.crossfadeMs;
 var AUDIO_SILENCE_GAIN = 0.0001;
 var audioFadeEnvelope = 1;
 var userPlaylists = [], qqPlaylists = [], qishuiPlaylists = [], spotifyPlaylists = [], myPodcastCollections = [], myPodcastItems = {}, playlistCoverCache = {};
+var persistentLocalLibraryTracks = [];
 var CUSTOM_COVER_STORE_KEY = 'mineradio-custom-covers';
 var CUSTOM_LYRIC_STORE_KEY = 'mineradio-custom-lyrics-v1';
 var CUSTOM_LYRIC_PREF_STORE_KEY = 'mineradio-custom-lyric-prefs-v1';
@@ -83,8 +103,10 @@ var LYRIC_LAYOUT_STORE_KEY = 'mineradio-lyric-layout-v1';
 var CURRENT_FX_AUTOSAVE_STORE_KEY = 'mineradio-current-fx-autosave-v1';
 var CURRENT_FX_AUTOSAVE_SCHEMA = 'current-fx-autosave-v2';
 var VISUAL_PRESET_SCHEMA = 'skull-preset-v2';
-// 预设索引:0-10 为全部预设
-var MAX_VISUAL_PRESET_INDEX = 10;
+// 预设索引:0-11 为全部预设;12=声波地形(音域地形),13=声波工坊(音域回响·WE) —— Windows v2.1.0 迁移
+var MAX_VISUAL_PRESET_INDEX = 13;
+var SONIC_PRESET_INDEX = 12;              // 声波地形(Sonic Topography)
+var SONIC_WORKSHOP_PRESET_INDEX = 13;     // 声波工坊(Sonic Workshop / Wallpaper Engine)
 var PLAYBACK_QUALITY_STORE_KEY = 'mineradio-playback-quality-v1';
 var AUDIO_OUTPUT_DEVICE_STORE_KEY = 'mineradio-audio-output-device-v1';
 var AUDIO_OUTPUT_MIRROR_STORE_KEY = 'mineradio-audio-output-mirror-v1';
@@ -123,6 +145,8 @@ var PLAYBACK_QUALITY_OPTIONS = {
 var UPLOAD_TIP_STORE_KEY = 'mineradio-upload-tip-seen';
 var DIY_MODE_STORE_KEY = 'mineradio-diy-player-mode-v1';
 var PLAYLIST_PANEL_PIN_STORE_KEY = 'mineradio-playlist-panel-pinned-v1';
+var FX_PANEL_PIN_STORE_KEY = 'mineradio-fx-panel-pinned-v1';
+var FX_PANEL_TAB_STORE_KEY = 'mineradio-fx-panel-tab-v1';
 var PLAYLIST_PANEL_TAB_STORE_KEY = 'mineradio-playlist-panel-tab-v1';
 var USER_CAPSULE_AUTO_HIDE_STORE_KEY = 'mineradio-user-capsule-auto-hide-v1';
 var FX_FAB_AUTO_HIDE_STORE_KEY = 'mineradio-fx-fab-auto-hide-v1';
@@ -167,6 +191,7 @@ var audioInputBridgeState = readAudioInputBridgePreference();
 var audioOutputMirrorElements = {};
 var audioOutputMirrorRuntime = {};
 var audioOutputMirrorSyncTimer = 0;
+var audioOutputRuntime = { state: 'idle', message: '' };
 var playbackQualityRuntimeCaps = {};
 var qqPlaybackQualityCeiling = '';   // 上游已用 playbackQualityRuntimeCaps 取代;我方 13-start-audio 旧钩子仍读写,保留声明
 var coverCropState = null, coverCropBound = false;

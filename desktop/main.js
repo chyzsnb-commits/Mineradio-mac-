@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, crashReporter, powerMonitor, systemPreferences, protocol } = require('electron');
 const net = require('net');
 const http = require('http');
 const path = require('path');
@@ -12,22 +12,36 @@ const { execFile, spawn } = require('child_process');
 const systemMemory = process.platform === 'win32'
   ? require('./system-memory')
   : require('./system-memory-mac');
+const { readSystemGpuUsage } = require('./gpu-usage');
+const { createAiStemService } = require('./ai-stem-separator');
+const { createCrashDiagnostics } = require('./crash-diagnostics');
+const { LocalMusicLibrary, registerLocalMusicScheme } = require('./local-music-library');
+const { applyOfficialProviderLogin } = require('./official-login-bridge');
+const { clearDirectoryContents, safeWallpaperLibraryFileName, scanDirectoryUsage } = require('./cache-manager');
+const { createCameraPermissionController } = require('./camera-permission');
+const { registerWallpaperLibraryScheme } = require('./wallpaper-library-bridge');
+// Electron 的 registerSchemesAsPrivileged 全局只允许调用一次,后一次调用会覆盖前一次
+// (实测两次分别注册会让先注册的 mineradio-local 丢失 supportFetchAPI,
+//  渲染进程报 "URL scheme is not supported")。先收集两次注册,再合并成一次真正注册。
+const mineradioPrivilegedSchemes = [];
+const collectPrivilegedSchemes = (schemes) => { mineradioPrivilegedSchemes.push(...schemes); };
+const registerSchemesAsPrivileged = protocol.registerSchemesAsPrivileged.bind(protocol);
+protocol.registerSchemesAsPrivileged = collectPrivilegedSchemes;
+registerLocalMusicScheme(protocol);
+registerWallpaperLibraryScheme(protocol);
+protocol.registerSchemesAsPrivileged = registerSchemesAsPrivileged;
+registerSchemesAsPrivileged(mineradioPrivilegedSchemes);
+
+
+const RELEASE_POLICY = require('./release-policy');
+const cameraPermissionController = createCameraPermissionController({
+  platform: process.platform,
+  systemPreferences,
+  shell,
+});
 // macOS Touch Bar 播放控制（2016-2019 Intel MBP）。无 Touch Bar 的机器安全 no-op。
 const touchbar = require('./touchbar');
 const { extractKugouAuth } = require('../kugou-api');
-const {
-  getQishuiOAuthConfig,
-  buildQishuiOAuthAuthorizeUrl,
-  exchangeQishuiOAuthCode,
-  createQishuiPcQrLogin,
-  checkQishuiPcQrLogin,
-  QISHUI_PC_FIXED,
-  qishuiPcUrl,
-  qishuiPcPassportParams,
-  qishuiOrderedForm,
-  qishuiQrErrorCode,
-  qishuiPcQrRedirectUrl,
-} = require('../qishui-api');
 const {
   getSpotifyOAuthConfig,
   buildSpotifyOAuthAuthorizeUrl,
@@ -35,9 +49,22 @@ const {
   clearSpotifyToken,
 } = require('../spotify-api');
 
+// Electron 42's development-only security warning handler calls `new URL()`
+// on empty Resource Timing names produced by intentionally source-less media
+// elements. It rejects in the isolated world before the app is usable. The
+// packaged app does not run that handler; disable only this dev-only advisory.
+if (!app.isPackaged) process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = '1';
+
 let mainWindow = null;
+let createWindowInFlight = null;
 let localServer = null;
 let mainServerPort = 0;
+let localMusicLibrary = null;
+const localMusicImportCapabilities = new Map();
+// Windows v2.1.0 对齐: 歌词磁盘缓存(userData/cache/lyrics, 不搬 Chromium 缓存/登录态)
+const LYRIC_CACHE_VERSION = 1;
+const LYRIC_CACHE_MAX_BYTES = 96 * 1024 * 1024;
+const LYRIC_CACHE_ENTRY_MAX_BYTES = 1024 * 1024;
 let desktopLyricsWindow = null;
 let desktopLyricsState = {};
 let desktopLyricsUserBounds = null;
@@ -53,6 +80,7 @@ let wallpaperState = {};
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
+let mainWindowActivationTimers = [];
 let appMemoryTrimTimer = null;
 let appMemoryTrimInFlight = false;
 let lastAppMemoryTrimAt = 0;
@@ -66,15 +94,19 @@ let memoryAutoState = {
   intervalMin: 30,
   thresholdPercent: 78,
   autoElevate: false,
+  pendingSystemPurge: false,
   lastRunAt: 0,
   lastReason: '',
   lastResult: null,
   lastError: '',
 };
+let memoryPlaybackActive = false;
+let memoryPlaybackReason = '';
 let closeBehavior = 'exit';
 let appQuitting = false;
 let mainWindowCloseFlushArmed = false;
 let tray = null;
+let aiStemService = null;
 const registeredGlobalHotkeys = new Map();
 
 const WINDOWED_ASPECT = 16 / 9;
@@ -102,14 +134,8 @@ const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
 const KUGOU_LOGIN_PARTITION = 'persist:mineradio-kugou-login';
 const KUGOU_LOGIN_URL = 'https://www.kugou.com/';
 const KUGOU_LOGIN_WARMUP_URL = 'https://www.kugou.com/newuc/user/uc/type=edit';
-const QISHUI_LOGIN_PARTITION = 'persist:mineradio-qishui-oauth-login';
+const QISHUI_LOGIN_PARTITION = 'persist:mineradio-qishui-login';
 const SPOTIFY_LOGIN_PARTITION = 'persist:mineradio-spotify-login';
-const QISHUI_WEB_LOGIN_URL = process.env.QISHUI_WEB_LOGIN_URL || 'https://qishui.douyin.com/';
-const QISHUI_WEB_LOGIN_FALLBACK_URL = process.env.QISHUI_WEB_LOGIN_FALLBACK_URL || 'https://bff-pc.qishui.com/ucenter_web/app/sdk-next';
-const QISHUI_OFFICIAL_CLIENT_DATA_DIRS = (process.env.QISHUI_OFFICIAL_CLIENT_DATA_DIRS || '')
-  .split(/[;,]/)
-  .map((value) => String(value || '').trim())
-  .filter(Boolean);
 
 const CHROMIUM_SAFE_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
@@ -145,6 +171,13 @@ for (const [name, value, envName] of CHROMIUM_OPT_IN_PERFORMANCE_SWITCHES) {
 }
 // 开发/测试:指定独立 userData,可与正式安装版同时运行(单实例锁按 userData 隔离)
 if (process.env.MINERADIO_USER_DATA_DIR) app.setPath('userData', process.env.MINERADIO_USER_DATA_DIR);
+const crashDiagnostics = createCrashDiagnostics({
+  app,
+  crashReporter,
+  appName: APP_NAME,
+  packageInfo: APP_PACKAGE_INFO,
+});
+crashDiagnostics.configure();
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 const QQ_LOGIN_COOKIE_PRIORITY = [
@@ -181,17 +214,8 @@ const KUGOU_LOGIN_COOKIE_PRIORITY = [
   'NickName',
 ];
 const QISHUI_LOGIN_COOKIE_PRIORITY = [
-  'sessionid',
-  'sessionid_ss',
-  'sid_guard',
-  'sid_tt',
-  'uid_tt',
-  'uid_tt_ss',
-  'passport_csrf_token',
-  'passport_csrf_token_default',
-  's_v_web_id',
-  'odin_tt',
-  'ttwid',
+  'sessionid', 'sessionid_ss', 'sid_guard', 'sid_tt', 'uid_tt', 'uid_tt_ss',
+  'passport_csrf_token', 'passport_csrf_token_default', 's_v_web_id', 'odin_tt', 'ttwid',
 ];
 const NETEASE_LOGIN_COOKIE_PRIORITY = [
   'MUSIC_U',
@@ -241,6 +265,32 @@ function waitForServer(server) {
 
 function getCurrentFxAutosavePath() {
   return path.join(app.getPath('userData'), CURRENT_FX_AUTOSAVE_FILE);
+}
+
+function getAiStemCacheRoot() {
+  return path.join(app.getPath('userData'), 'ai-stems');
+}
+
+function getAiStemPowerState() {
+  let onBatteryPower = process.platform === 'darwin';
+  let thermalState = process.platform === 'darwin' ? 'unknown' : 'nominal';
+  try { onBatteryPower = powerMonitor.isOnBatteryPower(); } catch (_) {}
+  try { thermalState = powerMonitor.getCurrentThermalState(); } catch (_) {}
+  return { onBatteryPower, thermalState };
+}
+
+function ensureAiStemService() {
+  if (aiStemService) return aiStemService;
+  aiStemService = createAiStemService({
+    cacheRoot: getAiStemCacheRoot(),
+    getLocalOrigin: () => 'http://127.0.0.1:' + mainServerPort,
+    getPowerState: getAiStemPowerState,
+    onProgress: (payload) => {
+      if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents || mainWindow.webContents.isDestroyed()) return;
+      mainWindow.webContents.send('mineradio-ai-stems-progress', payload || {});
+    },
+  });
+  return aiStemService;
 }
 
 function readCurrentFxAutosaveFile() {
@@ -304,6 +354,23 @@ function flushMainWindowFxAutosave(reason) {
 }
 
 const LOCAL_APP_PERMISSION_ALLOWLIST = new Set(['media', 'speaker-selection', 'pointerLock', 'pointer-lock']);
+const SAFE_EXTERNAL_URL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
+function safeOpenExternalUrl(value) {
+  const raw = String(value || '').trim();
+  let target;
+  try {
+    target = new URL(raw);
+  } catch (_) {
+    return Promise.resolve({ ok: false, error: 'INVALID_EXTERNAL_URL' });
+  }
+  if (!SAFE_EXTERNAL_URL_PROTOCOLS.has(target.protocol)) {
+    return Promise.resolve({ ok: false, error: 'EXTERNAL_URL_PROTOCOL_REJECTED' });
+  }
+  return Promise.resolve(shell.openExternal(target.toString()))
+    .then(() => ({ ok: true }))
+    .catch(() => ({ ok: false, error: 'EXTERNAL_URL_OPEN_FAILED' }));
+}
 
 function isLocalAppUrl(value) {
   try {
@@ -651,14 +718,16 @@ function scheduleAppMemoryTrim(reason, delay = 9000) {
 
 function normalizeMemoryAutoState(payload = {}) {
   const systemEnabled = systemMemory.SYSTEM_PURGE_AVAILABLE === true && systemMemory.SYSTEM_PURGE_ENABLED === true;
+  const enabled = systemEnabled && payload.enabled === true;
   return {
     appTrimEnabled: payload.appTrimEnabled !== false,
     backgroundTrimEnabled: payload.backgroundTrimEnabled !== false,
-    enabled: systemEnabled && payload.enabled === true,
+    enabled,
     mask: systemMemory.normalizeMask(payload.mask != null ? payload.mask : memoryAutoState.mask),
     intervalMin: Math.max(5, Math.min(180, Math.round(Number(payload.intervalMin != null ? payload.intervalMin : memoryAutoState.intervalMin) || 30))),
     thresholdPercent: Math.max(0, Math.min(100, Math.round(Number(payload.thresholdPercent != null ? payload.thresholdPercent : memoryAutoState.thresholdPercent) || 0))),
     autoElevate: payload.autoElevate === true,
+    pendingSystemPurge: enabled && memoryAutoState.pendingSystemPurge === true,
     lastRunAt: memoryAutoState.lastRunAt || 0,
     lastReason: memoryAutoState.lastReason || '',
     lastResult: memoryAutoState.lastResult || null,
@@ -692,6 +761,7 @@ async function runMemoryAutoTick(reason = 'auto') {
   const snapshot = await systemMemory.getMemorySnapshotExtended();
   const threshold = Number(memoryAutoState.thresholdPercent) || 0;
   if (threshold > 0 && snapshot && snapshot.usedPercent < threshold) {
+    memoryAutoState.pendingSystemPurge = false;
     memoryAutoState.lastRunAt = Date.now();
     memoryAutoState.lastReason = reason + ':below-threshold';
     memoryAutoState.lastResult = { ok: true, skipped: true, usedPercent: snapshot.usedPercent, thresholdPercent: threshold };
@@ -699,6 +769,24 @@ async function runMemoryAutoTick(reason = 'auto') {
   }
   memoryAutoState.lastRunAt = Date.now();
   memoryAutoState.lastReason = reason;
+  if (memoryPlaybackActive) {
+    const trim = memoryAutoState.appTrimEnabled === false
+      ? { ok: false, skipped: true, reason: 'app-trim-disabled' }
+      : await trimAppMemoryNow('memory-auto-playing');
+    const result = {
+      ok: true,
+      skipped: true,
+      deferred: true,
+      reason: 'playback-active',
+      message: '播放中只清理播放器内存；系统级释放将在暂停并进入后台后执行。',
+      trim,
+    };
+    memoryAutoState.pendingSystemPurge = true;
+    memoryAutoState.lastResult = result;
+    memoryAutoState.lastError = '';
+    return { ok: true, result, snapshot: await systemMemory.getMemorySnapshotExtended(), state: memoryAutoState };
+  }
+  memoryAutoState.pendingSystemPurge = false;
   try {
     const result = await systemMemory.purgeSystemMemorySmart(memoryAutoState.mask, {
       autoElevate: memoryAutoState.autoElevate === true,
@@ -735,14 +823,34 @@ function isZoomShortcutInput(input) {
     || code === 'NumpadSubtract' || code === 'Digit0' || code === 'Numpad0';
 }
 
+function activateMainWindow() {
+  if (process.platform !== 'darwin') return;
+  try { app.focus({ steal: true }); } catch (e) {}
+}
+
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (mainWindow.isMinimized()) mainWindow.restore();
+  activateMainWindow();
   if (!mainWindow.isVisible()) mainWindow.show();
   resetMainWindowZoom();
   mainWindow.focus();
+  try { if (typeof mainWindow.moveTop === 'function') mainWindow.moveTop(); } catch (e) {}
+  activateMainWindow();
   sendWindowState(mainWindow);
   return true;
+}
+
+// macOS 从终端启动时，Electron 可能在页面加载完成前仍被终端保持为后台进程。
+// 只在启动/恢复窗口时短暂重试，避免常驻计时器影响正常的应用切换。
+function scheduleMainWindowActivation() {
+  if (process.platform !== 'darwin' || !mainWindow || mainWindow.isDestroyed()) return;
+  mainWindowActivationTimers.forEach((timer) => clearTimeout(timer));
+  mainWindowActivationTimers = [0, 160, 420].map((delay) => setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isFocused()) return;
+    focusMainWindow();
+  }, delay));
 }
 
 function createOrUpdateTray() {
@@ -1255,1138 +1363,73 @@ async function clearNeteaseMusicLoginSession() {
   return { ok: true };
 }
 
-function isQishuiCookieDomain(domain) {
-  const normalized = String(domain || '').replace(/^\./, '').toLowerCase();
-  return normalized === 'douyin.com' || normalized.endsWith('.douyin.com') ||
-    normalized === 'qishui.com' || normalized.endsWith('.qishui.com');
-}
-
-function qishuiCookieHasLogin(cookieText) {
-  return /(?:^|;\s*)(sessionid|sessionid_ss|sid_guard|sid_tt|uid_tt|uid_tt_ss)=/i.test(String(cookieText || ''));
-}
-
 function qishuiOfficialClientDataDirCandidates() {
   const candidates = [];
   const add = (value) => {
-    value = String(value || '').trim();
     if (!value) return;
-    const resolved = path.resolve(value.replace(/^~(?=\\|\/|$)/, app.getPath('home')));
+    const resolved = path.resolve(value);
     if (!candidates.includes(resolved)) candidates.push(resolved);
   };
-  QISHUI_OFFICIAL_CLIENT_DATA_DIRS.forEach(add);
-  try { add(path.join(app.getPath('appData'), 'SodaMusic')); } catch (e) {}
-  try { add(path.join(app.getPath('appData'), 'sodaMusic')); } catch (e) {}
-  try { add(path.join(app.getPath('appData'), 'QishuiMusic')); } catch (e) {}
-  try { add(path.join(app.getPath('appData'), 'LunaMusic')); } catch (e) {}
-  // macOS:汽水客户端(bundleId com.soda.music)是沙盒应用,userData 在容器内而非标准 appData。
-  // 实测 cookie DB = ~/Library/Containers/com.soda.music/Data/Library/Application Support/SodaMusic/Cookies,
-  // 且 value 列为明文(沙盒版未启用 Safe Storage 加密),现有 SQLite 解析器直接可读(已对拍 sqlite3 一致)。
   if (process.platform === 'darwin') {
-    try {
-      const home = app.getPath('home');
-      const container = path.join(home, 'Library', 'Containers', 'com.soda.music', 'Data', 'Library', 'Application Support');
-      add(path.join(container, 'SodaMusic'));
-      add(path.join(container, 'sodaMusic'));
-      add(path.join(container, 'QishuiMusic'));
-    } catch (e) {}
+    const support = path.join(app.getPath('home'), 'Library', 'Containers', 'com.soda.music', 'Data', 'Library', 'Application Support');
+    add(path.join(support, 'SodaMusic'));
+    add(path.join(support, 'sodaMusic'));
   }
   return candidates;
 }
 
-function readSqliteVarint(buffer, offset, end) {
-  let value = 0n;
-  for (let i = 0; i < 9 && offset + i < end; i++) {
-    const byte = buffer[offset + i];
-    if (i === 8) {
-      value = (value << 8n) | BigInt(byte);
-      return { value: Number(value), next: offset + i + 1 };
-    }
-    value = (value << 7n) | BigInt(byte & 0x7f);
-    if ((byte & 0x80) === 0) return { value: Number(value), next: offset + i + 1 };
-  }
-  return null;
-}
-
-function sqliteSerialSize(type) {
-  if (type === 0 || type === 8 || type === 9) return 0;
-  if (type === 1) return 1;
-  if (type === 2) return 2;
-  if (type === 3) return 3;
-  if (type === 4) return 4;
-  if (type === 5) return 6;
-  if (type === 6 || type === 7) return 8;
-  if (type >= 12) return Math.floor((type - 12) / 2);
-  return 0;
-}
-
-function sqliteDecodeSerialValue(buffer, offset, type) {
-  const size = sqliteSerialSize(type);
-  if (offset + size > buffer.length) return { value: null, size };
-  if (type === 0) return { value: null, size };
-  if (type === 1) return { value: buffer.readInt8(offset), size };
-  if (type === 2) return { value: buffer.readInt16BE(offset), size };
-  if (type === 3) return { value: buffer.readIntBE(offset, 3), size };
-  if (type === 4) return { value: buffer.readInt32BE(offset), size };
-  if (type === 5) return { value: buffer.readIntBE(offset, 6), size };
-  if (type === 6) return { value: Number(buffer.readBigInt64BE(offset)), size };
-  if (type === 7) return { value: buffer.readDoubleBE(offset), size };
-  if (type === 8) return { value: 0, size };
-  if (type === 9) return { value: 1, size };
-  if (type >= 12 && type % 2 === 0) return { value: buffer.slice(offset, offset + size), size };
-  if (type >= 13 && type % 2 === 1) return { value: buffer.toString('utf8', offset, offset + size), size };
-  return { value: null, size };
-}
-
-function sqliteParseRecord(buffer, offset, payloadSize) {
-  const payloadEnd = Math.min(buffer.length, offset + payloadSize);
-  const header = readSqliteVarint(buffer, offset, payloadEnd);
-  if (!header || header.value <= 0 || offset + header.value > payloadEnd) return [];
-  const headerEnd = offset + header.value;
-  const serials = [];
-  let pos = header.next;
-  while (pos < headerEnd) {
-    const serial = readSqliteVarint(buffer, pos, headerEnd);
-    if (!serial) break;
-    serials.push(serial.value);
-    pos = serial.next;
-  }
-  const values = [];
-  pos = headerEnd;
-  for (const type of serials) {
-    const decoded = sqliteDecodeSerialValue(buffer, pos, type);
-    values.push(decoded.value);
-    pos += decoded.size;
-    if (pos > payloadEnd) break;
-  }
-  return values;
-}
-
-function sqliteLeafRecords(buffer) {
-  if (!buffer || buffer.length < 100 || buffer.toString('ascii', 0, 16) !== 'SQLite format 3\0') return [];
-  const rawPageSize = buffer.readUInt16BE(16);
-  const pageSize = rawPageSize === 1 ? 65536 : rawPageSize;
-  if (!pageSize || pageSize < 512) return [];
-  const pageCount = Math.floor(buffer.length / pageSize);
-  const records = [];
-  for (let pageNo = 1; pageNo <= pageCount; pageNo++) {
-    const pageStart = (pageNo - 1) * pageSize;
-    const headerStart = pageStart + (pageNo === 1 ? 100 : 0);
-    if (headerStart + 8 > buffer.length || buffer[headerStart] !== 0x0d) continue;
-    const cellCount = buffer.readUInt16BE(headerStart + 3);
-    const pointerStart = headerStart + 8;
-    for (let i = 0; i < cellCount; i++) {
-      const pointerOffset = pointerStart + i * 2;
-      if (pointerOffset + 2 > buffer.length) break;
-      const cellOffset = pageStart + buffer.readUInt16BE(pointerOffset);
-      if (cellOffset <= 0 || cellOffset >= buffer.length) continue;
-      const payloadSize = readSqliteVarint(buffer, cellOffset, Math.min(buffer.length, cellOffset + 10));
-      if (!payloadSize) continue;
-      const rowId = readSqliteVarint(buffer, payloadSize.next, Math.min(buffer.length, payloadSize.next + 10));
-      if (!rowId) continue;
-      records.push(sqliteParseRecord(buffer, rowId.next, payloadSize.value));
-    }
-  }
-  return records;
-}
-
-function sqliteCookieColumns(records) {
-  const master = records.find((record) =>
-    record.some((value) => typeof value === 'string' && /CREATE\s+TABLE\s+cookies/i.test(value))
-  );
-  const sql = master && master.find((value) => typeof value === 'string' && /CREATE\s+TABLE\s+cookies/i.test(value));
-  const body = sql && sql.slice(sql.indexOf('(') + 1, sql.lastIndexOf(')'));
-  if (!body) return [];
-  return body.split(/,(?![^()]*\))/)
-    .map(part => part.trim().split(/\s+/)[0])
-    .map(name => String(name || '').replace(/^[`"[]|[`"\]]$/g, ''))
-    .filter(Boolean);
-}
-
-function extractQishuiSessionIdFromCookieDatabase(databasePath) {
-  const buffer = fs.readFileSync(databasePath);
-  const records = sqliteLeafRecords(buffer);
-  const columns = sqliteCookieColumns(records);
-  const hostIndex = columns.indexOf('host_key');
-  const nameIndex = columns.indexOf('name');
-  const valueIndex = columns.indexOf('value');
-  if (hostIndex < 0 || nameIndex < 0 || valueIndex < 0) return '';
-  for (const record of records) {
-    const host = String(record[hostIndex] || '').replace(/^\./, '').toLowerCase();
-    const name = String(record[nameIndex] || '').toLowerCase();
-    if ((host === 'qishui.com' || host.endsWith('.qishui.com')) && name === 'sessionid') {
-      return String(record[valueIndex] || '').trim();
-    }
-  }
-  return '';
-}
-
-function readQishuiOfficialClientCookieDatabase(dir) {
-  // Windows/新版 Chromium 把 Cookies 放 <dir>/Network/Cookies;mac 沙盒版汽水直接放 <dir>/Cookies —— 两种布局都试。
-  const candidates = [path.join(dir, 'Network', 'Cookies'), path.join(dir, 'Cookies')];
-  const cookieDb = candidates.find((p) => fs.existsSync(p));
-  if (!cookieDb) return { cookie: '', source: '', missing: true, dbPath: candidates[0] };
-  try {
-    const sessionid = extractQishuiSessionIdFromCookieDatabase(cookieDb);
-    if (!sessionid) return { cookie: '', source: '', noSession: true, dbPath: cookieDb };
-    return { cookie: 'sessionid=' + sessionid + ';', source: cookieDb, dbPath: cookieDb };
-  } catch (e) {
-    const message = e && e.message || String(e || '');
-    const locked = /used by another process|EBUSY|locked|busy|access.*denied|无法访问|另一个程序正在使用|进程无法访问/i.test(message);
-    return { cookie: '', source: '', locked, error: message, dbPath: cookieDb };
-  }
+function readQishuiCookieDatabase(databasePath) {
+  return new Promise((resolve) => {
+    const sql = "SELECT value FROM cookies WHERE host_key LIKE '%qishui.com' AND name IN ('sessionid', 'sessionid_ss') AND value != '' LIMIT 1;";
+    execFile('/usr/bin/sqlite3', ['-readonly', '-noheader', databasePath, sql], { timeout: 3500, maxBuffer: 16 * 1024 }, (error, stdout) => {
+      const sessionId = String(stdout || '').trim();
+      if (!error && sessionId) return resolve({ cookie: 'sessionid=' + sessionId + ';', source: databasePath });
+      resolve({
+        cookie: '',
+        source: databasePath,
+        locked: !!(error && /locked|busy|EBUSY/i.test(String(error.message || ''))),
+      });
+    });
+  });
 }
 
 async function readQishuiOfficialClientCookieHeader() {
   let last = null;
   for (const dir of qishuiOfficialClientDataDirCandidates()) {
-    const direct = readQishuiOfficialClientCookieDatabase(dir);
-    if (direct && direct.cookie) return Object.assign({ method: 'cookie-db' }, direct);
-    if (direct && direct.locked) return Object.assign({ method: 'cookie-db' }, direct);
-    last = direct || last;
-  }
-  if (!session || typeof session.fromPath !== 'function') return Object.assign({ cookie: '', source: '', skipped: 'session.fromPath unavailable' }, last || {});
-  for (const dir of qishuiOfficialClientDataDirCandidates()) {
-    try {
-      const cookieDb = path.join(dir, 'Network', 'Cookies');
-      if (!fs.existsSync(cookieDb)) continue;
-      const clientSession = session.fromPath(dir, { cache: false });
-      const cookie = await readQishuiLoginCookieHeader(clientSession);
-      if (qishuiCookieHasLogin(cookie)) return { cookie, source: dir, method: 'electron-session' };
-    } catch (e) {
-      console.warn('Qishui official client cookie import skipped:', dir, e && e.message || e);
+    for (const databasePath of [path.join(dir, 'Cookies'), path.join(dir, 'Network', 'Cookies')]) {
+      if (!fs.existsSync(databasePath)) continue;
+      const result = await readQishuiCookieDatabase(databasePath);
+      if (result.cookie) return result;
+      last = result;
     }
   }
-  return Object.assign({ cookie: '', source: '', skipped: 'no logged-in SodaMusic client session' }, last || {});
+  return last || { cookie: '', source: '' };
 }
 
-async function readQishuiLoginCookieHeader(cookieSession) {
-  const cookies = await cookieSession.cookies.get({});
-  return buildCookieHeaderFor(cookies, isQishuiCookieDomain, QISHUI_LOGIN_COOKIE_PRIORITY);
-}
-
-// 汽水 PC 登录接口 UA —— 与 qishui-api.js 第 32 行 QISHUI_WEB_UA 同值(该常量未从模块导出,故在此镜像;上游改动需同步此处)。
-const QISHUI_WEB_UA_WARMUP = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) SodaMusic/3.1.0 Chrome/136.0.7103.59 Electron/36.4.0-rs.22.release.main.1 TTElectron/36.4.0-rs.22.release.main.1 Safari/537.36';
-// 汽水 PC 登录同源 origin —— 读自 qishui-api.js 第 27 行 QISHUI_WEB_PC_API_BASE;qishuiPcUrl(第 306-311 行)据此拼 check_qrconnect/get_qrcode 等 PC 登录接口。
-const QISHUI_PC_WARMUP_ORIGIN = 'https://api.qishui.com';
-
-function mergeQishuiCookieStrings(baseCookie, overrideCookie) {
-  const map = new Map();
-  const add = (str) => {
-    String(str || '').split(';').forEach((part) => {
-      const seg = part.trim();
-      if (!seg) return;
-      const eq = seg.indexOf('=');
-      const name = (eq >= 0 ? seg.slice(0, eq) : seg).trim();
-      if (!name) return;
-      map.set(name, seg);
-    });
-  };
-  add(baseCookie);      // 预热 ttwid/passport_csrf_token 等打底
-  add(overrideCookie);  // qrPayload.cookie 同名覆盖(优先)
-  return Array.from(map.values()).join('; ');
-}
-
-function extractQishuiWarmupCookie(setCookieHeader) {
-  const list = Array.isArray(setCookieHeader) ? setCookieHeader : (setCookieHeader ? [setCookieHeader] : []);
-  const out = [];
-  list.forEach((line) => {
-    const first = String(line || '').split(';')[0].trim();
-    const eq = first.indexOf('=');
-    if (eq <= 0) return;
-    const name = first.slice(0, eq).trim();
-    const val = first.slice(eq + 1).trim();
-    if (!name || !val || val.toLowerCase() === 'deleted') return;
-    out.push(name + '=' + val);
-  });
-  return out.join('; ');
-}
-
-// 创建二维码前预热:向汽水 PC 登录同源 origin 发一次 GET,捕获 set-cookie(ttwid/passport_csrf_token 等)。
-// 失败/超时/无 cookie 一律静默 resolve('') —— 绝不阻塞或抛出到扫码主流程。
-function warmupQishuiPcTtwid() {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (val) => { if (done) return; done = true; resolve(val || ''); };
-    try {
-      const https = require('https');
-      const req = https.request(QISHUI_PC_WARMUP_ORIGIN + '/', {
-        method: 'GET',
-        headers: {
-          'User-Agent': QISHUI_WEB_UA_WARMUP,
-          'Referer': 'app://resources/',
-          'Accept': '*/*',
-        },
-      }, (res) => {
-        const setCookie = res.headers && res.headers['set-cookie'];
-        res.on('data', () => {});
-        res.on('end', () => finish(extractQishuiWarmupCookie(setCookie)));
-        res.on('error', () => finish(extractQishuiWarmupCookie(setCookie)));
-      });
-      req.on('error', () => finish(''));
-      req.setTimeout(3500, () => { try { req.destroy(); } catch (e) {} finish(''); });
-      req.end();
-    } catch (e) {
-      finish('');
-    }
-  });
-}
-
-async function openQishuiOfficialWebLoginWindow(owner, config) {
-  let qrPayload = null;
-  // ttwid 预热:创建二维码前拿到同源会话 cookie(ttwid/passport_csrf_token 等),失败静默('')不阻塞扫码。
-  let qishuiPreheatCookie = '';
-  try { qishuiPreheatCookie = await warmupQishuiPcTtwid(); } catch (e) { qishuiPreheatCookie = ''; }
-  try {
-    qrPayload = await createQishuiPcQrLogin();
-  } catch (e) {
-    console.warn('Qishui PC QR create failed:', e && e.message || e);
-    return openQishuiOfficialWebLoginWindowLegacy(owner, config);
-  }
-
-  return new Promise((resolve) => {
-    let settled = false;
-    let pollTimer = null;
-    let expireTimer = null;
-    let lastStatus = '';
-    let qrPollBackoffUntil = 0;
-    let qrRateLimitStreak = 0;       // 连续命中限流退避次数(≥2 升格网页登录按钮)
-    let qrSwitchHighlighted = false; // 网页登录按钮是否已升格为高亮
-    let qrRiskEncountered = false;   // 本次扫码是否命中过汽水风控(限流/短信二次验证);随取消结果回传前端,引导改用 Cookie 粘贴
-
-    const loginWindow = new BrowserWindow({
-      width: 560,
-      height: 700,
-      minWidth: 460,
-      minHeight: 560,
-      // macOS: 不挂 parent —— 全屏状态下关闭子窗口会触发 AppKit
-      // _NSExitFullScreenTransitionController 崩溃(登录成功关窗即黑屏死)
-      parent: process.platform !== 'darwin' && owner && !owner.isDestroyed() ? owner : undefined,
-      modal: false,
-      show: false,
-      autoHideMenuBar: true,
-      title: '汽水音乐扫码登录',
-      backgroundColor: '#10110f',
-      icon: APP_ICON_ICO,
-      webPreferences: {
-        partition: QISHUI_LOGIN_PARTITION,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-
-    const canUseLoginWindow = () => !settled &&
-      loginWindow &&
-      !loginWindow.isDestroyed() &&
-      loginWindow.webContents &&
-      !loginWindow.webContents.isDestroyed();
-
-    const clearTimers = () => {
-      if (pollTimer) {
-        clearTimeout(pollTimer);
-        pollTimer = null;
-      }
-      if (expireTimer) {
-        clearTimeout(expireTimer);
-        expireTimer = null;
-      }
-    };
-
-    const publicResult = (cookie, extra) => ({
-      ok: true,
-      provider: 'qishui',
-      webSession: !!cookie,
-      opened: true,
-      cookieSaved: !!cookie,
-      cookie: cookie || '',
-      loggedIn: !!cookie,
-      configured: !!cookie,
-      searchReady: true,
-      publicCatalog: !cookie,
-      playbackMode: 'recommend-match',
-      oauthConfigured: false,
-      oauthMissing: config && config.missing || [],
-      message: cookie
-        ? '汽水音乐扫码登录态已获取，可同步我的喜欢和歌单；播放仍会按匹配源自动换源。'
-        : '已打开汽水音乐扫码窗口；未确认前 QS 搜索匹配源仍可用。',
-      ...(extra || {}),
-    });
-
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      clearTimers();
-      if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
-      resolve(result);
-    };
-
-    const escaped = (value) => String(value == null ? '' : value).replace(/[<>&"]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
-
-    const buildQrHtml = (statusText) => {
-      const qrImg = qrPayload && qrPayload.qrcode || '';
-      const statusLine = statusText || '等待汽水音乐 App 扫码…';
-      return [
-        '<!doctype html><meta charset="utf-8">',
-        '<title>汽水音乐扫码登录</title>',
-        '<style>',
-        'html,body{margin:0;height:100%;background:#10110f;color:#ecf6df;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}',
-        'body{display:grid;place-items:center;}',
-        'main{width:min(420px,calc(100vw - 44px));text-align:center;}',
-        '.brand{font-size:12px;letter-spacing:.22em;color:#b7d48a;font-weight:800;margin-bottom:12px;}',
-        'h1{font-size:25px;margin:0 0 10px;font-weight:850;}',
-        'p{margin:0 auto 18px;color:rgba(236,246,223,.70);line-height:1.65;font-size:14px;}',
-        '.qr{width:286px;height:286px;margin:0 auto 18px;border-radius:24px;background:#f9fff1;padding:16px;box-shadow:0 24px 70px rgba(100,170,70,.20),inset 0 0 0 1px rgba(20,60,30,.10);}',
-        '.qr img{width:100%;height:100%;display:block;border-radius:14px;}',
-        '.status{min-height:24px;color:#cce68b;font-weight:700;}',
-        'a{color:#d6f89b;text-decoration:none;}',
-        '.switch{margin:2px auto 0;display:inline-block;padding:7px 16px;border:0;border-radius:999px;background:rgba(236,246,223,.08);color:rgba(236,246,223,.60);font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .2s,color .2s,transform .2s;}',
-        '.switch:hover{color:#ecf6df;background:rgba(236,246,223,.15);}',
-        '.switch-hot{background:linear-gradient(90deg,#8fd14f,#cbf58a);color:#0f1a08;font-size:13px;box-shadow:0 10px 26px rgba(120,190,60,.34);animation:switchpulse 1.6s ease-in-out infinite;}',
-        '@keyframes switchpulse{0%,100%{transform:scale(1);}50%{transform:scale(1.05);}}',
-        '</style><main>',
-        '<div class="brand">QISHUI MUSIC</div>',
-        '<h1>使用汽水音乐 App 扫码</h1>',
-        '<p>请用汽水音乐 App 扫码并确认。确认后 Mineradio 会自动保存汽水登录态，同步汽水歌单与我的喜欢。</p>',
-        qrImg ? ('<div class="qr"><img src="' + escaped(qrImg) + '" alt="汽水音乐扫码登录"></div>') : '',
-        '<div class="status" id="status">' + escaped(statusLine) + '</div>',
-        '<button id="switch-login-btn" class="switch' + (qrSwitchHighlighted ? ' switch-hot' : '') + '" onclick="window.open(\'mineradio://switch-web-login\');return false;">' + (qrSwitchHighlighted ? '限流频繁？试试网页登录，成功率更高' : '改用网页登录') + '</button>',
-        qrPayload && qrPayload.qrcodeIndexUrl ? '<p>这个二维码来自汽水 PC 登录接口；抖音 App 扫描可能打开 404 页面，请用汽水音乐 App。</p>' : '',
-        '</main>'
-      ].join('');
-    };
-
-    const setQrStatusText = (statusText) => {
-      if (!statusText || !canUseLoginWindow()) return;
-      loginWindow.webContents.executeJavaScript(
-        `var el=document.getElementById('status'); if(el) el.textContent=${JSON.stringify(statusText)};`,
-        true
-      ).catch(() => {});
-    };
-
-    const armQrExpireTimer = () => {
-      if (expireTimer) {
-        clearTimeout(expireTimer);
-        expireTimer = null;
-      }
-      const ttlMs = qrPayload && qrPayload.expireTime ? Math.max(30000, qrPayload.expireTime * 1000 - Date.now()) : 180000;
-      expireTimer = setTimeout(() => {
-        if (!canUseLoginWindow()) return;
-        lastStatus = '二维码已过期，请重新打开汽水授权';
-        setQrStatusText(lastStatus);
-      }, Math.min(240000, ttlMs + 3000));
-    };
-
-    const showLocalQrPage = (statusText) => {
-      if (!canUseLoginWindow()) return;
-      loginWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildQrHtml(statusText))).catch((e) => {
-        console.warn('Qishui QR fallback page failed:', e && e.message || e);
-      });
-    };
-
-    const qrNextPollDelay = (status) => {
-      if (!status) return 10000;
-      if (status.retryAfterMs) return Math.max(60000, Math.min(90000, Number(status.retryAfterMs) || 60000));
-      if (status.needsSms) return 10000;
-      const key = String(status.status || '').toLowerCase();
-      if (status.cookie || status.confirmed || /scan|confirm|success|login/.test(key)) return 2400;
-      if (/error|fail/.test(key)) return 12000;
-      if (/expire/.test(key)) return 30000;
-      return 10000;
-    };
-
-    const scheduleQrPoll = (delayMs) => {
-      if (!canUseLoginWindow()) return;
-      if (pollTimer) {
-        clearTimeout(pollTimer);
-        pollTimer = null;
-      }
-      const delay = Math.max(1500, Math.min(90000, Number(delayMs) || 10000));
-      pollTimer = setTimeout(() => {
-        pollTimer = null;
-        pollQrStatus();
-      }, delay);
-    };
-
-    const highlightSwitchLoginButton = () => {
-      if (qrSwitchHighlighted) return;
-      qrSwitchHighlighted = true;
-      if (!canUseLoginWindow()) return;
-      loginWindow.webContents.executeJavaScript(
-        "(function(){var b=document.getElementById('switch-login-btn');if(b){b.className='switch switch-hot';b.textContent='限流频繁？试试网页登录，成功率更高';}})();",
-        true
-      ).catch(() => {});
-    };
-
-    let switchingToWebLogin = false;
-    const requestSwitchToWebLogin = () => {
-      if (settled || switchingToWebLogin) return;
-      switchingToWebLogin = true;
-      settled = true; // 阻止 'closed' 回调把结果判为 cancelled;下方以 legacy 网页登录结果 resolve
-      clearTimers();
-      if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
-      openQishuiOfficialWebLoginWindowLegacy(owner, config)
-        .then(resolve, () => resolve(publicResult('', { cancelled: true, status: 'switch-web-login-failed' })));
-    };
-
-    loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (String(url || '').includes('mineradio://switch-web-login')) {
-        requestSwitchToWebLogin();
-        return { action: 'deny' };
-      }
-      if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
-      return { action: 'deny' };
-    });
-
-    loginWindow.webContents.on('will-navigate', (event, url) => {
-      if (/^data:/i.test(String(url || ''))) return;
-      if (event && typeof event.preventDefault === 'function') event.preventDefault();
-      if (/^https?:\/\//i.test(String(url || ''))) shell.openExternal(url).catch(() => {});
-    });
-
-    loginWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
-      if (!isMainFrame || Number(errorCode) === -3) return;
-      lastStatus = errorDescription || ('load failed: ' + errorCode);
-      showLocalQrPage();
-    });
-
-    const pollQrStatus = async () => {
-      if (!canUseLoginWindow()) return;
-      if (qrPollBackoffUntil && Date.now() < qrPollBackoffUntil) {
-        setQrStatusText(lastStatus || '汽水确认接口临时限流，已自动降频继续确认…');
-        scheduleQrPoll(qrPollBackoffUntil - Date.now() + 250);
-        return;
-      }
-      let nextPollDelay = 10000;
-      try {
-        const status = await checkQishuiPcQrLogin(qrPayload.token, mergeQishuiCookieStrings(qishuiPreheatCookie, qrPayload.cookie || ''), qrPayload);
-        if (status && status.pollCookie) qrPayload.cookie = status.pollCookie;
-        nextPollDelay = qrNextPollDelay(status);
-        // mac 轮询地板:darwin 下正常轮询间隔不低于 3000ms(退避值本就 ≥60000,不受影响,保持上游其余节奏)
-        if (process.platform === 'darwin') nextPollDelay = Math.max(3000, nextPollDelay);
-        lastStatus = status && (status.message || status.status) || lastStatus;
-        if (!status || !status.retryAfterMs) qrPollBackoffUntil = 0;
-        if (!status || !status.retryAfterMs) qrRateLimitStreak = 0;
-        if (status && status.cookie) {
-          finish(publicResult(status.cookie, { detected: true, status: status.status || 'confirmed' }));
-          return;
-        }
-        if (status && status.retryAfterMs) {
-          qrPollBackoffUntil = Date.now() + Math.max(5000, Math.min(90000, Number(status.retryAfterMs) || 0));
-          qrRateLimitStreak += 1;
-          qrRiskEncountered = true; // 限流即风控信号:用户放弃关窗时据此引导改用 Cookie 粘贴登录
-          if (qrRateLimitStreak >= 2) highlightSwitchLoginButton();
-          setQrStatusText(lastStatus || '汽水确认接口临时限流，已自动降频继续确认…');
-          return;
-        }
-        if (status && status.needsSms) {
-          qrPollBackoffUntil = Date.now() + 10000;
-          qrRiskEncountered = true; // 短信/二次验证同样是风控整层拦截,一并作为改用 Cookie 的触发信号
-          setQrStatusText(lastStatus || '汽水要求短信或二次验证，请先在汽水 App 内完成账号安全验证');
-          return;
-        }
-        if (status && status.confirmed) {
-          setQrStatusText(lastStatus || '已确认，正在换取汽水登录态…');
-          return;
-        }
-        if (status && /error|fail|expire/i.test(String(status.status || ''))) {
-          setQrStatusText(lastStatus || '扫码状态异常，正在继续确认当前二维码');
-          return;
-        }
-        setQrStatusText(lastStatus);
-      } catch (e) {
-        lastStatus = e && e.message || 'QISHUI_QR_CHECK_FAILED';
-        nextPollDelay = 12000;
-        setQrStatusText('扫码状态暂时无法确认，保留当前二维码继续重试…');
-      } finally {
-        if (!settled) scheduleQrPoll(nextPollDelay);
-      }
-    };
-
-    loginWindow.on('ready-to-show', () => {
-      if (canUseLoginWindow()) loginWindow.show();
-    });
-    loginWindow.on('closed', () => {
-      if (settled) return;
-      settled = true;
-      clearTimers();
-      resolve(publicResult('', { cancelled: true, status: lastStatus || '', riskControlBlocked: qrRiskEncountered }));
-    });
-
-    showLocalQrPage();
-    armQrExpireTimer();
-    scheduleQrPoll(6000);
-  });
-}
-
-async function openQishuiOfficialWebLoginWindowLegacy(owner, config) {
-  const cookieSession = session.fromPartition(QISHUI_LOGIN_PARTITION);
-
-  // 官方 create 接口返回的 qrcode_index_url 是带 token 的真实登录页(裸开 sdk-next 只会 404 TLB);
-  // 让窗口直接加载它 = 用汽水官方自己的扫码/登录页与握手,绕开我们被限流的自研确认轮询
-  let officialIndexUrl = '';
-  let officialIndexCookie = '';
-  try {
-    const qrPayload = await createQishuiPcQrLogin();
-    officialIndexUrl = String(qrPayload && qrPayload.qrcodeIndexUrl || '').trim();
-    officialIndexCookie = String(qrPayload && qrPayload.cookie || '').trim();
-  } catch (e) {
-    console.warn('Qishui official index url create failed:', e && e.message || e);
-  }
-  // 建码响应同时下发 passport_csrf_token 会话对,托管登录页要校验它们——不塞进窗口分区,裸开该页就是 404(TLB)
-  if (officialIndexUrl && officialIndexCookie) {
-    const jobs = officialIndexCookie.split(';').map(async (pair) => {
-      const eq = pair.indexOf('=');
-      if (eq <= 0) return;
-      const name = pair.slice(0, eq).trim();
-      const value = pair.slice(eq + 1).trim();
-      if (!name) return;
-      try {
-        await session.fromPartition(QISHUI_LOGIN_PARTITION).cookies.set({
-          url: 'https://bff-pc.qishui.com/', name, value, domain: '.qishui.com', path: '/', secure: true,
-        });
-      } catch (e) { console.warn('Qishui login cookie seed failed:', name, e && e.message || e); }
-    });
-    try { await Promise.all(jobs); } catch (e) {}
-  }
-
-  return new Promise((resolve) => {
-    let settled = false;
-    let pollTimer = null;
-    let loadRetryTimer = null;
-    let loadIndex = 0;
-    let lastLoadError = '';
-    let fallbackLoadQueued = false;
-    // mac 实测:qishui.douyin.com 是营销首页、无任何登录入口;bff-pc 的用户中心 SDK 页才是真登录页 —— 登录页优先,首页只作兜底
-    const officialLoginUrls = [officialIndexUrl, QISHUI_WEB_LOGIN_FALLBACK_URL, QISHUI_WEB_LOGIN_URL]
-      .map((value) => String(value || '').trim())
-      .filter((value, index, arr) => value && arr.indexOf(value) === index);
-
-    const loginWindow = new BrowserWindow({
-      width: 920,
-      height: 760,
-      minWidth: 760,
-      minHeight: 560,
-      // macOS: 不挂 parent —— 全屏状态下关闭子窗口会触发 AppKit
-      // _NSExitFullScreenTransitionController 崩溃(登录成功关窗即黑屏死)
-      parent: process.platform !== 'darwin' && owner && !owner.isDestroyed() ? owner : undefined,
-      modal: false,
-      show: false,
-      autoHideMenuBar: true,
-      title: '汽水音乐官方窗口',
-      backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
-      webPreferences: {
-        partition: QISHUI_LOGIN_PARTITION,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-
-    const finish = async (result) => {
-      if (settled) return;
-      settled = true;
-      if (pollTimer) clearInterval(pollTimer);
-      clearLoadRetryTimer();
-      if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
-      resolve(result);
-    };
-
-    const publicResult = (cookie, extra) => ({
-      ok: true,
-      provider: 'qishui',
-      webSession: !!cookie,
-      opened: true,
-      cookieSaved: !!cookie,
-      cookie: cookie || '',
-      loggedIn: false,
-      configured: false,
-      searchReady: true,
-      publicCatalog: true,
-      playbackMode: 'recommend-match',
-      oauthConfigured: false,
-      oauthMissing: config && config.missing || [],
-      message: cookie
-        ? '汽水官方网页登录态已保留；当前仍以汽水搜索/匹配源接入。'
-        : '已打开汽水/抖音官方窗口；当前仍以汽水搜索/匹配源接入。',
-      ...(extra || {}),
-    });
-
-    const readResult = async (extra) => {
-      try {
-        const cookie = await readQishuiLoginCookieHeader(cookieSession);
-        return publicResult(qishuiCookieHasLogin(cookie) ? cookie : '', extra);
-      } catch (e) {
-        return publicResult('', Object.assign({ warning: e.message }, extra || {}));
-      }
-    };
-
-    const canUseLoginWindow = () => !settled &&
-      loginWindow &&
-      !loginWindow.isDestroyed() &&
-      loginWindow.webContents &&
-      !loginWindow.webContents.isDestroyed();
-
-    const clearLoadRetryTimer = () => {
-      if (loadRetryTimer) {
-        clearTimeout(loadRetryTimer);
-        loadRetryTimer = null;
-      }
-    };
-
-    const scheduleOfficialLoginLoad = () => {
-      clearLoadRetryTimer();
-      if (!canUseLoginWindow()) return;
-      loadRetryTimer = setTimeout(() => {
-        loadRetryTimer = null;
-        if (canUseLoginWindow()) loadOfficialLoginUrl();
-      }, 30);
-    };
-
-    const safeLoadLoginWindowUrl = async (url) => {
-      if (!canUseLoginWindow()) return { ok: false, skipped: true };
-      try {
-        await loginWindow.loadURL(url);
-        return { ok: true };
-      } catch (e) {
-        return { ok: false, error: e && e.message || String(e) };
-      }
-    };
-
-    const showLoadFallbackPage = (message) => {
-      if (!canUseLoginWindow()) return;
-      lastLoadError = message || lastLoadError || '汽水官方网页打开失败';
-      const html = [
-        '<!doctype html><meta charset="utf-8">',
-        '<title>汽水音乐官方窗口</title>',
-        '<style>body{margin:0;background:#10110f;color:#e8f4d2;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:grid;place-items:center;height:100vh}main{max-width:560px;padding:28px;text-align:center}h1{font-size:24px;margin:0 0 12px}p{color:rgba(232,244,210,.72);line-height:1.7}a{color:#cde98a}</style>',
-        '<main><h1>汽水官方窗口暂时打不开</h1><p>',
-        String(lastLoadError).replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch])),
-        '</p><p>窗口不会自动关闭；可以稍后重试，或在浏览器里打开汽水官方扫码页。</p></main>'
-      ].join('');
-      safeLoadLoginWindowUrl('data:text/html;charset=utf-8,' + encodeURIComponent(html)).then(() => {
-        if (canUseLoginWindow() && !loginWindow.isVisible()) loginWindow.show();
-      });
-    };
-
-    const loadOfficialLoginUrl = () => {
-      if (!canUseLoginWindow()) return;
-      fallbackLoadQueued = false;
-      const targetUrl = officialLoginUrls[loadIndex++];
-      if (!targetUrl) {
-        showLoadFallbackPage(lastLoadError);
-        return;
-      }
-      safeLoadLoginWindowUrl(targetUrl).then((loadResult) => {
-        if (loadResult && loadResult.ok) return;
-        if (loadResult && loadResult.skipped) return;
-        if (fallbackLoadQueued) return;
-        fallbackLoadQueued = true;
-        lastLoadError = loadResult && loadResult.error || '汽水官方网页打开失败';
-        console.warn('Qishui official window load failed:', lastLoadError);
-        scheduleOfficialLoginLoad();
-      });
-    };
-
-    loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//i.test(url)) {
-        safeLoadLoginWindowUrl(url).then((result) => {
-          if (result && !result.ok && !result.skipped) console.warn('Qishui official window navigation failed:', result.error);
-        });
-      } else {
-        shell.openExternal(url).catch(() => {});
-      }
-      return { action: 'deny' };
-    });
-
-    loginWindow.webContents.on('will-navigate', (event, url) => {
-      if (/^(https?|data):/i.test(String(url || ''))) return;
-      if (event && typeof event.preventDefault === 'function') event.preventDefault();
-      shell.openExternal(url).catch(() => {});
-    });
-
-    loginWindow.webContents.on('did-finish-load', () => {
-      if (!canUseLoginWindow()) return;
-      loginWindow.webContents.executeJavaScript(`
-        setTimeout(() => {
-          const docs = [document];
-          document.querySelectorAll('iframe').forEach((frame) => {
-            try { if (frame.contentDocument) docs.push(frame.contentDocument); } catch (_) {}
-          });
-          for (const doc of docs) {
-            const nodes = Array.from(doc.querySelectorAll('a, button, span, div'));
-            const loginNode = nodes.find((node) => {
-              const text = (node.textContent || '').trim();
-              if (!/登录|扫码|抖音登录|立即登录/.test(text)) return false;
-              const rect = node.getBoundingClientRect();
-              return rect.width > 0 && rect.height > 0;
-            });
-            if (loginNode) { loginNode.click(); return true; }
-          }
-          return false;
-        }, 900);
-      `, true).catch(() => {});
-    });
-
-    loginWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-      if (!isMainFrame || Number(errorCode) === -3) return;
-      if (fallbackLoadQueued) return;
-      fallbackLoadQueued = true;
-      lastLoadError = errorDescription || ('load failed: ' + errorCode);
-      console.warn('Qishui official window did-fail-load:', lastLoadError, validatedURL || '');
-      scheduleOfficialLoginLoad();
-    });
-
-    // 404/5xx 属于"加载成功"(did-fail-load 不触发),托管页被网关拒绝时必须靠状态码降级到下一条 URL
-    loginWindow.webContents.on('did-navigate', (event, url, httpResponseCode) => {
-      if (Number(httpResponseCode) < 400) return;
-      if (fallbackLoadQueued) return;
-      fallbackLoadQueued = true;
-      lastLoadError = 'HTTP ' + httpResponseCode + ' @ ' + String(url || '').slice(0, 120);
-      console.warn('Qishui official window http error:', lastLoadError);
-      scheduleOfficialLoginLoad();
-    });
-
-    loginWindow.on('ready-to-show', () => {
-      if (canUseLoginWindow()) loginWindow.show();
-    });
-    loginWindow.on('closed', async () => {
-      if (settled) return;
-      settled = true;
-      if (pollTimer) clearInterval(pollTimer);
-      clearLoadRetryTimer();
-      resolve(await readResult({ cancelled: false, loadError: lastLoadError || '' }));
-    });
-
-    pollTimer = setInterval(async () => {
-      try {
-        const cookie = await readQishuiLoginCookieHeader(cookieSession);
-        if (qishuiCookieHasLogin(cookie)) {
-          finish(publicResult(cookie, { detected: true }));
-        }
-      } catch (e) {
-        console.warn('Qishui official cookie check failed:', e.message);
-      }
-    }, 1400);
-
-    loadOfficialLoginUrl();
-  });
-}
-
-function qishuiOAuthRedirectMatches(targetUrl, redirectUri) {
-  try {
-    const target = new URL(String(targetUrl || ''));
-    const redirect = new URL(String(redirectUri || ''));
-    const normalizePath = (value) => (value || '/').replace(/\/+$/, '') || '/';
-    return target.protocol === redirect.protocol &&
-      target.host === redirect.host &&
-      normalizePath(target.pathname) === normalizePath(redirect.pathname);
-  } catch (e) {
-    return false;
-  }
-}
-
-async function openQishuiMusicLoginWindow(owner) {
-  const config = getQishuiOAuthConfig();
-  // macOS 无汽水 PC 客户端可读本地 cookie。web 模式想加载的 bff-pc/ucenter_web/sdk-next 登录页在公网不存在(恒 404,
-  // 该页只活在汽水 PC 客户端内嵌环境)。pc-qr(Node 端自绘码+轮询)能出码,但确认接口把 Node 客户端归入风控限流
-  // (retryAfter≥60s,扫完要干等一分钟以上)。故 mac 默认改走 pc-qr-web:同一套码/确认接口,改由登录窗内
-  // 真 Chromium 同源(api.qishui.com)fetch 发出,赌浏览器指纹不吃这层限流;任何异常自动回退 pc-qr,不破坏现状。
-  // QISHUI_LOGIN_MODE=pc-qr / web 可强制走旧通道。
-  const qishuiDefaultLoginMode = process.platform === 'darwin' ? 'pc-qr-web' : 'local-pc';
-  const qishuiLoginMode = String(process.env.QISHUI_LOGIN_MODE || qishuiDefaultLoginMode).toLowerCase();
+async function openQishuiMusicLoginWindow() {
   const imported = await readQishuiOfficialClientCookieHeader();
-  if (imported && imported.cookie) {
+  if (imported.cookie) {
     return {
       ok: true,
       provider: 'qishui',
-      webSession: true,
-      opened: false,
-      cookieSaved: true,
       cookie: imported.cookie,
-      loggedIn: true,
-      configured: true,
-      searchReady: true,
-      publicCatalog: false,
-      playbackMode: 'recommend-match',
-      oauthConfigured: false,
-      oauthMissing: config && config.missing || [],
       importedOfficialClient: true,
       source: imported.source,
-      importMethod: imported.method || 'cookie-db',
-      message: '已读取本地汽水 PC 客户端登录态，正在同步我的喜欢和歌单',
     };
-  }
-  if (qishuiLoginMode === 'pc-qr') {
-    return openQishuiOfficialWebLoginWindow(owner, config);
-  }
-  // Q3 实验模式:仅在 QISHUI_LOGIN_MODE=pc-qr-web 显式开启,pc-qr 原路径保持不动。任何异常都回退 pc-qr。
-  if (qishuiLoginMode === 'pc-qr-web') {
-    return openQishuiPcQrWebLoginWindow(owner, config);
-  }
-  if (qishuiLoginMode === 'web') {
-    return openQishuiOfficialWebLoginWindowLegacy(owner, config);
   }
   return {
     ok: false,
     provider: 'qishui',
-    error: imported && imported.locked ? 'QISHUI_LOCAL_COOKIE_DB_LOCKED' : 'QISHUI_LOCAL_COOKIE_NOT_FOUND',
-    localPcImport: true,
-    source: imported && (imported.dbPath || imported.source) || '',
-    locked: !!(imported && imported.locked),
-    searchReady: true,
-    publicCatalog: true,
-    message: imported && imported.locked
-      ? '汽水 PC 客户端正在占用本地登录数据库。请先完全退出汽水音乐 PC 端，再回到 Mineradio 点击“读取本地汽水”。'
-      : '没有读到本地汽水 PC 登录态。请先在汽水音乐 PC 端登录一次，完全退出汽水音乐后再点击“读取本地汽水”。',
+    error: imported.locked ? 'QISHUI_LOCAL_COOKIE_DB_LOCKED' : 'QISHUI_LOCAL_COOKIE_NOT_FOUND',
+    message: imported.locked
+      ? '汽水音乐正在占用登录数据。请完全退出汽水音乐后重试。'
+      : '请先在 macOS 汽水音乐客户端登录一次，再回到这里点击“读取本地汽水”。',
   };
-}
-
-// ─── Q3 实验:pc-qr-web ───────────────────────────────────────────────────────
-// 假设:pc-qr 确认接口拒的是 Node 端 https 的 TLS/设备指纹;把 get_qrcode / check_qrconnect
-// 放到一个加载到 https://api.qishui.com(与 passport 接口同源,规避 CORS)的登录窗内用 fetch 发出,
-// 借真实 Chromium 的 UA/TLS/ttwid/msToken 生态,尝试绕过风控。登录态 cookie 由该窗会话自带,
-// 从分区 cookie jar 读出(fetch 读不到 Set-Cookie,故以 jar 里出现 sessionid 作为确认成功信号)。
-// 任一步异常一律回退标准 pc-qr,绝不破坏现状。默认模式仍是 pc-qr。
-async function openQishuiPcQrWebLoginWindow(owner, config) {
-  try {
-    return await runQishuiPcQrWebLogin(owner, config);
-  } catch (e) {
-    console.warn('Qishui pc-qr-web 实验失败,回退 pc-qr:', e && e.message || e);
-    return openQishuiOfficialWebLoginWindow(owner, config);
-  }
-}
-
-function runQishuiPcQrWebLogin(owner, config) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    let pollTimer = null;
-    let token = '';
-    let rlStreak = 0;            // error_code=7 连续限流计数:渐进退避,关窗时作为风控标志回传(前端据此展开 Cookie 粘贴区)
-    let exchangeStartedAt = 0;   // 已整窗导航去 redirect_url 兑换登录态的时刻;此后不再发 check,只轮询 cookie jar
-    const deadline = Date.now() + 180000; // 实验最长 3 分钟,超时按取消处理
-    const sess = session.fromPartition(QISHUI_LOGIN_PARTITION);
-
-    const loginWindow = new BrowserWindow({
-      width: 560, height: 700, minWidth: 460, minHeight: 560,
-      parent: process.platform !== 'darwin' && owner && !owner.isDestroyed() ? owner : undefined,
-      modal: false, show: false, autoHideMenuBar: true,
-      title: '汽水音乐扫码登录(实验)', backgroundColor: '#10110f', icon: APP_ICON_ICO,
-      webPreferences: { partition: QISHUI_LOGIN_PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true },
-    });
-    // 关键:窗口默认 UA 带 "Mineradio/Electron" 字样,页内 fetch 用的就是窗口 UA(User-Agent 是 fetch 禁改头,页面盖不掉),
-    // 风控一眼识别 → 每次 check 吃 error_code=7。这里把窗口 UA 换成与 Node 干净路径同源的官方 SodaMusic UA,
-    // 抹平「Node 探针干净、实验窗口被限流」的落差(实验前提本就是借真实客户端身份过风控)。
-    try { loginWindow.webContents.setUserAgent(QISHUI_WEB_UA_WARMUP); } catch (_) {}
-
-    const alive = () => !settled && loginWindow && !loginWindow.isDestroyed() && loginWindow.webContents && !loginWindow.webContents.isDestroyed();
-    const clearPoll = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
-    const escaped = (v) => String(v == null ? '' : v).replace(/[<>&"]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
-
-    const publicResult = (cookie, extra) => ({
-      ok: true, provider: 'qishui', webSession: !!cookie, opened: true, cookieSaved: !!cookie,
-      cookie: cookie || '', loggedIn: !!cookie, configured: !!cookie, searchReady: true,
-      publicCatalog: !cookie, playbackMode: 'recommend-match', oauthConfigured: false,
-      oauthMissing: config && config.missing || [], experiment: 'pc-qr-web',
-      message: cookie
-        ? '汽水音乐扫码登录态已获取(实验通道),可同步我的喜欢和歌单。'
-        : '已打开汽水扫码窗口(实验通道);未确认前 QS 搜索匹配源仍可用。',
-      ...(extra || {}),
-    });
-
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      clearPoll();
-      if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
-      resolve(result);
-    };
-    const fail = (err) => {
-      if (settled) return;
-      settled = true;
-      clearPoll();
-      if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
-      reject(err instanceof Error ? err : new Error(String(err || 'QISHUI_PCQRWEB_FAILED')));
-    };
-
-    // 在登录窗内(同源 api.qishui.com)发 fetch;fetch 读不到 Set-Cookie,但会写进分区 cookie jar。
-    const fetchInPage = (url, init) => {
-      if (!alive()) return Promise.reject(new Error('QISHUI_PCQRWEB_WINDOW_GONE'));
-      const p = JSON.stringify({ url: url, init: init || {} });
-      return loginWindow.webContents.executeJavaScript(
-        '(async()=>{try{const p=' + p + ';const r=await fetch(p.url,Object.assign({credentials:"include"},p.init));const t=await r.text();return{ok:r.ok,status:r.status,text:t};}catch(e){return{ok:false,status:0,error:String(e&&e.message||e)};}})()',
-        true
-      );
-    };
-
-    // 汇总分区里几个汽水/抖音域的 cookie,出现 sessionid 即视为登录态下发成功。
-    const collectCookie = async () => {
-      const urls = ['https://api.qishui.com/', 'https://qishui.com/', 'https://www.qishui.com/', 'https://www.douyin.com/'];
-      const seen = new Map();
-      for (const u of urls) {
-        let list = [];
-        try { list = await sess.cookies.get({ url: u }); } catch (_) {}
-        for (const c of (list || [])) if (c && c.name) seen.set(c.name, c.value);
-      }
-      return Array.from(seen.entries()).map(([k, v]) => k + '=' + v).join('; ');
-    };
-
-    // 页面文档写入自绘二维码(document.write 不改变 origin,fetch 仍是同源 api.qishui.com)。
-    const renderQr = (qrImg, statusText) => {
-      if (!alive()) return;
-      const body = '<div style="min-height:100vh;margin:0;display:grid;place-items:center;background:#10110f;color:#ecf6df;font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif;">'
-        + '<div style="width:min(420px,calc(100vw - 44px));text-align:center;">'
-        + '<div style="font-size:12px;letter-spacing:.22em;color:#b7d48a;font-weight:800;margin-bottom:12px;">QISHUI MUSIC · 实验通道</div>'
-        + '<h1 style="font-size:24px;margin:0 0 10px;font-weight:850;">使用汽水音乐 App 扫码</h1>'
-        + (qrImg ? '<div style="width:286px;height:286px;margin:0 auto 18px;border-radius:24px;background:#f9fff1;padding:16px;"><img src="' + escaped(qrImg) + '" style="width:100%;height:100%;display:block;border-radius:14px;"></div>' : '')
-        + '<div id="status" style="min-height:24px;color:#cce68b;font-weight:700;">' + escaped(statusText || '等待汽水音乐 App 扫码…') + '</div>'
-        + '</div></div>';
-      const doc = '<!doctype html><meta charset="utf-8"><title>汽水音乐扫码登录</title>' + body;
-      loginWindow.webContents.executeJavaScript('document.open();document.write(' + JSON.stringify(doc) + ');document.close();', true).catch(() => {});
-    };
-    const setStatus = (t) => {
-      if (!t || !alive()) return;
-      loginWindow.webContents.executeJavaScript('var el=document.getElementById("status");if(el)el.textContent=' + JSON.stringify(t) + ';', true).catch(() => {});
-    };
-
-    const schedulePoll = (d) => {
-      if (!alive()) return;
-      clearPoll();
-      pollTimer = setTimeout(() => { pollTimer = null; pollOnce(); }, Math.max(1500, Math.min(30000, Number(d) || 3500)));
-    };
-
-    const pollOnce = async () => {
-      if (!alive()) return;
-      if (Date.now() > deadline) { finish(publicResult('', { cancelled: true, status: 'timeout', riskControlBlocked: rlStreak > 0 })); return; }
-      let nextDelay = 3500;
-      try {
-        // 先看会话内是否已下发登录态 cookie(确认成功的最终信号)
-        const jar = await collectCookie();
-        if (qishuiCookieHasLogin(jar)) { finish(publicResult(jar, { detected: true })); return; }
-        // 兑换阶段:整窗已导航去 redirect_url,页面不再是我们的文档,只轮询 cookie jar 等 session 落袋
-        if (exchangeStartedAt) {
-          if (Date.now() - exchangeStartedAt > 25000) { finish(publicResult('', { cancelled: true, status: 'exchange-timeout', riskControlBlocked: rlStreak > 0 })); return; }
-          nextDelay = 1200;
-          return;
-        }
-        const checkUrl = qishuiPcUrl('/passport/web/check_qrconnect/', qishuiPcPassportParams());
-        const body = qishuiOrderedForm({
-          need_logo: QISHUI_PC_FIXED.need_logo,
-          need_short_url: QISHUI_PC_FIXED.need_short_url,
-          is_frontier: QISHUI_PC_FIXED.is_frontier,
-          token: token,
-          is_new_login: QISHUI_PC_FIXED.is_new_login,
-          next: QISHUI_PC_FIXED.next,
-        }, ['need_logo', 'need_short_url', 'is_frontier', 'token', 'is_new_login', 'next']);
-        const res = await fetchInPage(checkUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json,text/javascript' }, body: body });
-        let json = {};
-        try { json = JSON.parse(res && res.text || '{}'); } catch (_) {}
-        const data = (json && json.data) || {};
-        const errorCode = qishuiQrErrorCode(data, json);
-        const qrStatus = String(data.status || data.qr_status || json.status || '').toLowerCase();
-        const jar2 = await collectCookie();
-        if (qishuiCookieHasLogin(jar2)) { finish(publicResult(jar2, { detected: true })); return; }
-        if (errorCode === 7) {
-          // 7 = 确认接口限流(实测:全新码 check 返回 status:"new"/error_code:0,7 只在敏感时刻或高频轮询后出现),
-          // 不是「等待扫码」。渐进退避 15s→30s→60s,码本身仍有效,确认过的话退避结束那次就能拿到 confirmed。
-          rlStreak += 1;
-          nextDelay = Math.min(60000, 15000 * Math.pow(2, rlStreak - 1));
-          setStatus('汽水确认接口限流,' + Math.round(nextDelay / 1000) + ' 秒后自动重试(二维码仍有效,已确认的话稍候即可)');
-          return;
-        }
-        rlStreak = 0;
-        if (/confirm|success|login/.test(qrStatus)) {
-          const redirectUrl = qishuiPcQrRedirectUrl(json, data);
-          if (redirectUrl) {
-            // 关键兑换步骤(之前缺失,导致确认了也进不去):确认后必须访问 redirect_url,session cookie 才会下发。
-            // 用整窗真实导航而非页内 fetch —— 跨域重定向链的 Set-Cookie 语义与真浏览器完全一致,全部落进分区 jar。
-            setStatus('已确认,正在换取汽水登录态…');
-            exchangeStartedAt = Date.now();
-            loginWindow.loadURL(redirectUrl).catch(() => {});
-            nextDelay = 1200;
-          } else {
-            setStatus('已确认,等待登录态下发…');
-            nextDelay = 2000;
-          }
-        } else if (/scan/.test(qrStatus)) {
-          setStatus('已扫码,请在汽水音乐 App 内确认…');
-          nextDelay = 2500;   // 确认在即,收紧节奏,抢在限流窗口前拿到 confirmed
-        } else if (/expire|cancel|invalid/.test(qrStatus)) {
-          setStatus('二维码已过期,正在自动刷新…');
-          try { await startFlow(); return; } catch (_) { setStatus('二维码刷新失败,请关闭窗口重试'); nextDelay = 8000; }
-        } else if (errorCode) {
-          setStatus('扫码返回 error_code=' + errorCode + ',继续确认当前二维码');
-        } else {
-          setStatus('等待汽水音乐 App 扫码…');   // status=new(实测全新码即此值)或未知,默认等待
-          nextDelay = 4000;
-        }
-      } catch (e) {
-        nextDelay = 6000;
-      } finally {
-        if (!settled) schedulePoll(nextDelay);
-      }
-    };
-
-    const startFlow = async () => {
-      // 1) 同源 fetch 拉二维码(create 步骤 Node 端本就能出码,这里改由 Chromium 同源发,保证与 check 同一设备身份)
-      const qrUrl = qishuiPcUrl('/passport/web/get_qrcode/', qishuiPcPassportParams({
-        next: QISHUI_PC_FIXED.next,
-        need_logo: QISHUI_PC_FIXED.need_logo,
-        need_short_url: QISHUI_PC_FIXED.need_short_url,
-        is_frontier: QISHUI_PC_FIXED.is_frontier,
-      }));
-      const res = await fetchInPage(qrUrl, { method: 'GET', headers: { 'Accept': 'application/json,text/javascript' } });
-      let json = {};
-      try { json = JSON.parse(res && res.text || '{}'); } catch (_) {}
-      const data = (json && json.data) || {};
-      token = String(data.token || '').trim();
-      const qrImg = data.qrcode || '';
-      if (!token) throw new Error('QISHUI_PCQRWEB_QR_TOKEN_MISSING' + (res && res.status ? (':' + res.status) : ''));
-      renderQr(qrImg, '请用汽水音乐 App 扫码并确认');
-      if (alive() && !loginWindow.isVisible()) loginWindow.show();
-      schedulePoll(3000);
-    };
-
-    loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
-      return { action: 'deny' };
-    });
-    loginWindow.on('ready-to-show', () => { if (alive()) loginWindow.show(); });
-    loginWindow.on('closed', () => {
-      if (settled) return;
-      settled = true;
-      clearPoll();
-      resolve(publicResult('', { cancelled: true, status: 'closed', riskControlBlocked: rlStreak > 0 }));   // 限流过就带风控标志,前端自动展开 Cookie 粘贴区
-    });
-    loginWindow.webContents.once('did-finish-load', () => { startFlow().catch((e) => fail(e)); });
-    loginWindow.webContents.once('did-fail-load', (_e, code, desc, _u, isMain) => {
-      if (exchangeStartedAt) return;   // 兑换导航失败不整体回退:cookie 可能已在前几跳落袋,交给 jar 轮询和兑换超时兜底
-      if (isMain && Number(code) !== -3) fail(new Error('QISHUI_PCQRWEB_LOAD_FAILED:' + code + ':' + (desc || '')));
-    });
-    // 加载前先把 ttwid 预热 cookie 种进分区(Node 干净路径也这么做):get_qrcode/check 首发即带 ttwid,少一个风控信号缺失。
-    (async () => {
-      let warm = '';
-      try { warm = await warmupQishuiPcTtwid(); } catch (_) { warm = ''; }
-      if (warm && alive()) {
-        for (const pair of warm.split(';')) {
-          const eq = pair.indexOf('=');
-          if (eq <= 0) continue;
-          const name = pair.slice(0, eq).trim();
-          const value = pair.slice(eq + 1).trim();
-          if (!name) continue;
-          try { await sess.cookies.set({ url: 'https://api.qishui.com/', name, value, domain: '.qishui.com', path: '/', secure: true }); } catch (_) {}
-        }
-      }
-      if (alive()) loginWindow.loadURL('https://api.qishui.com/').catch((e) => fail(e));
-    })();
-  });
 }
 
 async function clearQishuiMusicLoginSession() {
   const cookieSession = session.fromPartition(QISHUI_LOGIN_PARTITION);
-  await cookieSession.clearStorageData({
-    storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
-  });
+  await cookieSession.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'] });
   return { ok: true };
 }
 
@@ -3199,14 +2242,38 @@ ipcMain.handle('desktop-window-get-state', (event) => {
   return getWindowState(getSenderWindow(event));
 });
 
+ipcMain.handle('desktop-window-restore', (event) => {
+  const win = getSenderWindow(event);
+  if (!win || win.isDestroyed()) return null;
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) win.show();
+  return getWindowState(win);
+});
+
 ipcMain.handle('mineradio-get-gpu-diagnostics', () => {
   return getGpuDiagnostics();
 });
 
-// 负载 HUD 设备指标:系统/播放器 CPU + 系统/播放器内存(HUD 可见时渲染层每 2s 拉一次)
+ipcMain.handle('mineradio-get-crash-diagnostics', () => {
+  return crashDiagnostics.snapshot();
+});
+
+ipcMain.handle('mineradio-camera-permission-request', async (event) => {
+  const senderUrl = event && event.sender && !event.sender.isDestroyed() ? event.sender.getURL() : '';
+  if (!isLocalAppUrl(senderUrl)) return { ok: false, status: 'unknown', requested: false, settingsRequired: false, error: 'UNTRUSTED_SENDER' };
+  return cameraPermissionController.requestCameraAccess();
+});
+
+ipcMain.handle('mineradio-camera-permission-open-settings', async (event) => {
+  const senderUrl = event && event.sender && !event.sender.isDestroyed() ? event.sender.getURL() : '';
+  if (!isLocalAppUrl(senderUrl)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  return cameraPermissionController.openCameraPrivacySettings();
+});
+
+// 负载 HUD 设备指标:CPU + macOS 系统 GPU + 内存(HUD 可见时渲染层每 2s 拉一次)
 let __deviceStatsCpuPrev = null; // os.cpus() 上次累计采样,用于系统 CPU 差分
 ipcMain.handle('mineradio-device-stats', async () => {
-  const out = { sysCpuPct: null, appCpuPct: null, memUsedMB: null, memTotalMB: null, memFreeMB: null, appMemMB: null };
+  const out = { sysCpuPct: null, appCpuPct: null, sysGpuPct: null, memUsedMB: null, memTotalMB: null, memFreeMB: null, appMemMB: null };
   // 系统 CPU%:os.cpus() 两次采样差分(首次无上次样本 → 返回 null,渲染层显示 --)
   try {
     const cpus = os.cpus() || [];
@@ -3240,6 +2307,9 @@ ipcMain.handle('mineradio-device-stats', async () => {
     out.appCpuPct = Math.max(0, Math.round(cpuSum / cores));
     out.appMemMB = Math.round(wsKB / 1024); // workingSetSize 单位 KB → MB
   } catch (e) {}
+  try {
+    out.sysGpuPct = await readSystemGpuUsage();
+  } catch (e) {}
   // 系统内存:复用 systemMemory(总量/已用/可用 MB,与内存压缩面板同源)
   try {
     const snap = await systemMemory.getMemorySnapshotExtended();
@@ -3250,6 +2320,21 @@ ipcMain.handle('mineradio-device-stats', async () => {
     }
   } catch (e) {}
   return out;
+});
+
+ipcMain.handle('mineradio-ai-stems-start', async (_event, payload = {}) => {
+  try { return await ensureAiStemService().start(payload); }
+  catch (error) { return { ok: false, status: 'error', error: String(error && (error.code || error.message) || 'AI_STEM_FAILED') }; }
+});
+
+ipcMain.handle('mineradio-ai-stems-status', (_event, trackKey) => {
+  try { return ensureAiStemService().status(trackKey); }
+  catch (error) { return { ok: false, status: 'error', error: String(error && (error.code || error.message) || 'AI_STEM_FAILED') }; }
+});
+
+ipcMain.handle('mineradio-ai-stems-cancel', (_event, jobId) => {
+  try { return ensureAiStemService().cancel(jobId); }
+  catch (error) { return { ok: false, status: 'error', error: String(error && (error.code || error.message) || 'AI_STEM_FAILED') }; }
 });
 
 ipcMain.handle('mineradio-memory-get-snapshot', async () => {
@@ -3282,6 +2367,18 @@ ipcMain.handle('mineradio-memory-configure-auto', async (_event, payload = {}) =
     systemPurgeAvailable: systemMemory.SYSTEM_PURGE_AVAILABLE === true,
     systemPurgeEnabled: systemMemory.SYSTEM_PURGE_ENABLED === true,
   };
+});
+
+ipcMain.on('mineradio-memory-playback-state', (_event, payload = {}) => {
+  const wasPlaying = memoryPlaybackActive;
+  memoryPlaybackActive = payload.playing === true;
+  memoryPlaybackReason = String(payload.reason || '');
+  if (wasPlaying && !memoryPlaybackActive
+      && memoryAutoState.enabled
+      && memoryAutoState.pendingSystemPurge
+      && !isMainWindowForegroundVisible()) {
+    runMemoryAutoTick('playback-idle:' + memoryPlaybackReason).catch(() => {});
+  }
 });
 
 ipcMain.handle('mineradio-memory-trim-app', async (_event, payload = {}) => {
@@ -3394,7 +2491,8 @@ ipcMain.handle('mineradio-current-fx-autosave-save', async (_event, payload = {}
 });
 
 ipcMain.handle('netease-music-open-login', async (event) => {
-  return openNeteaseMusicLoginWindow(getSenderWindow(event));
+  const result = await openNeteaseMusicLoginWindow(getSenderWindow(event));
+  return applyOfficialProviderLogin(localServer, 'netease', result);
 });
 
 ipcMain.handle('netease-music-clear-login', async () => {
@@ -3402,7 +2500,8 @@ ipcMain.handle('netease-music-clear-login', async () => {
 });
 
 ipcMain.handle('qq-music-open-login', async (event) => {
-  return openQQMusicLoginWindow(getSenderWindow(event));
+  const result = await openQQMusicLoginWindow(getSenderWindow(event));
+  return applyOfficialProviderLogin(localServer, 'qq', result);
 });
 
 ipcMain.handle('qq-music-clear-login', async () => {
@@ -3410,7 +2509,8 @@ ipcMain.handle('qq-music-clear-login', async () => {
 });
 
 ipcMain.handle('kugou-music-open-login', async (event) => {
-  return openKugouMusicLoginWindow(getSenderWindow(event));
+  const result = await openKugouMusicLoginWindow(getSenderWindow(event));
+  return applyOfficialProviderLogin(localServer, 'kugou', result);
 });
 
 ipcMain.handle('kugou-music-clear-login', async () => {
@@ -3418,11 +2518,281 @@ ipcMain.handle('kugou-music-clear-login', async () => {
 });
 
 ipcMain.handle('qishui-music-open-login', async (event) => {
-  return openQishuiMusicLoginWindow(getSenderWindow(event));
+  const result = await openQishuiMusicLoginWindow(getSenderWindow(event));
+  return applyOfficialProviderLogin(localServer, 'qishui', result);
 });
 
 ipcMain.handle('qishui-music-clear-login', async () => {
   return clearQishuiMusicLoginSession();
+});
+
+ipcMain.handle('mineradio-local-library-list', async () => {
+  if (!localMusicLibrary) return { ok: false, count: 0, tracks: [], error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  try {
+    return await localMusicLibrary.listTracks();
+  } catch (error) {
+    return { ok: false, count: 0, tracks: [], error: error.message || 'LOCAL_LIBRARY_READ_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-library-lyric', async (_event, localFileId) => {
+  if (!localMusicLibrary) return { ok: false, lyric: '', lyricSource: '', error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  try {
+    return localMusicLibrary.lyricForTrack(localFileId);
+  } catch (error) {
+    return { ok: false, lyric: '', lyricSource: '', error: error.message || 'LOCAL_LYRIC_READ_FAILED' };
+  }
+});
+
+function pruneLocalMusicImportCapabilities() {
+  const now = Date.now();
+  for (const [token, capability] of localMusicImportCapabilities) {
+    if (!capability || capability.expiresAt <= now) localMusicImportCapabilities.delete(token);
+  }
+  while (localMusicImportCapabilities.size > 8) {
+    const oldest = localMusicImportCapabilities.keys().next().value;
+    if (!oldest) break;
+    localMusicImportCapabilities.delete(oldest);
+  }
+}
+
+ipcMain.handle('mineradio-local-library-authorize', async (_event, payload = {}) => {
+  if (!localMusicLibrary) return { ok: false, count: 0, error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  const files = [];
+  const seen = new Set();
+  for (const item of (Array.isArray(payload && payload.files) ? payload.files : []).slice(0, 50000)) {
+    const requestedPath = String(item && item.path || '').trim();
+    if (!requestedPath || /^[\/]{2}/.test(requestedPath) || !path.isAbsolute(requestedPath)) continue;
+    if (!/\.(mp3|flac|wav|ogg|m4a|aac|opus)$/i.test(requestedPath)) continue;
+    let filePath = '';
+    try {
+      filePath = fs.realpathSync.native ? fs.realpathSync.native(requestedPath) : fs.realpathSync(requestedPath);
+      if (/^[\/]{2}/.test(filePath) || !fs.statSync(filePath).isFile()) continue;
+    } catch (_) { continue; }
+    const identity = filePath;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    files.push({
+      path: filePath,
+      relativePath: String(item && item.relativePath || path.basename(filePath)).replace(/\0/g, '').slice(0, 2000),
+    });
+  }
+  if (!files.length) return { ok: false, count: 0, error: 'NO_AUTHORIZED_LOCAL_AUDIO' };
+  pruneLocalMusicImportCapabilities();
+  const token = crypto.randomBytes(24).toString('hex');
+  localMusicImportCapabilities.set(token, {
+    senderId: _event && _event.sender && _event.sender.id,
+    files,
+    expiresAt: Date.now() + 3 * 60 * 1000,
+  });
+  return { ok: true, count: files.length, token };
+});
+
+ipcMain.handle('mineradio-local-library-import', async (event, payload = {}) => {
+  if (!localMusicLibrary) return { ok: false, count: 0, tracks: [], error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  pruneLocalMusicImportCapabilities();
+  const token = String(payload && payload.token || '').trim().toLowerCase();
+  const capability = /^[a-f0-9]{48}$/.test(token) ? localMusicImportCapabilities.get(token) : null;
+  if (!capability || (event && event.sender && capability.senderId !== event.sender.id) || capability.expiresAt <= Date.now()) {
+    return { ok: false, count: 0, tracks: [], error: 'LOCAL_IMPORT_CAPABILITY_INVALID' };
+  }
+  localMusicImportCapabilities.delete(token);
+  try {
+    return await localMusicLibrary.importFiles(capability.files, { replace: false });
+  } catch (error) {
+    return { ok: false, count: 0, tracks: [], error: error.code || error.message || 'LOCAL_LIBRARY_IMPORT_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-library-remove', async (_event, ids) => {
+  if (!localMusicLibrary) return { ok: false, count: 0, tracks: [], error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  try {
+    const before = localMusicLibrary.listTracksSync().count || 0;
+    const result = await localMusicLibrary.removeTracks(ids);
+    return { ...result, removed: Math.max(0, before - (result.count || 0)) };
+  } catch (error) {
+    return { ok: false, count: 0, tracks: [], removed: 0, error: error.message || 'LOCAL_LIBRARY_REMOVE_FAILED' };
+  }
+});
+
+// ---- 壁纸库：本地库与 Windows Mineradio 服务（固定 HTTP 协议） ----
+let wallpaperLibraryBridge = null;
+function getWallpaperLibraryBridge() {
+  if (!wallpaperLibraryBridge) {
+    const bridge = require('./wallpaper-library-bridge');
+    // 必须传 protocol:bridge 靠它安装 mineradio-wallpaper:// 下载协议处理器,
+    // 缺了会让"下载并应用到 Mineradio"一律报 WALLPAPER_PROTOCOL_UNAVAILABLE
+    wallpaperLibraryBridge = bridge.init({ userDataPath: app.getPath('userData'), protocol });
+  }
+  return wallpaperLibraryBridge;
+}
+
+function wallpaperLibraryTrustedSender(event) {
+  const senderUrl = event && event.sender && !event.sender.isDestroyed() ? event.sender.getURL() : '';
+  if (!isLocalAppUrl(senderUrl)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  return { ok: true, senderUrl };
+}
+
+ipcMain.handle('mineradio-wallpaper-windows-discover', async () => {
+  return getWallpaperLibraryBridge().discoverWindowsSources();
+});
+ipcMain.handle('mineradio-wallpaper-windows-connect', async (_event, baseUrl) => {
+  return getWallpaperLibraryBridge().connectWindowsSource(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-windows-live-status', async (_event, baseUrl) => {
+  return getWallpaperLibraryBridge().getWindowsLiveStatus(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-windows-export-start', async (_event, baseUrl, sceneId, seconds) => {
+  return getWallpaperLibraryBridge().startWindowsSceneExport(baseUrl, sceneId, seconds);
+});
+ipcMain.handle('mineradio-wallpaper-windows-export-status', async (_event, baseUrl, jobId) => {
+  return getWallpaperLibraryBridge().getWindowsExportJob(baseUrl, jobId);
+});
+ipcMain.handle('mineradio-wallpaper-windows-exported-videos', async (_event, baseUrl) => {
+  return getWallpaperLibraryBridge().listWindowsExportedVideos(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-windows-download-media', async (_event, baseUrl, payload) => {
+  const request = payload && typeof payload === 'object' ? payload : {};
+  if (request.kind === 'scene-export') {
+    return getWallpaperLibraryBridge().downloadWindowsExportedMedia(baseUrl, String(request.fileName || ''));
+  }
+  return getWallpaperLibraryBridge().downloadWindowsWallpaperMedia(baseUrl, String(request.recordId || ''), String(request.type || ''));
+});
+ipcMain.handle('mineradio-wallpaper-windows-export-download', async (_event, baseUrl, fileName) => {
+  const safeName = path.basename(String(fileName || '')).replace(/[^a-z0-9._ -]/gi, '_') || 'wallpaper-scene.mp4';
+  const owner = BrowserWindow.getFocusedWindow() || mainWindow;
+  const selected = await dialog.showSaveDialog(owner, {
+    title: '保存导出的壁纸视频',
+    defaultPath: safeName,
+    filters: [{ name: '视频', extensions: ['mp4', 'webm', 'mov'] }],
+  });
+  if (selected.canceled || !selected.filePath) return { ok: false, error: 'DOWNLOAD_CANCELLED' };
+  return getWallpaperLibraryBridge().downloadWindowsExport(baseUrl, fileName, selected.filePath);
+});
+
+function lyricCacheDirectoryPath() {
+  return path.join(app.getPath('userData'), 'cache', 'lyrics');
+}
+function wallpaperLibraryDirectoryPath() {
+  return path.join(app.getPath('userData'), 'Wallpapers');
+}
+function mineradioCacheDirectories() {
+  const userData = app.getPath('userData');
+  return {
+    lyrics: lyricCacheDirectoryPath(),
+    beatmaps: path.join(userData, 'beatmaps'),
+    aiStems: path.join(userData, 'ai-stems'),
+    wallpapers: wallpaperLibraryDirectoryPath(),
+  };
+}
+function wallpaperMirrorPayload(payload) {
+  const value = payload && typeof payload === 'object' ? payload : {};
+  const mime = String(value.mime || '').toLowerCase();
+  const bytes = value.bytes;
+  if (!/^image\/(png|jpe?g|webp|gif)$/i.test(mime) && !/^video\/(mp4|webm|quicktime)$/i.test(mime)) {
+    throw new Error('WALLPAPER_MIME_NOT_ALLOWED');
+  }
+  if (!(Buffer.isBuffer(bytes) || bytes instanceof Uint8Array || bytes instanceof ArrayBuffer)) {
+    throw new Error('WALLPAPER_BYTES_INVALID');
+  }
+  const buffer = Buffer.from(bytes);
+  if (!buffer.length || buffer.length > 256 * 1024 * 1024) throw new Error('WALLPAPER_SIZE_INVALID');
+  return {
+    buffer,
+    mime,
+    id: String(value.id || 'wallpaper').slice(0, 160),
+    name: String(value.name || '').slice(0, 180),
+  };
+}
+ipcMain.handle('mineradio-wallpaper-local-store', async (_event, payload) => {
+  try {
+    const data = wallpaperMirrorPayload(payload);
+    const dir = wallpaperLibraryDirectoryPath();
+    await fs.promises.mkdir(dir, { recursive: true });
+    const filename = safeWallpaperLibraryFileName(data.name, data.mime, data.id);
+    const target = path.join(dir, filename);
+    if (path.dirname(target) !== dir) throw new Error('WALLPAPER_PATH_INVALID');
+    await fs.promises.writeFile(target, data.buffer);
+    return { ok: true, path: target, name: filename, bytes: data.buffer.length };
+  } catch (error) {
+    return { ok: false, error: error && error.message || 'WALLPAPER_STORE_FAILED' };
+  }
+});
+ipcMain.handle('mineradio-wallpaper-local-open', async () => {
+  try {
+    const dir = wallpaperLibraryDirectoryPath();
+    await fs.promises.mkdir(dir, { recursive: true });
+    const error = await shell.openPath(dir);
+    return error ? { ok: false, error } : { ok: true, path: dir };
+  } catch (error) {
+    return { ok: false, error: error && error.message || 'WALLPAPER_FOLDER_OPEN_FAILED' };
+  }
+});
+function lyricCacheFilePath(key) {
+  const digest = crypto.createHash('sha256').update(String(key || '')).digest('hex');
+  return path.join(lyricCacheDirectoryPath(), `${digest}.json`);
+}
+async function pruneLyricCache() {
+  let entries = [];
+  try {
+    entries = await fs.promises.readdir(lyricCacheDirectoryPath(), { withFileTypes: true });
+  } catch (_) {
+    return;
+  }
+  const files = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !/^[a-f0-9]{64}\.json$/i.test(entry.name)) continue;
+    const file = path.join(lyricCacheDirectoryPath(), entry.name);
+    try {
+      const stat = await fs.promises.stat(file);
+      files.push({ file, size: Math.max(0, Number(stat.size) || 0), time: Number(stat.mtimeMs) || 0 });
+    } catch (_) { }
+  }
+  let total = files.reduce((sum, item) => sum + item.size, 0);
+  files.sort((a, b) => a.time - b.time);
+  for (const item of files) {
+    if (total <= LYRIC_CACHE_MAX_BYTES) break;
+    try {
+      await fs.promises.unlink(item.file);
+      total -= item.size;
+    } catch (_) { }
+  }
+}
+ipcMain.handle('mineradio-cache-read-lyric', async (_event, key) => {
+  try {
+    const file = lyricCacheFilePath(key);
+    if (!fs.existsSync(file)) return { ok: true, hit: false };
+    const stat = await fs.promises.stat(file);
+    if (stat.size <= 0 || stat.size > LYRIC_CACHE_ENTRY_MAX_BYTES) {
+      await fs.promises.unlink(file).catch(() => {});
+      return { ok: true, hit: false };
+    }
+    const parsed = JSON.parse(await fs.promises.readFile(file, 'utf8'));
+    if (!parsed || parsed.version !== LYRIC_CACHE_VERSION) return { ok: true, hit: false };
+    return { ok: true, hit: true, payload: parsed.payload };
+  } catch (e) {
+    return { ok: false, hit: false, error: e.message || 'LYRIC_CACHE_READ_FAILED' };
+  }
+});
+ipcMain.handle('mineradio-cache-write-lyric', async (_event, key, payload) => {
+  try {
+    const file = lyricCacheFilePath(key);
+    const text = JSON.stringify({
+      version: LYRIC_CACHE_VERSION,
+      savedAt: Date.now(),
+      key: String(key || '').slice(0, 500),
+      payload: payload || {},
+    });
+    if (Buffer.byteLength(text, 'utf8') > LYRIC_CACHE_ENTRY_MAX_BYTES) return { ok: true, skipped: true };
+    await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    const tempFile = `${file}.${process.pid}.${Date.now()}.tmp`;
+    await fs.promises.writeFile(tempFile, text, 'utf8');
+    await fs.promises.rename(tempFile, file);
+    await pruneLyricCache();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'LYRIC_CACHE_WRITE_FAILED' };
+  }
 });
 
 ipcMain.handle('spotify-music-open-login', async (event) => {
@@ -3433,6 +2803,76 @@ ipcMain.handle('spotify-music-clear-login', async () => {
   return clearSpotifyMusicLoginSession();
 });
 
+// Windows v2.1.0 对齐（缓存设置 · Mac 只读版）: 只读歌词缓存占用 + 手动清理，
+// 不迁移 Chromium 缓存目录搬迁（避免破坏 macOS 登录态/会话，见 AGENTS.md 硬约束）。
+async function mineradioCacheUsageSnapshot() {
+  const dirs = mineradioCacheDirectories();
+  const [lyrics, beatmaps, aiStems, wallpapers, chromiumBytes] = await Promise.all([
+    scanDirectoryUsage(dirs.lyrics),
+    scanDirectoryUsage(dirs.beatmaps),
+    scanDirectoryUsage(dirs.aiStems),
+    scanDirectoryUsage(dirs.wallpapers),
+    session.defaultSession.getCacheSize().catch(() => 0),
+  ]);
+  return {
+    ok: true,
+    rootPath: app.getPath('userData'),
+    lyricsPath: dirs.lyrics,
+    lyricsBytes: lyrics.bytes,
+    lyricsCount: lyrics.files,
+    beatmapsPath: dirs.beatmaps,
+    beatmapsBytes: beatmaps.bytes,
+    beatmapsCount: beatmaps.files,
+    aiStemsPath: dirs.aiStems,
+    aiStemsBytes: aiStems.bytes,
+    aiStemsCount: aiStems.files,
+    wallpapersPath: dirs.wallpapers,
+    wallpapersBytes: wallpapers.bytes,
+    wallpapersCount: wallpapers.files,
+    chromiumBytes: Math.max(0, Number(chromiumBytes) || 0),
+    userDataPath: app.getPath('userData'),
+    restartRequired: false,
+  };
+}
+
+ipcMain.handle('mineradio-cache-get-usage', async () => {
+  try {
+    return await mineradioCacheUsageSnapshot();
+  } catch (e) {
+    return { ok: false, error: e.message || 'CACHE_USAGE_READ_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-cache-clear-lyrics', async () => {
+  try {
+    const removed = await clearDirectoryContents(lyricCacheDirectoryPath());
+    return Object.assign({ ok: true, removed: removed.files }, await mineradioCacheUsageSnapshot());
+  } catch (e) {
+    return { ok: false, error: e.message || 'CACHE_CLEAR_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-cache-clear-selected', async (_event, payload) => {
+  const allowed = new Set(['lyrics', 'beatmaps', 'aiStems', 'network', 'wallpapers']);
+  const categories = Array.from(new Set((payload && Array.isArray(payload.categories) ? payload.categories : [])
+    .map((item) => String(item || '')))).filter((item) => allowed.has(item));
+  try {
+    const dirs = mineradioCacheDirectories();
+    const cleared = {};
+    for (const category of categories) {
+      if (category === 'network') {
+        await session.defaultSession.clearCache();
+        cleared.network = true;
+      } else {
+        cleared[category] = await clearDirectoryContents(dirs[category]);
+      }
+    }
+    return Object.assign({ ok: true, cleared }, await mineradioCacheUsageSnapshot());
+  } catch (error) {
+    return { ok: false, error: error && error.message || 'CACHE_CLEAR_FAILED' };
+  }
+});
+
 function loginCookieExportMeta(provider) {
   const key = String(provider || '').toLowerCase();
   const userData = app.getPath('userData');
@@ -3440,7 +2880,6 @@ function loginCookieExportMeta(provider) {
     netease: { label: '网易云音乐', files: [process.env.COOKIE_FILE, path.join(userData, '.cookie')] },
     qq: { label: 'QQ音乐', files: [process.env.QQ_COOKIE_FILE, path.join(userData, '.qq-cookie')] },
     kugou: { label: '酷狗音乐', files: [process.env.KUGOU_COOKIE_FILE, path.join(userData, '.kugou-cookie')] },
-    qishui: { label: '汽水音乐', files: [process.env.QISHUI_COOKIE_FILE, path.join(userData, '.qishui-cookie'), process.env.QISHUI_TOKEN_FILE, path.join(userData, '.qishui-token')] },
     spotify: { label: 'Spotify', files: [process.env.SPOTIFY_TOKEN_FILE, path.join(userData, '.spotify-token.json')] },
   };
   return entries[key] || null;
@@ -3448,6 +2887,13 @@ function loginCookieExportMeta(provider) {
 
 ipcMain.handle('mineradio-export-login-cookie', async (_event, provider) => {
   try {
+    if (!RELEASE_POLICY.allowCredentialExport) {
+      return {
+        ok: false,
+        error: 'CREDENTIAL_EXPORT_DISABLED',
+        message: '公开版不提供登录凭据导出。',
+      };
+    }
     const meta = loginCookieExportMeta(provider);
     if (!meta) return { ok: false, error: 'UNKNOWN_PROVIDER', message: '未知平台，无法导出登录 cookie' };
     const source = (meta.files || []).filter(Boolean).find((file) => {
@@ -3597,12 +3043,15 @@ ipcMain.on('mineradio-wallpaper-control', (_e, payload) => {
   }
 });
 
+
 // ── 手部姿态原生桥接(v12):Swift 助手用 Vision 在 ANE 上跑手部姿态(不碰 GPU,不与体素渲染抢核显)──
 // 渲染层采集摄像头(已有权限)→ 送 256×192 RGBA 帧到助手 stdin;助手回 21 点关键点 JSON → 转发渲染层。
 // 助手只做推理不碰摄像头,故无需摄像头权限。
 let handposeProc = null;
 let handposeStdoutBuf = '';
-const HANDPOSE_BIN = path.join(__dirname, 'native', 'handpose', 'handpose-helper');
+const HANDPOSE_BIN = app.isPackaged
+  ? path.join(process.resourcesPath, 'app.asar.unpacked', 'desktop', 'native', 'handpose', 'handpose-helper')
+  : path.join(__dirname, 'native', 'handpose', 'handpose-helper');
 function killHandpose() {
   if (handposeProc) { try { handposeProc.kill('SIGKILL'); } catch (e) {} handposeProc = null; }
   handposeStdoutBuf = '';
@@ -3643,7 +3092,19 @@ ipcMain.on('mineradio-handpose-frame', (_e, buf) => {
 ipcMain.on('mineradio-handpose-stop', () => killHandpose());
 app.on('before-quit', () => killHandpose());
 
-async function createWindow() {
+function createWindow() {
+  if (createWindowInFlight) return createWindowInFlight;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    focusMainWindow();
+    return Promise.resolve(mainWindow);
+  }
+  createWindowInFlight = createWindowInternal().finally(() => {
+    createWindowInFlight = null;
+  });
+  return createWindowInFlight;
+}
+
+async function createWindowInternal() {
   htmlFullscreenActive = false;
   windowFullscreenActive = false;
   const port = await findOpenPort(3000);
@@ -3656,6 +3117,7 @@ async function createWindow() {
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
   process.env.KUGOU_COOKIE_FILE = path.join(app.getPath('userData'), '.kugou-cookie');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
+  process.env.MINERADIO_AI_STEM_CACHE_DIR = getAiStemCacheRoot();
   try {
     const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
     if (fs.existsSync(legacyQQCookie)) {
@@ -3668,13 +3130,13 @@ async function createWindow() {
     console.warn('QQ cookie migration skipped:', e.message);
   }
 
-  // 音源状态文件(酷狗VIP凭据/汽水token+OAuth/Spotify凭据+token)必须落 userData:
+  // 音源状态文件（酷狗 VIP 凭据、Spotify 凭据与 token）必须落 userData：
   // mac 的 app bundle 视为只读且随更新被整体覆盖, provider 模块保持与上游零差异, 路径全走环境变量注入
   const providerStateDir = app.getPath('userData');
+  if (!localMusicLibrary) localMusicLibrary = new LocalMusicLibrary({ userDataPath: providerStateDir });
   if (!process.env.KUGOU_VIP_EVIDENCE_FILE) process.env.KUGOU_VIP_EVIDENCE_FILE = path.join(providerStateDir, 'kugou-vip-evidence.json');
   if (!process.env.QISHUI_TOKEN_FILE) process.env.QISHUI_TOKEN_FILE = path.join(providerStateDir, 'qishui-token.json');
   if (!process.env.QISHUI_COOKIE_FILE) process.env.QISHUI_COOKIE_FILE = path.join(providerStateDir, '.qishui-cookie');
-  if (!process.env.QISHUI_OAUTH_CONFIG_FILE) process.env.QISHUI_OAUTH_CONFIG_FILE = path.join(providerStateDir, 'qishui-oauth.json');
   if (!process.env.SPOTIFY_CONFIG_FILE) process.env.SPOTIFY_CONFIG_FILE = path.join(providerStateDir, 'spotify-credentials.json');
   if (!process.env.SPOTIFY_TOKEN_FILE) process.env.SPOTIFY_TOKEN_FILE = path.join(providerStateDir, 'spotify-token.json');
 
@@ -3683,7 +3145,6 @@ async function createWindow() {
 
   const initialBounds = getWindowedBounds();
   const initialMinimum = getAdaptiveWindowMinimumSize(screen.getPrimaryDisplay());
-
   mainWindow = new BrowserWindow({
     ...initialBounds,
     minWidth: initialMinimum.width,
@@ -3692,7 +3153,14 @@ async function createWindow() {
     frame: false,
     // macOS：显示原生红黄绿按钮，并关掉透明以启用原生全屏（绿色=进入全屏的双箭头）
     ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 18 }, fullscreenable: true }
+      ? {
+          titleBarStyle: 'hidden',
+          trafficLightPosition: { x: 14, y: 18 },
+          fullscreenable: true,
+          // 壁纸模式必须能覆盖 display.bounds（包括菜单栏后的像素）。
+          // 没有这个选项，macOS 会把 setBounds 自动夹回 workArea，顶部留下系统壁纸。
+          enableLargerThanScreen: true,
+        }
       : {}),
     fullscreen: false,
     transparent: process.platform !== 'darwin',
@@ -3710,8 +3178,14 @@ async function createWindow() {
     },
   });
 
+  try {
+    touchbar.init({ window: mainWindow, sendAction: sendGlobalHotkeyAction, ipcMain });
+  } catch (e) {
+    console.log('[TouchBar] 初始化跳过:', e.message);
+  }
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    safeOpenExternalUrl(url);
     return { action: 'deny' };
   });
 
@@ -3735,9 +3209,13 @@ async function createWindow() {
   mainWindow.once('ready-to-show', () => {
     resetMainWindowZoom();
     mainWindow.show();
+    activateMainWindow();
+    mainWindow.focus();
+    try { if (typeof mainWindow.moveTop === 'function') mainWindow.moveTop(); } catch (e) {}
     if (process.platform === 'darwin' && typeof mainWindow.setWindowButtonVisibility === 'function') {
       mainWindow.setWindowButtonVisibility(true);
     }
+    scheduleMainWindowActivation();
     sendWindowState(mainWindow);
   });
 
@@ -3764,8 +3242,19 @@ async function createWindow() {
   // 渲染进程崩溃恢复：自动重新加载页面（修复"窗口全黑/卡死"）
   // 渲染进程崩溃（OOM/GPU 异常/原生模块出错）时，页面变黑且无法操作。
   // 监听 render-process-gone，延迟 1.5 秒重新加载，给系统回收时间。
-  mainWindow.webContents.on('render-process-gone', (event, details) => {
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('[CrashRecovery] 渲染进程崩溃:', details && details.reason, details);
+    crashDiagnostics.capture('render-process-gone', {
+      reason: details && details.reason,
+      exitCode: details && details.exitCode,
+      processType: details && details.processType,
+      url: mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents
+        ? mainWindow.webContents.getURL()
+        : '',
+      gpuFeatureStatus: (() => {
+        try { return app.getGPUFeatureStatus(); } catch (error) { return { error: error.message || String(error) }; }
+      })(),
+    });
     if (mainWindow && !mainWindow.isDestroyed()) {
       // 延迟重新加载，避免崩溃瞬间反复重启
       setTimeout(() => {
@@ -3812,6 +3301,8 @@ async function createWindow() {
     }
   });
   mainWindow.on('closed', () => {
+    mainWindowActivationTimers.forEach((timer) => clearTimeout(timer));
+    mainWindowActivationTimers = [];
     mainWindowCloseFlushArmed = false;
     if (mainWindowStateTimer) {
       clearTimeout(mainWindowStateTimer);
@@ -3841,12 +3332,8 @@ async function createWindow() {
     setTimeout(() => applyWindowedBounds(mainWindow), 50);
   });
 
-  try {
-    await mainWindow.webContents.session.clearCache();
-  } catch (e) {
-    console.warn('Main window cache clear skipped:', e.message);
-  }
   await mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  scheduleMainWindowActivation();
 }
 
 app.setName(APP_NAME);
@@ -3926,6 +3413,20 @@ if (process.platform === 'darwin') {
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
+  app.on('child-process-gone', (_event, details) => {
+    const processType = details && details.type;
+    const reason = details && details.reason;
+    if (processType !== 'GPU' && reason !== 'crashed' && reason !== 'abnormal-exit') return;
+    console.error('[CrashDiagnostics] 子进程异常:', details);
+    crashDiagnostics.capture('child-process-gone', {
+      type: processType,
+      reason,
+      exitCode: details && details.exitCode,
+      serviceName: details && details.serviceName,
+      name: details && details.name,
+    });
+  });
+
   app.on('second-instance', () => {
     if (!focusMainWindow()) {
       app.whenReady().then(() => createWindow()).catch((e) => console.error('Second instance window restore failed:', e));
@@ -3944,12 +3445,43 @@ if (!gotSingleInstanceLock) {
     screen.on('display-metrics-changed', handleDisplayLayoutChanged);
     screen.on('display-added', handleDisplayLayoutChanged);
     screen.on('display-removed', handleDisplayLayoutChanged);
+    if (localMusicLibrary) {
+      try { await localMusicLibrary.installProtocol(protocol); } catch (e) { console.warn('[LocalMusic] media protocol unavailable:', e && e.message || e); }
+    }
+    // 壁纸库下载协议必须先于窗口创建安装:protocol.handle 若等首次 IPC 才懒安装,
+    // 页面 frame 的 URLLoaderFactory 已生成、不含该 scheme,渲染进程 fetch 临时资源
+    // 会一直报 net::ERR_UNKNOWN_URL_SCHEME(表现为"Failed to fetch"),重载页面才能恢复
+    try { getWallpaperLibraryBridge(); } catch (e) { console.warn('[WallpaperLibrary] protocol unavailable:', e && e.message || e); }
     await createWindow();
     try { require('./telemetry').startTelemetry(); } catch (e) {}
-    // macOS Touch Bar 播放控制（无 Touch Bar 的机器安全 no-op，不报错）
+    // 软件内更新检查（自研轻量方案：无 Developer ID 证书，不做后台静默替换，
+    // 只做"检查清单 → 提示 → 下载 dmg → 打开安装器"，见 desktop/update-checker.js）
     try {
-      touchbar.init({ window: mainWindow, sendAction: sendGlobalHotkeyAction, ipcMain: ipcMain });
-    } catch (e) { console.log('[TouchBar] 初始化跳过:', e.message); }
+      const appVersion = app.getVersion();
+      const updater = require('./update-checker');
+      updater.startUpdateChecker({
+        mainWindow,
+        manifestUrl: APP_METADATA.updateManifestUrl || '',
+        currentVersion: appVersion,
+      });
+      ipcMain.handle('mineradio-update-check-now', async () => {
+        return updater.checkForUpdate({ manifestUrl: APP_METADATA.updateManifestUrl || '', currentVersion: appVersion });
+      });
+      ipcMain.handle('mineradio-update-download', async (_event, downloadUrl) => {
+        const result = await updater.downloadUpdateDmg({
+          url: downloadUrl,
+          onProgress: (loaded, total) => {
+            try {
+              if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+                mainWindow.webContents.send('mineradio-update-event', { type: 'download-progress', loaded, total });
+              }
+            } catch (_) {}
+          },
+        });
+        if (result.ok) result.opened = updater.openDownloadedDmg(result.filePath);
+        return result;
+      });
+    } catch (e) { console.warn('[UpdateChecker] 初始化跳过:', e && e.message || e); }
   });
 
   app.on('activate', () => {
@@ -3965,6 +3497,7 @@ if (!gotSingleInstanceLock) {
 
   app.on('before-quit', () => {
     appQuitting = true;
+    if (aiStemService) aiStemService.shutdown();
     stopMemoryAutoTimer();
     unregisterMineradioGlobalHotkeys();
     closeOverlayWindows();

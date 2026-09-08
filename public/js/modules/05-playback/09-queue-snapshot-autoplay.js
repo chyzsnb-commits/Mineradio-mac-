@@ -13,7 +13,7 @@ function playbackRestoreSongSnapshot(song) {
   [
     'provider', 'source', 'type', 'id', 'mid', 'songmid', 'mediaMid', 'media_mid', 'qqId',
     'name', 'title', 'artist', 'album', 'cover', 'duration', 'durationMs', 'dt', 'fee',
-    'playable', 'programId', 'radioId', 'radioName', 'localKey'
+    'playable', 'programId', 'radioId', 'radioName', 'localKey', 'localFileId'
   ].forEach(function (key) {
     if (song[key] != null && song[key] !== '') snap[key] = song[key];
   });

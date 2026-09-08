@@ -1,5 +1,7 @@
 // ============================================================
 var PEEK_HIDE_DELAY = 170;
+// DIY 控制台(fx)要求"鼠标一离开就收起"，隐藏延迟要比搜索/歌单更短
+var FX_PEEK_HIDE_DELAY = 100;
 var peekTimers = { search: null, fx: null, pl: null };
 var PLAYLIST_PANEL_MOTION_MS = 360;
 var PLAYLIST_PANEL_OPEN_ANIM_COOLDOWN = 520;
@@ -25,10 +27,15 @@ function shouldAnimatePlaylistPanelOpen(panel) {
 }
 function setPeek(el, on, key) {
   if (!el) return;
+  if (key === 'pl' && on && typeof canOpenPlaylistPanel === 'function' && !canOpenPlaylistPanel()) {
+    if (typeof hidePlaylistPanelOutsideListeningPage === 'function') hidePlaylistPanelOutsideListeningPage();
+    return;
+  }
   if (immersiveMode && on && (key === 'search' || key === 'fx')) return;
   if (on && !diyPlayerMode && key === 'fx') return;
   if (!on && key === 'search' && emptyHomeActive && !immersiveMode) return;
   if (!on && key === 'pl' && playlistPanelPinned) return;
+  if (!on && key === 'fx' && fxPanelPinned) return;
   if (on && key === 'fx') document.body.classList.remove('fullscreen-diy-peek');
   if (on) {
     var wasPeek = el.classList.contains('peek');
@@ -74,7 +81,7 @@ function setPeek(el, on, key) {
         if (fabOff && !el.classList.contains('show')) fabOff.classList.remove('active');
       }
       peekTimers[key] = null;
-    }, PEEK_HIDE_DELAY);
+    }, key === 'fx' ? FX_PEEK_HIDE_DELAY : PEEK_HIDE_DELAY);
   }
 }
 function uploadTipWasSeen() {
@@ -157,8 +164,15 @@ function maybeShowUploadTipOnce() {
 var secondaryPlaylistEdgeGuard = { enteredAt: 0, timer: null, x: 0, y: 0, H: 0 };
 var SECONDARY_PLAYLIST_EDGE_MIN_X = 14;
 var SECONDARY_PLAYLIST_EDGE_MAX_X = 118;
-var SECONDARY_PLAYLIST_EDGE_DWELL_MS = 160;
+var PLAYLIST_EDGE_DWELL_MS = 300;
+var SECONDARY_PLAYLIST_EDGE_DWELL_MS = PLAYLIST_EDGE_DWELL_MS;
 var SECONDARY_PLAYLIST_SEAM_CLOSE_X = 12;
+function isVisualPointerDragActive(e) {
+  if (e && typeof e.buttons === 'number' && (e.buttons & 1)) return true;
+  if (typeof orbit !== 'undefined' && orbit && orbit.rotating) return true;
+  if (typeof _voxDrag !== 'undefined' && _voxDrag && _voxDrag.active) return true;
+  return false;
+}
 function isSecondaryLeftDisplaySeamGuardActive() {
   var state = (typeof desktopWindowState !== 'undefined' && desktopWindowState) ? desktopWindowState : {};
   return !!(window.desktopWindow && window.desktopWindow.isDesktop && state.isPrimaryDisplay === false && state.hasDisplayOnLeft);
@@ -179,18 +193,34 @@ function armSecondaryPlaylistEdgeDwell() {
     secondaryPlaylistEdgeGuard.timer = null;
     if (!isSecondaryLeftDisplaySeamGuardActive()) return;
     if (!isSecondaryPlaylistSafeBandPoint(secondaryPlaylistEdgeGuard.x, secondaryPlaylistEdgeGuard.y, secondaryPlaylistEdgeGuard.H)) return;
+    if (typeof canOpenPlaylistPanel === 'function' && !canOpenPlaylistPanel()) return;
     var panel = document.getElementById('playlist-panel');
     if (panel) setPeek(panel, true, 'pl');
   }, SECONDARY_PLAYLIST_EDGE_DWELL_MS);
 }
 function isPlaylistEdgeTrigger(ex, ey, H) {
+  var pointerEvent = arguments.length > 3 ? arguments[3] : null;
+  if (typeof canOpenPlaylistPanel === 'function' && !canOpenPlaylistPanel()) {
+    resetSecondaryPlaylistEdgeGuard();
+    return false;
+  }
+  if (isVisualPointerDragActive(pointerEvent)) {
+    resetSecondaryPlaylistEdgeGuard();
+    return false;
+  }
   var inVerticalBand = ey > 132 && ey < H - 132;
   if (!inVerticalBand) {
     resetSecondaryPlaylistEdgeGuard();
     return false;
   }
   if (!isSecondaryLeftDisplaySeamGuardActive()) {
-    return ex >= 0 && ex < 86;
+    if (!(ex >= 0 && ex < 86)) {
+      resetSecondaryPlaylistEdgeGuard();
+      return false;
+    }
+    var primaryNow = performance.now();
+    if (!secondaryPlaylistEdgeGuard.enteredAt) secondaryPlaylistEdgeGuard.enteredAt = primaryNow;
+    return primaryNow - secondaryPlaylistEdgeGuard.enteredAt >= PLAYLIST_EDGE_DWELL_MS;
   }
   var inSafeBand = isSecondaryPlaylistSafeBandPoint(ex, ey, H);
   if (!inSafeBand) {
@@ -279,13 +309,21 @@ window.addEventListener('mousemove', function (e) {
     setFocusZone(null);
     return;
   }
+  var visualDragActive = isVisualPointerDragActive(e);
+  if (visualDragActive) {
+    // 左键拖动只服务于镜头/音柱交互；清除两侧歌单的临时唤醒目标。
+    updateShelfHoverCueFromPointer(null);
+    updateShelfCardHoverSelection(null);
+    resetSecondaryPlaylistEdgeGuard();
+    return;
+  }
   if (immersiveMode) {
     updateShelfHoverCueFromPointer(e);
     updateShelfCardHoverSelection(e);
     updateControlsAutoHideFromPointer(ex, ey);
     var ppOnImm = isPlaylistPanelActiveState(pp);
     var ppRectImm = pp.getBoundingClientRect();
-    var inQueueTriggerImm = isPlaylistEdgeTrigger(ex, ey, H);
+    var inQueueTriggerImm = isPlaylistEdgeTrigger(ex, ey, H, e);
     var inQueuePanelImm = isPlaylistPanelPanelHit(pp, ppRectImm, ex, ey);
     var inQueueBridgeImm = isPlaylistPanelBridgeHit(pp, ppRectImm, ex, ey, H);
     if (inQueueTriggerImm || inQueuePanelImm || inQueueBridgeImm) setPeek(pp, true, 'pl');
@@ -327,7 +365,7 @@ window.addEventListener('mousemove', function (e) {
   // 歌单/队列 DOM 面板只在左侧明确停留时出现，避免和右侧 3D 架抢焦点
   var ppOn = isPlaylistPanelActiveState(pp);
   var ppRect = pp.getBoundingClientRect();
-  var inQueueTrigger = isPlaylistEdgeTrigger(ex, ey, H);
+  var inQueueTrigger = isPlaylistEdgeTrigger(ex, ey, H, e);
   var inQueuePanel = isPlaylistPanelPanelHit(pp, ppRect, ex, ey);
   var inQueueBridge = isPlaylistPanelBridgeHit(pp, ppRect, ex, ey, H);
   if (inQueueTrigger || inQueuePanel || inQueueBridge) setPeek(pp, true, 'pl');

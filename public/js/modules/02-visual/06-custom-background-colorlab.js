@@ -95,6 +95,33 @@ async function getCustomBackgroundBlob(id) {
     tx.oncomplete = function () { db.close(); };
   });
 }
+async function listCustomBackgroundMediaEntries() {
+  var db = await openCustomBackgroundDb();
+  return new Promise(function (resolve, reject) {
+    var entries = [];
+    var tx = db.transaction(CUSTOM_BG_STORE, 'readonly');
+    var req = tx.objectStore(CUSTOM_BG_STORE).openCursor();
+    req.onsuccess = function () {
+      var cursor = req.result;
+      if (cursor) {
+        if (cursor.value && cursor.value.id && cursor.value.blob) entries.push(cursor.value);
+        cursor.continue();
+      }
+    };
+    req.onerror = function () { reject(req.error || new Error('indexedDB cursor failed')); };
+    tx.oncomplete = function () { db.close(); resolve(entries); };
+    tx.onerror = function () { db.close(); reject(tx.error || new Error('indexedDB transaction failed')); };
+  });
+}
+async function clearCustomBackgroundMediaLibrary() {
+  var db = await openCustomBackgroundDb();
+  return new Promise(function (resolve, reject) {
+    var tx = db.transaction(CUSTOM_BG_STORE, 'readwrite');
+    tx.objectStore(CUSTOM_BG_STORE).clear();
+    tx.oncomplete = function () { db.close(); resolve(); };
+    tx.onerror = function () { db.close(); reject(tx.error || new Error('indexedDB clear failed')); };
+  });
+}
 var colorLabState = { picker: null, id: '', h: 0, s: 1, v: 1, dragging: false };
 var COLOR_LAB_PRESETS = [
   { name: '极黑', color: '#000000' },

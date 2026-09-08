@@ -24,13 +24,22 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+CrashDumps/
 
 # Tool caches (must never be committed)
 build/.omc/
 .omc/
+.superpowers/
 
 # Local secrets / env
 .env
 .env.local
 *.p12
 *.pfx
+.cookie
+.qq-cookie
+.kugou-cookie
+.qishui-cookie
+.spotify-token.json
+spotify-credentials.json
+kugou-vip-evidence.json

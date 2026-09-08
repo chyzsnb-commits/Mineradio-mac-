@@ -87,6 +87,81 @@ function lyricLineAllowedForDisplayMode(lineIndex, targetLineIndex, mode) {
   return false;
 }
 
+// 多行时行轨道本身已经负责换行。转场只能轻触焦点原文及其当前译文，
+// 不能再移动整组或让上下文行跟着失焦，否则会与 trackScrollOffset 叠加。
+function lyricRowTransitionTransform(transition, isFocus, row) {
+  var result = { x: 0, y: 0, z: 0, scale: 1, transitionBlur: 0 };
+  if (!transition || !isFocus) return result;
+  var style = String(transition.style || 'crossfade');
+  if (style === 'original' || style === 'crossfade' || transition.reduced) return result;
+  var phase = clampRange(Number(transition.phase) || 0, 0, 1);
+  // 原文先起，当前译文稍后接力，避免两种文字在同一帧抢同一条轨道。
+  if (row && row.isTranslation) phase = clampRange((phase - 0.028) / 0.972, 0, 1);
+  var direction = Number(transition.direction) < 0 ? -1 : 1;
+  var isOutgoing = !!transition.isOutgoing;
+  var remaining = 1 - phase;
+  if (style === 'rise') {
+    // 多行根节点固定在轨道上，因此焦点行要有足够的局部行程才能与叠化区分。
+    result.y = isOutgoing ? 0.120 * phase : -0.180 * remaining;
+    result.z = isOutgoing ? -0.018 * phase : -0.014 * remaining;
+    result.scale = isOutgoing ? 1 - phase * 0.016 : 0.988 + phase * 0.012;
+    result.transitionBlur = (isOutgoing ? phase : remaining) * 0.068;
+  } else if (style === 'slide') {
+    result.x = (isOutgoing ? direction : -direction) * (isOutgoing ? 0.280 * phase : 0.320 * remaining);
+    result.y = isOutgoing ? 0.024 * phase : -0.020 * remaining;
+    result.z = isOutgoing ? -0.022 * phase : -0.016 * remaining;
+    result.scale = isOutgoing ? 1 - phase * 0.014 : 0.990 + phase * 0.010;
+    result.transitionBlur = (isOutgoing ? phase : remaining) * 0.074;
+  } else if (style === 'focus') {
+    result.z = isOutgoing ? -0.065 * phase : 0.100 * remaining;
+    result.scale = isOutgoing ? 1 - phase * 0.040 : 1.070 - phase * 0.070;
+    result.transitionBlur = (isOutgoing ? phase : remaining) * 0.100;
+  }
+  return result;
+}
+
+function primeLyricRowTransitionStart(mesh, style, direction) {
+  var data = mesh && mesh.userData && mesh.userData.lyric;
+  if (!data || !data.usesTrack || !data.rowLayers || !data.rowLayers.length) return false;
+  var targetLineIndex = Number(data.trackTargetLineIndex);
+  if (!isFinite(targetLineIndex)) return false;
+  var transition = { style: style, phase: 0, direction: direction, isOutgoing: false, reduced: false };
+  var primed = false;
+  data.rowLayers.forEach(function (row) {
+    if (!row) return;
+    var isCurrentTranslation = row.isTranslation && Number(row.parentIndex) === targetLineIndex;
+    var isCurrentPrimary = row.isPrimary && Number(row.lineIndex) === targetLineIndex;
+    var transform = lyricRowTransitionTransform(transition, isCurrentPrimary || isCurrentTranslation, row);
+    if (transform.x === 0 && transform.y === 0 && transform.z === 0 && transform.scale === 1 && transform.transitionBlur === 0) return;
+    row.transitionPrimed = true;
+    primed = true;
+  });
+  if (!primed) return false;
+  // 进入可见态前用与逐帧相同的分区布局一次性落位，避免译文的深度/尺度层在第二帧补算而跳变。
+  updateLyricRowLayers(data, {
+    opacity: 0,
+    readability: 0.58,
+    contextIntro: 0,
+    shownProgress: 0,
+    contextDrift: 0,
+    style: 'smooth',
+    time: 0,
+    seed: 0,
+    jitterX: 0,
+    jitterY: 0,
+    rowGlow: 0,
+    rowGlowBeat: 0,
+    targetLineIndex: targetLineIndex,
+    targetVirtualIndex: data.trackTargetVirtualIndex,
+    transition: transition,
+    renderBase: 43,
+    ease: 1,
+    trackEase: 1,
+    transitionStart: true
+  });
+  return primed;
+}
+
 function lyricRowVisualDelta(entry, index, activeLine) {
   entry = entry || {};
   var raw = index - activeLine;
@@ -417,6 +492,7 @@ function updateLyricRowLayers(data, opts) {
   var jitterY = Number(opts.jitterY) || 0;
   var verticalFloatOn = typeof lyricVerticalFloatEnabled === 'function' ? lyricVerticalFloatEnabled() : true;
   var ease = opts.ease == null ? 0.16 : clampRange(Number(opts.ease) || 0.16, 0.04, 1);
+  var transitionStart = !!opts.transitionStart;
   var targetLineIndex = opts.targetLineIndex != null && isFinite(Number(opts.targetLineIndex))
     ? Number(opts.targetLineIndex)
     : (isFinite(Number(data.trackTargetLineIndex)) ? Number(data.trackTargetLineIndex) : 0);
@@ -442,12 +518,14 @@ function updateLyricRowLayers(data, opts) {
   var rowDrift = (0.5 - shownProgress) * contextDrift;
   var rowGlow = clampRange(Number(opts.rowGlow) || 0, 0, 1);
   var rowGlowBeat = clampRange(Number(opts.rowGlowBeat) || 0, 0, 1.5);
+  var transition = opts.transition || null;
   var backdropAdapt = lyricSonicBackdropAdaptActive() ? lyricBackgroundAdaptStrengthValue() : 0;
   var readabilityBackdropColor = backdropAdapt > 0.001 ? lyricReadabilityColorForBrightBackdrop(backdropAdapt) : null;
   var activeRow = null;
   for (var i = 0; i < data.rowLayers.length; i++) {
     var row = data.rowLayers[i];
-    var liveDelta = (row.virtualIndex != null && isFinite(Number(row.virtualIndex)) ? Number(row.virtualIndex) : i) - scrollOffset;
+    var rowVirtualIndex = row.virtualIndex != null && isFinite(Number(row.virtualIndex)) ? Number(row.virtualIndex) : i;
+    var liveDelta = rowVirtualIndex - scrollOffset;
     var targetDelta = (row.virtualIndex != null && isFinite(Number(row.virtualIndex)) ? Number(row.virtualIndex) : i) - targetIndex;
     var abs = Math.abs(liveDelta);
     var targetAbs = Math.abs(targetDelta);
@@ -500,12 +578,22 @@ function updateLyricRowLayers(data, opts) {
       }
       singleLineTranslationSwap = singleLineStaticSwap && (currentTranslation || row.parentRole === 'current');
     }
+    if (transition && data.usesTrack) {
+      var zoneFollow = isActive ? 1.14 : (currentTranslation ? 1.05 : clampRange(0.76 - Math.min(3, targetAbs) * 0.06, 0.58, 0.76));
+      var rowTrackEase = clampRange(trackEase * zoneFollow, 0.06, 0.30);
+      if (!isFinite(Number(row.transitionScrollOffset))) row.transitionScrollOffset = scrollOffset;
+      row.transitionScrollOffset += (scrollOffset - row.transitionScrollOffset) * rowTrackEase;
+      liveDelta = rowVirtualIndex - row.transitionScrollOffset;
+      abs = Math.abs(liveDelta);
+      visibilityAbs = abs;
+    }
     var lineWindowAllowed = lyricLineAllowedForDisplayMode(rowWindowLineIndex, targetLineIndex, displayMode);
     if (!lineWindowAllowed) {
       contextAlpha = 0;
       translationFocus = 0;
     }
     var motionAnchor = isActive || currentTranslation;
+    var rowTransition = lyricRowTransitionTransform(transition, motionAnchor, row);
     var rowIntro = motionAnchor ? 1 : contextIntro;
     var visibleRadius = Math.max(0.85, Number(data.trackVisibleRadius) || 3);
     var visibleFade = lineWindowAllowed ? (motionAnchor ? 1 : clampRange((visibleRadius + 1.10 - visibilityAbs) / 1.10, 0, 1)) : 0;
@@ -516,10 +604,10 @@ function updateLyricRowLayers(data, opts) {
     if (row.isTranslation) {
       yTarget = singleLineTranslationSwap && isFinite(Number(row.baseY))
         ? Number(row.baseY)
-        : lyricTranslationAnchoredY(row, i, targetIndex, lineStepWorld, translationLineStepWorld, scrollOffset, rowDrift, currentTranslation, !!data.usesTrack);
+        : lyricTranslationAnchoredY(row, i, targetIndex, lineStepWorld, translationLineStepWorld, row.transitionScrollOffset == null ? scrollOffset : row.transitionScrollOffset, rowDrift, currentTranslation, !!data.usesTrack);
     }
     var zBase = 0.055 - Math.pow(Math.min(5.5, visibilityAbs), 1.06) * 0.145;
-    var zTarget = zBase - (motionAnchor ? 0 : Math.abs(rowDrift) * 0.18) + (row.isTranslation ? translationFocus * 0.065 : 0);
+    var zTarget = zBase - (motionAnchor ? 0 : Math.abs(rowDrift) * 0.18) + (row.isTranslation ? translationFocus * 0.065 : 0) + rowTransition.z;
     var baseScale = clampRange(1 - Math.min(5.5, visibilityAbs) * 0.026, 0.84, 1.02);
     if (row.isTranslation) baseScale *= clampRange(Number(row.fontScale) || 1, 0.72, 1.34);
     if (singleLineTranslationSwap) {
@@ -528,17 +616,18 @@ function updateLyricRowLayers(data, opts) {
     } else if (row.isTranslation) {
       baseScale *= 1.00 + translationFocus * 0.16;
     }
-    var scaleTarget = baseScale * (motionAnchor || !verticalFloatOn ? 1 : (1 + Math.sin(t * 0.68 + seed + i * 0.71) * (style === 'float' ? 0.012 : 0.004)));
+    var scaleTarget = baseScale * rowTransition.scale * (motionAnchor || !verticalFloatOn ? 1 : (1 + Math.sin(t * 0.68 + seed + i * 0.71) * (style === 'float' ? 0.012 : 0.004)));
     var translationGlowFocus = row.isTranslation ? translationFocus : 0;
     if (row.mesh) {
-      row.mesh.position.x += ((isActive ? jitterX : (currentTranslation ? jitterX * 0.82 : jitterX * 0.28)) - row.mesh.position.x) * (opts.glitchPulse ? 0.48 : 0.13);
-      row.mesh.position.y += (yTarget + (verticalFloatOn ? (isActive ? jitterY : (currentTranslation ? jitterY * 0.78 : jitterY * 0.24)) : 0) - row.mesh.position.y) * ease;
+      row.mesh.position.x += ((isActive ? jitterX : (currentTranslation ? jitterX * 0.82 : jitterX * 0.28)) + rowTransition.x - row.mesh.position.x) * (transitionStart ? 1 : (opts.glitchPulse ? 0.48 : 0.13));
+      row.mesh.position.y += (yTarget + rowTransition.y + (verticalFloatOn ? (isActive ? jitterY : (currentTranslation ? jitterY * 0.78 : jitterY * 0.24)) : 0) - row.mesh.position.y) * ease;
       row.mesh.position.z += (zTarget - row.mesh.position.z) * ease;
       row.mesh.scale.setScalar(row.mesh.scale.x + (scaleTarget - row.mesh.scale.x) * ease);
       row.mesh.renderOrder = isActive ? (renderBase + 0.40) : (row.isTranslation ? (renderBase + 0.05 + (currentTranslation ? 0.34 : translationFocus * 0.30)) : (renderBase - 0.40 - Math.min(5.5, abs) * 0.015));
     }
     if (row.mat && row.mat.uniforms) {
       if (row.mat.uniforms.uOpacity) row.mat.uniforms.uOpacity.value += (target * depthFade - row.mat.uniforms.uOpacity.value) * ease;
+      if (transition && row.mat.uniforms.uTransitionBlur) row.mat.uniforms.uTransitionBlur.value = rowTransition.transitionBlur;
       if (row.mat.uniforms.uProgress) row.mat.uniforms.uProgress.value = isActive ? shownProgress : 0;
       if (row.mat.uniforms.uActiveMix) {
         var activeMixTarget = isActive ? 1 : 0;
@@ -554,8 +643,8 @@ function updateLyricRowLayers(data, opts) {
       row.mat.opacity += (target * depthFade - row.mat.opacity) * ease;
     }
     if (row.readability) {
-      row.readability.position.x += ((isActive ? jitterX * 0.46 : (currentTranslation ? jitterX * 0.40 : jitterX * 0.16)) - row.readability.position.x) * (opts.glitchPulse ? 0.42 : 0.12);
-      row.readability.position.y += (yTarget + (verticalFloatOn ? (isActive ? jitterY * 0.40 : (currentTranslation ? jitterY * 0.34 : jitterY * 0.12)) : 0) - row.readability.position.y) * ease;
+      row.readability.position.x += ((isActive ? jitterX * 0.46 : (currentTranslation ? jitterX * 0.40 : jitterX * 0.16)) + rowTransition.x - row.readability.position.x) * (transitionStart ? 1 : (opts.glitchPulse ? 0.42 : 0.12));
+      row.readability.position.y += (yTarget + rowTransition.y + (verticalFloatOn ? (isActive ? jitterY * 0.40 : (currentTranslation ? jitterY * 0.34 : jitterY * 0.12)) : 0) - row.readability.position.y) * ease;
       row.readability.position.z += (zTarget - 0.012 - row.readability.position.z) * ease;
       row.readability.scale.setScalar(row.readability.scale.x + (scaleTarget - row.readability.scale.x) * ease);
       row.readability.renderOrder = row.mesh ? row.mesh.renderOrder - 0.04 : (row.isTranslation ? renderBase : renderBase - 0.45);

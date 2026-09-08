@@ -19,7 +19,29 @@ window.addEventListener('resize', function () {
   scheduleMainRendererViewportRefresh('resize');
   if (desktopRuntimeState.fullscreen || desktopFullscreenActive || document.fullscreenElement || document.body.classList.contains('desktop-fullscreen')) layoutFullscreenDiyZone();
 });
+
+// ============================================================
+// 根滚动锁 — html/body 是 overflow:hidden 的固定舞台,但 focus()/scrollIntoView()
+// 这类程序性滚动对 overflow:hidden 容器依然生效,会把整个 fixed 舞台推出视口,
+// 表现为整页横向偏移 + 右侧露出未绘制的黑边(历史 #27 显卡弹窗黑边同源)。
+// 滚动发生在合成器层时主线程 scrollLeft 可能读回 0 但画面仍滞留偏移,
+// 所以除了把真实滚动归零,再用一次 0↔1px 滚动抖动强制合成器刷新偏移。
+function guardRootScroll() {
+  var root = document.documentElement;
+  var body = document.body;
+  if (root && (root.scrollLeft || root.scrollTop)) { root.scrollTo(0, 0); return; }
+  if (body && (body.scrollLeft || body.scrollTop)) { body.scrollTo(0, 0); return; }
+  if (window.scrollX || window.scrollY) { window.scrollTo(0, 0); return; }
+  var stage = document.getElementById('canvas-container');
+  if (!stage || Math.abs(stage.getBoundingClientRect().x) <= 0.5) return;
+  window.scrollTo(1, 0);
+  window.scrollTo(0, 0);
+}
+document.addEventListener('scroll', guardRootScroll, true);
+window.addEventListener('resize', guardRootScroll);
+setInterval(guardRootScroll, 400);
 document.addEventListener('keydown', function (e) {
+  if (document.body && document.body.classList.contains('splash-active')) return;
   if (isTypingTarget(e.target)) return;
   if (handleConfiguredLocalHotkey(e)) return;
   if (shouldSuppressDefaultConfiguredHotkey(e)) return;

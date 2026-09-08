@@ -97,6 +97,7 @@ function refreshMemorySnapshot(force) {
     else memoryLastStatusPayload = null;
     var status = payload && payload.ok ? memoryFormatSnapshot(payload.snapshot) : '系统内存读取失败';
     if (payload && payload.elevated) status += ' | 管理员';
+    if (payload && payload.auto && payload.auto.pendingSystemPurge) status += ' | 系统释放等待暂停';
     updateMemoryStatusText(status);
     updateMemoryControls();
     return payload;

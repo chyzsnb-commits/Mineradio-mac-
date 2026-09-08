@@ -8,6 +8,7 @@ var idleGuideStartedAt = performance.now();
 var idleGuideVisible = false;
 var idleGuideLastFrameAt = performance.now();
 var idleGuideDelayTimer = null;
+var idleGuideAnimationFrame = 0;
 // Keep Wallpaper as the only startup idle background.
 var IDLE_GUIDE_BACKGROUND_ENABLED = false;
 var idleGuideInteraction = {
@@ -220,7 +221,45 @@ function drawIdleGuideTrail(ctx, trail, now, alpha, energy) {
   }
   ctx.restore();
 }
+function idleGuideLoopShouldRun() {
+  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) return false;
+  if (IDLE_GUIDE_BACKGROUND_ENABLED) return true;
+  if (typeof shelfHoverCue === 'undefined' || !shelfHoverCue) return false;
+  return !!(shelfHoverCue.guide || shelfHoverCue.zoneActive || shelfHoverCue.target > 0 || shelfHoverCue.value > 0.005);
+}
+function stopIdleGuideLoop(clearSurface, resetShelfCue) {
+  if (idleGuideDelayTimer) {
+    clearTimeout(idleGuideDelayTimer);
+    idleGuideDelayTimer = null;
+  }
+  if (idleGuideAnimationFrame) {
+    cancelAnimationFrame(idleGuideAnimationFrame);
+    idleGuideAnimationFrame = 0;
+  }
+  if (clearSurface && idleGuideCtx) {
+    idleGuideCtx.clearRect(0, 0, idleGuideW, idleGuideH);
+    resetIdleGuideTrails();
+    setIdleGuideVisible(false, false);
+  }
+  if (resetShelfCue && typeof shelfHoverCue !== 'undefined' && shelfHoverCue && !shelfHoverCue.guide) {
+    shelfHoverCue.target = 0;
+    shelfHoverCue.value = 0;
+    shelfHoverCue.zoneActive = false;
+    shelfHoverCue.enteredAt = 0;
+  }
+}
+function requestIdleGuideAnimationFrame() {
+  if (idleGuideAnimationFrame || !idleGuideLoopShouldRun()) return;
+  idleGuideAnimationFrame = requestAnimationFrame(function () {
+    idleGuideAnimationFrame = 0;
+    drawIdleGuideFrame();
+  });
+}
 function scheduleIdleGuideFrame(delay) {
+  if (!idleGuideLoopShouldRun()) {
+    stopIdleGuideLoop(true);
+    return;
+  }
   if (idleGuideDelayTimer) {
     clearTimeout(idleGuideDelayTimer);
     idleGuideDelayTimer = null;
@@ -228,14 +267,40 @@ function scheduleIdleGuideFrame(delay) {
   if (delay && delay > 0) {
     idleGuideDelayTimer = setTimeout(function () {
       idleGuideDelayTimer = null;
-      requestAnimationFrame(drawIdleGuideFrame);
+      requestIdleGuideAnimationFrame();
     }, delay);
   } else {
-    requestAnimationFrame(drawIdleGuideFrame);
+    requestIdleGuideAnimationFrame();
   }
 }
+function wakeIdleGuideLoop() {
+  if (!idleGuideCanvas || !idleGuideCtx) return;
+  if (!idleGuideLoopShouldRun()) {
+    stopIdleGuideLoop(true);
+    return;
+  }
+  if (idleGuideDelayTimer) {
+    clearTimeout(idleGuideDelayTimer);
+    idleGuideDelayTimer = null;
+  }
+  idleGuideLastFrameAt = performance.now();
+  requestIdleGuideAnimationFrame();
+}
+function syncIdleGuideLoopPowerState() {
+  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) stopIdleGuideLoop(true, true);
+  else wakeIdleGuideLoop();
+}
+document.addEventListener('visibilitychange', function () {
+  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) stopIdleGuideLoop(true, true);
+  else wakeIdleGuideLoop();
+});
+window.addEventListener('focus', wakeIdleGuideLoop);
 function drawIdleGuideFrame() {
   if (!idleGuideCanvas || !idleGuideCtx) return;
+  if (!idleGuideLoopShouldRun()) {
+    stopIdleGuideLoop(true);
+    return;
+  }
   var ctx = idleGuideCtx;
   var nowFrame = performance.now();
   var dtFrame = Math.max(1 / 120, Math.min(0.05, (nowFrame - idleGuideLastFrameAt) / 1000 || 1 / 60));
@@ -474,7 +539,7 @@ function initIdleGuideCanvas() {
   idleGuideStartedAt = performance.now();
   resizeIdleGuideCanvas();
   window.addEventListener('resize', resizeIdleGuideCanvas);
-  drawIdleGuideFrame();
+  wakeIdleGuideLoop();
 }
 
 // ============================================================
@@ -530,48 +595,36 @@ var visualGuideSteps = [
     kicker: '05 / Visual',
     title: '进阶视觉都放在舞台周围',
     body: '右侧 3D 歌单架和 DIY 玩家模式是进阶入口；先播放一首歌，再慢慢调视觉效果。'
-  },
-  {
-    selector: '#fullscreen-diy-btn',
-    kicker: '06 / DIY',
-    title: '高级功能在 DIY 玩家模式',
-    body: '视觉控制台、上传/封面、自定义歌词、音质和更多面板都会在这里展开。'
   }
 ];
 var visualGuideStepsDiy = [
   {
-    selector: '#fullscreen-diy-btn',
-    kicker: '01 / DIY',
-    title: 'DIY 玩家模式已展开',
-    body: '这里可以随时切回默认模式。DIY 模式会显示完整控制台、上传、视觉面板和高级调参。'
-  },
-  {
     selector: '#search-box',
-    kicker: '02 / Search',
+    kicker: '01 / Search',
     title: '搜索源和导入入口会展开',
     body: '顶部搜索支持更多来源切换，上传歌曲、封面等入口也会在 DIY 模式中显示。'
   },
   {
     selector: '#playlist-panel',
-    kicker: '03 / Library',
+    kicker: '02 / Library',
     title: '左侧是完整歌单和队列',
     body: '靠近左侧边缘可以打开歌单/队列面板，在这里管理队列、个人歌单和播客。'
   },
   {
     selector: '#fx-panel',
-    kicker: '04 / Visual Lab',
+    kicker: '03 / Visual Lab',
     title: '右侧是视觉控制台',
     body: '靠近右下角或点击视觉按钮，可以调节粒子、歌词、镜头、3D 歌单架和更多视觉参数。'
   },
   {
     selector: '#quality-control',
-    kicker: '05 / Controls',
+    kicker: '04 / Controls',
     title: '高级播放控制会补全',
     body: '音质、播放顺序、收藏、歌词源和更多按钮会在 DIY 模式中完整显示。'
   },
   {
     target: 'shelf',
-    kicker: '06 / Shelf',
+    kicker: '05 / Shelf',
     title: '3D 歌单架支持直接打开',
     body: '右侧的 3D 歌单架会在靠近时半透明浮现，点击卡片可打开歌单，点卡片里的播放按钮可直接播放整张歌单。'
   }
@@ -700,23 +753,13 @@ function guideTargetRect(step) {
       return { left: left, top: top, width: right - left, height: bottom - top, right: right, bottom: bottom };
     }
   }
-  var isFullscreenDiyStep = !!(step && step.selector === '#fullscreen-diy-btn' && (desktopRuntimeState.fullscreen || desktopFullscreenActive || document.fullscreenElement || document.body.classList.contains('desktop-fullscreen')));
-  var useFullscreenDiyTarget = isFullscreenDiyStep && !shouldSuppressFullscreenDiyPeek();
-  if (useFullscreenDiyTarget) {
-    layoutFullscreenDiyZone();
-    document.body.classList.add('fullscreen-diy-peek');
-  }
-  var target = step && step.selector ? document.querySelector(useFullscreenDiyTarget ? '#fullscreen-diy-btn' : step.selector) : null;
+  var target = step && step.selector ? document.querySelector(step.selector) : null;
   if (target) {
     var style = window.getComputedStyle(target);
     var rect = target.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden') return rect;
   }
-  if (step && step.selector === '#fullscreen-diy-btn') {
-    var fallbackRight = Math.max(116, innerWidth - 26);
-    var fallbackTop = 16;
-    return { left: fallbackRight - 88, top: fallbackTop, width: 88, height: 38, right: fallbackRight, bottom: fallbackTop + 38 };
-  }
+  // 目标元素不存在（如入口已下线）：回屏幕中央兜底，绝不再画到右上角空白处残留
   return { left: innerWidth * 0.5 - 120, top: innerHeight * 0.5 - 40, width: 240, height: 80, right: innerWidth * 0.5 + 120, bottom: innerHeight * 0.5 + 40 };
 }
 function positionVisualGuideStep() {

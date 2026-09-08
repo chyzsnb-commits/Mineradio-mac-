@@ -183,6 +183,92 @@ function buildEdgeAndDepth(srcCanvas) {
   return out;
 }
 
+// 切歌时不能在渲染线程跑 256×256 的像素扫描。Worker 只返回可直接用作
+// Three 纹理的 ImageBitmap，保留原有深度算法与缓存，不复制 RGBA 数组回主线程。
+var coverDepthWorker = null;
+var coverDepthWorkerBroken = false;
+var coverDepthWorkerNextId = 0;
+var coverDepthWorkerTasks = {};
+
+function coverDepthWorkerAvailable() {
+  return !coverDepthWorkerBroken
+    && typeof Worker === 'function'
+    && typeof createImageBitmap === 'function';
+}
+
+function ensureCoverDepthWorker() {
+  if (!coverDepthWorkerAvailable()) return null;
+  if (coverDepthWorker) return coverDepthWorker;
+  try {
+    coverDepthWorker = new Worker('/js/cover-depth-worker.js');
+    coverDepthWorker.onmessage = function (event) {
+      var data = event && event.data ? event.data : {};
+      var task = coverDepthWorkerTasks[data.id];
+      if (!task) {
+        if (data.bitmap && typeof data.bitmap.close === 'function') data.bitmap.close();
+        return;
+      }
+      delete coverDepthWorkerTasks[data.id];
+      if (data.error || !data.bitmap) task.reject(new Error(data.error || '封面深度 Worker 未返回位图'));
+      else task.resolve(data.bitmap);
+    };
+    coverDepthWorker.onerror = function () {
+      coverDepthWorkerBroken = true;
+      var tasks = coverDepthWorkerTasks;
+      coverDepthWorkerTasks = {};
+      Object.keys(tasks).forEach(function (id) { tasks[id].reject(new Error('封面深度 Worker 不可用')); });
+      try { coverDepthWorker.terminate(); } catch (e) { }
+      coverDepthWorker = null;
+    };
+  } catch (e) {
+    coverDepthWorkerBroken = true;
+    coverDepthWorker = null;
+  }
+  return coverDepthWorker;
+}
+
+function buildCoverEdgeAndDepthAsync(srcCanvas) {
+  var worker = ensureCoverDepthWorker();
+  if (!worker || !srcCanvas) return Promise.reject(new Error('封面深度 Worker 不可用'));
+  return createImageBitmap(srcCanvas).then(function (sourceBitmap) {
+    return new Promise(function (resolve, reject) {
+      var id = ++coverDepthWorkerNextId;
+      coverDepthWorkerTasks[id] = { resolve: resolve, reject: reject };
+      try {
+        worker.postMessage({ id: id, bitmap: sourceBitmap }, [sourceBitmap]);
+      } catch (e) {
+        delete coverDepthWorkerTasks[id];
+        if (sourceBitmap && typeof sourceBitmap.close === 'function') sourceBitmap.close();
+        reject(e);
+      }
+    });
+  });
+}
+
+function materializeCoverDepthCanvas(bitmap) {
+  if (!bitmap || typeof bitmap.getContext === 'function') return bitmap || null;
+  try {
+    var canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Number(bitmap.width) || 256);
+    canvas.height = Math.max(1, Number(bitmap.height) || 256);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    if (typeof bitmap.close === 'function') bitmap.close();
+    return canvas;
+  } catch (e) {
+    if (typeof bitmap.close === 'function') bitmap.close();
+    return null;
+  }
+}
+
+function coverDepthSyncFallbackAllowed(opts) {
+  if (!opts || !opts.deferHeavy) return true;
+  var playing = !!(audio && audio.src && !audio.paused && !audio.ended);
+  if (playing) return false;
+  if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive()) return false;
+  if (typeof isDocumentScrollActive === 'function' && isDocumentScrollActive()) return false;
+  return true;
+}
+
 // AI 深度估计 (Xenova/depth-anything-small) - 异步加载, 失败回退
 async function ensureAIDepthPipeline() {
   if (aiDepthReady && aiDepthPipeline) return aiDepthPipeline;
@@ -531,12 +617,48 @@ function setControlCoverSrc(src) {
   cover.classList.remove('cover-empty');
 }
 
+function syncTouchBarTrack(song, isPlayingOverride) {
+  if (!window.desktopWindow || typeof window.desktopWindow.updateTouchBarTrack !== 'function') return false;
+  if (!song && typeof currentCoverSong === 'function') song = currentCoverSong();
+  song = song || {};
+  var title = song.name || song.title || '';
+  if (!title) return false;
+  var active = typeof isPlayingOverride === 'boolean'
+    ? isPlayingOverride
+    : !!(audio && audio.src && !audio.paused && !audio.ended);
+  window.desktopWindow.updateTouchBarTrack({
+    title: title,
+    artist: song.artist || '',
+    isPlaying: active,
+  });
+  return true;
+}
+
 function updateControlTrackInfo(song) {
   song = song || {};
   var title = document.getElementById('control-title');
+  var titleText = document.getElementById('control-title-text');
   var artist = document.getElementById('control-artist');
-  if (title) title.textContent = song.name || '';
+  if (title) {
+    // Windows v2.1.0 对齐: 播放标题旁显示当前音源 chip(可点击切换) + VIP 标签
+    var titleText = document.getElementById('control-title-text');
+    var titleBadges = document.getElementById('control-title-badges');
+    if (!titleText) {
+      title.innerHTML = '<span id="control-title-text" class="control-title-text"></span><span id="control-title-badges" class="control-title-badges"><span id="control-source-badges" class="control-source-badges"></span></span>';
+      titleText = document.getElementById('control-title-text');
+      titleBadges = document.getElementById('control-title-badges');
+    }
+    if (titleText) titleText.textContent = song.name || '';
+    else title.textContent = song.name || '';
+    if (titleBadges) {
+      var sourceTag = typeof songSourceTagHtml === 'function' ? songSourceTagHtml(song, { switcher: true }) : '';
+      var vipTag = typeof songVipTagHtml === 'function' ? songVipTagHtml(song) : '';
+      var sourceBadges = document.getElementById('control-source-badges');
+      if (sourceBadges) sourceBadges.innerHTML = (song && song.name) ? (sourceTag + vipTag) : '';
+    }
+  }
   if (artist) artist.textContent = song.artist || '';
+  syncTouchBarTrack(song);
   updatePlaybackQualityUi();
   if (typeof updateLyricTimingOffsetUi === 'function') updateLyricTimingOffsetUi(song);
 }
@@ -585,6 +707,9 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
   // 切歌只做干净的新旧封面 crossfade，不再插入加载雾团。
   var colorMixMs = opts.colorMixDuration || (opts.seamlessTrackSwitch ? (fx.preset === 0 ? 320 : 460) : (fx.preset === 0 ? 520 : 960));
   startColorMixTween(opts.fromResolutionChange ? (fx.preset === 0 ? 300 : 520) : colorMixMs);
+  if (opts.trackToken != null && typeof markLyricDepthCoverReady === 'function') {
+    try { markLyricDepthCoverReady(opts.trackToken); } catch (e) { }
+  }
 
   function refreshCoverDependentColors() {
     if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;
@@ -593,20 +718,39 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     updateLyricPaletteFromCover(cv);
   }
 
+  function applyCoverDepthResult(edgeCv) {
+    edgeCv = materializeCoverDepthCanvas(edgeCv);
+    if (!edgeCv || token !== coverProcessToken || !coverApplyStillCurrent(opts)) {
+      if (edgeCv && typeof edgeCv.close === 'function') edgeCv.close();
+      return;
+    }
+    setCoverDepthCache(cacheSeed, edgeCv, false);
+    coverEdgeTex.image = edgeCv; coverEdgeTex.needsUpdate = true;
+    setCoverDepthState(1, 0.55, opts.deferHeavy ? 260 : 180);
+    refreshCoverDependentColors();
+    queueAIDepthForCover(cv, edgeCv, token, opts, cacheSeed, false);
+  }
+
+  function runCoverDepthSyncFallback() {
+    if (!coverDepthSyncFallbackAllowed(opts)) return false;
+    applyCoverDepthResult(buildEdgeAndDepth(cv));
+    return true;
+  }
+
   function runHeavyCoverWork() {
     if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;
     if (opts.deferHeavy && typeof isRenderInteractionActive === 'function' && isRenderInteractionActive()) {
       scheduleVisualApply(runHeavyCoverWork, 420, heavyTimeout || 1800);
       return;
     }
-    var edgeCv = buildEdgeAndDepth(cv);
-    if (token !== coverProcessToken || !coverApplyStillCurrent(opts)) return;
-    setCoverDepthCache(cacheSeed, edgeCv, false);
-    coverEdgeTex.image = edgeCv; coverEdgeTex.needsUpdate = true;
-    setCoverDepthState(1, 0.55, opts.deferHeavy ? 260 : 180);
-    refreshCoverDependentColors();
-
-    queueAIDepthForCover(cv, edgeCv, token, opts, cacheSeed, false);
+    if (opts.deferHeavy && coverDepthWorkerAvailable()) {
+      buildCoverEdgeAndDepthAsync(cv).then(applyCoverDepthResult).catch(function () {
+        if (!coverDepthSyncFallbackAllowed(opts)) return;
+        runCoverDepthSyncFallback();
+      });
+      return;
+    }
+    if (!runCoverDepthSyncFallback()) scheduleVisualApply(runHeavyCoverWork, 720, heavyTimeout || 1800);
   }
   if (cachedDepth && cachedDepth.canvas) {
     scheduleVisualApply(refreshCoverDependentColors, opts.deferHeavy ? 260 : 90, opts.deferHeavy ? 1200 : 700);

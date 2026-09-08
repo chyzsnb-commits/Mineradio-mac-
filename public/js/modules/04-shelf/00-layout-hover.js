@@ -25,6 +25,60 @@ function markShelfPlaybackSwitchGuard(ms) {
 function isPortraitShelfViewport() {
   return innerHeight > innerWidth * 1.08;
 }
+// P10 歌架与其他预设同步: 普通预设的常驻(贴右缘)/呼出(推近居中)构图差异来自电影镜头推近
+// (orbit.focus), 体素相机不做这套推近, 所以歌架按同一状态在两套相机相对位姿间过渡。
+// 两套常数都取自普通预设基准机位实测: 歌架组原点的相机坐标(前/右/上) + 反向朝向欧拉(XYZ)。
+var P10_SHELF_POSE_REST = { d: 6.553, r: 0, u: 0, rx: 0.084, ry: 0, rz: 0 };
+var P10_SHELF_POSE_FOCUS = { d: 5.804, r: -1.825, u: -0.093, rx: -0.12, ry: -0.42, rz: 0 };
+function p10ShelfPoseMix(mix) {
+  var m = clampRange(Number(mix) || 0, 0, 1);
+  return {
+    d: P10_SHELF_POSE_REST.d + (P10_SHELF_POSE_FOCUS.d - P10_SHELF_POSE_REST.d) * m,
+    r: P10_SHELF_POSE_REST.r + (P10_SHELF_POSE_FOCUS.r - P10_SHELF_POSE_REST.r) * m,
+    u: P10_SHELF_POSE_REST.u + (P10_SHELF_POSE_FOCUS.u - P10_SHELF_POSE_REST.u) * m,
+    rx: P10_SHELF_POSE_REST.rx + (P10_SHELF_POSE_FOCUS.rx - P10_SHELF_POSE_REST.rx) * m,
+    ry: P10_SHELF_POSE_REST.ry + (P10_SHELF_POSE_FOCUS.ry - P10_SHELF_POSE_REST.ry) * m,
+    rz: P10_SHELF_POSE_REST.rz + (P10_SHELF_POSE_FOCUS.rz - P10_SHELF_POSE_REST.rz) * m
+  };
+}
+function p10ShelfRootPose(mix) {
+  // 歌单架对鼠标零反应: 拖拽只转场景本体(体素方块/封面粒子), 朝向只由常驻/呼出基础角决定。
+  var pose = p10ShelfPoseMix(mix);
+  return { x: pose.rx, y: pose.ry, z: pose.rz };
+}
+function p10ShelfCameraAnchor(cameraRef, mix) {
+  if (!cameraRef || !cameraRef.position || !cameraRef.quaternion || typeof cameraRef.getWorldDirection !== 'function' || typeof THREE === 'undefined') return null;
+  var pose = p10ShelfPoseMix(mix);
+  var forward = new THREE.Vector3();
+  var right = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraRef.quaternion);
+  var up = new THREE.Vector3(0, 1, 0).applyQuaternion(cameraRef.quaternion);
+  cameraRef.getWorldDirection(forward);
+  // P10 保留原生远景镜头, 1:1 布局经此锚点落在与其他预设相同的屏幕位置。
+  return {
+    x: cameraRef.position.x + forward.x * pose.d + right.x * pose.r + up.x * pose.u,
+    y: cameraRef.position.y + forward.y * pose.d + up.y * pose.u,
+    z: cameraRef.position.z + forward.z * pose.d + right.z * pose.r + up.z * pose.u
+  };
+}
+function p10ShelfCardSurface(shelfLook) {
+  if (typeof voxelCityActive !== 'function' || !voxelCityActive()) return null;
+  var palette = typeof stageLyrics !== 'undefined' && stageLyrics && stageLyrics.palette ? stageLyrics.palette : null;
+  var source = palette && (palette.secondary || palette.primary || palette.highlight);
+  var rgb = typeof hexToRgb === 'function' ? hexToRgb(source) : null;
+  if (!rgb) rgb = { r: 92, g: 126, b: 148 };
+  var raw = shelfLook ? Number(shelfLook.bgOpacity) : 0.90;
+  // 一级卡处在体素远景和黑色场景上，普通的暗玻璃比例会被两次透明度合成吃掉。
+  // 提高冷色底和 alpha，但仍限制在玻璃范围，避免变成不透明色块。
+  var alpha = clampRange(raw * 0.62, 0.34, 0.62);
+  var r = Math.round(12 + rgb.r * 0.24);
+  var g = Math.round(24 + rgb.g * 0.28);
+  var b = Math.round(36 + rgb.b * 0.34);
+  return {
+    base: 'rgba(' + r + ',' + g + ',' + b + ',' + alpha.toFixed(3) + ')',
+    highlight: 'rgba(' + Math.min(245, r + 132) + ',' + Math.min(248, g + 138) + ',' + Math.min(255, b + 148) + ',0.105)',
+    key: [r, g, b, alpha.toFixed(3)].join(':')
+  };
+}
 function shelfLayoutProfile() {
   var portrait = isPortraitShelfViewport();
   var narrow = !portrait && innerWidth < 980;
@@ -96,6 +150,7 @@ function canUseSideShelfWithoutPinnedOpen() {
   return !!shelfAlwaysVisible();
 }
 function shelfPreviewIsVisible() {
+  if (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf()) return false;
   if (shelfPlaybackSwitchGuardActive()) return false;
   return shelfHoverCue.guide || shelfHoverCue.zoneActive || shelfHoverCue.target > 0 || shelfHoverCue.value > 0.10 || shelfVisibility > 0.12;
 }
@@ -106,6 +161,7 @@ function shelfAutoHiddenInputReady() {
   return !!(shelfHoverCue.guide || shelfHoverCue.zoneActive || shelfHoverCue.value > 0.18 || shelfVisibility > 0.16);
 }
 function canShowShelfHoverCueAt(e) {
+  if (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf()) return false;
   if (!e) return false;
   if (shelfPlaybackSwitchGuardActive()) return false;
   if (!shelfHoverCue.guide) return false;
@@ -140,6 +196,7 @@ function setShelfGuideCueActive(on) {
   } else {
     shelfHoverCue.target = 0;
   }
+  if (typeof wakeIdleGuideLoop === 'function') wakeIdleGuideLoop();
 }
 function updateShelfHoverCueFromPointer(e) {
   if (shelfPlaybackSwitchGuardActive()) {
@@ -170,6 +227,9 @@ function updateShelfHoverCueFromPointer(e) {
   shelfHoverCue.x = e.clientX;
   shelfHoverCue.y = e.clientY;
   shelfHoverCue.lastAt = performance.now();
+  if (typeof idleGuideLoopShouldRun === 'function'
+      && idleGuideLoopShouldRun()
+      && typeof wakeIdleGuideLoop === 'function') wakeIdleGuideLoop();
 }
 function tickShelfHoverCue(dt) {
   if (shelfPlaybackSwitchGuardActive()) {

@@ -202,7 +202,7 @@ function renderDetailComments(comments) {
     var user = c.user || {};
     var avatar = user.avatar ? coverUrlWithSize(user.avatar, 64) : '';
     return '<div class="comment-item">' +
-      (avatar ? '<img class="comment-avatar" src="' + avatar + '" alt="">' : '<div class="comment-avatar"></div>') +
+      (avatar ? '<img class="comment-avatar" src="' + coverMarkupSrc(avatar) + '" alt="">' : '<div class="comment-avatar"></div>') +
       '<div class="comment-main"><div class="comment-meta">' + escHtml(user.nickname || '音乐用户') + (c.likedCount ? (' · ' + c.likedCount + ' 赞') : '') + (c.time ? (' · ' + escHtml(commentTimeLabel(c.time))) : '') + '</div>' +
       '<div class="comment-text">' + escHtml(c.content || '') + '</div></div>' +
       '</div>';
@@ -263,7 +263,7 @@ function openTrackDetailModal(type, songOverride) {
   var body = document.getElementById('track-detail-body');
   if (!heading || !body) return;
   var cover = songCoverSrc(song, 180);
-  var coverHtml = cover ? '<img class="detail-cover" src="' + cover + '" alt="">' : '<div class="detail-cover"></div>';
+  var coverHtml = cover ? '<img class="detail-cover" src="' + coverMarkupSrc(cover) + '" alt="">' : '<div class="detail-cover"></div>';
   var title = song.name || '当前歌曲';
   var artists = currentArtistNames(song);
   var seq = ++trackDetailSeq;
@@ -550,12 +550,23 @@ function clearCustomCoverForCurrent() {
     for (var i = 0; i < playQueue.length; i++) {
       if (songCustomCoverKey(playQueue[i]) === key) delete playQueue[i].customCover;
     }
+    if (Array.isArray(playlist)) {
+      for (var j = 0; j < playlist.length; j++) {
+        if (songCustomCoverKey(playlist[j]) === key) delete playlist[j].customCover;
+      }
+    }
   }
   if (key && currentLocalSong && songCustomCoverKey(currentLocalSong) === key) delete currentLocalSong.customCover;
   if (currentIdx >= 0 && playQueue[currentIdx] && playQueue[currentIdx].cover) loadCoverFromUrl(coverUrlWithSize(playQueue[currentIdx].cover, 400));
   else loadCoverFromUrl('');
   safeRenderQueuePanel('custom-cover-clear', { scrollCurrent: miniQueueOpen });
   safeShelfRebuild('custom-cover-clear');
+  if (typeof renderSongSearchResults === 'function'
+      && typeof $results !== 'undefined' && $results
+      && $results.classList.contains('show')
+      && typeof isMusicSearchMode === 'function' && isMusicSearchMode(searchMode)) {
+    renderSongSearchResults(playlist);
+  }
   updateCustomCoverButton();
   showToast('已恢复默认封面');
 }
@@ -695,6 +706,9 @@ function applyLyricsState(lines, hasNativeKaraoke, timingSource, translationLine
   var prepared = preparedLyricStateForApply(lines, hasNativeKaraoke, timingSource, translationLines, translationSource);
   if (skipSameLyricStateRender(prepared, renderOptions, 'applyLyricsState')) {
     updateCustomLyricControls();
+    if (prepared.timingSource !== 'pending' && typeof markLyricDepthLyricsReady === 'function') {
+      try { markLyricDepthLyricsReady(trackSwitchToken); } catch (e) { }
+    }
     return;
   }
   lyricsHasNativeKaraoke = prepared.hasNativeKaraoke;
@@ -703,7 +717,12 @@ function applyLyricsState(lines, hasNativeKaraoke, timingSource, translationLine
   lyricsTranslationSource = prepared.translationSource;
   lyricsLines = cloneLyricLines(prepared.lines);
   renderLyrics(renderOptions || {});
+  if (typeof refreshVoxelLyricStageAfterLyricsReady === 'function') refreshVoxelLyricStageAfterLyricsReady('lyrics-ready');
+  if (typeof refreshSonicWorkshopLyricStageAfterLyricsReady === 'function') refreshSonicWorkshopLyricStageAfterLyricsReady('lyrics-ready');
   updateCustomLyricControls();
+  if (prepared.timingSource !== 'pending' && typeof markLyricDepthLyricsReady === 'function') {
+    try { markLyricDepthLyricsReady(trackSwitchToken); } catch (e) { }
+  }
 }
 function applyOriginalLyricsState(renderOptions) {
   lyricSourceMode = 'original';
@@ -746,6 +765,9 @@ function applyCustomLyricState(song, silent, renderOptions) {
   var prepared = preparedLyricStateForApply(lines, false, lines[0] && lines[0].source === 'custom-lrc' ? 'custom-lrc' : 'custom-text', [], 'none');
   if (skipSameLyricStateRender(prepared, renderOptions, 'applyCustomLyricState')) {
     updateCustomLyricControls();
+    if (typeof markLyricDepthLyricsReady === 'function') {
+      try { markLyricDepthLyricsReady(trackSwitchToken); } catch (e) { }
+    }
     return true;
   }
   lyricsHasNativeKaraoke = prepared.hasNativeKaraoke;
@@ -754,7 +776,11 @@ function applyCustomLyricState(song, silent, renderOptions) {
   lyricsTranslationSource = prepared.translationSource;
   lyricsLines = cloneLyricLines(prepared.lines);
   renderLyrics(renderOptions || {});
+  if (typeof refreshVoxelLyricStageAfterLyricsReady === 'function') refreshVoxelLyricStageAfterLyricsReady('lyrics-ready-custom');
   updateCustomLyricControls();
+  if (typeof markLyricDepthLyricsReady === 'function') {
+    try { markLyricDepthLyricsReady(trackSwitchToken); } catch (e) { }
+  }
   return true;
 }
 function preferredLyricSourceForSong(song) {
@@ -763,7 +789,9 @@ function preferredLyricSourceForSong(song) {
   if (!hasCustom) return 'original';
   var pref = key ? customLyricPrefs[key] : '';
   if (pref === 'custom') return 'custom';
-  if (pref === 'original') return 'original';
+  // “自动”保持自动歌词优先，但没有可信歌词时仍回退用户已存的本地版本。
+  // 旧版 original 偏好也按自动处理，避免升级后把云盘歌曲重新降级为标题占位。
+  if (originalLyricsState && originalLyricsState.timingSource !== 'fallback' && originalLyricsState.timingSource !== 'pending') return 'original';
   return originalLyricsState.timingSource === 'fallback' ? 'custom' : 'original';
 }
 function applyPreferredLyricsForCurrent(silent) {
@@ -787,7 +815,7 @@ function setLyricSourceMode(mode, silent) {
     applyOriginalLyricsState();
   }
   if (key) {
-    customLyricPrefs[key] = mode;
+    customLyricPrefs[key] = mode === 'custom' ? 'custom' : 'auto';
     saveCustomLyricPrefs();
   }
   if (!silent) showToast(mode === 'custom' ? '已切换到自定义歌词' : '已切换到原歌词');
@@ -801,12 +829,12 @@ function updateCustomLyricControls() {
   var customBtn = document.getElementById('lyric-source-custom');
   if (originalBtn) {
     originalBtn.classList.toggle('active', lyricSourceMode !== 'custom');
-    originalBtn.title = '使用网易云或本地解析歌词';
+    originalBtn.title = '自动歌词优先；无可用歌词时回退已保存的本地歌词';
   }
   if (customBtn) {
     customBtn.classList.toggle('active', lyricSourceMode === 'custom');
     customBtn.classList.toggle('has-custom', hasCustom);
-    customBtn.title = hasCustom ? '打开并编辑自定义歌词' : '新增自定义歌词';
+    customBtn.title = hasCustom ? '使用、导入或编辑本地歌词' : '导入或编辑本地歌词';
   }
 }
 function updateLyricDisplayModeControls() {
@@ -821,6 +849,12 @@ function updateLyricTranslationModeControls() {
     btn.classList.toggle('active', btn.dataset.translation === mode);
   });
 }
+function updateLyricRasterQualityControls() {
+  var quality = normalizeLyricRasterQuality(fx && fx.lyricRasterQuality);
+  document.querySelectorAll('#lyric-raster-quality-seg [data-lyric-raster-quality]').forEach(function (btn) {
+    btn.classList.toggle('active', Number(btn.getAttribute('data-lyric-raster-quality')) === quality);
+  });
+}
 function updateLyricMotionStyleControls() {
   var style = normalizeLyricMotionStyle(fx && fx.lyricMotionStyle);
   var seg = document.getElementById('lyric-motion-style-seg');
@@ -829,6 +863,12 @@ function updateLyricMotionStyleControls() {
     btn.classList.toggle('active', btn.dataset.motion === style);
   });
   updateLyricGlitchControls();
+}
+function updateLyricTransitionControls() {
+  var style = normalizeLyricTransitionStyle(fx && fx.lyricTransitionStyle);
+  document.querySelectorAll('#lyric-transition-style-seg button').forEach(function (btn) {
+    btn.classList.toggle('active', btn.dataset.transition === style);
+  });
 }
 function updateLyricGlitchControls() {
   var style = normalizeLyricMotionStyle(fx && fx.lyricMotionStyle);
@@ -846,6 +886,59 @@ function toggleLyricGlitchCameraBind() {
   refreshStageLyricDisplayMode();
   saveLyricLayout({ user: true, reason: 'lyricGlitchCameraBind' });
   showToast(fx.lyricGlitchCameraBind ? '故障歌词已跟随鼓点' : '故障歌词已取消鼓点跟随');
+}
+var stageLyricOptionRefreshFrame = 0;
+var stageLyricOptionApplyFrame = 0;
+var stageLyricOptionRefreshToken = 0;
+function cancelStageLyricOptionRefresh() {
+  if (stageLyricOptionRefreshFrame) cancelAnimationFrame(stageLyricOptionRefreshFrame);
+  if (stageLyricOptionApplyFrame) cancelAnimationFrame(stageLyricOptionApplyFrame);
+  stageLyricOptionRefreshFrame = 0;
+  stageLyricOptionApplyFrame = 0;
+}
+function flushStageLyricOptionRefresh(token) {
+  if (token !== stageLyricOptionRefreshToken) return false;
+  if (!stageLyrics || !stageLyrics.current || stageLyrics.currentIdx < 0 || !lyricsLines || !lyricsLines.length) return false;
+  var index = stageLyrics.currentIdx;
+  var progress = stageLyrics.current.userData ? (stageLyrics.current.userData.lastLyricProgress || 0) : 0;
+  var mode = normalizeLyricDisplayMode(fx && fx.lyricDisplayMode);
+  var payload = buildStageLyricDisplayPayload(index, mode === 'single' ? {} : { lightweightTrack: true });
+  if (!payload) return false;
+  stageLyrics.transitionLineStep = 0;
+  var displayed = false;
+  try {
+    displayed = showStageLine(payload, true);
+  } catch (err) {
+    console.warn('[Lyrics] option refresh failed', err);
+  }
+  if (!displayed) {
+    if (typeof scheduleStageLyricPrewarmForIndex === 'function') {
+      scheduleStageLyricPrewarmForIndex(index, payload.trackLightweight ? 'track-demand-light' : 'single-line-demand', 16);
+    }
+    return false;
+  }
+  updateLyricMeshProgress(stageLyrics.current, progress);
+  if (stageLyrics.current && stageLyrics.current.userData) stageLyrics.current.userData.age = 0.48;
+  if (payload.trackLightweight && typeof scheduleStageLyricFullTrackWarmup === 'function') {
+    scheduleStageLyricFullTrackWarmup('option-switch-upgrade', 120);
+  }
+  return true;
+}
+function scheduleStageLyricOptionRefresh() {
+  stageLyricOptionRefreshToken += 1;
+  cancelStageLyricOptionRefresh();
+  if (typeof clearStageLyricFullTrackWarmup === 'function') clearStageLyricFullTrackWarmup();
+  if (!stageLyrics || !stageLyrics.current || stageLyrics.currentIdx < 0 || !lyricsLines || !lyricsLines.length) return false;
+  var token = stageLyricOptionRefreshToken;
+  stageLyricOptionRefreshFrame = requestAnimationFrame(function () {
+    stageLyricOptionRefreshFrame = 0;
+    if (token !== stageLyricOptionRefreshToken) return;
+    stageLyricOptionApplyFrame = requestAnimationFrame(function () {
+      stageLyricOptionApplyFrame = 0;
+      flushStageLyricOptionRefresh(token);
+    });
+  });
+  return true;
 }
 function refreshStageLyricDisplayMode() {
   var progress = stageLyrics && stageLyrics.current && stageLyrics.current.userData
@@ -868,25 +961,62 @@ function refreshStageLyricVisualOptions() {
   pushDesktopLyricsState(true);
 }
 function setLyricDisplayMode(mode) {
-  fx.lyricDisplayMode = normalizeLyricDisplayMode(mode);
+  if (fx && Number(fx.preset) === 11) {
+    showToast('词境穿行固定使用五层景深');
+    return;
+  }
+  var nextMode = normalizeLyricDisplayMode(mode);
+  if (normalizeLyricDisplayMode(fx && fx.lyricDisplayMode) === nextMode) return;
+  fx.lyricDisplayMode = nextMode;
   updateLyricDisplayModeControls();
-  refreshStageLyricDisplayMode();
+  scheduleStageLyricOptionRefresh();
   saveLyricLayout({ user: true, reason: 'lyricDisplayMode' });
   showToast('歌词行数已切换');
 }
 function setLyricTranslationMode(mode) {
-  fx.lyricTranslationMode = normalizeLyricTranslationMode(mode);
+  var nextMode = normalizeLyricTranslationMode(mode);
+  if (normalizeLyricTranslationMode(fx && fx.lyricTranslationMode) === nextMode) return;
+  fx.lyricTranslationMode = nextMode;
   updateLyricTranslationModeControls();
-  refreshStageLyricDisplayMode();
+  scheduleStageLyricOptionRefresh();
   saveLyricLayout({ user: true, reason: 'lyricTranslationMode' });
   showToast('双语翻译已切换');
 }
-function setLyricMotionStyle(style) {
-  fx.lyricMotionStyle = normalizeLyricMotionStyle(style);
-  updateLyricMotionStyleControls();
+function setLyricRasterQuality(value) {
+  var nextQuality = normalizeLyricRasterQuality(value);
+  if (normalizeLyricRasterQuality(fx && fx.lyricRasterQuality) === nextQuality) return;
+  fx.lyricRasterQuality = nextQuality;
+  updateLyricRasterQualityControls();
+  if (typeof clearLyricRasterCache === 'function') clearLyricRasterCache();
   refreshStageLyricDisplayMode();
+  saveLyricLayout({ user: true, reason: 'lyricRasterQuality' });
+  showToast('歌词清晰度已切换为 ' + nextQuality + 'x');
+}
+function setLyricMotionStyle(style) {
+  var nextStyle = normalizeLyricMotionStyle(style);
+  if (normalizeLyricMotionStyle(fx && fx.lyricMotionStyle) === nextStyle) return;
+  fx.lyricMotionStyle = nextStyle;
+  updateLyricMotionStyleControls();
+  if (typeof applyStageLyricMotionStyleInPlace === 'function') applyStageLyricMotionStyleInPlace();
+  else refreshStageLyricDisplayMode();
   saveLyricLayout({ user: true, reason: 'lyricMotionStyle' });
   showToast('歌词动画已切换');
+}
+function setLyricTransitionStyle(style) {
+  var nextStyle = normalizeLyricTransitionStyle(style);
+  if (fx.lyricTransitionStyle === nextStyle && fx.lyricTransitionExplicit === true) return;
+  fx.lyricTransitionStyle = nextStyle;
+  fx.lyricTransitionExplicit = true;
+  updateLyricTransitionControls();
+  saveLyricLayout({ user: true, reason: 'lyricTransitionStyle' });
+  showToast('歌词切换动效已切换');
+}
+function setLyricTransitionSpeed(value) {
+  var nextSpeed = clampRange(Number(value) || fxDefaults.lyricTransitionSpeed, 0.55, 1.65);
+  if (Math.abs((Number(fx && fx.lyricTransitionSpeed) || 0) - nextSpeed) < 0.001 && fx.lyricTransitionExplicit === true) return;
+  fx.lyricTransitionSpeed = nextSpeed;
+  fx.lyricTransitionExplicit = true;
+  saveLyricLayout({ user: true, reason: 'lyricTransitionSpeed' });
 }
 function setCustomLyricStatus(text, tone) {
   var el = document.getElementById('custom-lyric-status');
@@ -944,6 +1074,51 @@ function saveCustomLyricForCurrent() {
   showToast(saved ? '自定义歌词已保存' : '自定义歌词已应用');
   setTimeout(function () { closeCustomLyricModal(); }, 520);
 }
+function triggerCustomLyricImport() {
+  var input = document.getElementById('custom-lyric-file-input');
+  if (input) input.click();
+}
+function decodeImportedLyricBuffer(buffer) {
+  var bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer || []);
+  if (!bytes.length) return '';
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return new TextDecoder('utf-8').decode(bytes.subarray(3)).trim();
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes.subarray(2)).trim();
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    var swapped = new Uint8Array(bytes.length - 2);
+    for (var index = 2; index + 1 < bytes.length; index += 2) { swapped[index - 2] = bytes[index + 1]; swapped[index - 1] = bytes[index]; }
+    return new TextDecoder('utf-16le').decode(swapped).trim();
+  }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes).trim(); }
+  catch (_) { try { return new TextDecoder('gb18030').decode(bytes).trim(); } catch (_) { return ''; } }
+}
+async function importCustomLyricFile(file) {
+  var song = currentLyricSong();
+  var key = songCustomLyricKey(song);
+  var name = String(file && file.name || '');
+  if (!song || !key) { showToast('先播放或选择一首歌'); return false; }
+  if (!/\.(lrc|txt)$/i.test(name)) { setCustomLyricStatus('请选择 .lrc 或 .txt 歌词文件', 'fail'); return false; }
+  if (!file || !file.size || file.size > 512 * 1024) { setCustomLyricStatus('歌词文件需小于 512KB', 'fail'); return false; }
+  try {
+    var text = decodeImportedLyricBuffer(await file.arrayBuffer());
+    var lines = parseCustomLyricText(text);
+    if (!lines.length) { setCustomLyricStatus('没有识别到可显示的歌词行', 'fail'); return false; }
+    customLyricMap[key] = { text: text, updatedAt: Date.now(), importedName: name };
+    if (lyricSourceMode === 'custom') customLyricPrefs[key] = 'custom';
+    else customLyricPrefs[key] = 'auto';
+    var saved = saveCustomLyricMap();
+    saveCustomLyricPrefs();
+    var input = document.getElementById('custom-lyric-input');
+    if (input) input.value = text;
+    applyPreferredLyricsForCurrent(true);
+    updateCustomLyricControls();
+    setCustomLyricStatus(saved ? ('已导入 ' + lines.length + ' 行；可在“自动 / 本地歌词”间切换') : '已导入，但本地存储空间不足', saved ? 'good' : 'fail');
+    showToast(saved ? '歌词已导入本地' : '歌词仅在本次运行可用');
+    return true;
+  } catch (error) {
+    setCustomLyricStatus('歌词文件读取失败', 'fail');
+    return false;
+  }
+}
 function deleteCustomLyricForCurrent() {
   var song = currentLyricSong();
   var key = songCustomLyricKey(song);
@@ -975,10 +1150,16 @@ function isCloudSong(song) {
 function isKugouWritableSong(song) {
   return !!(song && song.id && songProviderKey(song) === 'kugou' && kugouLoginStatus.loggedIn);
 }
+function isSpotifyWritableSong(song) {
+  return !!(song && song.id && songProviderKey(song) === 'spotify' && spotifyLoginStatus && spotifyLoginStatus.loggedIn);
+}
 // QQ 红心写入(加入我喜欢)实测受 QQ musicu 签名风控拦截:AddSonglist 恒返回 code 80105(仅取消 DelSonglist 放行),
 // 本仓库无 QQ 安全签名实现,加红心不可靠,故 QQ 不进入红心/收藏写路径;后端 /api/qq/song/like(/check) 仍在,待日后补签名可复用。
+function isQishuiWritableSong(song) {
+  return songProviderKey(song) === 'qishui' && typeof qishuiLoginStatus !== 'undefined' && qishuiLoginStatus && qishuiLoginStatus.loggedIn;
+}
 function isLikeableSong(song) {
-  return isCloudSong(song) || isKugouWritableSong(song);
+  return isCloudSong(song) || isKugouWritableSong(song) || isSpotifyWritableSong(song) || isQishuiWritableSong(song);
 }
 function songLikeKey(song) {
   return (songProviderKey(song) || 'netease') + ':' + String(song && song.id || '');
@@ -989,6 +1170,12 @@ function isSongLiked(song) {
 function ensureLoggedInForAction() {
   if (loginStatus.loggedIn) return true;
   showToast('登录后可同步到网易云');
+  showLoginModal();
+  return false;
+}
+function ensureSpotifyLoggedInForAction() {
+  if (spotifyLoginStatus && spotifyLoginStatus.loggedIn) return true;
+  showToast('登录 Spotify 后可同步收藏');
   showLoginModal();
   return false;
 }
@@ -1042,6 +1229,18 @@ function syncLikeStatusForSongs(songs) {
       likedSongMap[songLikeKey(song)] = !!(r.liked[hash] || r.liked[hash.toLowerCase()]);
     });
   }));
+  var spotifySongs = songs.filter(isSpotifyWritableSong);
+  if (spotifySongs.length) tasks.push(apiJson('/api/spotify/song/like/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ songs: spotifySongs })
+  }).then(function (r) {
+    if (token < likeStatusToken - 3 || !r || !r.liked) return;
+    spotifySongs.forEach(function (song) {
+      var id = String(song.spotifyId || song.providerSongId || song.id || '');
+      likedSongMap[songLikeKey(song)] = !!r.liked[id];
+    });
+  }));
   if (!tasks.length) return;
   Promise.all(tasks).then(function () {
     safeRenderQueuePanel('like-status-sync', { scrollCurrent: miniQueueOpen });
@@ -1079,6 +1278,14 @@ function refreshSearchResultActionStates() {
   });
 }
 async function toggleLikeSong(song) {
+  var spotifyTarget = songProviderKey(song) === 'spotify';
+  var qishuiTarget = songProviderKey(song) === 'qishui';
+  if (spotifyTarget && !ensureSpotifyLoggedInForAction()) return;
+  if (qishuiTarget && !(typeof qishuiLoginStatus !== 'undefined' && qishuiLoginStatus && qishuiLoginStatus.loggedIn)) {
+    showToast('登录汽水音乐后可同步喜欢');
+    showLoginModal();
+    return;
+  }
   if (!isLikeableSong(song)) {
     showToast(songProviderKey(song) === 'qq' ? 'QQ 红心写入受签名风控限制，暂不可用' : '本地文件暂不支持红心同步');
     return;
@@ -1088,20 +1295,26 @@ async function toggleLikeSong(song) {
   if (likeBusyMap[key]) return;
   var next = !likedSongMap[key];
   likeBusyMap[key] = true;
-  likedSongMap[key] = next;
+  if (!spotifyTarget) likedSongMap[key] = next;
   updateLikeButtons(song);
-  safeRenderQueuePanel('like-toggle-optimistic', { scrollCurrent: miniQueueOpen });
-  refreshSearchResultActionStates();
+  if (!spotifyTarget) {
+    safeRenderQueuePanel('like-toggle-optimistic', { scrollCurrent: miniQueueOpen });
+    refreshSearchResultActionStates();
+  }
   try {
-    var r = isKugouWritableSong(song)
-      ? await apiJson('/api/kugou/song/like', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ song: song, like: next }) })
-      : await apiJson('/api/song/like?id=' + encodeURIComponent(String(song.id)) + '&like=' + encodeURIComponent(String(next)));
+    var r = spotifyTarget
+      ? await apiJson('/api/spotify/song/like', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ song: song, like: next }) })
+      : (qishuiTarget
+        ? await apiJson('/api/qishui/song/like', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ song: song, like: next }) })
+        : (isKugouWritableSong(song)
+        ? await apiJson('/api/kugou/song/like', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ song: song, like: next }) })
+          : await apiJson('/api/song/like?id=' + encodeURIComponent(String(song.id)) + '&like=' + encodeURIComponent(String(next)))));
     if (r && r.error) throw new Error(r.error);
     likedSongMap[key] = next;
-    showToast(next ? '已加入红心喜欢' : '已取消红心');
+    showToast(spotifyTarget ? (next ? '已加入 Spotify 喜欢的歌曲' : '已取消 Spotify 喜欢') : (qishuiTarget ? (next ? '已加入汽水喜欢' : '已取消汽水喜欢') : (next ? '已加入红心喜欢' : '已取消红心')));
   } catch (err) {
-    likedSongMap[key] = !next;
-    showToast('红心操作失败');
+    if (!spotifyTarget) likedSongMap[key] = !next;
+    showToast(spotifyTarget ? (err && err.message ? err.message : 'Spotify 收藏操作失败') : (qishuiTarget ? '汽水喜欢操作失败' : '红心操作失败'));
   } finally {
     delete likeBusyMap[key];
     updateLikeButtons(song);
@@ -1114,6 +1327,8 @@ function toggleLikeSearchResult(i) { if (playlist[i]) toggleLikeSong(playlist[i]
 function toggleLikeQueueIndex(i) { if (playQueue[i]) toggleLikeSong(playQueue[i]); }
 function toggleLikeDetailSong(song) { toggleLikeSong(song); }
 function openCollectModal(song) {
+  var spotifyTarget = songProviderKey(song) === 'spotify';
+  if (spotifyTarget && !ensureSpotifyLoggedInForAction()) return;
   if (!isLikeableSong(song)) {
     showToast(songProviderKey(song) === 'qq' ? 'QQ 收藏写入受签名风控限制，暂不可用' : '本地文件暂不支持收藏到网易云歌单');
     return;
@@ -1141,10 +1356,12 @@ function renderCollectModal() {
   if (!current || !list) return;
   var song = collectTargetSong || {};
   var cover = songCoverSrc(song, 80);
-  current.innerHTML = (cover ? '<img src="' + cover + '" alt="">' : '<div class="cover-placeholder"></div>') +
+  current.innerHTML = (cover ? '<img src="' + coverMarkupSrc(cover) + '" alt="">' : '<div class="cover-placeholder"></div>') +
     '<div style="min-width:0"><div class="collect-title">' + escHtml(song.name || '当前歌曲') + '</div><div class="collect-sub">' + escHtml(song.artist || '') + '</div></div>';
   var targetProvider = songProviderKey(song) || 'netease';
-  if ((targetProvider === 'netease' && !loginStatus.loggedIn) || (targetProvider === 'kugou' && !kugouLoginStatus.loggedIn)) {
+  var create = document.querySelector('#collect-modal .collect-create');
+  if (create) create.hidden = targetProvider === 'spotify';
+  if ((targetProvider === 'netease' && !loginStatus.loggedIn) || (targetProvider === 'kugou' && !kugouLoginStatus.loggedIn) || (targetProvider === 'spotify' && !spotifyLoginStatus.loggedIn)) {
     list.innerHTML = '<div class="collect-empty">登录后显示你的歌单</div>';
     return;
   }
@@ -1152,7 +1369,7 @@ function renderCollectModal() {
     list.innerHTML = miniQueueSkeleton();
     return;
   }
-  var mine = userPlaylists.filter(function (pl) { return !pl.subscribed && (pl.provider || 'netease') === targetProvider; });
+  var mine = userPlaylists.filter(function (pl) { return !pl.virtual && !pl.subscribed && (pl.provider || 'netease') === targetProvider; });
   if (!mine.length) {
     list.innerHTML = '<div class="collect-empty">还没有可写入的歌单，可以先新建一个</div>';
     return;
@@ -1160,7 +1377,7 @@ function renderCollectModal() {
   list.innerHTML = mine.map(function (pl) {
     var thumb = pl.cover ? coverUrlWithSize(pl.cover, 80) : '';
     return '<div class="collect-item" data-collect-pid="' + escHtml(String(pl.id || '')) + '" onclick="addCollectTargetToPlaylist(this.getAttribute(\'data-collect-pid\'))">' +
-      (thumb ? '<img src="' + thumb + '" alt="">' : '<div class="cover-placeholder"></div>') +
+      (thumb ? '<img src="' + coverMarkupSrc(thumb) + '" alt="">' : '<div class="cover-placeholder"></div>') +
       '<div style="min-width:0"><div class="collect-title">' + escHtml(pl.name || '') + '</div><div class="collect-sub">' + (pl.trackCount || 0) + ' 首</div></div>' +
       '</div>';
   }).join('');
@@ -1174,6 +1391,10 @@ function setCollectBusyPid(pid, busy) {
   });
 }
 async function createPlaylistFromCollect() {
+  if (songProviderKey(collectTargetSong) === 'spotify') {
+    showToast('Spotify 当前只支持加入已有歌单');
+    return;
+  }
   if (!ensureLoggedInForAction()) return;
   var input = document.getElementById('collect-new-name');
   var name = input ? input.value.trim() : '';
@@ -1227,16 +1448,17 @@ async function addCollectTargetToPlaylist(pid) {
   try {
     var songId = String(collectTargetSong.id || '');
     var kugouTarget = songProviderKey(collectTargetSong) === 'kugou';
-    var r = await apiJson(kugouTarget ? '/api/kugou/playlist/add-song' : '/api/playlist/add-song', {
+    var spotifyTarget = songProviderKey(collectTargetSong) === 'spotify';
+    var r = await apiJson(spotifyTarget ? '/api/spotify/playlist/add-song' : (kugouTarget ? '/api/kugou/playlist/add-song' : '/api/playlist/add-song'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(kugouTarget ? { pid: pid, song: collectTargetSong } : { pid: pid, id: songId })
+      body: JSON.stringify(spotifyTarget ? { playlistId: pid, song: collectTargetSong } : (kugouTarget ? { pid: pid, song: collectTargetSong } : { pid: pid, id: songId }))
     });
     if (!(r && r.success)) throw new Error(collectResultMessage(r));
-    showToast('已收藏到歌单');
+    showToast(spotifyTarget ? '已加入 Spotify 歌单' : '已收藏到歌单');
     closeCollectModal();
     refreshUserPlaylists(true);
-    if (!kugouTarget) setTimeout(function () {
+    if (!kugouTarget && !spotifyTarget) setTimeout(function () {
       verifySongInPlaylist(pid, songId).then(function (ok) {
         if (!ok) console.warn('collect submitted but verify did not find song yet:', pid, songId);
       });

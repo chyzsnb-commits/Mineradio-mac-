@@ -69,9 +69,6 @@ function customBackgroundCropNumber(key, fallback, min, max) {
   if (!isFinite(n)) n = min;
   return clampRange(n, min, max);
 }
-var customBackgroundCropModalState = null;
-var customBackgroundCropModalBound = false;
-var customBackgroundCropModalObjectUrl = '';
 function customBackgroundAlbumCoverSource() {
   var src = '';
   try {
@@ -85,8 +82,21 @@ function customBackgroundAlbumCoverSource() {
   if (!src) {
     try {
       var thumb = document.getElementById('thumb-cover');
-      src = thumb && (thumb.currentSrc || thumb.src || thumb.getAttribute('src')) || '';
+      var thumbSrc = thumb && thumb.getAttribute('src');
+      var thumbSrcSet = thumb && thumb.getAttribute('srcset');
+      // 空 src 的 HTMLImageElement.src 会被浏览器解析为当前页面地址，不能当封面。
+      src = thumb && (thumbSrc || thumbSrcSet ? (thumb.currentSrc || thumbSrc) : '') || '';
     } catch (e3) { }
+  }
+  if (!src) {
+    try {
+      // 切歌/恢复存档时 currentCoverSource 可能尚未写入，但模糊封面层已经可见。
+      // 从它读取当前 URL，保证“封面”按钮和鼠标视角不依赖某个异步完成顺序。
+      var albumLayer = document.getElementById('album-bg');
+      var albumImage = albumLayer && window.getComputedStyle ? window.getComputedStyle(albumLayer).backgroundImage : '';
+      var albumMatch = albumImage && albumImage.match(/url\((['"]?)(.*?)\1\)/i);
+      if (albumMatch && albumMatch[2] && albumMatch[2] !== 'none') src = albumMatch[2];
+    } catch (e4) { }
   }
   if (!src) {
     try {
@@ -94,7 +104,7 @@ function customBackgroundAlbumCoverSource() {
       if (!song) song = Array.isArray(playQueue) && currentIdx >= 0 && currentIdx < playQueue.length ? playQueue[currentIdx] : null;
       if (!song) song = Array.isArray(playlist) && currentIdx >= 0 && currentIdx < playlist.length ? playlist[currentIdx] : null;
       if (song) src = typeof songCoverSrc === 'function' ? songCoverSrc(song, 640) : (song.customCover || song.cover || '');
-    } catch (e4) { }
+    } catch (e5) { }
   }
   if (src && /^https?:\/\//i.test(src) && typeof coverProxySrc === 'function') return coverProxySrc(src, false) || src;
   return src || '';
@@ -107,6 +117,57 @@ function customBackgroundActiveMedia() {
   }
   return media;
 }
+
+var wallpaperMouseParallaxState = {
+  targetX: 0,
+  targetY: 0,
+  currentX: 0,
+  currentY: 0,
+  frame: 0
+};
+
+function wallpaperMouseParallaxSupported() {
+  var media = typeof customBackgroundActiveMedia === 'function' ? customBackgroundActiveMedia() : null;
+  return !!(media && !media.album && (media.type === 'image' || media.type === 'video'));
+}
+
+function writeWallpaperMouseParallaxVars(x, y) {
+  var layer = document.getElementById('custom-bg');
+  if (!layer) return;
+  layer.style.setProperty('--wallpaper-bg-parallax-x', (Number(x) || 0).toFixed(3) + '%');
+  layer.style.setProperty('--wallpaper-bg-parallax-y', (Number(y) || 0).toFixed(3) + '%');
+}
+
+function updateCustomBackgroundMouseParallax(ndcX, ndcY) {
+  if (Number.isFinite(Number(ndcX))) wallpaperMouseParallaxState.targetX = Math.max(-1, Math.min(1, Number(ndcX)));
+  if (Number.isFinite(Number(ndcY))) wallpaperMouseParallaxState.targetY = Math.max(-1, Math.min(1, Number(ndcY)));
+  var enabled = !!(typeof fx !== 'undefined' && fx && fx.wallpaperMouseParallax === true && wallpaperMouseParallaxSupported());
+  if (!enabled) {
+    if (wallpaperMouseParallaxState.frame) cancelAnimationFrame(wallpaperMouseParallaxState.frame);
+    wallpaperMouseParallaxState.frame = 0;
+    wallpaperMouseParallaxState.targetX = wallpaperMouseParallaxState.targetY = 0;
+    wallpaperMouseParallaxState.currentX = wallpaperMouseParallaxState.currentY = 0;
+    writeWallpaperMouseParallaxVars(0, 0);
+    return;
+  }
+  if (!wallpaperMouseParallaxState.frame) wallpaperMouseParallaxState.frame = requestAnimationFrame(stepCustomBackgroundMouseParallax);
+}
+
+function stepCustomBackgroundMouseParallax() {
+  wallpaperMouseParallaxState.frame = 0;
+  var state = wallpaperMouseParallaxState;
+  state.currentX += (state.targetX - state.currentX) * 0.18;
+  state.currentY += (state.targetY - state.currentY) * 0.18;
+  writeWallpaperMouseParallaxVars(state.currentX * -1.55, state.currentY * 1.25);
+  if (Math.abs(state.targetX - state.currentX) > 0.002 || Math.abs(state.targetY - state.currentY) > 0.002) {
+    state.frame = requestAnimationFrame(stepCustomBackgroundMouseParallax);
+  } else {
+    state.currentX = state.targetX;
+    state.currentY = state.targetY;
+    writeWallpaperMouseParallaxVars(state.currentX * -1.55, state.currentY * 1.25);
+  }
+}
+
 function applyCustomBackgroundCropVars(root, layer) {
   var cropX = customBackgroundCropNumber('backgroundMediaCropX', fxDefaults.backgroundMediaCropX == null ? 50 : fxDefaults.backgroundMediaCropX, 0, 100);
   var cropY = customBackgroundCropNumber('backgroundMediaCropY', fxDefaults.backgroundMediaCropY == null ? 50 : fxDefaults.backgroundMediaCropY, 0, 100);
@@ -126,6 +187,8 @@ function applyCustomBackground() {
   var rgb = hexToRgb(color);
   var albumMode = typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover();
   var media = customBackgroundActiveMedia();
+  if (!albumMode && media && fx.albumBackgroundMouseBind === true) fx.albumBackgroundMouseBind = false;
+  var wallpaperParallax = !!(media && !media.album && (media.type === 'image' || media.type === 'video') && fx.wallpaperMouseParallax === true);
   var image = media && media.type === 'image' ? media.src : '';
   var hasVideo = !!(media && media.type === 'video');
   var opacity = clampRange(fx.backgroundOpacity == null ? 1 : Number(fx.backgroundOpacity), 0, 1);
@@ -153,6 +216,7 @@ function applyCustomBackground() {
   document.body.classList.toggle('custom-background-flat', override && !media);
   document.body.classList.toggle('custom-background-album-cover', albumMode);
   document.body.classList.toggle('custom-background-video', hasVideo);
+  document.body.classList.toggle('custom-background-parallax', wallpaperParallax);
   document.body.classList.toggle('custom-window-transparent', windowOpacity < 0.999);
   document.body.classList.toggle('custom-bg-glass-active', glassActive);
   var token = ++customBgApplyToken;
@@ -245,15 +309,79 @@ function updateCustomBackgroundMediaPreview(media) {
     preview.dataset.kind = 'VID';
   }
 }
+function updateAlbumBackgroundMouseBindControl(activeMedia, albumMode) {
+  var toggle = document.getElementById('t-albumBackgroundMouseBind');
+  if (!toggle) return;
+  activeMedia = activeMedia || customBackgroundActiveMedia();
+  albumMode = albumMode === true || (typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover());
+  var hasCover = !!customBackgroundAlbumCoverSource();
+  var blocked = !!activeMedia && !albumMode;
+  var available = albumMode || (!activeMedia && hasCover);
+  var bound = fx.albumBackgroundMouseBind === true && available;
+  var copy = toggle.querySelector('.fx-toggle-copy small');
+  toggle.classList.toggle('on', bound);
+  toggle.classList.toggle('is-unavailable', !available);
+  toggle.setAttribute('aria-checked', bound ? 'true' : 'false');
+  toggle.setAttribute('aria-disabled', blocked ? 'true' : 'false');
+  toggle.dataset.state = bound ? 'on' : 'off';
+  if (copy) {
+    copy.textContent = blocked
+      ? '当前为上传媒体，保持固定视角'
+      : albumMode
+        ? '封面原图随鼠标轻微移动'
+        : hasCover
+          ? '点击后自动切换到封面原图'
+          : '播放有封面的歌曲后可用';
+  }
+  toggle.title = blocked
+    ? '上传图片和视频不支持鼠标视角'
+    : hasCover || albumMode
+      ? '让当前歌曲封面背景跟随鼠标产生轻微视差'
+      : '当前歌曲没有可用封面';
+}
+var customBackgroundCropPersistTimer = 0;
+function updateCustomBackgroundCropPreview() {
+  if (window.performance && typeof performance.mark === 'function') performance.mark('mineradio-bg-crop-input');
+  updateCustomBackgroundControls({ cropOnly: true });
+  if (typeof updateCustomBackgroundCropModalView === 'function') updateCustomBackgroundCropModalView();
+  if (window.performance && typeof performance.mark === 'function' && typeof performance.measure === 'function') {
+    performance.mark('mineradio-bg-crop-preview-complete');
+    try { performance.measure('mineradio-bg-crop-preview', 'mineradio-bg-crop-input', 'mineradio-bg-crop-preview-complete'); } catch (_) {}
+  }
+}
+function flushCustomBackgroundCropPersist() {
+  if (customBackgroundCropPersistTimer) {
+    clearTimeout(customBackgroundCropPersistTimer);
+    customBackgroundCropPersistTimer = 0;
+  }
+  saveLyricLayout({ user: true, reason: 'backgroundMediaCrop' });
+}
+function scheduleCustomBackgroundCropPersist() {
+  if (customBackgroundCropPersistTimer) clearTimeout(customBackgroundCropPersistTimer);
+  customBackgroundCropPersistTimer = setTimeout(function () {
+    customBackgroundCropPersistTimer = 0;
+    saveLyricLayout({ user: true, reason: 'backgroundMediaCrop' });
+  }, 280);
+}
 function updateCustomBackgroundControls() {
+  var options = arguments[0];
+  if (options && options.cropOnly === true) {
+    applyCustomBackgroundCropVars(document.documentElement, document.getElementById('custom-bg'));
+    return;
+  }
   applyCustomBackground();
+  if (typeof updateAlbumBackgroundMouseView === 'function') updateAlbumBackgroundMouseView();
+  updateCustomBackgroundMouseParallax();
   var activeMedia = customBackgroundActiveMedia();
+  var albumMode = typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover();
   var color = normalizeHexColor(fx.backgroundColor || '#000000', '#000000');
   var picker = document.getElementById('bg-color-picker');
   var value = document.getElementById('bg-color-value');
   var imageValue = document.getElementById('bg-image-value');
   var albumBtn = document.getElementById('bg-album-toggle-btn');
   var cropBtn = document.getElementById('bg-media-crop-btn');
+  var clearBtn = document.getElementById('bg-media-clear-btn');
+  var state = document.getElementById('bg-media-state');
   var customColor = fx.backgroundColorMode === 'custom' || !!fx.backgroundColorCustom;
   if (picker) picker.value = color;
   if (value) value.textContent = customColor ? color.toUpperCase() : '\u5c01\u9762\u6e10\u53d8';
@@ -276,7 +404,19 @@ function updateCustomBackgroundControls() {
     cropBtn.disabled = !activeMedia;
     cropBtn.title = activeMedia ? '\u91cd\u65b0\u88c1\u5207\u5df2\u8bbe\u7f6e\u7684\u80cc\u666f\u5a92\u4f53' : '\u5148\u9009\u62e9\u5c01\u9762\u3001\u56fe\u7247\u6216\u89c6\u9891';
   }
+  if (clearBtn) {
+    clearBtn.disabled = !activeMedia;
+    clearBtn.title = activeMedia ? '\u6e05\u9664\u5f53\u524d\u80cc\u666f\u5a92\u4f53' : '\u5f53\u524d\u6ca1\u6709\u53ef\u6e05\u9664\u7684\u80cc\u666f\u5a92\u4f53';
+  }
+  if (state) {
+    state.textContent = albumMode
+      ? '\u5f53\u524d\uff1a\u5c01\u9762\u539f\u56fe'
+      : activeMedia
+        ? '\u5f53\u524d\uff1a' + (activeMedia.type === 'video' ? '\u80cc\u666f\u89c6\u9891' : '\u80cc\u666f\u56fe\u7247') + '\uff08\u56fa\u5b9a\u89c6\u89d2\uff09'
+        : '\u5f53\u524d\uff1a\u9ed8\u8ba4\u80cc\u666f';
+  }
   updateCustomBackgroundMediaPreview(activeMedia);
+  updateAlbumBackgroundMouseBindControl(activeMedia, albumMode);
   applyBackgroundMediaHint();
 }
 function setCustomBackgroundColor(color, silent, customFlag) {
@@ -319,17 +459,26 @@ function setBackgroundGlassOpacity(value, silent) {
   if (!silent) showToast('\u6bdb\u73bb\u7483\u900f\u660e: ' + Math.round(fx.backgroundGlassOpacity * 100) + '%');
 }
 function setCustomBackgroundAlbumCover(enabled, silent) {
-  fx.backgroundAlbumCover = enabled === true;
+  var nextEnabled = enabled === true;
+  // 没有当前封面时不能只切换状态:否则 UI 会显示“封面原图”,但实际没有可渲染的媒体。
+  if (nextEnabled && !customBackgroundAlbumCoverSource()) {
+    fx.backgroundAlbumCover = false;
+    fx.albumBackgroundMouseBind = false;
+    updateCustomBackgroundControls();
+    if (!silent) showToast('当前歌曲暂无可用封面');
+    return false;
+  }
+  fx.backgroundAlbumCover = nextEnabled;
   if (fx.backgroundAlbumCover) {
     fx.backgroundMedia = null;
     fx.backgroundImage = '';
+  } else {
+    fx.albumBackgroundMouseBind = false;
   }
   updateCustomBackgroundControls();
   saveLyricLayout({ user: true, reason: 'backgroundAlbumCover' });
   if (!silent) showToast(fx.backgroundAlbumCover ? '\u80cc\u666f\u5a92\u4f53: \u5c01\u9762\u539f\u56fe' : '\u80cc\u666f\u5a92\u4f53: \u5df2\u5173\u95ed\u5c01\u9762');
-}
-function toggleCustomBackgroundAlbumCover() {
-  setCustomBackgroundAlbumCover(!(typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover()));
+  return true;
 }
 function setCustomBackgroundCrop(key, value, silent) {
   var allowed = {
@@ -341,16 +490,16 @@ function setCustomBackgroundCrop(key, value, silent) {
   var meta = allowed[key];
   var next = clampRange(Number(value), meta[0], meta[1]);
   fx[key] = isFinite(next) ? next : meta[2];
-  updateCustomBackgroundControls();
-  saveLyricLayout({ user: true, reason: 'backgroundMediaCrop' });
+  updateCustomBackgroundCropPreview();
+  flushCustomBackgroundCropPersist();
   if (!silent) showToast('\u80cc\u666f\u88c1\u5207\u5df2\u66f4\u65b0');
 }
 function resetCustomBackgroundCrop() {
   fx.backgroundMediaCropX = fxDefaults.backgroundMediaCropX == null ? 50 : fxDefaults.backgroundMediaCropX;
   fx.backgroundMediaCropY = fxDefaults.backgroundMediaCropY == null ? 50 : fxDefaults.backgroundMediaCropY;
   fx.backgroundMediaZoom = fxDefaults.backgroundMediaZoom == null ? 1 : fxDefaults.backgroundMediaZoom;
-  updateCustomBackgroundControls();
-  saveLyricLayout({ user: true, reason: 'backgroundMediaCrop' });
+  updateCustomBackgroundCropPreview();
+  flushCustomBackgroundCropPersist();
   showToast('\u80cc\u666f\u88c1\u5207\u5df2\u590d\u4f4d');
 }
 function customBackgroundCropSnapshot() {
@@ -365,8 +514,7 @@ function applyCustomBackgroundCropSnapshot(snapshot) {
   fx.backgroundMediaCropX = clampRange(Number(snapshot.x), 0, 100);
   fx.backgroundMediaCropY = clampRange(Number(snapshot.y), 0, 100);
   fx.backgroundMediaZoom = clampRange(Number(snapshot.zoom), 1, 2.8);
-  updateCustomBackgroundControls();
-  updateCustomBackgroundCropModalView();
+  updateCustomBackgroundCropPreview();
 }
 function customBackgroundCropMediaSrc(media) {
   if (!media) return '';
@@ -378,185 +526,15 @@ function customBackgroundCropMediaSrc(media) {
   }
   return '';
 }
-function bindCustomBackgroundCropModal() {
-  if (customBackgroundCropModalBound) return;
-  customBackgroundCropModalBound = true;
-  var stage = document.getElementById('background-crop-stage');
-  var zoom = document.getElementById('background-crop-zoom');
-  if (!stage || !zoom) return;
-  stage.addEventListener('pointerdown', function (e) {
-    if (!customBackgroundCropModalState) return;
-    e.preventDefault();
-    customBackgroundCropModalState.dragging = true;
-    customBackgroundCropModalState.lastX = e.clientX;
-    customBackgroundCropModalState.lastY = e.clientY;
-    stage.classList.add('dragging');
-    if (stage.setPointerCapture) {
-      try { stage.setPointerCapture(e.pointerId); } catch (err) { }
-    }
-  });
-  stage.addEventListener('pointermove', function (e) {
-    if (!customBackgroundCropModalState || !customBackgroundCropModalState.dragging) return;
-    e.preventDefault();
-    var rect = stage.getBoundingClientRect();
-    var dx = e.clientX - customBackgroundCropModalState.lastX;
-    var dy = e.clientY - customBackgroundCropModalState.lastY;
-    customBackgroundCropModalState.lastX = e.clientX;
-    customBackgroundCropModalState.lastY = e.clientY;
-    var zoomFactor = Math.max(1, Number(fx.backgroundMediaZoom) || 1);
-    var nextX = (Number(fx.backgroundMediaCropX) || 50) - (dx / Math.max(1, rect.width)) * 100 / zoomFactor;
-    var nextY = (Number(fx.backgroundMediaCropY) || 50) - (dy / Math.max(1, rect.height)) * 100 / zoomFactor;
-    applyCustomBackgroundCropSnapshot({ x: nextX, y: nextY, zoom: zoomFactor });
-  });
-  function stopDrag() {
-    if (!customBackgroundCropModalState) return;
-    customBackgroundCropModalState.dragging = false;
-    stage.classList.remove('dragging');
-  }
-  stage.addEventListener('pointerup', stopDrag);
-  stage.addEventListener('pointercancel', stopDrag);
-  stage.addEventListener('wheel', function (e) {
-    if (!customBackgroundCropModalState) return;
-    e.preventDefault();
-    var current = customBackgroundCropSnapshot();
-    current.zoom = clampRange(current.zoom + (e.deltaY < 0 ? 0.08 : -0.08), 1, 2.8);
-    applyCustomBackgroundCropSnapshot(current);
-  }, { passive: false });
-  zoom.addEventListener('input', function () {
-    if (!customBackgroundCropModalState) return;
-    var current = customBackgroundCropSnapshot();
-    current.zoom = clampRange(Number(zoom.value) || 1, 1, 2.8);
-    applyCustomBackgroundCropSnapshot(current);
-  });
-}
-function updateCustomBackgroundCropModalView() {
-  var snapshot = customBackgroundCropSnapshot();
-  var zoom = document.getElementById('background-crop-zoom');
-  if (zoom) zoom.value = snapshot.zoom;
-  ['background-crop-stage', 'background-crop-preview'].forEach(function (id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.style.setProperty('--bg-crop-modal-x', snapshot.x.toFixed(1) + '%');
-    el.style.setProperty('--bg-crop-modal-y', snapshot.y.toFixed(1) + '%');
-    el.style.setProperty('--bg-crop-modal-zoom', snapshot.zoom.toFixed(3));
-  });
-}
-function releaseCustomBackgroundCropModalObjectUrl() {
-  if (customBackgroundCropModalObjectUrl) {
-    URL.revokeObjectURL(customBackgroundCropModalObjectUrl);
-    customBackgroundCropModalObjectUrl = '';
-  }
-}
-function setCustomBackgroundCropModalSource(media, src) {
-  var stage = document.getElementById('background-crop-stage');
-  var preview = document.getElementById('background-crop-preview');
-  var img = document.getElementById('background-crop-img');
-  var video = document.getElementById('background-crop-video');
-  var previewImg = document.getElementById('background-crop-preview-img');
-  var previewVideo = document.getElementById('background-crop-preview-video');
-  [stage, preview].forEach(function (el) {
-    if (!el) return;
-    el.classList.toggle('media-image', media && media.type === 'image');
-    el.classList.toggle('media-video', media && media.type === 'video');
-  });
-  if (img) img.removeAttribute('src');
-  if (previewImg) previewImg.removeAttribute('src');
-  [video, previewVideo].forEach(function (el) {
-    if (!el) return;
-    el.pause();
-    el.removeAttribute('src');
-    el.load();
-  });
-  if (!src) return;
-  if (media.type === 'image') {
-    if (img) img.src = src;
-    if (previewImg) previewImg.src = src;
-  } else if (media.type === 'video') {
-    [video, previewVideo].forEach(function (el) {
-      if (!el) return;
-      el.src = src;
-      el.muted = true;
-      el.loop = true;
-      el.playsInline = true;
-      var p = el.play();
-      if (p && p.catch) p.catch(function () { });
-    });
-  }
-}
-function openCustomBackgroundCropModal() {
-  var media = customBackgroundActiveMedia();
-  if (!media) {
-    showToast('\u5148\u9009\u62e9\u5c01\u9762\u3001\u56fe\u7247\u6216\u89c6\u9891');
-    return;
-  }
-  bindCustomBackgroundCropModal();
-  var modal = document.getElementById('background-crop-modal');
-  if (!modal) return;
-  releaseCustomBackgroundCropModalObjectUrl();
-  customBackgroundCropModalState = {
-    media: media,
-    original: customBackgroundCropSnapshot(),
-    dragging: false,
-    lastX: 0,
-    lastY: 0
-  };
-  var src = customBackgroundCropMediaSrc(media);
-  if (media.type === 'video' && !src && media.id) {
-    getCustomBackgroundBlob(media.id).then(function (blob) {
-      if (!customBackgroundCropModalState || customBackgroundCropModalState.media !== media || !blob) return;
-      releaseCustomBackgroundCropModalObjectUrl();
-      customBackgroundCropModalObjectUrl = URL.createObjectURL(blob);
-      setCustomBackgroundCropModalSource(media, customBackgroundCropModalObjectUrl);
-    }).catch(function () { showToast('\u80cc\u666f\u89c6\u9891\u8bfb\u53d6\u5931\u8d25'); });
-  } else {
-    setCustomBackgroundCropModalSource(media, src);
-  }
-  updateCustomBackgroundCropModalView();
-  openGsapModal(modal);
-  var stage = document.getElementById('background-crop-stage');
-  if (stage && window.gsap) window.gsap.fromTo(stage, { scale: 0.985 }, { scale: 1, duration: 0.72, ease: 'expo.out', overwrite: true });
-}
-function closeCustomBackgroundCropModal(restoreOriginal) {
-  var modal = document.getElementById('background-crop-modal');
-  var original = customBackgroundCropModalState && customBackgroundCropModalState.original;
-  if (restoreOriginal && original) applyCustomBackgroundCropSnapshot(original);
-  closeGsapModal(modal, function () {
-    setCustomBackgroundCropModalSource({ type: 'image' }, '');
-    releaseCustomBackgroundCropModalObjectUrl();
-    customBackgroundCropModalState = null;
-  });
-}
-function cancelCustomBackgroundCropModal() {
-  closeCustomBackgroundCropModal(true);
-}
-function resetCustomBackgroundCropInModal() {
-  applyCustomBackgroundCropSnapshot({
-    x: fxDefaults.backgroundMediaCropX == null ? 50 : fxDefaults.backgroundMediaCropX,
-    y: fxDefaults.backgroundMediaCropY == null ? 50 : fxDefaults.backgroundMediaCropY,
-    zoom: fxDefaults.backgroundMediaZoom == null ? 1 : fxDefaults.backgroundMediaZoom
-  });
-}
-function commitCustomBackgroundCropModal() {
-  saveLyricLayout({ user: true, reason: 'backgroundMediaCrop' });
-  showToast('\u80cc\u666f\u88c1\u5207\u5df2\u66f4\u65b0');
-  closeCustomBackgroundCropModal(false);
-}
-function openCustomBackgroundCropModalSoon() {
-  setTimeout(function () {
-    if (customBackgroundActiveMedia()) openCustomBackgroundCropModal();
-  }, 80);
-}
 function setCustomBackgroundImage(src, silent) {
   var image = normalizeCustomBackgroundImage(src);
   fx.backgroundImage = image;
   fx.backgroundMedia = image ? { type: 'image', src: image } : null;
   fx.backgroundAlbumCover = false;
+  fx.albumBackgroundMouseBind = false;
   updateCustomBackgroundControls();
   saveLyricLayout({ user: true, reason: 'backgroundImage' });
   if (!silent) showToast(fx.backgroundImage ? '背景图片已应用' : '背景图片已清除');
-}
-function clearCustomBackgroundImage() {
-  setCustomBackgroundImage('');
 }
 function setCustomBackgroundMedia(media, silent) {
   media = normalizeCustomBackgroundMedia(media);
@@ -567,6 +545,7 @@ function setCustomBackgroundMedia(media, silent) {
   fx.backgroundMedia = media;
   fx.backgroundImage = media && media.type === 'image' ? media.src : '';
   fx.backgroundAlbumCover = false;
+  fx.albumBackgroundMouseBind = false;
   // 设/清背景媒体后必须让 _voxApplyBg 重新裁决 scene.background:
   // 有媒体→scene.background=null(canvas 透明,露出 DOM 视频);无媒体→回到纯色/默认。
   // 否则从纯色切到 mp4 时,不透明的 THREE.Color canvas 一直压在视频上→视频看不见(用户实测纯色↔mp4 切不动)
@@ -581,11 +560,15 @@ function setCustomBackgroundMedia(media, silent) {
   saveLyricLayout({ user: true, reason: 'backgroundMedia' });
   if (!silent) showToast(media ? (media.type === 'video' ? '背景视频已应用' : '背景图片已应用') : '背景媒体已清除');
 }
+function clearCustomBackgroundMedia(silent) {
+  setCustomBackgroundMedia(null, silent);
+}
 function readBackgroundImageFile(file) {
   if (!file || !/^image\//i.test(file.type || '')) {
     showToast('请选择图片文件');
     return;
   }
+  mirrorCustomBackgroundBlob(file, { id: 'bg-image-source-' + Date.now(), name: file.name || '', mime: file.type || '', size: file.size || 0 });
   var reader = new FileReader();
   reader.onload = function (e) {
     var img = new Image();
@@ -606,7 +589,6 @@ function readBackgroundImageFile(file) {
         try { out = cv.toDataURL('image/jpeg', 0.86); } catch (err2) { out = String(e.target.result || ''); }
       }
       setCustomBackgroundImage(out);
-      openCustomBackgroundCropModalSoon();
     };
     img.onerror = function () { showToast('背景图片读取失败'); };
     img.src = e.target.result;
@@ -621,8 +603,8 @@ function readBackgroundVideoFile(file) {
   }
   var id = 'bg-video-' + Date.now() + '-' + Math.random().toString(16).slice(2);
   putCustomBackgroundBlob(id, file, { name: file.name || '', mime: file.type || '', size: file.size || 0 }).then(function () {
+    mirrorCustomBackgroundBlob(file, { id: id, name: file.name || '', mime: file.type || '', size: file.size || 0 });
     setCustomBackgroundMedia({ type: 'video', id: id, name: file.name || '', mime: file.type || '', size: file.size || 0 });
-    openCustomBackgroundCropModalSoon();
   }).catch(function (err) {
     console.warn('background video store failed:', err);
     if ((file.size || 0) > 18 * 1024 * 1024) {
@@ -632,7 +614,6 @@ function readBackgroundVideoFile(file) {
     var reader = new FileReader();
     reader.onload = function (e) {
       setCustomBackgroundMedia({ type: 'video', src: String(e.target.result || ''), name: file.name || '', mime: file.type || '', size: file.size || 0 });
-      openCustomBackgroundCropModalSoon();
     };
     reader.onerror = function () { showToast('背景视频读取失败'); };
     reader.readAsDataURL(file);
@@ -643,6 +624,26 @@ function readBackgroundMediaFile(file) {
   if (/^image\//i.test(file.type || '')) readBackgroundImageFile(file);
   else if (/^video\//i.test(file.type || '')) readBackgroundVideoFile(file);
   else showToast('请选择图片或视频文件');
+}
+function mirrorCustomBackgroundBlob(blob, meta) {
+  if (!blob || !window.desktopWindow || typeof window.desktopWindow.storeLocalWallpaperMedia !== 'function' || typeof blob.arrayBuffer !== 'function') return Promise.resolve({ ok: false, skipped: true });
+  meta = meta || {};
+  return blob.arrayBuffer().then(function (buffer) {
+    return window.desktopWindow.storeLocalWallpaperMedia({
+      id: String(meta.id || 'wallpaper'),
+      name: String(meta.name || ''),
+      mime: String(meta.mime || blob.type || ''),
+      bytes: new Uint8Array(buffer)
+    });
+  }).catch(function () { return { ok: false }; });
+}
+function syncCustomBackgroundLibraryToFolder() {
+  if (typeof listCustomBackgroundMediaEntries !== 'function') return Promise.resolve({ ok: true, count: 0 });
+  return listCustomBackgroundMediaEntries().then(function (entries) {
+    return Promise.all(entries.map(function (entry) {
+      return mirrorCustomBackgroundBlob(entry.blob, entry);
+    })).then(function () { return { ok: true, count: entries.length }; });
+  });
 }
 function applyUiAccentColor() {
   var color = normalizeHexColor(fx.uiAccentColor || '#00f5d4', '#00f5d4');
@@ -879,7 +880,10 @@ function sonicWorkshopCurrentCoverDomSource() {
   } catch (e) { }
   try {
     var thumb = document.getElementById('thumb-cover');
-    var thumbSrc = thumb && (thumb.currentSrc || thumb.src || thumb.getAttribute('src'));
+    var thumbAttr = thumb && thumb.getAttribute('src');
+    var thumbSrcSet = thumb && thumb.getAttribute('srcset');
+    // 空 src 会解析为当前文档 URL；只有实际声明的图片来源才允许读 currentSrc。
+    var thumbSrc = thumb && (thumbAttr || thumbSrcSet ? (thumb.currentSrc || thumbAttr) : '');
     if (thumbSrc) return String(thumbSrc);
   } catch (e) { }
   try {
@@ -1194,4 +1198,82 @@ function setSonicWorkshopRegionColorFromPicker(id, color, silent) {
   fx[item.colorKey] = hex;
   pushSonicWorkshopColorChange(item.colorKey);
   if (!silent) showToast('\u97f3\u57df\u56de\u54cd\u00b7WE ' + item.label + ': ' + hex.toUpperCase());
+}
+
+// ===== \u754c\u9762\u4e3b\u9898(\u7f51\u9875\u7248\u89c4\u6574\u800c\u6765)=====
+// js/runtime-themes.js \u63d0\u4f9b 6 \u5957\u7ed3\u6784\u8272(default/midnight/ember/violet/aurora/rose);
+// default \u7684\u7ed3\u6784\u503c\u4e0e\u672c\u5730 :root \u9010\u9879\u4e00\u81f4,\u6240\u4ee5\u4e0d\u9009\u4e3b\u9898\u65f6\u5b8c\u5168\u7b49\u4ef7\u4e8e\u65e7\u884c\u4e3a\u3002
+function normalizeAppThemeId(id) {
+  if (window.MineradioThemes && typeof window.MineradioThemes.normalize === 'function') {
+    return window.MineradioThemes.normalize(id);
+  }
+  return 'default';
+}
+function getAppThemeMeta(id) {
+  if (window.MineradioThemes && typeof window.MineradioThemes.get === 'function') {
+    return window.MineradioThemes.get(id);
+  }
+  return { id: 'default', name: '\u9ed8\u8ba4' };
+}
+function applyAppThemeStructure(id) {
+  if (window.MineradioThemes && typeof window.MineradioThemes.applyStructure === 'function') {
+    return window.MineradioThemes.applyStructure(id);
+  }
+}
+function renderAppThemeGrid() {
+  var grid = document.getElementById('app-theme-grid');
+  if (!grid || !window.MineradioThemes || typeof window.MineradioThemes.list !== 'function') return;
+  var active = normalizeAppThemeId(fx && fx.appTheme);
+  grid.innerHTML = window.MineradioThemes.list().map(function (theme) {
+    var swatches = (theme.swatch || []).map(function (color) {
+      return '<span class="app-theme-swatch" style="background:' + escHtml(color) + '"></span>';
+    }).join('');
+    return '<button type="button" class="app-theme-card' + (theme.id === active ? ' active' : '') + '" data-app-theme="' + escHtml(theme.id) + '" role="option" aria-selected="' + (theme.id === active ? 'true' : 'false') + '" title="' + escHtml(theme.name) + '">' +
+      '<span class="app-theme-check" aria-hidden="true"></span>' +
+      '<span class="app-theme-swatches">' + swatches + '</span>' +
+      '<span class="app-theme-copy"><span class="app-theme-name">' + escHtml(theme.name) + '</span><span class="app-theme-desc">' + escHtml(theme.desc || '') + '</span></span>' +
+      '</button>';
+  }).join('');
+}
+function setAppTheme(id, opts) {
+  opts = opts || {};
+  var themeId = normalizeAppThemeId(id);
+  var theme = getAppThemeMeta(themeId);
+  fx.appTheme = themeId;
+  applyAppThemeStructure(themeId);
+  if (opts.syncFx !== false && window.MineradioThemes && typeof window.MineradioThemes.getFxDefaults === 'function') {
+    var defs = window.MineradioThemes.getFxDefaults(themeId) || {};
+    if (defs.uiAccentColor) fx.uiAccentColor = normalizeHexColor(defs.uiAccentColor, '#00f5d4');
+    if (defs.homeAccentColor) fx.homeAccentColor = normalizeHexColor(defs.homeAccentColor, '#00f5d4');
+    if (defs.homeIconColor) fx.homeIconColor = normalizeHexColor(defs.homeIconColor, '#f4d28a');
+    if (defs.visualIconColor) fx.visualIconColor = normalizeHexColor(defs.visualIconColor, '#7fd8ff');
+    if (defs.visualTintColor) fx.visualTintColor = normalizeHexColor(defs.visualTintColor, '#9db8cf');
+    if (defs.shelfAccentColor) fx.shelfAccentColor = normalizeHexColor(defs.shelfAccentColor, fx.uiAccentColor);
+    if (fx.visualTintMode !== 'custom') fx.visualTintMode = 'auto';
+    if (typeof updateUiAccentControls === 'function') updateUiAccentControls();
+    if (typeof updateHomeAccentControls === 'function') updateHomeAccentControls();
+    if (typeof updateIconAccentControls === 'function') updateIconAccentControls();
+    if (typeof updateVisualTintControls === 'function') updateVisualTintControls();
+    if (typeof updateShelfControlUi === 'function') updateShelfControlUi();
+    if (typeof shelfManager !== 'undefined' && shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
+  }
+  renderAppThemeGrid();
+  if (!opts.skipSave) saveLyricLayout({ user: true, reason: 'appTheme' });
+  if (!opts.silent) showToast('\u754c\u9762\u4e3b\u9898: ' + (theme.name || themeId));
+}
+function initAppThemeFromState() {
+  if (typeof fx === 'undefined' || !fx) return;
+  fx.appTheme = normalizeAppThemeId(fx.appTheme || (window.MineradioThemes ? window.MineradioThemes.readStored() : 'default'));
+  applyAppThemeStructure(fx.appTheme);
+  renderAppThemeGrid();
+}
+function bindAppThemeGrid() {
+  var grid = document.getElementById('app-theme-grid');
+  if (!grid || grid._themeBound) return;
+  grid._themeBound = true;
+  grid.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('[data-app-theme]') : null;
+    if (!btn) return;
+    setAppTheme(btn.getAttribute('data-app-theme'));
+  });
 }

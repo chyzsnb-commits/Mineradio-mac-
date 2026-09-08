@@ -56,7 +56,7 @@ function initMineradioSplashWebgl(canvas) {
       stencil: false,
       premultipliedAlpha: false,
       preserveDrawingBuffer: false,
-      powerPreference: 'high-performance'
+      powerPreference: 'default'
     }) || canvas.getContext('experimental-webgl');
   } catch (e) {
     gl = null;
@@ -579,11 +579,12 @@ function dismissSplash(opts) {
   var s = document.getElementById('splash');
   if (!s || s.classList.contains('hide') || s.classList.contains('exiting')) return;
   var instant = !!opts.instant;
-  markAppPerf(instant ? 'splash-skip' : 'splash-dismiss');
+  var quick = !!opts.quick && !instant;
+  markAppPerf((instant || quick) ? 'splash-skip' : 'splash-dismiss');
   if (splashTimer) { clearTimeout(splashTimer); splashTimer = null; }
   splashReadyToEnter = false;
   s.classList.remove('ready');
-  setTimeout(stopSplashIntroSound, instant ? 0 : 240);
+  setTimeout(stopSplashIntroSound, (instant || quick) ? 0 : 240);
   if (instant) {
     s.classList.add('hide');
     s.style.display = 'none';
@@ -599,13 +600,15 @@ function dismissSplash(opts) {
     : (typeof shouldShowEmptyHomeAfterSplash === 'function' && shouldShowEmptyHomeAfterSplash())) {
     activateHomeWallpaperPreview();
   }
-  revealIdleParticles(0, reduceSplashMotion ? 520 : 920);
+  revealIdleParticles(0, quick ? 320 : (reduceSplashMotion ? 520 : 920));
   document.body.classList.add('splash-revealing');
   s.classList.add('exiting');
 
   var content = s.querySelector('.splash-content');
   if (content) {
-    content.style.transition = 'opacity 360ms cubic-bezier(.22,1,.36,1), transform 520ms cubic-bezier(.22,1,.36,1)';
+    content.style.transition = quick
+      ? 'opacity 140ms ease, transform 200ms cubic-bezier(.22,1,.36,1)'
+      : 'opacity 360ms cubic-bezier(.22,1,.36,1), transform 520ms cubic-bezier(.22,1,.36,1)';
     content.style.opacity = '0';
     content.style.transform = 'translateY(-10px) scale(.992)';
   }
@@ -616,8 +619,8 @@ function dismissSplash(opts) {
     document.body.classList.remove('splash-active');
     document.body.classList.remove('splash-revealing');
     if (s && s.parentNode) s.style.display = 'none';
-    finishSplashReveal(true, { reason: 'splash-dismiss' });
-  }, 620);
+    finishSplashReveal(true, { reason: quick ? 'splash-quick-skip' : 'splash-dismiss' });
+  }, quick ? 220 : 620);
 }
 
 function markSplashReadyToEnter() {
@@ -636,6 +639,9 @@ document.addEventListener('DOMContentLoaded', function () {
   var s = document.getElementById('splash');
   if (!s) return;
   markAppPerf('dom-content-loaded');
+  s.setAttribute('role', 'button');
+  s.setAttribute('tabindex', '0');
+  s.setAttribute('aria-label', '点击进入 Mineradio');
   if (startupFastSkipPreference) {
     dismissSplash({ instant: true });
     return;
@@ -643,8 +649,7 @@ document.addEventListener('DOMContentLoaded', function () {
   armSplashSoundFallback();
   prewarmHomeWallpaperPreview();
   function requestSplashEnter() {
-    playMineradioIntroSound();
-    if (splashReadyToEnter) dismissSplash();
+    dismissSplash({ quick: true });
   }
   s.addEventListener('click', requestSplashEnter);
   document.addEventListener('keydown', function (e) {
@@ -662,4 +667,3 @@ document.addEventListener('DOMContentLoaded', function () {
   playMineradioIntroSound();
   splashTimer = setTimeout(markSplashReadyToEnter, 5000);   // 照 1.1.2 zip:正常路径 5000ms(用户要慢版 + Mac版徽章齐显)
 });
-

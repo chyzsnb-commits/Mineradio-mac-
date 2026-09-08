@@ -25,8 +25,52 @@ function waitForAudioReadyToPlay(media, timeoutMs) {
   });
 }
 
+function waitForAudioSeekCompletion(media, timeoutMs) {
+  if (!media) return Promise.resolve(false);
+  if (!media.seeking) return Promise.resolve(true);
+  return new Promise(function (resolve) {
+    var done = false;
+    var timer = null;
+    function cleanup() {
+      if (timer) clearTimeout(timer);
+      media.removeEventListener('seeked', onSeeked);
+      media.removeEventListener('error', onStopped);
+      media.removeEventListener('emptied', onStopped);
+      media.removeEventListener('abort', onStopped);
+    }
+    function finish(ok) {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(!!ok);
+    }
+    function onSeeked() { finish(!media.seeking); }
+    function onStopped() { finish(false); }
+    media.addEventListener('seeked', onSeeked, { once: true });
+    media.addEventListener('error', onStopped, { once: true });
+    media.addEventListener('emptied', onStopped, { once: true });
+    media.addEventListener('abort', onStopped, { once: true });
+    timer = setTimeout(function () { finish(!media.seeking); }, Math.max(250, Number(timeoutMs) || 900));
+  });
+}
+
+function mediaPlaybackTargetSrc(media) {
+  // `currentSrc` is asynchronous: immediately after assigning a new `src` it can
+  // still point at the previous track. Playback request identity must follow the
+  // source we just assigned, otherwise a valid rapid switch is mistaken for a
+  // stale request and the new URL is cleared.
+  return media ? (media.src || media.currentSrc || '') : '';
+}
+
 function isSameAudioPlaybackTarget(media, src) {
-  return !!(audio && media && audio === media && (audio.currentSrc || audio.src || '') === src);
+  return !!(audio && media && audio === media && mediaPlaybackTargetSrc(audio) === src);
+}
+
+function audioPlayRequestCurrent(opts, media, src) {
+  if (!isSameAudioPlaybackTarget(media, src)) return false;
+  if (!opts || typeof opts.playRequestCurrent !== 'function') return true;
+  try { return opts.playRequestCurrent() !== false; }
+  catch (e) { return false; }
 }
 
 function clearPlaybackResumeWatchdogs() {
@@ -47,7 +91,7 @@ function updatePlaybackResumePauseMarker(reason) {
   if (!playbackResumeRecovery) return;
   if (reason === 'pause' || reason === 'manual-pause') {
     var song = playQueue && currentIdx >= 0 && currentIdx < playQueue.length ? playQueue[currentIdx] : null;
-    var src = audio && (audio.currentSrc || audio.src || '') || '';
+    var src = mediaPlaybackTargetSrc(audio);
     if (!song || !src || !audio || audio.ended) {
       clearPlaybackResumePauseMarker();
       return;
@@ -95,7 +139,7 @@ function playbackResumePausedLongEnough(song) {
   var currentKey = typeof queueItemKey === 'function' ? queueItemKey(song) : '';
   if (markerKey && currentKey && markerKey !== currentKey) return false;
   var markerSrc = playbackResumeRecovery.pausedSrc || '';
-  var currentSrc = audio && (audio.currentSrc || audio.src || '') || '';
+  var currentSrc = mediaPlaybackTargetSrc(audio);
   if (markerSrc && currentSrc && markerSrc !== currentSrc) return false;
   return Date.now() - playbackResumeRecovery.pausedAt >= playbackResumeLongPauseThresholdMs(song);
 }
@@ -211,7 +255,7 @@ function schedulePlaybackStallRecovery(reason, opts) {
   if (!canRefreshCurrentPlaybackUrlForResume(song)) return;
   clearPlaybackResumeWatchdogs();
   var media = audio;
-  var src = media.currentSrc || media.src || '';
+  var src = mediaPlaybackTargetSrc(media);
   var token = trackSwitchToken;
   var startTime = isFinite(media.currentTime) ? media.currentTime : 0;
   var recoverySerial = playbackResumeRecovery.serial;
@@ -258,6 +302,11 @@ function schedulePlaybackStallRecovery(reason, opts) {
 async function completeAudioPlayStart(opts, reason) {
   opts = opts || {};
   await ensurePlaybackAudioGraph(reason || 'playback-started');
+  var requestMedia = opts._playRequestMedia || audio;
+  var requestSrc = opts._playRequestSrc != null
+    ? opts._playRequestSrc
+    : mediaPlaybackTargetSrc(requestMedia);
+  if (!audioPlayRequestCurrent(opts, requestMedia, requestSrc)) return false;
   switchPlaybackVisualToEmily();
   playing = true; setPlayIcon(true);
   if (typeof markStageLyricsPlaybackResume === 'function') markStageLyricsPlaybackResume(reason || 'playback-started');
@@ -268,6 +317,9 @@ async function completeAudioPlayStart(opts, reason) {
   schedulePlaybackStallRecovery(reason || 'playback-started', opts);
   forcePlaybackControlsInteractive();
   hideLoading();
+  if (opts.trackSwitch && typeof markLyricDepthAudioReady === 'function') {
+    try { markLyricDepthAudioReady(trackSwitchToken); } catch (e) { }
+  }
   return true;
 }
 
@@ -305,7 +357,7 @@ async function resumePausedAudioFast(opts) {
   opts = opts || {};
   if (!canResumePausedAudioFast(opts)) return null;
   var media = audio;
-  var src = media.currentSrc || media.src || '';
+  var src = mediaPlaybackTargetSrc(media);
   var token = trackSwitchToken;
   try {
     restorePlaybackGain();
@@ -332,19 +384,22 @@ async function resumePausedAudioFast(opts) {
 
 async function retryTrackSwitchAudioPlayOnce(opts, originalErr) {
   var retryAudio = audio;
-  var retrySrc = retryAudio && (retryAudio.currentSrc || retryAudio.src || '');
+  var retrySrc = mediaPlaybackTargetSrc(retryAudio);
   if (!retryAudio || !retrySrc) throw originalErr;
   await waitForAudioReadyToPlay(retryAudio, opts.manual ? 650 : 900);
-  if (!isSameAudioPlaybackTarget(retryAudio, retrySrc)) return null;
+  if (!audioPlayRequestCurrent(opts, retryAudio, retrySrc)) return null;
   if (retryAudio.readyState === 0 || retryAudio.networkState === retryAudio.NETWORK_EMPTY) {
     try { retryAudio.load(); } catch (e) { }
   }
   if (!audioGraphHealthy()) initAudio();
   await applyAudioOutputDevice(retryAudio);
+  if (!audioPlayRequestCurrent(opts, retryAudio, retrySrc)) return null;
   await ensurePlaybackAudioGraph('track-switch-retry-before-play');
+  if (!audioPlayRequestCurrent(opts, retryAudio, retrySrc)) return null;
   var retryPlay = retryAudio.play();
   await ensurePlaybackAudioGraph('track-switch-retry-after-play-request');
   await retryPlay;
+  if (!audioPlayRequestCurrent(opts, retryAudio, retrySrc)) return null;
   return await completeAudioPlayStart(opts, 'track-switch-retry-started');
 }
 
@@ -352,8 +407,21 @@ async function attemptAudioPlay(opts) {
   opts = opts || {};
   try {
     if (!audio) return false;
+    var seekMedia = audio;
+    var seekSrc = mediaPlaybackTargetSrc(seekMedia);
+    opts._playRequestMedia = seekMedia;
+    opts._playRequestSrc = seekSrc;
+    if (!audioPlayRequestCurrent(opts, seekMedia, seekSrc)) return false;
+    if (seekMedia.seeking) {
+      var seekCompleted = await waitForAudioSeekCompletion(seekMedia, opts.manual ? 900 : 1200);
+      var seekRequestCurrent = audioPlayRequestCurrent(opts, seekMedia, seekSrc);
+      if (!seekCompleted || !seekRequestCurrent) {
+        if (seekRequestCurrent) restorePlaybackGain();
+        return false;
+      }
+    }
     var currentSongForResume = playQueue && currentIdx >= 0 && currentIdx < playQueue.length ? playQueue[currentIdx] : null;
-    if (opts.manual && !opts.trackSwitch && !opts.resumeRecovery && audio && audio.src && audio.paused && !audio.ended && playbackResumePausedLongEnough(currentSongForResume)) {
+    if (!opts.playRequestCurrent && opts.manual && !opts.trackSwitch && !opts.resumeRecovery && audio && audio.src && audio.paused && !audio.ended && playbackResumePausedLongEnough(currentSongForResume)) {
       var staleResumeAt = currentResumeSeconds(playbackResumeRecovery && playbackResumeRecovery.pausedPosition);
       var refreshedResume = await recoverCurrentTrackPlaybackFromFreshUrl('long-pause-stale-source', {
         resumeAt: staleResumeAt,
@@ -361,24 +429,28 @@ async function attemptAudioPlay(opts) {
       });
       if (refreshedResume) return true;
     }
-    var fastResume = await resumePausedAudioFast(opts);
+    var fastResume = opts.playRequestCurrent ? null : await resumePausedAudioFast(opts);
     if (fastResume === true) return true;
+    if (!audioPlayRequestCurrent(opts, seekMedia, seekSrc)) return false;
     if (!audioGraphHealthy()) initAudio();
     if (opts.fade !== false) preparePlaybackFadeIn();
     if (opts.manual || opts.trackSwitch) {
-      var directPlay = audio.play();
-      await applyAudioOutputDevice(audio);
+      var directPlay = seekMedia.play();
+      await applyAudioOutputDevice(seekMedia);
       await ensurePlaybackAudioGraph(opts.manual ? 'manual-after-play-request' : 'track-switch-after-play-request');
       await directPlay;
     } else {
-      await applyAudioOutputDevice(audio);
+      await applyAudioOutputDevice(seekMedia);
       await ensurePlaybackAudioGraph(opts.startupAutoplay ? 'startup-before-play' : 'auto-before-play');
-      var autoPlay = audio.play();
+      if (!audioPlayRequestCurrent(opts, seekMedia, seekSrc)) return false;
+      var autoPlay = seekMedia.play();
       await ensurePlaybackAudioGraph(opts.startupAutoplay ? 'startup-after-play-request' : 'auto-after-play-request');
       await autoPlay;
     }
+    if (!audioPlayRequestCurrent(opts, seekMedia, seekSrc)) return false;
     return await completeAudioPlayStart(opts, 'playback-started');
   } catch (err) {
+    if (opts.playRequestCurrent && !audioPlayRequestCurrent(opts, opts._playRequestMedia, opts._playRequestSrc)) return false;
     if (opts.trackSwitch && audio && audio.src) {
       try {
         var recovered = await retryTrackSwitchAudioPlayOnce(opts, err);
@@ -403,7 +475,7 @@ async function attemptAudioPlay(opts) {
 }
 async function playAudio(opts) {
   opts = opts || {};
-  return attemptAudioPlay({ manual: !!opts.manual, silent: !!opts.silent || !!opts.startupAutoplay || !!opts.trackSwitch, startupAutoplay: !!opts.startupAutoplay, fade: opts.fade, trackSwitch: !!opts.trackSwitch, resumeRecovery: !!opts.resumeRecovery });
+  return attemptAudioPlay({ manual: !!opts.manual, silent: !!opts.silent || !!opts.startupAutoplay || !!opts.trackSwitch, startupAutoplay: !!opts.startupAutoplay, fade: opts.fade, trackSwitch: !!opts.trackSwitch, resumeRecovery: !!opts.resumeRecovery, playRequestCurrent: opts.playRequestCurrent });
 }
 async function togglePlay() {
   if (playToggleBusy) return;
@@ -478,30 +550,108 @@ function reorderQueueForShufflePlaybackOrder(startIdx, opts) {
   if (opts.persistSnapshot !== false && typeof saveLastPlaybackSnapshot === 'function') saveLastPlaybackSnapshot(true, opts.reason || 'shuffle-playback-order');
   return currentIdx;
 }
-function nextTrack(userInitiated) {
-  if (!playQueue.length) return;
-  playToggleBusy = false;
-  forcePlaybackControlsInteractive();
-  if (playMode === 'shuffle') currentIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % playQueue.length;
-  else currentIdx = (currentIdx + 1) % playQueue.length;
-  var opts = userInitiated ? { manual: true, suppressPlayFailureNotice: true } : { suppressPlayFailureNotice: true };
-  if (playMode === 'shuffle') opts.skipShuffleOrder = true;
-  Promise.resolve(playQueueAt(currentIdx, opts)).finally(forcePlaybackControlsInteractive);
+function trackNavigationTargetIndex(startIndex, delta, length) {
+  length = Math.max(0, Number(length) || 0);
+  if (!length) return -1;
+  return ((Number(startIndex) + Number(delta)) % length + length) % length;
 }
-function prevTrack(userInitiated) {
-  if (!playQueue.length) return;
+
+async function drainTrackNavigation(serial) {
+  if (!playQueue.length || serial !== trackNavigationState.serial) return false;
+  var targetIndex = trackNavigationTargetIndex(trackNavigationState.desiredIndex, 0, playQueue.length);
+  var manual = trackNavigationState.manual;
+  trackNavigationState.pendingDelta = 0;
+  trackNavigationState.manual = false;
+  if (targetIndex < 0) return false;
+  var opts = manual ? { manual: true, suppressPlayFailureNotice: true } : { suppressPlayFailureNotice: true };
+  if (playMode === 'shuffle') opts.skipShuffleOrder = true;
+  opts.playRequestCurrent = function () { return serial === trackNavigationState.serial; };
+  trackNavigationState.inProgress = true;
+  var completed = false;
+  try {
+    if (targetIndex === currentIdx) {
+      completed = true;
+      return true;
+    }
+    var targetSong = playQueue[targetIndex];
+    var isLocalTarget = !!(targetSong && (targetSong.type === 'local' || targetSong.source === 'local' || targetSong.localUrl));
+    if (!isLocalTarget && typeof resolveAlbumGaplessPlaybackData === 'function') {
+      // 预解析只是为了让旧歌继续响到新地址就绪，不能把一次切歌额外拖到完整取链超时。
+      // 短窗口未命中就交回 playQueueAt 的标准请求与错误处理。
+      var navigationPreloadTimeoutMs = 2200;
+      var sourceRequest = beginPlaybackSourceRequest(trackSwitchToken + 1, navigationPreloadTimeoutMs);
+      try {
+        opts.preloadedData = await resolveAlbumGaplessPlaybackData(targetSong, {
+          signal: sourceRequest.signal,
+          timeoutMs: navigationPreloadTimeoutMs,
+        });
+      } catch (preloadErr) {
+        if (serial !== trackNavigationState.serial || (sourceRequest && sourceRequest.abortReason === 'superseded')) return false;
+        console.warn('[TrackNavigationPreload]', preloadErr);
+        delete opts.preloadedData;
+      } finally {
+        finishPlaybackSourceRequest(sourceRequest);
+      }
+      if (serial !== trackNavigationState.serial) return false;
+    }
+    completed = await playQueueAt(targetIndex, opts) === true;
+    return completed;
+  } catch (err) {
+    if (serial !== trackNavigationState.serial || (err && err.name === 'AbortError')) return false;
+    console.warn('[TrackNavigation]', err);
+    return false;
+  } finally {
+    if (serial === trackNavigationState.serial) {
+      trackNavigationState.inProgress = false;
+      trackNavigationState.desiredIndex = -1;
+      trackNavigationState.promise = null;
+      var settle = trackNavigationState.settle;
+      trackNavigationState.settle = null;
+      if (settle) settle(completed);
+    }
+    forcePlaybackControlsInteractive();
+  }
+}
+
+function requestTrackNavigation(delta, userInitiated) {
+  if (!playQueue.length) return Promise.resolve(false);
   playToggleBusy = false;
   forcePlaybackControlsInteractive();
-  currentIdx = (currentIdx - 1 + playQueue.length) % playQueue.length;
-  var opts = userInitiated ? { manual: true, suppressPlayFailureNotice: true } : { suppressPlayFailureNotice: true };
-  if (playMode === 'shuffle') opts.skipShuffleOrder = true;
-  Promise.resolve(playQueueAt(currentIdx, opts)).finally(forcePlaybackControlsInteractive);
+  var step = Number(delta) || 0;
+  var baseIndex = trackNavigationState.desiredIndex >= 0 ? trackNavigationState.desiredIndex : currentIdx;
+  trackNavigationState.desiredIndex = trackNavigationTargetIndex(baseIndex, step, playQueue.length);
+  trackNavigationState.pendingDelta += step;
+  trackNavigationState.manual = trackNavigationState.manual || !!userInitiated;
+  trackNavigationState.serial += 1;
+  cancelPlaybackSourceRequest('superseded');
+  if (trackNavigationState.timer) clearTimeout(trackNavigationState.timer);
+  trackNavigationState.scheduled = true;
+  if (!trackNavigationState.promise) {
+    trackNavigationState.promise = new Promise(function (resolve) { trackNavigationState.settle = resolve; });
+  }
+  var serial = trackNavigationState.serial;
+  trackNavigationState.timer = setTimeout(function () {
+    trackNavigationState.timer = 0;
+    trackNavigationState.scheduled = false;
+    drainTrackNavigation(serial);
+  }, 64);
+  return trackNavigationState.promise;
+}
+
+function nextTrack(userInitiated) {
+  return requestTrackNavigation(1, userInitiated);
+}
+
+function prevTrack(userInitiated) {
+  return requestTrackNavigation(-1, userInitiated);
 }
 function shuffleQueue() {
+  if (typeof cancelTrackNavigationRequest === 'function') cancelTrackNavigationRequest('shuffle-queue');
   reorderQueueForShufflePlaybackOrder(currentIdx, { reason: 'shuffle-queue' });
   showToast('队列已随机');
 }
 function clearQueue() {
+  if (typeof cancelTrackNavigationRequest === 'function') cancelTrackNavigationRequest('clear-queue');
   playQueue = []; currentIdx = -1;
   currentLocalSong = null;
   startupRestoreHomePending = false;
@@ -516,6 +666,7 @@ function clearQueue() {
 }
 function removeFromQueue(idx) {
   if (idx < 0 || idx >= playQueue.length) return;
+  if (typeof cancelTrackNavigationRequest === 'function') cancelTrackNavigationRequest('remove-queue-item');
   playQueue.splice(idx, 1);
   if (currentIdx >= playQueue.length) currentIdx = playQueue.length - 1;
   safeRenderQueuePanel('remove-queue-item');
@@ -577,6 +728,7 @@ function cyclePlayMode() {
   var prevMode = playMode;
   playMode = modes[(idx + 1) % modes.length];
   if (playMode === 'shuffle' && prevMode !== 'shuffle') {
+    if (typeof cancelTrackNavigationRequest === 'function') cancelTrackNavigationRequest('play-mode-shuffle');
     reorderQueueForShufflePlaybackOrder(currentIdx, { reason: 'play-mode-shuffle' });
   }
   updatePlayModeButton(true);

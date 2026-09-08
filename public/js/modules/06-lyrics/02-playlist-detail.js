@@ -76,7 +76,7 @@ function playlistProviderNorm(provider) {
 }
 function playlistPanelCover(provider, cover, param) {
   if (!cover) return '';
-  return provider === 'netease' ? (cover + '?param=' + param) : cover;   // 只有网易云封面吃 ?param 尺寸;qishui/spotify/qq/kugou 原样
+  return provider === 'netease' ? (cover + '?param=' + param) : cover;
 }
 function playlistPanelKey(provider, id) {
   return playlistProviderNorm(provider) + ':' + String(id || '');
@@ -84,7 +84,7 @@ function playlistPanelKey(provider, id) {
 function playlistPanelProviderId(provider, id) {
   if (provider === 'qq') return 'qq:' + id;
   if (provider === 'kugou') return 'kugou:' + id;
-  if (provider === 'qishui') return 'qishui:' + id;     // loadPlaylistIntoQueueById 靠前缀路由到 /api/qishui/playlist/tracks
+  if (provider === 'qishui') return 'qishui:' + id;
   if (provider === 'spotify') return 'spotify:' + id;
   return id;
 }

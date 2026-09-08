@@ -67,12 +67,6 @@ function providerVipAuditSnapshot(provider, status) {
     checkedAt: Date.now()
   };
 }
-function providerVipAuditLabel(provider, snapshot) {
-  var meta = platformMeta(provider);
-  var label = meta && meta.label || provider;
-  var level = snapshot && snapshot.vipLevel === 'svip' ? 'SVIP' : 'VIP';
-  return label + ' ' + level;
-}
 function providerVipAuditSameUser(previous, current) {
   if (!previous || !current) return true;
   if (!previous.userId || !current.userId) return true;
@@ -81,21 +75,8 @@ function providerVipAuditSameUser(previous, current) {
 function auditProviderVipState(provider, status) {
   if (!status) return;
   var state = readProviderVipAuditState();
-  var previous = state[provider] || null;
   var current = providerVipAuditSnapshot(provider, status);
-  var sameUser = providerVipAuditSameUser(previous, current);
-  if (previous && sameUser && previous.loggedIn && previous.isVip && current.loggedIn && !current.isVip) {
-    var title = providerVipAuditLabel(provider, previous) + ' 状态掉了';
-    var body = '本次启动复验时已变为普通账号，会员曲目可能只能试听或需要换源。';
-    if (typeof showSourceFallbackNotice === 'function') showSourceFallbackNotice(title, body);
-    else showToast(title);
-  }
-  if (previous && sameUser && previous.loggedIn && !previous.isVip && current.loggedIn && current.isVip) {
-    var syncTitle = providerVipAuditLabel(provider, current) + ' 已同步';
-    var syncBody = '已重新检查到当前账号会员状态，会员曲目会按新的平台权限继续尝试播放。';
-    if (typeof showToast === 'function') showToast(syncTitle);
-    else if (typeof showSourceFallbackNotice === 'function') showSourceFallbackNotice(syncTitle, syncBody);
-  }
+  // 继续保存内部能力快照,但不再弹出可能误判的会员等级升降提示。
   state[provider] = current;
   writeProviderVipAuditState(state);
 }
@@ -179,17 +160,18 @@ function qqLoginNeedsAuthorizationRefresh(status) {
   status = status || qqLoginStatus;
   return !!(status && status.loggedIn && (status.authorizationIncomplete || status.membershipStale || status.playbackKeyReady === false));
 }
-function qqMembershipLabel(status) {
-  if (qqLoginNeedsAuthorizationRefresh(status)) return '会员待同步';
-  var level = providerVipLevel('qq', status);
-  return level === 'svip' ? 'SVIP 会员' : (level === 'vip' ? 'VIP 会员' : '普通账号');
+function qqMembershipNeedsSync(status) {
+  status = status || qqLoginStatus;
+  if (!status || !status.loggedIn) return false;
+  if (status.authorizationIncomplete && status.playbackKeyReady === false) return false;
+  return !!(status.membershipStale || status.vipSyncState === 'stale' || status.vipSyncState === 'pending' || status.vipSyncState === 'profile');
 }
 function qqLoginStatusText(info) {
   info = normalizeQQLoginStatus(info || qqLoginStatus);
   if (!info.loggedIn) return '点击“扫码登录”打开 QQ 音乐官方窗口';
-  if (qqLoginNeedsAuthorizationRefresh(info)) return 'QQ 会话需要重新授权 · 会员状态待同步';
-  var syncText = info.vipCheckedAt ? ' · 会员已复验' : '';
-  return '已保存 QQ 音乐会话 · ' + (info.nickname || 'QQ 音乐') + ' · ' + qqMembershipLabel(info) + syncText;
+  if (info.authorizationIncomplete && info.playbackKeyReady === false) return 'QQ 播放授权未完成 · 需要重新授权';
+  if (qqMembershipNeedsSync(info)) return 'QQ 会话已保存 · 权益信息待同步';
+  return '已保存 QQ 音乐会话 · ' + (info.nickname || 'QQ 音乐');
 }
 
 async function refreshQQLoginStatus(options) {
@@ -262,7 +244,7 @@ function normalizeKugouLoginStatus(info) {
     isVip: normalizedLevel !== 'none' || !!(info && info.isVip),
     isSvip: normalizedLevel === 'svip' || !!(info && info.isSvip),
     stale: !!(info && info.stale),
-    playbackKeyReady: !!(info && info.playbackKeyReady)
+    playbackKeyReady: !!(info && (info.playbackReady || info.playbackKeyReady))
   });
   return Object.assign({}, fallback, info, {
     provider: 'kugou',
@@ -275,7 +257,7 @@ function normalizeKugouLoginStatus(info) {
     vipLevel: normalizedLevel,
     isVip: normalizedLevel !== 'none' || !!info.isVip,
     isSvip: normalizedLevel === 'svip' || !!info.isSvip,
-    playbackKeyReady: !!info.playbackKeyReady,
+    playbackKeyReady: !!(info.playbackReady || info.playbackKeyReady),
     stale: !!info.stale
   });
 }
@@ -401,38 +383,32 @@ function normalizeQishuiLoginStatus(info) {
   });
 }
 async function refreshQishuiLoginStatus() {
-  try {
-    var info = await apiJson('/api/qishui/status?t=' + Date.now());
-    var prevLogged = !!qishuiLoginStatus.loggedIn;
-    qishuiLoginStatus = normalizeQishuiLoginStatus(info);
-    auditProviderVipState('qishui', qishuiLoginStatus);
-    if (!qishuiLoginStatus.loggedIn) {
-      if (prevLogged || qishuiLoginWasLoggedIn) showToast('汽水音乐授权已清除');
-      qishuiPlaylists = [];
-      userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
-      homeDiscoverState.loaded = false;
-    } else if (!userPlaylists.some(function (pl) { return pl && pl.provider === 'qishui'; })) {
-      homeDiscoverState.loaded = false;
-      homeDiscoverState.loggedIn = true;
-      refreshUserPlaylists(true);
-      loadHomeDiscover(true);
-    }
-    qishuiLoginWasLoggedIn = !!qishuiLoginStatus.loggedIn;
-    if (!hasPlatformLogin(activeAccountProvider)) activeAccountProvider = firstLoggedProvider();
-    renderUserBtn();
-    return qishuiLoginStatus;
-  } catch (e) {
-    console.warn('Qishui login status failed:', e);
-    qishuiLoginStatus = normalizeQishuiLoginStatus(null);
-    renderUserBtn();
+  if (!MINERADIO_QISHUI_CATALOG_ENABLED) {
+    qishuiLoginStatus = normalizeQishuiLoginStatus({ enabled: false, searchReady: false, publicCatalog: false });
+    qishuiPlaylists = [];
+    userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
     return qishuiLoginStatus;
   }
+  try {
+    qishuiLoginStatus = normalizeQishuiLoginStatus(await apiJson('/api/qishui/status', { timeoutMs: 5000 }));
+  } catch (e) {
+    qishuiLoginStatus = normalizeQishuiLoginStatus({
+      enabled: true,
+      catalogOnly: true,
+      searchReady: true,
+      publicCatalog: true,
+      playbackMode: 'recommend-match'
+    });
+  }
+  qishuiPlaylists = [];
+  userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
+  return qishuiLoginStatus;
 }
 function startQishuiLoginStatusAutoRefresh() {
   if (qishuiLoginAutoRefreshTimer) clearInterval(qishuiLoginAutoRefreshTimer);
-  qishuiLoginAutoRefreshTimer = setInterval(function () {
+  qishuiLoginAutoRefreshTimer = MINERADIO_QISHUI_ENABLED ? setInterval(function () {
     refreshQishuiLoginStatus().catch(function (e) { console.warn('Qishui login auto refresh failed:', e); });
-  }, 45000);
+  }, 45000) : null;
 }
 
 function normalizeSpotifyLoginStatus(info) {
@@ -523,8 +499,7 @@ function renderUserBtn() {
     btn.classList.remove('logged-out');
     btn.title = dualAccountMode ? '登录接入 / 已启用多平台展示' : ((st.nickname || meta.label) + ' / 登录接入');
     btn.innerHTML = '<img id="user-avatar" src="' + providerAvatarSrc(activeAccountProvider, st) + '">' +
-      '<span>' + escHtml(st.nickname || meta.label) + '</span>' +
-      providerVipBadge(activeAccountProvider, st, 'user-vip-tag', true);
+      '<span>' + escHtml(st.nickname || meta.label) + '</span>';
   } else {
     btn.classList.remove('logged-in');
     btn.classList.add('logged-out');

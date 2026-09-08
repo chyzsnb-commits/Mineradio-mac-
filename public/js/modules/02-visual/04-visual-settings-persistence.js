@@ -164,6 +164,19 @@ function normalizeSavedLyricMotionStyle(style) {
   style = String(style || 'float');
   return /^(glass|smooth|float|quick|shine|glitch)$/.test(style) ? style : 'float';
 }
+function normalizeSavedLyricTransitionStyle(style) {
+  style = String(style || 'original');
+  if (style === 'quick') style = 'crossfade';
+  if (style === 'scale') style = 'focus';
+  return /^(original|crossfade|rise|slide|focus)$/.test(style) ? style : 'original';
+}
+function resolveSavedLyricTransition(raw) {
+  raw = plainCurrentFxAutosavePayload(raw) || {};
+  // The first transition prototype wrote its temporary selection through ordinary
+  // autosave. Only a later, explicit user choice may override the PR #111 default.
+  if (raw.lyricTransitionExplicit !== true) return fxDefaults.lyricTransitionStyle;
+  return normalizeSavedLyricTransitionStyle(raw.lyricTransitionStyle || fxDefaults.lyricTransitionStyle);
+}
 function readSavedLyricLayoutCriticalFallback(raw, err) {
   raw = plainCurrentFxAutosavePayload(raw);
   if (err) {
@@ -182,8 +195,16 @@ function readSavedLyricLayoutCriticalFallback(raw, err) {
     lyricDisplayMode: normalizeSavedLyricDisplayMode(raw.lyricDisplayMode || fxDefaults.lyricDisplayMode),
     lyricTranslationMode: normalizeSavedLyricTranslationMode(raw.lyricTranslationMode || fxDefaults.lyricTranslationMode),
     lyricMotionStyle: normalizeSavedLyricMotionStyle(raw.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+    lyricTransitionStyle: resolveSavedLyricTransition(raw),
+    lyricTransitionExplicit: raw.lyricTransitionExplicit === true,
+    lyricTransitionSpeed: layoutNumber(raw.lyricTransitionSpeed, fxDefaults.lyricTransitionSpeed, 0.55, 1.65),
+    lyricRasterQuality: normalizeLyricRasterQuality(raw.lyricRasterQuality),
+    lyricVerticalFloat: raw.lyricVerticalFloat !== false,
+    lyricPauseHold: raw.lyricPauseHold !== false,
     lyricCustomLineCount: layoutInteger(raw.lyricCustomLineCount, fxDefaults.lyricCustomLineCount, 1, 10),
     lyricScalePulse: layoutNumber(raw.lyricScalePulse, fxDefaults.lyricScalePulse, 0, 0.06),
+    lyricDepthWordSweep: raw.lyricDepthWordSweep !== false,
+    lyricDepthInteraction: raw.lyricDepthInteraction === true,
     controlGlassChromaticOffset: layoutNumber(raw.controlGlassChromaticOffset, fxDefaults.controlGlassChromaticOffset, 0, 140)   // 下限 0=关闭色散(mac 性能)
   };
 }
@@ -192,10 +213,11 @@ function readSavedLyricLayout() {
   try {
     raw = readCurrentFxAutosaveRaw();
     var savedPreset = clampRange(Number(raw.preset) || 0, 0, MAX_VISUAL_PRESET_INDEX);
-    if (savedPreset === 9) savedPreset = 0;   // 声波走廊已下架
+    if (savedPreset === 7) savedPreset = 0;   // 7=黑洞 已下架(9 在本地为雨境,保留)
     if (savedPreset === 3 && raw.visualPresetSchema !== VISUAL_PRESET_SCHEMA) {
       savedPreset = 5;
     }
+    if (isPresetHidden(savedPreset)) savedPreset = HIDDEN_PRESET_FALLBACK;
     var savedBgColor = normalizeHexColor(raw.backgroundColor || '#000000', '#000000');
     var savedBgOpacity = clampRange(raw.backgroundOpacity == null ? fxDefaults.backgroundOpacity : Number(raw.backgroundOpacity), 0, 1);
     var savedGlassOffset = layoutNumber(raw.controlGlassChromaticOffset, fxDefaults.controlGlassChromaticOffset, 0, 140);
@@ -235,6 +257,8 @@ function readSavedLyricLayout() {
       lyricOffsetZ: layoutNumber(raw.lyricOffsetZ, 0, -3.2, 3.2),
       lyricTiltX: layoutNumber(raw.lyricTiltX, 0, -84, 84),
       lyricTiltY: layoutNumber(raw.lyricTiltY, 0, -84, 84),
+      albumBackgroundMouseBind: raw.albumBackgroundMouseBind === true,
+      wallpaperMouseParallax: raw.wallpaperMouseParallax === true,
       lyricCameraLock: !!raw.lyricCameraLock,
       lyricColorMode: raw.lyricColorMode === 'custom' ? 'custom' : 'auto',
       lyricColor: normalizeHexColor(raw.lyricColor || '#a9b8c8'),
@@ -245,6 +269,12 @@ function readSavedLyricLayout() {
       lyricDisplayMode: normalizeSavedLyricDisplayMode(raw.lyricDisplayMode || fxDefaults.lyricDisplayMode),
       lyricTranslationMode: normalizeSavedLyricTranslationMode(raw.lyricTranslationMode || fxDefaults.lyricTranslationMode),
       lyricMotionStyle: normalizeSavedLyricMotionStyle(raw.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+      lyricTransitionStyle: resolveSavedLyricTransition(raw),
+      lyricTransitionExplicit: raw.lyricTransitionExplicit === true,
+      lyricTransitionSpeed: layoutNumber(raw.lyricTransitionSpeed, fxDefaults.lyricTransitionSpeed, 0.55, 1.65),
+      lyricRasterQuality: normalizeLyricRasterQuality(raw.lyricRasterQuality),
+      lyricVerticalFloat: raw.lyricVerticalFloat !== false,
+      lyricPauseHold: raw.lyricPauseHold !== false,
       lyricCustomLineCount: layoutInteger(raw.lyricCustomLineCount, fxDefaults.lyricCustomLineCount, 1, 10),
       lyricScalePulse: layoutNumber(raw.lyricScalePulse, fxDefaults.lyricScalePulse, 0, 0.06),
       lyricGlitchCameraBind: !!raw.lyricGlitchCameraBind,
@@ -264,6 +294,8 @@ function readSavedLyricLayout() {
       lyricLetterSpacing: layoutNumber(raw.lyricLetterSpacing, 0, -0.04, 0.18),
       lyricLineHeight: layoutNumber(raw.lyricLineHeight, 1, 0.72, 1.80),
       lyricWeight: layoutInteger(raw.lyricWeight, 900, 500, 900),
+      lyricDepthWordSweep: raw.lyricDepthWordSweep !== false,
+      lyricDepthInteraction: raw.lyricDepthInteraction === true,
       lyricGlow: raw.lyricGlow !== false,
       lyricGlowBeat: raw.lyricGlowBeat !== false,
       lyricGlowParticles: !!raw.lyricGlowParticles,
@@ -273,7 +305,9 @@ function readSavedLyricLayout() {
       edge: raw.edge === true,
       aiDepth: raw.aiDepth === true,
       particleLyrics: raw.particleLyrics !== false,
+      backgroundStarRiver: raw.backgroundStarRiver !== false,
       backCover: raw.backCover === true,
+      appTheme: normalizeAppThemeId(raw.appTheme),
       visualTintMode: raw.visualTintMode === 'custom' ? 'custom' : 'auto',
       visualTintColor: normalizeHexColor(raw.visualTintColor || '#9db8cf'),
       uiAccentColor: normalizeHexColor(raw.uiAccentColor || '#00f5d4', '#00f5d4'),
@@ -291,6 +325,7 @@ function readSavedLyricLayout() {
       backgroundColorCustom: savedBgCustom,
       backgroundImage: normalizeCustomBackgroundImage(raw.backgroundImage),
       backgroundMedia: normalizeCustomBackgroundMedia(raw.backgroundMedia || raw.backgroundImage),
+      perspectiveMode: raw.perspectiveMode === true,
       desktopLyrics: raw.desktopLyrics === true,
       desktopLyricsSize: clampRange(Number(raw.desktopLyricsSize) || fxDefaults.desktopLyricsSize, 0.72, 1.55),
       desktopLyricsOpacity: clampRange(raw.desktopLyricsOpacity == null ? fxDefaults.desktopLyricsOpacity : Number(raw.desktopLyricsOpacity), 0.28, 1),
@@ -311,6 +346,57 @@ function readSavedLyricLayout() {
       memorySystemMask: clampRange(Math.round(raw.memorySystemMask == null ? fxDefaults.memorySystemMask : Number(raw.memorySystemMask)), 1, 29),
       memorySafetyRevision: fxDefaults.memorySafetyRevision,
       liveBackgroundKeep: normalizePerformanceBackgroundMode(raw.performanceBackground, raw.liveBackgroundKeep === true) === 'keep',
+      sonicGroundAmplitude: clampRange(raw.sonicGroundAmplitude == null ? fxDefaults.sonicGroundAmplitude : Number(raw.sonicGroundAmplitude), 0, 100),
+      sonicGroundMotionSpeed: clampRange(raw.sonicGroundMotionSpeed == null ? fxDefaults.sonicGroundMotionSpeed : Number(raw.sonicGroundMotionSpeed), 0, 100),
+      sonicGroundDensity: clampRange(raw.sonicGroundDensity == null ? fxDefaults.sonicGroundDensity : Number(raw.sonicGroundDensity), 0, 100),
+      sonicGroundRange: clampRange(raw.sonicGroundRange == null ? fxDefaults.sonicGroundRange : Number(raw.sonicGroundRange), 0, 100),
+      sonicGroundLower: clampRange(raw.sonicGroundLower == null ? fxDefaults.sonicGroundLower : Number(raw.sonicGroundLower), 0, 100),
+      sonicGroundDepth: clampRange(raw.sonicGroundDepth == null ? fxDefaults.sonicGroundDepth : Number(raw.sonicGroundDepth), 0, 100),
+      sonicGroundAutoRotate: clampRange(raw.sonicGroundAutoRotate == null ? fxDefaults.sonicGroundAutoRotate : Number(raw.sonicGroundAutoRotate), 0, 100),
+      sonicGroundColorMode: raw.sonicGroundColorMode === 'custom' ? 'custom' : 'cover',
+      sonicGroundBaseColor: normalizeHexColor(raw.sonicGroundBaseColor || fxDefaults.sonicGroundBaseColor, fxDefaults.sonicGroundBaseColor),
+      sonicGroundCoolColor: normalizeHexColor(raw.sonicGroundCoolColor || fxDefaults.sonicGroundCoolColor, fxDefaults.sonicGroundCoolColor),
+      sonicGroundWarmColor: normalizeHexColor(raw.sonicGroundWarmColor || fxDefaults.sonicGroundWarmColor, fxDefaults.sonicGroundWarmColor),
+      sonicGroundAccentColor: normalizeHexColor(raw.sonicGroundAccentColor || fxDefaults.sonicGroundAccentColor, fxDefaults.sonicGroundAccentColor),
+      sonicGroundGlow: clampRange(raw.sonicGroundGlow == null ? fxDefaults.sonicGroundGlow : Number(raw.sonicGroundGlow), 0, 100),
+      sonicGroundSubBass: clampRange(raw.sonicGroundSubBass == null ? fxDefaults.sonicGroundSubBass : Number(raw.sonicGroundSubBass), 0, 100),
+      sonicGroundBass: clampRange(raw.sonicGroundBass == null ? fxDefaults.sonicGroundBass : Number(raw.sonicGroundBass), 0, 100),
+      sonicGroundLowMid: clampRange(raw.sonicGroundLowMid == null ? fxDefaults.sonicGroundLowMid : Number(raw.sonicGroundLowMid), 0, 100),
+      sonicGroundMid: clampRange(raw.sonicGroundMid == null ? fxDefaults.sonicGroundMid : Number(raw.sonicGroundMid), 0, 100),
+      sonicGroundHighMid: clampRange(raw.sonicGroundHighMid == null ? fxDefaults.sonicGroundHighMid : Number(raw.sonicGroundHighMid), 0, 100),
+      sonicGroundPresence: clampRange(raw.sonicGroundPresence == null ? fxDefaults.sonicGroundPresence : Number(raw.sonicGroundPresence), 0, 100),
+      sonicGroundBrilliance: clampRange(raw.sonicGroundBrilliance == null ? fxDefaults.sonicGroundBrilliance : Number(raw.sonicGroundBrilliance), 0, 100),
+      sonicGroundAir: clampRange(raw.sonicGroundAir == null ? fxDefaults.sonicGroundAir : Number(raw.sonicGroundAir), 0, 100),
+      sonicGroundFloatingEnabled: raw.sonicGroundFloatingEnabled !== false,
+      sonicGroundFloatingIntensity: clampRange(raw.sonicGroundFloatingIntensity == null ? fxDefaults.sonicGroundFloatingIntensity : Number(raw.sonicGroundFloatingIntensity), 0, 100),
+      sonicGroundFloatingMinSize: clampRange(raw.sonicGroundFloatingMinSize == null ? fxDefaults.sonicGroundFloatingMinSize : Number(raw.sonicGroundFloatingMinSize), 0, 100),
+      sonicGroundFloatingMaxSize: clampRange(raw.sonicGroundFloatingMaxSize == null ? fxDefaults.sonicGroundFloatingMaxSize : Number(raw.sonicGroundFloatingMaxSize), 0, 100),
+      sonicGroundFloatingSpeed: clampRange(raw.sonicGroundFloatingSpeed == null ? fxDefaults.sonicGroundFloatingSpeed : Number(raw.sonicGroundFloatingSpeed), 0, 100),
+      sonicGroundFloatingCount: clampRange(raw.sonicGroundFloatingCount == null ? fxDefaults.sonicGroundFloatingCount : Number(raw.sonicGroundFloatingCount), 0, 100),
+      sonicAudioMonitorEnabled: raw.sonicAudioMonitorEnabled !== false,
+      sonicAudioAutoTrack: raw.sonicAudioAutoTrack !== false,
+      sonicAudioSensitivity: clampRange(raw.sonicAudioSensitivity == null ? fxDefaults.sonicAudioSensitivity : Number(raw.sonicAudioSensitivity), 0, 100),
+      sonicAudioBandStart: clampRange(raw.sonicAudioBandStart == null ? fxDefaults.sonicAudioBandStart : Number(raw.sonicAudioBandStart), 0, 510),
+      sonicAudioBandEnd: clampRange(raw.sonicAudioBandEnd == null ? fxDefaults.sonicAudioBandEnd : Number(raw.sonicAudioBandEnd), 2, 512),
+      sonicAudioThreshold: clampRange(raw.sonicAudioThreshold == null ? fxDefaults.sonicAudioThreshold : Number(raw.sonicAudioThreshold), 0, 100),
+      sonicAudioPulseStrength: clampRange(raw.sonicAudioPulseStrength == null ? fxDefaults.sonicAudioPulseStrength : Number(raw.sonicAudioPulseStrength), 0, 100),
+      sonicWorkshopInputGain: clampRange(raw.sonicWorkshopInputGain == null ? fxDefaults.sonicWorkshopInputGain : Number(raw.sonicWorkshopInputGain), 40, 100),
+      sonicWorkshopAudioIntensity: clampRange(raw.sonicWorkshopAudioIntensity == null ? fxDefaults.sonicWorkshopAudioIntensity : Number(raw.sonicWorkshopAudioIntensity), 0.3, 2.5),
+      sonicWorkshopResponseRange: clampRange(raw.sonicWorkshopResponseRange == null ? fxDefaults.sonicWorkshopResponseRange : Number(raw.sonicWorkshopResponseRange), 0.3, 2),
+      sonicWorkshopPeakIntensity: clampRange(raw.sonicWorkshopPeakIntensity == null ? fxDefaults.sonicWorkshopPeakIntensity : Number(raw.sonicWorkshopPeakIntensity), 0, 1.4),
+      sonicWorkshopColorMode: raw.sonicWorkshopColorMode === 'custom' ? 'custom' : 'cover',
+      sonicWorkshopTheme: /^(coral-mirage|ocean-deep|arctic-blue|arctic-aurora|emerald-forest|cyber-forest|minimal-mono|minimal-monochrome|neon-tokyo|golden-hour|ember-fire|crimson|crimson-sunset|aurora|violet-dream)$/.test(String(raw.sonicWorkshopTheme || '')) ? raw.sonicWorkshopTheme : fxDefaults.sonicWorkshopTheme,
+      sonicWorkshopCustomColor: normalizeHexColor(raw.sonicWorkshopCustomColor || fxDefaults.sonicWorkshopCustomColor || '#cb6c89', fxDefaults.sonicWorkshopCustomColor || '#cb6c89'),
+      sonicWorkshopBaseColorMode: raw.sonicWorkshopBaseColorMode === 'custom' ? 'custom' : 'cover',
+      sonicWorkshopBaseColor: normalizeHexColor(raw.sonicWorkshopBaseColor || fxDefaults.sonicWorkshopBaseColor || '#16060f', fxDefaults.sonicWorkshopBaseColor || '#16060f'),
+      sonicWorkshopWarmColorMode: raw.sonicWorkshopWarmColorMode === 'custom' ? 'custom' : 'cover',
+      sonicWorkshopWarmColor: normalizeHexColor(raw.sonicWorkshopWarmColor || fxDefaults.sonicWorkshopWarmColor || '#cb6c89', fxDefaults.sonicWorkshopWarmColor || '#cb6c89'),
+      sonicWorkshopCoolColorMode: raw.sonicWorkshopCoolColorMode === 'custom' ? 'custom' : 'cover',
+      sonicWorkshopCoolColor: normalizeHexColor(raw.sonicWorkshopCoolColor || fxDefaults.sonicWorkshopCoolColor || '#99c4ff', fxDefaults.sonicWorkshopCoolColor || '#99c4ff'),
+      sonicWorkshopRippleColorMode: raw.sonicWorkshopRippleColorMode === 'custom' ? 'custom' : 'cover',
+      sonicWorkshopRippleColor: normalizeHexColor(raw.sonicWorkshopRippleColor || fxDefaults.sonicWorkshopRippleColor || '#f8d8ff', fxDefaults.sonicWorkshopRippleColor || '#f8d8ff'),
+      sonicWorkshopPeakColorMode: raw.sonicWorkshopPeakColorMode === 'custom' ? 'custom' : 'cover',
+      sonicWorkshopPeakColor: normalizeHexColor(raw.sonicWorkshopPeakColor || fxDefaults.sonicWorkshopPeakColor || '#99c4ff', fxDefaults.sonicWorkshopPeakColor || '#99c4ff'),
       wallpaperMode: false,
       wallpaperOpacity: clampRange(raw.wallpaperOpacity == null ? fxDefaults.wallpaperOpacity : Number(raw.wallpaperOpacity), 0.35, 1),
       coverResolution: normalizeCoverResolution(raw.coverResolution),
@@ -349,7 +435,8 @@ function readSavedLyricLayout() {
       shelfSummonParallax: clampRange(raw.shelfSummonParallax == null ? fxDefaults.shelfSummonParallax : Number(raw.shelfSummonParallax), 0, 2.5),
       shelfCameraEnterSpeed: clampRange(raw.shelfCameraEnterSpeed == null ? fxDefaults.shelfCameraEnterSpeed : Number(raw.shelfCameraEnterSpeed), 0.2, 1.5),
       shelfCameraExitSpeed: clampRange(raw.shelfCameraExitSpeed == null ? fxDefaults.shelfCameraExitSpeed : Number(raw.shelfCameraExitSpeed), 0.2, 1.5),
-      cam: /^(off|gesture)$/.test(String(raw.cam || '')) ? raw.cam : fxDefaults.cam
+      cam: /^(off|gesture)$/.test(String(raw.cam || '')) ? raw.cam : fxDefaults.cam,
+      pointerDragFollowMode: normalizePointerDragFollowMode(raw.pointerDragFollowMode || fxDefaults.pointerDragFollowMode)
     };
   } catch (e) {
     return readSavedLyricLayoutCriticalFallback(raw, e);
@@ -434,19 +521,40 @@ function currentFxAutosaveTouchedKeys(reason, payload) {
     lyricDisplayMode: ['lyricDisplayMode'],
     lyricTranslationMode: ['lyricTranslationMode'],
     lyricMotionStyle: ['lyricMotionStyle'],
+    lyricTransitionStyle: ['lyricTransitionStyle', 'lyricTransitionExplicit'],
+    lyricTransitionSpeed: ['lyricTransitionSpeed', 'lyricTransitionExplicit'],
+    lyricRasterQuality: ['lyricRasterQuality'],
+    lyricVerticalFloat: ['lyricVerticalFloat'],
+    lyricPauseHold: ['lyricPauseHold'],
     lyricGlitchCameraBind: ['lyricGlitchCameraBind'],
     backgroundColor: ['backgroundColorMode', 'backgroundColor', 'backgroundColorCustom'],
     backgroundColorCover: ['backgroundColorMode', 'backgroundColor', 'backgroundColorCustom'],
     backgroundOpacity: ['backgroundOpacity', 'backgroundColorMode', 'backgroundColorCustom'],
     backgroundImage: ['backgroundImage', 'backgroundMedia'],
     backgroundMedia: ['backgroundImage', 'backgroundMedia'],
+    perspectiveMode: ['perspectiveMode'],
     visualTintAuto: ['visualTintMode', 'visualTintColor'],
     visualTintReset: ['visualTintMode', 'visualTintColor'],
     visualTintColor: ['visualTintMode', 'visualTintColor'],
+    appTheme: ['appTheme', 'uiAccentColor', 'homeAccentColor', 'homeIconColor', 'visualIconColor', 'visualTintMode', 'visualTintColor', 'shelfAccentColor'],
     uiAccentColor: ['uiAccentColor'],
     homeAccentColor: ['homeAccentColor'],
     homeIconColor: ['homeIconColor'],
     visualIconColor: ['visualIconColor'],
+    sonicGroundColorAuto: ['sonicGroundColorMode', 'sonicGroundBaseColor', 'sonicGroundCoolColor', 'sonicGroundWarmColor', 'sonicGroundAccentColor'],
+    sonicGroundBaseColor: ['sonicGroundColorMode', 'sonicGroundBaseColor'],
+    sonicGroundCoolColor: ['sonicGroundColorMode', 'sonicGroundCoolColor'],
+    sonicGroundWarmColor: ['sonicGroundColorMode', 'sonicGroundWarmColor'],
+    sonicGroundAccentColor: ['sonicGroundColorMode', 'sonicGroundAccentColor'],
+    sonicWorkshopColorMode: ['sonicWorkshopColorMode', 'sonicWorkshopTheme', 'sonicWorkshopCustomColor'],
+    sonicWorkshopTheme: ['sonicWorkshopColorMode', 'sonicWorkshopTheme', 'sonicWorkshopCustomColor'],
+    sonicWorkshopCustomColor: ['sonicWorkshopColorMode', 'sonicWorkshopTheme', 'sonicWorkshopCustomColor'],
+    sonicWorkshopRegionColors: ['sonicWorkshopColorMode', 'sonicWorkshopTheme', 'sonicWorkshopCustomColor', 'sonicWorkshopBaseColorMode', 'sonicWorkshopBaseColor', 'sonicWorkshopWarmColorMode', 'sonicWorkshopWarmColor', 'sonicWorkshopCoolColorMode', 'sonicWorkshopCoolColor', 'sonicWorkshopRippleColorMode', 'sonicWorkshopRippleColor', 'sonicWorkshopPeakColorMode', 'sonicWorkshopPeakColor'],
+    sonicWorkshopBaseColor: ['sonicWorkshopBaseColorMode', 'sonicWorkshopBaseColor'],
+    sonicWorkshopWarmColor: ['sonicWorkshopWarmColorMode', 'sonicWorkshopWarmColor'],
+    sonicWorkshopCoolColor: ['sonicWorkshopCoolColorMode', 'sonicWorkshopCoolColor'],
+    sonicWorkshopRippleColor: ['sonicWorkshopRippleColorMode', 'sonicWorkshopRippleColor'],
+    sonicWorkshopPeakColor: ['sonicWorkshopPeakColorMode', 'sonicWorkshopPeakColor'],
     shelfMode: ['shelf', 'shelfPinnedOpen', 'shelfPresence'],
     shelfPinnedOpen: ['shelfPinnedOpen', 'shelfPresence'],
     shelfCameraMode: ['shelfCameraMode', 'shelfAngleY', 'shelfAngleYManual'],
@@ -557,6 +665,12 @@ function currentFxAutosaveCriticalPatch() {
     lyricDisplayMode: normalizeSavedLyricDisplayMode(fx.lyricDisplayMode || fxDefaults.lyricDisplayMode),
     lyricTranslationMode: normalizeSavedLyricTranslationMode(fx.lyricTranslationMode || fxDefaults.lyricTranslationMode),
     lyricMotionStyle: normalizeSavedLyricMotionStyle(fx.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+    lyricTransitionStyle: normalizeSavedLyricTransitionStyle(fx.lyricTransitionStyle || fxDefaults.lyricTransitionStyle),
+    lyricTransitionExplicit: fx.lyricTransitionExplicit === true,
+    lyricTransitionSpeed: layoutNumber(fx.lyricTransitionSpeed, fxDefaults.lyricTransitionSpeed, 0.55, 1.65),
+    lyricRasterQuality: normalizeLyricRasterQuality(fx.lyricRasterQuality),
+    lyricVerticalFloat: fx.lyricVerticalFloat !== false,
+    lyricPauseHold: fx.lyricPauseHold !== false,
     lyricCustomLineCount: layoutInteger(fx.lyricCustomLineCount, fxDefaults.lyricCustomLineCount, 1, 10),
     lyricScalePulse: layoutNumber(fx.lyricScalePulse, fxDefaults.lyricScalePulse, 0, 0.06),
     lyricGlitchCameraBind: !!fx.lyricGlitchCameraBind,
@@ -576,6 +690,8 @@ function currentFxAutosaveCriticalPatch() {
     lyricLetterSpacing: layoutNumber(fx.lyricLetterSpacing, 0, -0.04, 0.18),
     lyricLineHeight: layoutNumber(fx.lyricLineHeight, 1, 0.72, 1.80),
     lyricWeight: layoutInteger(fx.lyricWeight, 900, 500, 900),
+    lyricDepthWordSweep: fx.lyricDepthWordSweep !== false,
+    lyricDepthInteraction: fx.lyricDepthInteraction === true,
     lyricGlow: !!fx.lyricGlow,
     lyricGlowBeat: !!fx.lyricGlowBeat,
     lyricGlowParticles: !!fx.lyricGlowParticles,
@@ -634,6 +750,8 @@ function saveLyricLayout(opts) {
       lyricOffsetZ: layoutNumber(fx.lyricOffsetZ, 0, -3.2, 3.2),
       lyricTiltX: layoutNumber(fx.lyricTiltX, 0, -84, 84),
       lyricTiltY: layoutNumber(fx.lyricTiltY, 0, -84, 84),
+      albumBackgroundMouseBind: fx.albumBackgroundMouseBind === true,
+      wallpaperMouseParallax: fx.wallpaperMouseParallax === true,
       lyricCameraLock: !!fx.lyricCameraLock,
       lyricColorMode: fx.lyricColorMode === 'custom' ? 'custom' : 'auto',
       lyricColor: normalizeHexColor(fx.lyricColor || '#a9b8c8'),
@@ -644,6 +762,12 @@ function saveLyricLayout(opts) {
       lyricDisplayMode: normalizeSavedLyricDisplayMode(fx.lyricDisplayMode || fxDefaults.lyricDisplayMode),
       lyricTranslationMode: normalizeSavedLyricTranslationMode(fx.lyricTranslationMode || fxDefaults.lyricTranslationMode),
       lyricMotionStyle: normalizeSavedLyricMotionStyle(fx.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+      lyricTransitionStyle: normalizeSavedLyricTransitionStyle(fx.lyricTransitionStyle || fxDefaults.lyricTransitionStyle),
+      lyricTransitionExplicit: fx.lyricTransitionExplicit === true,
+      lyricTransitionSpeed: layoutNumber(fx.lyricTransitionSpeed, fxDefaults.lyricTransitionSpeed, 0.55, 1.65),
+      lyricRasterQuality: normalizeLyricRasterQuality(fx.lyricRasterQuality),
+      lyricVerticalFloat: fx.lyricVerticalFloat !== false,
+      lyricPauseHold: fx.lyricPauseHold !== false,
       lyricCustomLineCount: layoutInteger(fx.lyricCustomLineCount, fxDefaults.lyricCustomLineCount, 1, 10),
       lyricScalePulse: layoutNumber(fx.lyricScalePulse, fxDefaults.lyricScalePulse, 0, 0.06),
       lyricGlitchCameraBind: !!fx.lyricGlitchCameraBind,
@@ -663,6 +787,8 @@ function saveLyricLayout(opts) {
       lyricLetterSpacing: layoutNumber(fx.lyricLetterSpacing, 0, -0.04, 0.18),
       lyricLineHeight: layoutNumber(fx.lyricLineHeight, 1, 0.72, 1.80),
       lyricWeight: layoutInteger(fx.lyricWeight, 900, 500, 900),
+      lyricDepthWordSweep: fx.lyricDepthWordSweep !== false,
+      lyricDepthInteraction: fx.lyricDepthInteraction === true,
       lyricGlow: !!fx.lyricGlow,
       lyricGlowBeat: !!fx.lyricGlowBeat,
       lyricGlowParticles: !!fx.lyricGlowParticles,
@@ -672,7 +798,9 @@ function saveLyricLayout(opts) {
       edge: !!fx.edge,
       aiDepth: !!fx.aiDepth,
       particleLyrics: fx.particleLyrics !== false,
+      backgroundStarRiver: fx.backgroundStarRiver !== false,
       backCover: !!fx.backCover,
+      appTheme: normalizeAppThemeId(fx.appTheme),
       visualTintMode: fx.visualTintMode === 'custom' ? 'custom' : 'auto',
       visualTintColor: normalizeHexColor(fx.visualTintColor || '#9db8cf'),
       uiAccentColor: normalizeHexColor(fx.uiAccentColor || '#00f5d4', '#00f5d4'),
@@ -690,6 +818,7 @@ function saveLyricLayout(opts) {
       backgroundColorCustom: fx.backgroundColorMode === 'custom' || !!fx.backgroundColorCustom,
       backgroundImage: normalizeCustomBackgroundImage(fx.backgroundImage),
       backgroundMedia: normalizeCustomBackgroundMedia(fx.backgroundMedia || fx.backgroundImage),
+      perspectiveMode: fx.perspectiveMode === true,
       desktopLyrics: !!fx.desktopLyrics,
       desktopLyricsSize: clampRange(Number(fx.desktopLyricsSize) || fxDefaults.desktopLyricsSize, 0.72, 1.55),
       desktopLyricsOpacity: clampRange(fx.desktopLyricsOpacity == null ? fxDefaults.desktopLyricsOpacity : Number(fx.desktopLyricsOpacity), 0.28, 1),
@@ -710,6 +839,57 @@ function saveLyricLayout(opts) {
       memorySystemMask: clampRange(Math.round(fx.memorySystemMask == null ? fxDefaults.memorySystemMask : Number(fx.memorySystemMask)), 1, 29),
       memorySafetyRevision: fxDefaults.memorySafetyRevision,
       liveBackgroundKeep: normalizePerformanceBackgroundMode(fx.performanceBackground, fx.liveBackgroundKeep === true) === 'keep',
+      sonicGroundAmplitude: clampRange(fx.sonicGroundAmplitude == null ? fxDefaults.sonicGroundAmplitude : Number(fx.sonicGroundAmplitude), 0, 100),
+      sonicGroundMotionSpeed: clampRange(fx.sonicGroundMotionSpeed == null ? fxDefaults.sonicGroundMotionSpeed : Number(fx.sonicGroundMotionSpeed), 0, 100),
+      sonicGroundDensity: clampRange(fx.sonicGroundDensity == null ? fxDefaults.sonicGroundDensity : Number(fx.sonicGroundDensity), 0, 100),
+      sonicGroundRange: clampRange(fx.sonicGroundRange == null ? fxDefaults.sonicGroundRange : Number(fx.sonicGroundRange), 0, 100),
+      sonicGroundLower: clampRange(fx.sonicGroundLower == null ? fxDefaults.sonicGroundLower : Number(fx.sonicGroundLower), 0, 100),
+      sonicGroundDepth: clampRange(fx.sonicGroundDepth == null ? fxDefaults.sonicGroundDepth : Number(fx.sonicGroundDepth), 0, 100),
+      sonicGroundAutoRotate: clampRange(fx.sonicGroundAutoRotate == null ? fxDefaults.sonicGroundAutoRotate : Number(fx.sonicGroundAutoRotate), 0, 100),
+      sonicGroundColorMode: fx.sonicGroundColorMode === 'custom' ? 'custom' : 'cover',
+      sonicGroundBaseColor: normalizeHexColor(fx.sonicGroundBaseColor || fxDefaults.sonicGroundBaseColor, fxDefaults.sonicGroundBaseColor),
+      sonicGroundCoolColor: normalizeHexColor(fx.sonicGroundCoolColor || fxDefaults.sonicGroundCoolColor, fxDefaults.sonicGroundCoolColor),
+      sonicGroundWarmColor: normalizeHexColor(fx.sonicGroundWarmColor || fxDefaults.sonicGroundWarmColor, fxDefaults.sonicGroundWarmColor),
+      sonicGroundAccentColor: normalizeHexColor(fx.sonicGroundAccentColor || fxDefaults.sonicGroundAccentColor, fxDefaults.sonicGroundAccentColor),
+      sonicGroundGlow: clampRange(fx.sonicGroundGlow == null ? fxDefaults.sonicGroundGlow : Number(fx.sonicGroundGlow), 0, 100),
+      sonicGroundSubBass: clampRange(fx.sonicGroundSubBass == null ? fxDefaults.sonicGroundSubBass : Number(fx.sonicGroundSubBass), 0, 100),
+      sonicGroundBass: clampRange(fx.sonicGroundBass == null ? fxDefaults.sonicGroundBass : Number(fx.sonicGroundBass), 0, 100),
+      sonicGroundLowMid: clampRange(fx.sonicGroundLowMid == null ? fxDefaults.sonicGroundLowMid : Number(fx.sonicGroundLowMid), 0, 100),
+      sonicGroundMid: clampRange(fx.sonicGroundMid == null ? fxDefaults.sonicGroundMid : Number(fx.sonicGroundMid), 0, 100),
+      sonicGroundHighMid: clampRange(fx.sonicGroundHighMid == null ? fxDefaults.sonicGroundHighMid : Number(fx.sonicGroundHighMid), 0, 100),
+      sonicGroundPresence: clampRange(fx.sonicGroundPresence == null ? fxDefaults.sonicGroundPresence : Number(fx.sonicGroundPresence), 0, 100),
+      sonicGroundBrilliance: clampRange(fx.sonicGroundBrilliance == null ? fxDefaults.sonicGroundBrilliance : Number(fx.sonicGroundBrilliance), 0, 100),
+      sonicGroundAir: clampRange(fx.sonicGroundAir == null ? fxDefaults.sonicGroundAir : Number(fx.sonicGroundAir), 0, 100),
+      sonicGroundFloatingEnabled: fx.sonicGroundFloatingEnabled !== false,
+      sonicGroundFloatingIntensity: clampRange(fx.sonicGroundFloatingIntensity == null ? fxDefaults.sonicGroundFloatingIntensity : Number(fx.sonicGroundFloatingIntensity), 0, 100),
+      sonicGroundFloatingMinSize: clampRange(fx.sonicGroundFloatingMinSize == null ? fxDefaults.sonicGroundFloatingMinSize : Number(fx.sonicGroundFloatingMinSize), 0, 100),
+      sonicGroundFloatingMaxSize: clampRange(fx.sonicGroundFloatingMaxSize == null ? fxDefaults.sonicGroundFloatingMaxSize : Number(fx.sonicGroundFloatingMaxSize), 0, 100),
+      sonicGroundFloatingSpeed: clampRange(fx.sonicGroundFloatingSpeed == null ? fxDefaults.sonicGroundFloatingSpeed : Number(fx.sonicGroundFloatingSpeed), 0, 100),
+      sonicGroundFloatingCount: clampRange(fx.sonicGroundFloatingCount == null ? fxDefaults.sonicGroundFloatingCount : Number(fx.sonicGroundFloatingCount), 0, 100),
+      sonicAudioMonitorEnabled: fx.sonicAudioMonitorEnabled !== false,
+      sonicAudioAutoTrack: fx.sonicAudioAutoTrack !== false,
+      sonicAudioSensitivity: clampRange(fx.sonicAudioSensitivity == null ? fxDefaults.sonicAudioSensitivity : Number(fx.sonicAudioSensitivity), 0, 100),
+      sonicAudioBandStart: clampRange(fx.sonicAudioBandStart == null ? fxDefaults.sonicAudioBandStart : Number(fx.sonicAudioBandStart), 0, 510),
+      sonicAudioBandEnd: clampRange(fx.sonicAudioBandEnd == null ? fxDefaults.sonicAudioBandEnd : Number(fx.sonicAudioBandEnd), 2, 512),
+      sonicAudioThreshold: clampRange(fx.sonicAudioThreshold == null ? fxDefaults.sonicAudioThreshold : Number(fx.sonicAudioThreshold), 0, 100),
+      sonicAudioPulseStrength: clampRange(fx.sonicAudioPulseStrength == null ? fxDefaults.sonicAudioPulseStrength : Number(fx.sonicAudioPulseStrength), 0, 100),
+      sonicWorkshopInputGain: clampRange(fx.sonicWorkshopInputGain == null ? fxDefaults.sonicWorkshopInputGain : Number(fx.sonicWorkshopInputGain), 40, 100),
+      sonicWorkshopAudioIntensity: clampRange(fx.sonicWorkshopAudioIntensity == null ? fxDefaults.sonicWorkshopAudioIntensity : Number(fx.sonicWorkshopAudioIntensity), 0.3, 2.5),
+      sonicWorkshopResponseRange: clampRange(fx.sonicWorkshopResponseRange == null ? fxDefaults.sonicWorkshopResponseRange : Number(fx.sonicWorkshopResponseRange), 0.3, 2),
+      sonicWorkshopPeakIntensity: clampRange(fx.sonicWorkshopPeakIntensity == null ? fxDefaults.sonicWorkshopPeakIntensity : Number(fx.sonicWorkshopPeakIntensity), 0, 1.4),
+      sonicWorkshopColorMode: fx.sonicWorkshopColorMode === 'custom' ? 'custom' : 'cover',
+      sonicWorkshopTheme: /^(coral-mirage|ocean-deep|arctic-blue|arctic-aurora|emerald-forest|cyber-forest|minimal-mono|minimal-monochrome|neon-tokyo|golden-hour|ember-fire|crimson|crimson-sunset|aurora|violet-dream)$/.test(String(fx.sonicWorkshopTheme || '')) ? fx.sonicWorkshopTheme : fxDefaults.sonicWorkshopTheme,
+      sonicWorkshopCustomColor: normalizeHexColor(fx.sonicWorkshopCustomColor || fxDefaults.sonicWorkshopCustomColor || '#cb6c89', fxDefaults.sonicWorkshopCustomColor || '#cb6c89'),
+      sonicWorkshopBaseColorMode: fx.sonicWorkshopBaseColorMode === 'custom' ? 'custom' : 'cover',
+      sonicWorkshopBaseColor: normalizeHexColor(fx.sonicWorkshopBaseColor || fxDefaults.sonicWorkshopBaseColor || '#16060f', fxDefaults.sonicWorkshopBaseColor || '#16060f'),
+      sonicWorkshopWarmColorMode: fx.sonicWorkshopWarmColorMode === 'custom' ? 'custom' : 'cover',
+      sonicWorkshopWarmColor: normalizeHexColor(fx.sonicWorkshopWarmColor || fxDefaults.sonicWorkshopWarmColor || '#cb6c89', fxDefaults.sonicWorkshopWarmColor || '#cb6c89'),
+      sonicWorkshopCoolColorMode: fx.sonicWorkshopCoolColorMode === 'custom' ? 'custom' : 'cover',
+      sonicWorkshopCoolColor: normalizeHexColor(fx.sonicWorkshopCoolColor || fxDefaults.sonicWorkshopCoolColor || '#99c4ff', fxDefaults.sonicWorkshopCoolColor || '#99c4ff'),
+      sonicWorkshopRippleColorMode: fx.sonicWorkshopRippleColorMode === 'custom' ? 'custom' : 'cover',
+      sonicWorkshopRippleColor: normalizeHexColor(fx.sonicWorkshopRippleColor || fxDefaults.sonicWorkshopRippleColor || '#f8d8ff', fxDefaults.sonicWorkshopRippleColor || '#f8d8ff'),
+      sonicWorkshopPeakColorMode: fx.sonicWorkshopPeakColorMode === 'custom' ? 'custom' : 'cover',
+      sonicWorkshopPeakColor: normalizeHexColor(fx.sonicWorkshopPeakColor || fxDefaults.sonicWorkshopPeakColor || '#99c4ff', fxDefaults.sonicWorkshopPeakColor || '#99c4ff'),
       wallpaperMode: false,
       wallpaperOpacity: clampRange(fx.wallpaperOpacity == null ? fxDefaults.wallpaperOpacity : Number(fx.wallpaperOpacity), 0.35, 1),
       coverResolution: normalizeCoverResolution(fx.coverResolution),
@@ -748,7 +928,8 @@ function saveLyricLayout(opts) {
       shelfSummonParallax: clampRange(fx.shelfSummonParallax == null ? fxDefaults.shelfSummonParallax : Number(fx.shelfSummonParallax), 0, 2.5),
       shelfCameraEnterSpeed: clampRange(fx.shelfCameraEnterSpeed == null ? fxDefaults.shelfCameraEnterSpeed : Number(fx.shelfCameraEnterSpeed), 0.2, 1.5),
       shelfCameraExitSpeed: clampRange(fx.shelfCameraExitSpeed == null ? fxDefaults.shelfCameraExitSpeed : Number(fx.shelfCameraExitSpeed), 0.2, 1.5),
-      cam: /^(off|gesture)$/.test(String(fx.cam || '')) ? fx.cam : fxDefaults.cam
+      cam: /^(off|gesture)$/.test(String(fx.cam || '')) ? fx.cam : fxDefaults.cam,
+      pointerDragFollowMode: normalizePointerDragFollowMode(fx.pointerDragFollowMode || fxDefaults.pointerDragFollowMode)
     };
     autosavePayload = scopeCurrentFxAutosavePayload(autosavePayload, opts);
     if (shouldSkipCurrentFxAutosaveWrite(autosavePayload, opts)) return;
@@ -883,6 +1064,8 @@ function shelfAlwaysVisible() {
 }
 function shouldUseShelfDynamicCamera(type) {
   if (!/^shelf-/.test(String(type || ''))) return true;
+  // P10 一级歌架固定相机相对锚定, 静态相机模式的世界坐标详情面板在体素预设里没有落点, 强制走动态相机。
+  if (typeof voxelCityActive === 'function' && voxelCityActive()) return true;
   return !(fx && normalizeShelfCameraMode(fx.shelfCameraMode) === 'static');
 }
 function shelfAccentHex() {

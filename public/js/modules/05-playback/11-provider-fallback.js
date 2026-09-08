@@ -134,7 +134,7 @@ function playbackRestrictionNotice(song, data) {
     return {
       category: category,
       title: '平台仅作为匹配源',
-      body: message || (provider + ' 当前只提供搜索/匹配信息，播放会自动寻找其它可播版本。'),
+      body: message || (provider + ' 当前只提供搜索/匹配信息，不能证明该平台可播放。可以选择自动换源。'),
       action: 'switch_source',
       toast: '正在自动换源'
     };
@@ -170,13 +170,22 @@ function playbackRestrictionMessage(song, data) {
     else if (category === 'paid_required') message = provider + '歌曲需要购买或更高权限';
     else if (category === 'trial_only') message = provider + '仅返回试听片段';
     else if (category === 'copyright_unavailable') message = provider + '版权暂不可播';
-    else if (category === 'provider_limited') message = provider + '当前只作为匹配源，正在寻找其它可播版本';
+    else if (category === 'provider_limited') message = provider + '当前只提供搜索/匹配信息，不能证明该平台可播放';
     else message = provider + '没有返回可播放地址';
   }
   if (category === 'login_required') return message + ' · 正在打开登录';
-  if (category === 'provider_limited') return message + ' · 可以自动换源';
+  if (category === 'provider_limited') return message + ' · 可以选择自动换源';
   if (category === 'copyright_unavailable' || category === 'url_unavailable') return message + ' · 可以试试另一个平台版本';
   return message;
+}
+function qishuiPlaybackFailureDetail(data) {
+  var diagnostic = data && data.diagnostic || {};
+  var parts = [];
+  if (diagnostic.reason) parts.push(diagnostic.reason);
+  if (diagnostic.requestHost) parts.push('请求主机 ' + diagnostic.requestHost);
+  if (diagnostic.statusCode) parts.push('HTTP ' + diagnostic.statusCode);
+  if (diagnostic.stage) parts.push('阶段 ' + diagnostic.stage);
+  return parts.join(' · ') || (data && data.message) || '汽水接口没有返回可播放流';
 }
 function qqPlaybackRetryQualities(requestedQuality, resolvedLevel) {
   requestedQuality = normalizePlaybackQualityForProvider(requestedQuality || getProviderPlaybackQuality('qq'), 'qq');
@@ -188,6 +197,27 @@ function qqPlaybackRetryQualities(requestedQuality, resolvedLevel) {
     pool = ['standard'];
   }
   return pool.filter(function (q) { return q !== requestedQuality; });
+}
+function playbackFallbackRequestCurrent(opts, token) {
+  if (token !== trackSwitchToken) return false;
+  return playbackFallbackNavigationCurrent(opts);
+}
+function playbackFallbackNavigationCurrent(opts) {
+  if (!opts || typeof opts.playRequestCurrent !== 'function') return true;
+  try { return opts.playRequestCurrent() !== false; } catch (e) { return false; }
+}
+function playbackFallbackOutcome(handled, started) {
+  return { handled: !!handled, started: started === true };
+}
+function playbackRetryOptionsWithoutPreload(opts) {
+  var next = Object.assign({}, opts || {});
+  delete next.preloadedAudio;
+  delete next.preloadedData;
+  delete next.preloadedProxyAudioUrl;
+  delete next.albumGaplessHandoff;
+  delete next.albumGaplessMixed;
+  delete next.albumGaplessReleaseReason;
+  return next;
 }
 async function retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data, requestedQuality) {
   opts = opts || {};
@@ -204,19 +234,19 @@ async function retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data
     if (q && tried.indexOf(q) < 0) tried.push(q);
   });
   var candidates = qqPlaybackRetryQualities(requestedQuality, data && data.level).filter(function (q) { return tried.indexOf(q) < 0; });
-  if (!candidates.length || token !== trackSwitchToken) return false;
+  if (!candidates.length || !playbackFallbackRequestCurrent(opts, token)) return false;
   var nextQuality = candidates[0];
   var resolvedQuality = normalizePlaybackQuality(data && data.level);
   markPlaybackQualityRuntimeCap(song, 'qq', nextQuality, 'qq-url-unavailable');
   if (!opts.startupAutoplay) showSourceFallbackNotice('QQ 音质自动兼容', '当前音质启动失败，正在切到 ' + playbackQualityLabel(nextQuality, 'qq') + '。');
   var retryResumeAt = opts.resumeAt;
   if (retryResumeAt == null && opts.startupAutoplay && pendingPlaybackResumeAt > 0) retryResumeAt = pendingPlaybackResumeAt;
-  await playQueueAt(idx, Object.assign({}, opts, {
+  var retryStarted = await playQueueAt(idx, Object.assign(playbackRetryOptionsWithoutPreload(opts), {
     qualityOverride: nextQuality,
     qqQualityTried: tried,
     resumeAt: retryResumeAt,
   }));
-  return true;
+  return playbackFallbackOutcome(true, retryStarted === true);
 }
 var sourceFallbackNoticeTimer = null;
 function closeSourceFallbackNotice() {
@@ -245,7 +275,8 @@ function removeSourceFallbackCard(card) {
 // 节流：同样的通知 800ms 内不重复弹（防止失败链路疯狂创建 DOM 卡死）
 var _lastFallbackNotice = '';
 var _lastFallbackNoticeAt = 0;
-function showSourceFallbackNotice(title, body) {
+function showSourceFallbackNotice(title, body, opts) {
+  opts = opts || {};
   var noticeKey = String(title) + '|' + String(body);
   var now = Date.now();
   if (noticeKey === _lastFallbackNotice && now - _lastFallbackNoticeAt < 800) return;
@@ -253,8 +284,21 @@ function showSourceFallbackNotice(title, body) {
   _lastFallbackNoticeAt = now;
   var stack = ensureSourceFallbackStack();
   if (stack) {
+    // 播放失败、自动换源和音质兼容来自同一条异步播放链。保留多张历史卡会
+    // 让较早阶段在较晚阶段完成后仍占屏，且每张卡都带昂贵的 backdrop-filter。
+    // 这里是“当前播放状态”而不是通知中心，因此每次同步替换为唯一一张卡。
+    // 保留旧的 kind/replace 清理契约，随后再统一清掉其它来源的历史卡。
+    if (opts.kind && opts.replace) {
+      Array.prototype.slice.call(stack.children || []).forEach(function (existing) {
+        if (existing && existing.dataset && existing.dataset.noticeKind === opts.kind) {
+          if (existing.parentNode) existing.parentNode.removeChild(existing);
+        }
+      });
+    }
+    while (stack.lastElementChild) stack.removeChild(stack.lastElementChild);
     var card = document.createElement('div');
     card.className = 'source-fallback-card';
+    if (opts.kind) card.dataset.noticeKind = opts.kind;
     var head = document.createElement('div');
     head.className = 'source-fallback-head';
     var titleElNew = document.createElement('div');
@@ -273,7 +317,6 @@ function showSourceFallbackNotice(title, body) {
     card.appendChild(head);
     card.appendChild(bodyElNew);
     stack.insertBefore(card, stack.firstChild || null);
-    while (stack.children.length > 4) removeSourceFallbackCard(stack.lastElementChild);
     requestAnimationFrame(function () { card.classList.add('show'); });
     setTimeout(function () { removeSourceFallbackCard(card); }, 5600);
     return;
@@ -287,6 +330,9 @@ function showSourceFallbackNotice(title, body) {
   notice.classList.add('show');
   if (sourceFallbackNoticeTimer) clearTimeout(sourceFallbackNoticeTimer);
   sourceFallbackNoticeTimer = setTimeout(closeSourceFallbackNotice, 5000);
+}
+function showSourceSwitchNotice(title, body) {
+  showSourceFallbackNotice(title, body, { kind: 'source-switch', replace: true });
 }
 function normalizeMatchText(text) {
   return String(text || '').toLowerCase()
@@ -340,9 +386,26 @@ async function searchAlternatePlatformSong(song) {
 }
 // 连续自动跳过计数:整队都不可播时,nextUnblockedQueueIndex 的 18s 时间窗会让
 // 早先失败的曲目重新“解封”,导致无限跳歌把主线程和内存拖到卡死。用一个单调计数
-// 器保证级联最多跑一整圈队列就停;任何一首拿到可播 URL 时(见播放成功路径)清零。
+// 器保证级联最多跑一整圈队列就停;只有当前歌曲真正开始播放后才清零。
 var playbackSkipCascade = 0;
-function resetPlaybackSkipCascade() { playbackSkipCascade = 0; }
+// 连续失败到这个上限就停止自动跳转。原来是 >playQueue.length(整个队列),大歌单下会 storm 几百首、
+// 每首都分配封面/GPU 纹理 → 渲染层显存爆掉 SIGTRAP 崩溃(实测崩溃报告 2.2 万个 GPU 区)。8 首足够判定"系统性失败"。
+var PLAYBACK_SKIP_CASCADE_MAX = 8;
+function resetPlaybackSkipCascade() {
+  playbackSkipCascade = 0;
+  // #13 正在播放的这首清掉失败标记,避免旧标记长期挂在队列项上、被 18s 窗口误判
+  if (typeof playQueue !== 'undefined' && typeof currentIdx !== 'undefined' && playQueue[currentIdx]) delete playQueue[currentIdx]._lastPlaybackFailAt;
+}
+function confirmQueuePlaybackStarted(idx, token) {
+  if (token !== trackSwitchToken || idx !== currentIdx || !audio || audio.paused || audio.ended) return false;
+  resetPlaybackSkipCascade();
+  setTimeout(function () {
+    if (token === trackSwitchToken && idx === currentIdx && audio && !audio.paused && !audio.ended) {
+      saveLastPlaybackSnapshot(true, 'track-started');
+    }
+  }, 80);
+  return true;
+}
 function markQueueItemPlaybackFailed(idx) {
   if (playQueue[idx]) playQueue[idx]._lastPlaybackFailAt = Date.now();
 }
@@ -363,6 +426,10 @@ function skipFailedQueueItem(idx, token, message, opts) {
   opts = opts || {};
   hideLoading();
   if (token !== trackSwitchToken) return;
+  var nextPlaybackOpts = opts.playbackOpts || { fallbackDepth: 0 };
+  if (typeof nextPlaybackOpts.playRequestCurrent === 'function') {
+    try { if (nextPlaybackOpts.playRequestCurrent() === false) return; } catch (e) { return; }
+  }
   markQueueItemPlaybackFailed(idx);
   if (playQueue.length <= 1) {
     if (!opts.silent) showSourceFallbackNotice('没有可跳过的下一首', message || '当前歌曲不可播放，队列里没有其他歌曲。');
@@ -374,46 +441,64 @@ function skipFailedQueueItem(idx, token, message, opts) {
     return;
   }
   playbackSkipCascade++;
-  if (playbackSkipCascade > playQueue.length) {
+  if (playbackSkipCascade >= Math.min(playQueue.length, PLAYBACK_SKIP_CASCADE_MAX)) {
     playbackSkipCascade = 0;
     if (!opts.silent) showSourceFallbackNotice('队列里暂时没有可播放的歌曲', '已连续跳过整轮受限/不可播的歌曲，已停止自动跳转，避免卡顿。可手动选择其它歌曲或稍后重试。');
     return;
   }
   if (!opts.silent) showSourceFallbackNotice('已跳过受限歌曲', message || '未找到同名同歌手的另一个平台版本，正在播放下一首。');
   currentIdx = nextIdx;
-  playQueueAt(nextIdx, opts.playbackOpts || { fallbackDepth: 0 });
+  playQueueAt(nextIdx, nextPlaybackOpts);
 }
 async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
   opts = opts || {};
   // 失败总次数防护：同一首歌 15 秒内失败超 3 次就跳下一首，不再换源
   if (_playbackFailExceeded(song, idx)) {
     console.warn('[FB-DIAG] 换源被失败计数器拦截→跳下一首', song && song.name, 'idx=' + idx);
-    var skipOpts0 = opts.startupAutoplay ? { silent: true, playbackOpts: { fallbackDepth: 0, startupAutoplay: true } } : null;
+    var skipOpts0 = opts.startupAutoplay ? { silent: true, playbackOpts: { fallbackDepth: 0, startupAutoplay: true, playRequestCurrent: opts.playRequestCurrent } } : null;
     skipFailedQueueItem(idx, token, '当前歌曲多次播放失败，已跳过。', skipOpts0);
-    return true;
+    return playbackFallbackOutcome(true, false);
   }
   var _failN2 = _recordPlaybackFail(song, idx);
   console.warn('[FB-DIAG] 自动换源', song && song.name, 'idx=' + idx, '第' + _failN2 + '次');
   var skipPlaybackOpts = { fallbackDepth: 0, startupAutoplay: true };
   if (opts.resumeAt != null) skipPlaybackOpts.resumeAt = opts.resumeAt;
+  if (typeof opts.playRequestCurrent === 'function') skipPlaybackOpts.playRequestCurrent = opts.playRequestCurrent;
   var skipOpts = opts.startupAutoplay ? { silent: true, playbackOpts: skipPlaybackOpts } : null;
   if (opts.fallbackDepth > 0) {
-    skipFailedQueueItem(idx, token, '自动换源后的版本仍不可播，正在播放下一首。', skipOpts);
-    return true;
+    // 用户手动点中的歌只自动匹配一次。替代源仍不可播时停下来说明原因，
+    // 不要继续跳下一首并再次换源；启动自动续播才允许扫描后续队列。
+    if (opts.startupAutoplay) skipFailedQueueItem(idx, token, '自动换源后的版本仍不可播，正在播放下一首。', skipOpts);
+    else {
+      markQueueItemPlaybackFailed(idx);
+      handlePlaybackUnavailable(song, data);
+    }
+    return playbackFallbackOutcome(true, false);
   }
   if (!song || song.type === 'local' || song.type === 'podcast' || song.source === 'podcast') return false;
   var category = playbackRestrictionCategory(song, data);
   var fromLabel = playbackProviderLabel(song);
+  var isQishuiPlayback = playbackLoginProvider(song) === 'qishui';
+  var qishuiDetail = isQishuiPlayback ? qishuiPlaybackFailureDetail(data) : '';
   var alternateProvider = alternatePlaybackProvider(song);
   var targetLabel = alternateProvider === 'qq' ? 'QQ 音乐' : (alternateProvider === 'kugou' ? '酷狗音乐' : (alternateProvider === 'spotify' ? 'Spotify' : '网易云'));
-  if (!opts.startupAutoplay) showSourceFallbackNotice('正在自动换源', fromLabel + ' 当前不可播，正在查找 ' + targetLabel + ' 的同名同歌手版本。');
+  if (!opts.startupAutoplay) showSourceSwitchNotice(
+    isQishuiPlayback ? '汽水未返回可播放流' : '正在自动换源',
+    isQishuiPlayback
+      ? qishuiDetail + '。正在查找 ' + targetLabel + ' 的同名同歌手版本。'
+      : fromLabel + ' 当前不可播，正在查找 ' + targetLabel + ' 的同名同歌手版本。'
+  );
   try {
     var alternate = await searchAlternatePlatformSong(song);
-    if (token !== trackSwitchToken) return true;
+    if (!playbackFallbackRequestCurrent(opts, token)) return playbackFallbackOutcome(true, false);
     if (!alternate) {
       if (category === 'login_required') return false;
-      skipFailedQueueItem(idx, token, '没有找到同名同歌手的 ' + targetLabel + ' 版本，正在播放下一首。', skipOpts);
-      return true;
+      if (opts.startupAutoplay) skipFailedQueueItem(idx, token, '没有找到同名同歌手的 ' + targetLabel + ' 版本，正在播放下一首。', skipOpts);
+      else {
+        markQueueItemPlaybackFailed(idx);
+        handlePlaybackUnavailable(song, data);
+      }
+      return playbackFallbackOutcome(true, false);
     }
     alternate.autoFallbackFrom = songProviderKey(song);
     // 保留换源前的失败标记，避免换源后队列项被新对象覆盖导致 18 秒退避失效
@@ -423,15 +508,27 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
     playQueue[idx] = altHydrated;
     safeRenderQueuePanel('source-fallback', { scrollCurrent: miniQueueOpen });
     safeShelfRebuild('source-fallback');
-    if (!opts.startupAutoplay) showSourceFallbackNotice('已自动切换音源', (song.name || '当前歌曲') + ' 已从 ' + fromLabel + ' 切到 ' + targetLabel + '。');
     var fallbackPlaybackOpts = { fallbackDepth: 1, startupAutoplay: !!opts.startupAutoplay, preserveHomeState: !!opts.preserveHomeState };
     if (opts.resumeAt != null) fallbackPlaybackOpts.resumeAt = opts.resumeAt;
-    await playQueueAt(idx, fallbackPlaybackOpts);
-    return true;
+    if (typeof opts.playRequestCurrent === 'function') fallbackPlaybackOpts.playRequestCurrent = opts.playRequestCurrent;
+    var fallbackStarted = await playQueueAt(idx, fallbackPlaybackOpts);
+    var fallbackUiCurrent = playbackFallbackNavigationCurrent(opts) && idx === currentIdx && playQueue[idx] === altHydrated;
+    if (!opts.startupAutoplay && fallbackUiCurrent) {
+      if (fallbackStarted) {
+        showSourceSwitchNotice('已自动切换音源', (song.name || '当前歌曲') + ' 已从 ' + fromLabel + ' 切到 ' + targetLabel + '。' + (isQishuiPlayback ? ' 原因：' + qishuiDetail + '。' : ''));
+      } else {
+        showSourceSwitchNotice('音源切换失败', targetLabel + ' 版本也没有确认开始播放，已保留诊断信息。');
+      }
+    }
+    return playbackFallbackOutcome(true, fallbackStarted === true);
   } catch (e) {
-    if (token !== trackSwitchToken) return true;
-    skipFailedQueueItem(idx, token, '自动换源搜索失败，正在播放下一首。', skipOpts);
-    return true;
+    if (!playbackFallbackRequestCurrent(opts, token)) return playbackFallbackOutcome(true, false);
+    if (opts.startupAutoplay) skipFailedQueueItem(idx, token, '自动换源搜索失败，正在播放下一首。', skipOpts);
+    else {
+      markQueueItemPlaybackFailed(idx);
+      handlePlaybackUnavailable(song, data);
+    }
+    return playbackFallbackOutcome(true, false);
   }
 }
 function handlePlaybackUnavailable(song, data) {

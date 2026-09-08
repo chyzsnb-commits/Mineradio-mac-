@@ -12,8 +12,11 @@ function hideAIDepthChip() {
 function loadCoverFromUrl(directUrl, opts) {
   opts = opts || {};
   var preserveOnSwitch = !!(opts.trackSwitch || opts.seamlessCover || opts.seamlessTrackSwitch);
-  if (!directUrl || typeof directUrl !== 'string' || !/^https?:\/\//i.test(directUrl)) {
+  if (!directUrl || typeof directUrl !== 'string' || (!/^https?:\/\//i.test(directUrl) && !/^mineradio-local:\/\//i.test(directUrl))) {
     if (!coverApplyStillCurrent(opts)) return;
+    // 当前歌曲明确没有封面时不能把上一首封面继续标成有效。
+    // seamless 只用于“新封面正在加载”的短交叉淡入，不适用于没有目标封面的歌曲。
+    if (opts.clearWhenMissing) preserveOnSwitch = false;
     if (preserveOnSwitch && uniforms.uHasCover.value > 0.5) {
       document.getElementById('thumb-cover').removeAttribute('src');
       setControlCoverSrc('');
@@ -77,11 +80,34 @@ function cssBackgroundUrl(src) {
   return 'url("' + String(src || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '")';
 }
 
+var albumBackgroundMouseView = { x: 0, y: 0 };
+
+function updateAlbumBackgroundMouseView(ndcX, ndcY) {
+  if (Number.isFinite(Number(ndcX))) albumBackgroundMouseView.x = Number(ndcX);
+  if (Number.isFinite(Number(ndcY))) albumBackgroundMouseView.y = Number(ndcY);
+  var enabled = !!(typeof fx !== 'undefined' && fx && fx.albumBackgroundMouseBind === true);
+  var coverMode = typeof customBackgroundUsesAlbumCover === 'function' && customBackgroundUsesAlbumCover();
+  var x = enabled ? Math.max(-1, Math.min(1, albumBackgroundMouseView.x)) : 0;
+  var y = enabled ? Math.max(-1, Math.min(1, albumBackgroundMouseView.y)) : 0;
+  var offsetX = (x * -2.1).toFixed(2) + '%';
+  var offsetY = (y * 1.7).toFixed(2) + '%';
+  ['album-bg', 'album-bg-next', 'custom-bg'].forEach(function (id) {
+    var layer = document.getElementById(id);
+    if (!layer) return;
+    var isCustomCoverLayer = id === 'custom-bg';
+    var layerOffsetX = isCustomCoverLayer && !coverMode ? '0%' : offsetX;
+    var layerOffsetY = isCustomCoverLayer && !coverMode ? '0%' : offsetY;
+    layer.style.setProperty('--album-bg-mouse-x', layerOffsetX);
+    layer.style.setProperty('--album-bg-mouse-y', layerOffsetY);
+  });
+}
+
 function setAlbumBackground(src, opts) {
   opts = opts || {};
   var bg = document.getElementById('album-bg');
   var next = document.getElementById('album-bg-next');
   if (!bg) return;
+  updateAlbumBackgroundMouseView();
   if (!src) {
     if (opts.preserve) return;
     bg.classList.remove('visible');

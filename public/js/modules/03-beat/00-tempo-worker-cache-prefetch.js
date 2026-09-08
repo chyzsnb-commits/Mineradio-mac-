@@ -209,6 +209,44 @@ async function resolveBeatAnalysisLightUrl(song, fallbackUrl) {
   return fallbackUrl;
 }
 
+function beatAnalysisPlaybackIsStable(token, minPlaybackSec) {
+  if (token !== beatMapToken || !audio || audio.paused) return false;
+  var minimum = Math.max(0, Number(minPlaybackSec == null ? beatAnalysisConfig.minPlaybackSec : minPlaybackSec) || 0);
+  if ((audio.currentTime || 0) < minimum) return false;
+  return !(typeof isRenderInteractionActive === 'function' && isRenderInteractionActive());
+}
+
+function beatAnalysisRetryDelay(minPlaybackSec) {
+  var remaining = audio && !audio.paused
+    ? Math.max(0, (Number(minPlaybackSec) || 0) - (audio.currentTime || 0)) * 1000
+    : 0;
+  return Math.max(beatAnalysisConfig.retryMs || 900, Math.ceil(remaining));
+}
+
+function scheduleStableBeatAnalysis(fn, token) {
+  if (typeof fn !== 'function') return;
+  var retry = function () {
+    if (token !== beatMapToken || !audio || audio.paused) return;
+    if (!beatAnalysisPlaybackIsStable(token, beatAnalysisConfig.minPlaybackSec)) {
+      beatAnalysisTimer = setTimeout(retry, beatAnalysisRetryDelay(beatAnalysisConfig.minPlaybackSec));
+      return;
+    }
+    var startWhenIdle = function (deadline) {
+      if (token !== beatMapToken || !audio || audio.paused) return;
+      var hasBudget = !deadline || typeof deadline.timeRemaining !== 'function'
+        || deadline.timeRemaining() >= (beatAnalysisConfig.idleMinBudgetMs || 18);
+      if (!beatAnalysisPlaybackIsStable(token, beatAnalysisConfig.minPlaybackSec) || !hasBudget) {
+        beatAnalysisTimer = setTimeout(retry, beatAnalysisConfig.retryMs || 900);
+        return;
+      }
+      fn();
+    };
+    if (window.requestIdleCallback) requestIdleCallback(startWhenIdle);
+    else setTimeout(startWhenIdle, beatAnalysisConfig.retryMs || 900);
+  };
+  retry();
+}
+
 function scheduleBeatAnalysis(songId, audioUrl, token, song, analysisOpts) {
   if (!songId || !audioUrl) return;
   if (djMode.active) {
@@ -239,7 +277,7 @@ function scheduleBeatAnalysis(songId, audioUrl, token, song, analysisOpts) {
       if (beatMapBusy) {
         beatAnalysisTimer = setTimeout(function () {
           beatAnalysisTimer = null;
-          scheduleAnalysisTask(startAnalysis, 260);
+          scheduleStableBeatAnalysis(startAnalysis, token);
         }, 420);
         return;
       }
@@ -248,6 +286,10 @@ function scheduleBeatAnalysis(songId, audioUrl, token, song, analysisOpts) {
       if (analysisOpts && analysisOpts.heavyLossless) {
         analysisUrl = await resolveBeatAnalysisLightUrl(song, audioUrl);
         if (token !== beatMapToken || !audio || audio.paused || beatMapCache[songId]) return;
+      }
+      if (!beatAnalysisPlaybackIsStable(token, beatAnalysisConfig.minPlaybackSec)) {
+        scheduleStableBeatAnalysis(startAnalysis, token);
+        return;
       }
       analyzeAudioBeats(analysisUrl, null, token, {
         skipMusicTempo: beatAnalysisConfig.skipMusicTempoWhilePlaying && !audio.paused,
@@ -266,7 +308,7 @@ function scheduleBeatAnalysis(songId, audioUrl, token, song, analysisOpts) {
         hideBeatChip();
       });
     };
-    scheduleAnalysisTask(startAnalysis, beatAnalysisConfig.idleTimeout);
+    scheduleStableBeatAnalysis(startAnalysis, token);
   }, beatAnalysisConfig.delayMs);
 }
 
@@ -403,6 +445,8 @@ function scheduleQueueBeatPrefetch(fromIdx, delayMs, state) {
   var seq = ++beatPrefetchToken;
   var startIdx = isFinite(fromIdx) ? fromIdx : currentIdx;
   var waitMs = delayMs == null ? 1800 : delayMs;
+  // 当前歌曲的第一段只留给播放解码和实时频谱，预热下一首会另起一次完整解码。
+  if (audio && !audio.paused) waitMs = Math.max(waitMs, beatAnalysisRetryDelay(beatAnalysisConfig.prefetchMinPlaybackSec));
   if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive()) waitMs = Math.max(waitMs, 2200);
   beatPrefetchTimer = setTimeout(function () {
     beatPrefetchTimer = null;
@@ -414,6 +458,10 @@ async function runQueueBeatPrefetch(fromIdx, token, seq, state) {
   if (!QUEUE_BEAT_AUDIO_PREFETCH_ENABLED) return;
   if (token !== beatMapToken || seq !== beatPrefetchToken || beatPrefetchBusy || !playQueue.length) return;
   if (audio && audio.paused) return;
+  if (!beatAnalysisPlaybackIsStable(token, beatAnalysisConfig.prefetchMinPlaybackSec)) {
+    scheduleQueueBeatPrefetch(fromIdx, beatAnalysisRetryDelay(beatAnalysisConfig.prefetchMinPlaybackSec), state);
+    return;
+  }
   state = normalizeBeatPrefetchState(state);
   if (state.count >= BEAT_PREFETCH_LIMIT) return;
   var idx = findNextBeatPrefetchIndex(fromIdx, state.keys);
@@ -442,6 +490,10 @@ async function runQueueBeatPrefetch(fromIdx, token, seq, state) {
       await yieldToIdle(isHiddenForBackgroundOptimization() ? 30 : 240);
     }
     if (token !== beatMapToken || seq !== beatPrefetchToken || beatMapCache[key]) return;
+    if (!beatAnalysisPlaybackIsStable(token, beatAnalysisConfig.prefetchMinPlaybackSec)) {
+      scheduleQueueBeatPrefetch(fromIdx, beatAnalysisRetryDelay(beatAnalysisConfig.prefetchMinPlaybackSec), state);
+      return;
+    }
     var map = await analyzeAudioBeats(audioUrl, null, token, {
       background: true,
       prefetch: true,

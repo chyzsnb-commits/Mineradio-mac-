@@ -1,29 +1,69 @@
+var SONIC_SERIES_PRESET_INDICES = [10, 12, 13];
+
+function buildSonicSeriesPresetCard() {
+  var options = SONIC_SERIES_PRESET_INDICES.map(function (i) {
+    var p = presetMeta[i];
+    var name = p.nameHtml || p.name;
+    var desc = p.descHtml || p.desc;
+    return '<button class="pc-series-option" type="button" data-preset="' + i + '" onclick="event.stopPropagation();setPreset(' + i + ')" aria-pressed="false">' +
+      '<span class="pc-series-option-name">' + name + '</span>' +
+      '<span class="pc-series-option-desc">' + desc + '</span>' +
+      '</button>';
+  }).join('');
+  return '<section class="preset-card preset-series-card" data-preset-group="sonic-series" aria-label="音域回响系列" role="group">' +
+    '<div class="pc-icon">' + presetIcons[10] + '</div>' +
+    '<div class="pc-name">音域回响</div>' +
+    '<div class="pc-series-options" role="group" aria-label="音域回响版本">' + options + '</div>' +
+    '</section>';
+}
+
+function buildPresetCard(i) {
+  var p = presetMeta[i];
+  var desc = p.descHtml || p.desc;
+  return '<div class="preset-card" data-preset="' + i + '" onclick="setPreset(' + i + ')">' +
+    '<div class="pc-icon">' + presetIcons[i] + '</div>' +
+    '<div class="pc-name">' + (p.nameHtml || p.name) + '</div>' +
+    '<div class="pc-desc">' + desc + '</div>' +
+    '</div>';
+}
+
 function buildPresetGrid() {
   var grid = document.getElementById('preset-grid');
   if (!grid) return;
-  var seen = { 9: true };   // 9=声波走廊 已下架:不进网格,也不被下面的补位循环捞回来
+  var seen = { 7: true };   // 7=黑洞 已下架:不进网格,也不被下面的补位循环捞回来
   var order = presetDisplayOrder.filter(function (id) {
-    var ok = id >= 0 && id < presetMeta.length && !seen[id];
+    var ok = id >= 0 && id < presetMeta.length && !seen[id] && !isPresetHidden(id);
     seen[id] = true;
     return ok;
   });
   presetMeta.forEach(function (_, id) {
-    if (!seen[id]) order.push(id);
+    if (!seen[id] && !isPresetHidden(id)) order.push(id);
   });
+  var sonicSeriesRendered = false;
   grid.innerHTML = order.map(function (i) {
-    var p = presetMeta[i];
-    var desc = p.descHtml || p.desc;
-    return '<div class="preset-card" data-preset="' + i + '" onclick="setPreset(' + i + ')">' +
-      '<div class="pc-icon">' + presetIcons[i] + '</div>' +
-      '<div class="pc-name">' + p.name + '</div>' +
-      '<div class="pc-desc">' + desc + '</div>' +
-      '</div>';
+    if (SONIC_SERIES_PRESET_INDICES.indexOf(i) >= 0) {
+      if (sonicSeriesRendered) return '';
+      sonicSeriesRendered = true;
+      return buildSonicSeriesPresetCard();
+    }
+    return buildPresetCard(i);
   }).join('');
   refreshPresetGrid();
 }
 function refreshPresetGrid() {
   document.querySelectorAll('.preset-card').forEach(function (el) {
-    el.classList.toggle('active', Number(el.dataset.preset) === fx.preset);
+    var isSeries = el.dataset.presetGroup === 'sonic-series';
+    var active = isSeries
+      ? !!el.querySelector('.pc-series-option[data-preset="' + fx.preset + '"]')
+      : Number(el.dataset.preset) === fx.preset;
+    el.classList.toggle('active', active);
+    if (isSeries) {
+      el.querySelectorAll('.pc-series-option').forEach(function (option) {
+        var optionActive = Number(option.dataset.preset) === fx.preset;
+        option.classList.toggle('active', optionActive);
+        option.setAttribute('aria-pressed', optionActive ? 'true' : 'false');
+      });
+    }
   });
 }
 function triggerPresetParticleTransition(fromPreset, toPreset) {
@@ -40,7 +80,8 @@ function triggerPresetParticleTransition(fromPreset, toPreset) {
   for (var i = 0; i < 3; i++) {
     triggerRipple((Math.random() - 0.5) * 3.4, (Math.random() - 0.5) * 3.4, 0.58 + Math.random() * 0.32);
   }
-  var card = document.querySelector('.preset-card[data-preset="' + toPreset + '"]');
+  var card = document.querySelector('.preset-card[data-preset="' + toPreset + '"]') ||
+    document.querySelector('.preset-card[data-preset-group="sonic-series"]');
   if (card) {
     card.classList.remove('switching');
     void card.offsetWidth;
@@ -66,13 +107,26 @@ function tickPresetTransition() {
 function setPreset(p, opts) {
   opts = opts || {};
   p = Math.max(0, Math.min(presetMeta.length - 1, Number(p) || 0));
+  if (isPresetHidden(p)) p = HIDDEN_PRESET_FALLBACK;
   var prev = fx.preset;
   var changed = prev !== p;
+  if (changed && typeof reconcileFreeCameraPresetOwnership === 'function') {
+    reconcileFreeCameraPresetOwnership(p);
+  }
   fx.preset = p;
   if (changed && prev === SKULL_PRESET_INDEX && p !== SKULL_PRESET_INDEX) clearSkullPresetResidue();
   if (p === SKULL_PRESET_INDEX) loadSkullParticleAsset();
+  if (changed && window.MineradioSonicTopography) MineradioSonicTopography.onPresetChange(prev, p, { scene: scene, fx: fx });
+  if (changed && window.MineradioSonicWorkshop) MineradioSonicWorkshop.onPresetChange(prev, p, { scene: scene, fx: fx });
   uniforms.uPreset.value = p;
   refreshPresetGrid();
+  if (typeof updateSonicSeriesControlVisibility === 'function') updateSonicSeriesControlVisibility();
+  if (typeof updateMineradioMotionGroupVisibility === 'function') updateMineradioMotionGroupVisibility();
+  if (typeof updateSonicWorkshopColorControls === 'function') updateSonicWorkshopColorControls();
+  if (typeof refreshVoxelLyricStageAfterPresetChange === 'function') refreshVoxelLyricStageAfterPresetChange(changed ? 'voxel-preset-change' : 'voxel-preset-refresh');
+  if (typeof refreshSonicWorkshopLyricStageAfterPresetChange === 'function') refreshSonicWorkshopLyricStageAfterPresetChange(changed ? 'sonic-workshop-preset-change' : 'sonic-workshop-preset-refresh');
+  if (typeof updateLyricDepthControlAvailability === 'function') updateLyricDepthControlAvailability();
+  if (typeof updateLyricDepthSettingsControls === 'function') updateLyricDepthSettingsControls();
   if (changed && !opts.skipTransition) triggerPresetParticleTransition(prev, p);
   // 每个预设对应的相机基线 (改 userOrbit)
   if (changed && !opts.preserveCamera) {
@@ -84,11 +138,14 @@ function setPreset(p, opts) {
     else if (p === 6) { orbit.userRadius = 7.4; orbit.userPhi = 0.10; orbit.userTheta = 0.18; orbit.baselineRadius = 7.4; orbit.baselinePhi = 0.10; }
     else if (p === 7) { orbit.userRadius = 7.2; orbit.userPhi = 0.34; orbit.userTheta = 0.0; orbit.baselineRadius = 7.2; orbit.baselinePhi = 0.34; }
     else if (p === 8) { orbit.userRadius = 8.4; orbit.userPhi = 0.08; orbit.userTheta = 0.0; orbit.baselineRadius = 8.4; orbit.baselinePhi = 0.08; }
-    else if (p === 9) { orbit.userRadius = 7.6; orbit.userPhi = 0.55; orbit.userTheta = 0.0; orbit.baselineRadius = 7.6; orbit.baselinePhi = 0.55; }
+    else if (p === 9) { orbit.userRadius = 7.2; orbit.userPhi = 0.06; orbit.userTheta = 0.0; orbit.baselineRadius = 7.2; orbit.baselinePhi = 0.06; }   // 雨境：正视雨幕
     else if (p === 10){ orbit.userRadius = 50.0; orbit.userPhi = 0.20; orbit.userTheta = 0.0; orbit.baselineRadius = 50.0; orbit.baselinePhi = 0.20; }   // 音域回响：远处低角度横扫整片地形
+    else if (p === 11){ orbit.userRadius = 7.2; orbit.userPhi = 0.04; orbit.userTheta = 0.0; orbit.baselineRadius = 7.2; orbit.baselinePhi = 0.04; }   // 词境穿行：镜头内独立景深舞台
+    else if (p === 12){ orbit.userRadius = 10.0; orbit.userPhi = 0.18; orbit.userTheta = 0.0; orbit.baselineRadius = 10.0; orbit.baselinePhi = 0.18; }   // 声波地形：远处低角度横扫整片地形
+    else if (p === 13){ orbit.userRadius = 10.0; orbit.userPhi = 0.18; orbit.userTheta = 0.0; orbit.baselineRadius = 10.0; orbit.baselinePhi = 0.18; }   // 声波工坊：同声波地形机位
     else { orbit.userRadius = 6.6; orbit.userPhi = 0.08; orbit.userTheta = 0.0; orbit.baselineRadius = 6.6; orbit.baselinePhi = 0.08; }
     // 音域回响体素地形场景很大,放开半径夹紧;其它预设保持原值
-    if (p === 10) { orbit.minRadius = 10.0; orbit.maxRadius = 180.0; }
+    if (p === 10 || p === 12 || p === 13) { orbit.minRadius = 4.0; orbit.maxRadius = 180.0; }
     else { orbit.minRadius = 2.4; orbit.maxRadius = 14.0; }
     if (p !== 5) orbit.baselineTheta = p === 6 ? 0.18 : 0.0;
     // 切预设收尾: 清掉上一预设遗留的指针/手势/视差偏移, 避免叠加到世界锚定的歌架上加剧错位。

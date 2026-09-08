@@ -1,3 +1,49 @@
+// Windows v2.1.0 对齐: 本地每日收听聚合(rollup v2)——纯本地,不上报服务端(平台同步为上游 experimental 能力,Mac 不迁移)
+var HOME_LISTEN_ROLLUP_V2_KEY = 'mineradio-listen-rollup-v2';
+function emptyListenRollupV2() {
+  return { version: 2, totalListenMs: 0, sessions: 0, daily: {}, updatedAt: 0 };
+}
+function loadListenRollupV2() {
+  try {
+    var raw = localStorage.getItem(HOME_LISTEN_ROLLUP_V2_KEY);
+    if (!raw) return emptyListenRollupV2();
+    var data = JSON.parse(raw);
+    return {
+      version: 2,
+      totalListenMs: Math.max(0, Number(data.totalListenMs) || 0),
+      sessions: Math.max(0, Number(data.sessions) || 0),
+      daily: data.daily && typeof data.daily === 'object' ? data.daily : {},
+      updatedAt: Number(data.updatedAt) || 0,
+    };
+  } catch (e) {
+    return emptyListenRollupV2();
+  }
+}
+function listenDayKey(timestamp) {
+  var date = new Date(timestamp || Date.now());
+  var year = date.getFullYear();
+  var month = String(date.getMonth() + 1).padStart(2, '0');
+  var day = String(date.getDate()).padStart(2, '0');
+  return year + '-' + month + '-' + day;
+}
+function recordListenRollupV2(record) {
+  try {
+    var state = loadListenRollupV2();
+    var listenMs = Math.max(0, Math.round(Number(record && record.listenMs) || 0));
+    var dayKey = listenDayKey(record && record.playedAt);
+    var day = state.daily[dayKey] && typeof state.daily[dayKey] === 'object'
+      ? state.daily[dayKey]
+      : { listenMs: 0, sessions: 0, completed: 0 };
+    state.totalListenMs += listenMs;
+    state.sessions += 1;
+    day.listenMs = Math.max(0, Number(day.listenMs) || 0) + listenMs;
+    day.sessions = Math.max(0, Number(day.sessions) || 0) + 1;
+    day.completed = Math.max(0, Number(day.completed) || 0) + (record && record.completed ? 1 : 0);
+    state.daily[dayKey] = day;
+    state.updatedAt = Date.now();
+    localStorage.setItem(HOME_LISTEN_ROLLUP_V2_KEY, JSON.stringify(state));
+  } catch (e) { }
+}
 function loadListenStatsState() {
   try {
     var raw = localStorage.getItem(HOME_LISTEN_STATS_KEY);
@@ -120,6 +166,7 @@ function finalizeListenSession(completed) {
     listenStatsState.artists[name] = artistStat;
   });
   saveListenStatsState();
+  recordListenRollupV2(record);   // Windows v2.1.0: 本地每日聚合(纯本地,不上报服务端)
   if (emptyHomeActive) renderHomeDiscover();
 }
 function mostPlayedSong() {

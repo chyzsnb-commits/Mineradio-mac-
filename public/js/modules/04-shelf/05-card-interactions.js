@@ -7,6 +7,7 @@ function raycasterFromPointerEvent(e) {
   return rc;
 }
 function pointerCardHit(rc, e, screenPad) {
+  if (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf()) return null;
   if (!shelfManager) return null;
   return shelfManager.raycastCards(rc) || (shelfManager.pickCardAtScreen && shelfManager.pickCardAtScreen(e.clientX, e.clientY, screenPad));
 }
@@ -68,6 +69,7 @@ function isShelfPlaylistPlayHit(hit) {
   return hit.uv.x >= 0.49 && hit.uv.x <= 0.72 && hit.uv.y >= 0.13 && hit.uv.y <= 0.42;
 }
 renderer.domElement.addEventListener('click', function (e) {
+  if (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf()) return;
   if (!shelfManager || shelfManager.getMode() === 'off') return;
   if (typeof shelfPlaybackSwitchGuardActive === 'function' && shelfPlaybackSwitchGuardActive()) return;
   if (document.body.classList.contains('splash-active')) return;
@@ -141,17 +143,21 @@ renderer.domElement.addEventListener('click', function (e) {
 });
 
 renderer.domElement.addEventListener('contextmenu', function (e) {
+  if (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf()) return;
   if (document.body.classList.contains('splash-active')) return;
   if (typeof shelfPlaybackSwitchGuardActive === 'function' && shelfPlaybackSwitchGuardActive()) return;
   if (isPointerOverUi(e)) return;
   e.preventDefault();
   e.stopPropagation();
+  // 右键是显式的视觉交互；空闲降帧时先唤醒主循环，确保 P10 当帧计算并绘制一级歌架。
+  if (typeof markRenderInteraction === 'function') markRenderInteraction('shelf-context', 1200);
+  else if (typeof wakeMainLoopFromBackground === 'function') wakeMainLoopFromBackground();
   if (typeof suppressBottomControlsForShelf === 'function') suppressBottomControlsForShelf(980);
   if (!shelfManager) return;
   var mode = shelfManager.getMode && shelfManager.getMode();
   if (mode === 'off') {
     setShelfMode('side');
-    mode = 'side';
+    mode = shelfManager.getMode && shelfManager.getMode();
   }
   if (mode !== 'side') return;
   if (shelfManager.hasOpenContent && shelfManager.hasOpenContent()) {
@@ -167,8 +173,14 @@ renderer.domElement.addEventListener('contextmenu', function (e) {
     setShelfPinnedOpen(true, true);
     return;
   }
-  setShelfPinnedOpen(!shelfPinnedOpen, true);
-  if (!shelfPinnedOpen && typeof setFocusZone === 'function') setFocusZone(null, true);
+  var shouldOpen = shelfHardHidden || !shelfPinnedOpen;
+  if (shouldOpen) {
+    shelfHardHidden = false;
+    // 右键只负责唤起歌架；不应把鼠标移动留下的悬停抬升状态带进固定构图。
+    if (shelfManager.clearSelected) shelfManager.clearSelected();
+    if (typeof syncShelfToggleBtn === 'function') syncShelfToggleBtn();
+  }
+  setShelfPinnedOpen(shouldOpen, true);
 });
 
 // 滚轮: 在真实卡片或右侧窄热区内滚卡片; 否则保留给封面粒子/视角
@@ -179,12 +191,14 @@ var wheelOverShelf = false;
 // 歌架滚动敏感度:trackpad 一次滑动会喷几十个 wheel 事件,原来每个都滚一格 → 太快。
 // 累计 deltaY,够一个步长才滚一格(步长越大越不敏感);留余数保持平滑。
 var _shelfWheelAccum = 0;
-var SHELF_WHEEL_STEP = 190;
+// 2.0 调到中间档:比 190 更跟手,但仍保留累计阈值,不会退回最初“一事件一格”的过敏状态。
+var SHELF_WHEEL_STEP = 140;
 function shelfWheelDir(e) {
   var d = e.deltaY;
   if (e.deltaMode === 1) d *= 16; else if (e.deltaMode === 2) d *= 100;
   _shelfWheelAccum += d;
   if (Math.abs(_shelfWheelAccum) >= SHELF_WHEEL_STEP) {
+    // 锁定现有方向:向下滚为 +1,向上滚为 -1。
     var dir = _shelfWheelAccum > 0 ? 1 : -1;
     _shelfWheelAccum -= dir * SHELF_WHEEL_STEP;
     return dir;
@@ -192,6 +206,7 @@ function shelfWheelDir(e) {
   return 0;
 }
 renderer.domElement.addEventListener('wheel', function (e) {
+  if (typeof lyricDepthSuppressesThreeDimensionalShelf === 'function' && lyricDepthSuppressesThreeDimensionalShelf()) return;
   if (isPointerOverUi(e)) return;
   if (!shelfManager || shelfManager.getMode() === 'off') return;
   if (typeof shelfPlaybackSwitchGuardActive === 'function' && shelfPlaybackSwitchGuardActive()) return;
