@@ -187,6 +187,19 @@ function stageLyricShouldSkipFullTrackWarmup(reason) {
   return false;
 }
 
+// 完整轨道会一次性栅格化大量不可见歌词行，实测可占用 70ms 以上。播放首段只保留
+// 同视觉的轻量可见窗口；完整轨道只允许在真正空闲时预热，不能靠 idle timeout 闯入播放期。
+function stageLyricCanBuildFullTrackNow(deadline) {
+  var audioIsPlaying = !!(typeof audio !== 'undefined' && audio && audio.src && !audio.paused && !audio.ended);
+  if (audioIsPlaying) return false;
+  var now = stageLyricNowMs();
+  if ((Number(stageLyricTrackSwitchBootstrapUntil) || 0) > now) return false;
+  if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive()) return false;
+  if (typeof isDocumentScrollActive === 'function' && isDocumentScrollActive()) return false;
+  if (deadline && typeof deadline.timeRemaining === 'function' && deadline.timeRemaining() < 80) return false;
+  return true;
+}
+
 function clearStageLyricRestoreWarmup() {
   stageLyricRestoreWarmup.time = 0;
   stageLyricRestoreWarmup.token = 0;
@@ -548,6 +561,10 @@ function stageLyricPrewarmCanServePayload(payload) {
 function stageLyricCurrentMeshAlreadyPreparedForPayload(payload) {
   if (!stageLyrics || !stageLyrics.current || !payload) return false;
   if (payload.trackKey && payload.trackIndex != null) {
+    var currentPayload = stageLyrics.current.userData && stageLyrics.current.userData.payload;
+    // 当前轨道能显示下一句，不代表它已经准备好用于跨句叠化的 incoming mesh。
+    // 只有同一句进度刷新才可以阻止预热；下一句必须保留独立的预热网格。
+    if (currentPayload && currentPayload.trackIndex != null && Number(currentPayload.trackIndex) !== Number(payload.trackIndex)) return false;
     return stageLyricMeshCanServePayload(stageLyrics.current, payload);
   }
   return !!(stageLyrics.currentDisplayKey === payload.key);
@@ -709,7 +726,7 @@ function scheduleStageLyricPrewarmForIndex(targetIndex, reason, delay) {
   var hasTarget = targetIndex != null && isFinite(Number(targetIndex));
   var prewarmIndex = hasTarget ? Math.round(Number(targetIndex)) : null;
   if (hasTarget && lyricsLines && lyricsLines.length) prewarmIndex = Math.max(0, Math.min(lyricsLines.length - 1, prewarmIndex));
-  var lightweight = stageLyricLightPrewarmReason(reason);
+  var lightweight = stageLyricLightPrewarmReason(reason) || !stageLyricCanBuildFullTrackNow();
   var wait = delay == null ? 90 : Number(delay);
   if (!isFinite(wait)) wait = 90;
   wait = Math.max(0, wait);
@@ -743,6 +760,10 @@ function scheduleStageLyricPrewarmForIndex(targetIndex, reason, delay) {
     if (!fx || !fx.particleLyrics || !lyricsLines || !lyricsLines.length) return;
     var idx = prewarmIndex != null ? prewarmIndex : chooseStageLyricPrewarmIndex();
     if (idx < 0) return;
+    if (!lightweight && !stageLyricCanBuildFullTrackNow()) {
+      lightweight = true;
+      stageLyricPrewarm.lightweight = true;
+    }
     if (lightweight && stageLyricPrewarm.mesh && stageLyricPrewarmFullCanServeIndex(idx)) {
       upgradeCurrentStageLyricFromPreparedTrack(reason || 'full-prewarm-before-light');
       return;
@@ -803,10 +824,11 @@ function scheduleStageLyricFullTrackWarmup(reason, delay) {
   stageLyricFullTrackWarmupTimer = setTimeout(function () {
     stageLyricFullTrackWarmupTimer = 0;
     stageLyricFullTrackWarmupTargetAt = 0;
-    var run = function () {
+    var run = function (deadline) {
+      if (!stageLyricCanBuildFullTrackNow(deadline)) return;
       scheduleStageLyricPrewarm(reason || 'track-ready', stageLyricMultiLineWarmupLoad() ? 96 : 24);
     };
-    if (stageLyricMultiLineWarmupLoad() && window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 1500 });
+    if (stageLyricMultiLineWarmupLoad() && window.requestIdleCallback) window.requestIdleCallback(run);
     else run();
   }, warmupDelay);
   return true;
@@ -901,6 +923,31 @@ function applyStageLyricMotionStyleInPlace() {
   return meshes.length;
 }
 
+// 多行轨道可以复用同一网格来更新逐字进度，但换到另一句时必须保留上一句的
+// outgoing mesh。否则 current 会原地跳到新行，既没有 entering opacity，也没有
+// exiting opacity，用户看到的就是硬切。
+function stageLyricShouldCrossfadeBoundary(current, payload) {
+  if (!current || !current.userData || !payload) return false;
+  var previous = current.userData.payload || null;
+  if (!previous) return false;
+  if (previous.trackIndex == null || payload.trackIndex == null) return false;
+  return Number(previous.trackIndex) !== Number(payload.trackIndex);
+}
+
+// #111 的默认体验会优先让可覆盖当前行的轨道 mesh 原地更新。新增转场才需要
+// 保留旧 mesh 并构造 incoming/outgoing 对，二者不能混为同一种“默认叠化”。
+function stageLyricUsesOriginalTransition() {
+  return normalizeLyricTransitionStyle(fx && fx.lyricTransitionStyle) === 'original';
+}
+
+// 下一句的预热不能落在上一句仍在离场的交叉窗口里。否则虽然 incoming 已从
+// 预热池取到，紧接着的下下句纹理仍会在 24ms 后同步栅格化，实际听感仍像换句卡顿。
+function stageLyricCrossfadePrewarmDelay() {
+  var profile = typeof lyricTransitionProfile === 'function' ? lyricTransitionProfile() : null;
+  var exitMs = Math.max(0, Number(profile && profile.exit) || 0.46) * 1000;
+  return Math.max(520, Math.ceil(exitMs + 120));
+}
+
 function showStageLine(text, redrawOnly, options) {
   options = options || {};
   createLyricsParticles();
@@ -909,7 +956,8 @@ function showStageLine(text, redrawOnly, options) {
   if (!payload) { clearStageLyrics(); return false; }
   var lineStep = clampRange(Number(stageLyrics.transitionLineStep) || 0, -2, 2);
   var exitDir = lineStep > 0 ? 1 : (lineStep < 0 ? -1 : 0);
-  if (!redrawOnly && stageLyrics.current && setLyricTrackTarget(stageLyrics.current, payload)) {
+  var crossfadeBoundary = !redrawOnly && stageLyrics.current && !stageLyricUsesOriginalTransition() && stageLyricShouldCrossfadeBoundary(stageLyrics.current, payload);
+  if (!crossfadeBoundary && !redrawOnly && stageLyrics.current && setLyricTrackTarget(stageLyrics.current, payload)) {
     stageLyrics.currentText = payload.text;
     stageLyrics.currentDisplayKey = payload.key;
     stageLyrics.currentPayload = payload;
@@ -924,6 +972,12 @@ function showStageLine(text, redrawOnly, options) {
   var singleLinePayload = stageLyricPayloadIsSingleLine(payload);
   var mesh = takeStageLyricSingleLinePrewarmMesh(payload) || takeStageLyricPrewarmMesh(payload);
   if (!mesh) {
+    // 行间切换绝不在热路径同步重建纹理。未命中预热时保留当前句，等下一帧消费
+    // 同一个预热任务，再用既有 outgoing/incoming 曲线交叉淡化。
+    if (crossfadeBoundary && options.noSyncBuild) {
+      requestStageLyricDemandPrewarm(payload);
+      return false;
+    }
     var allowLightweightSyncBuild = options.noSyncBuild && payload && payload.trackLightweight;
     var singleLineBoundaryNoSyncBuild = options.noSyncBuild && singleLinePayload && !redrawOnly && stageLyrics.current;
     if (singleLineBoundaryNoSyncBuild) {
@@ -953,6 +1007,9 @@ function showStageLine(text, redrawOnly, options) {
   stageLyrics.currentPayload = payload;
   resetPreparedStageLyricMesh(mesh, payload, lineStep);
   mesh.userData.enterDirection = lineStep > 0 ? -1 : (lineStep < 0 ? 1 : 0);
+  if (crossfadeBoundary && !singleLinePayload && typeof primeLyricRowTransitionStart === 'function') {
+    primeLyricRowTransitionStart(mesh, normalizeLyricTransitionStyle(fx && fx.lyricTransitionStyle), mesh.userData.enterDirection);
+  }
   if (!redrawOnly) {
     var primeAmount = singleLinePayload ? 0 : (Math.abs(lineStep) > 0 ? 0.34 : 0.24);
     primeLyricMeshOpacity(mesh, primeAmount);
@@ -997,6 +1054,96 @@ function stageLyricUsesSingleLineSwap(mesh) {
   var payload = mesh.userData.payload || null;
   var mode = normalizeLyricDisplayMode(data.displayMode || (payload && payload.mode) || (fx && fx.lyricDisplayMode));
   return mode === 'single' && !data.usesTrack;
+}
+
+function stageLyricUsesTrackLayout(mesh) {
+  return !!(mesh && mesh.userData && mesh.userData.lyric && mesh.userData.lyric.usesTrack);
+}
+
+// 音域回响接管远景相机时，切预设可能发生在歌词舞台刚好处于 parked/预热状态。
+// 只在 p10 且用户没有关闭歌词时主动唤醒，不改动用户的歌词开关、位置或角度。
+function refreshVoxelLyricStageAfterPresetChange(reason) {
+  if (!fx || typeof VOXEL_PRESET_INDEX === 'undefined' || fx.preset !== VOXEL_PRESET_INDEX || fx.particleLyrics === false) return false;
+  if (typeof createLyricsParticles === 'function') createLyricsParticles();
+  if (!stageLyrics || !stageLyrics.group) return false;
+  stageLyrics.group.visible = true;
+  if (typeof markRenderInteraction === 'function') markRenderInteraction('voxel-lyrics', 900);
+  if ((!lyricsLines || !lyricsLines.length) && typeof applyPreferredLyricsForCurrent === 'function') {
+    try { applyPreferredLyricsForCurrent(true); } catch (e) { }
+  }
+  if (!lyricsLines || !lyricsLines.length) return false;
+  reason = reason || 'voxel-preset-change';
+  if (typeof markStageLyricsPlaybackResume === 'function') markStageLyricsPlaybackResume(reason);
+  if (typeof requestStageLyricWarmup === 'function') requestStageLyricWarmup(reason, 0);
+  if (typeof scheduleStageLyricPrewarm === 'function') scheduleStageLyricPrewarm(reason, 0);
+  if (typeof scheduleStageLyricFullTrackWarmup === 'function') scheduleStageLyricFullTrackWarmup('track-ready', 24);
+  return true;
+}
+
+// 歌词请求可能晚于预设切换完成；数据到达后再走一次同一唤醒路径，避免 p10 永久停在空舞台。
+function refreshVoxelLyricStageAfterLyricsReady(reason) {
+  if (!lyricsLines || !lyricsLines.length) return false;
+  return refreshVoxelLyricStageAfterPresetChange(reason || 'lyrics-ready');
+}
+
+function refreshSonicWorkshopLyricStageAfterPresetChange(reason) {
+  if (!fx || typeof SONIC_WORKSHOP_PRESET_INDEX === 'undefined' || fx.preset !== SONIC_WORKSHOP_PRESET_INDEX || fx.particleLyrics === false) return false;
+  if (typeof createLyricsParticles === 'function') createLyricsParticles();
+  if (!stageLyrics || !stageLyrics.group) return false;
+  stageLyrics.group.visible = true;
+  if (typeof markRenderInteraction === 'function') markRenderInteraction('sonic-workshop-lyrics', 900);
+  if ((!lyricsLines || !lyricsLines.length) && typeof applyPreferredLyricsForCurrent === 'function') {
+    try { applyPreferredLyricsForCurrent(true); } catch (e) { }
+  }
+  if (!lyricsLines || !lyricsLines.length) return false;
+  reason = reason || 'sonic-workshop-preset-change';
+  if (typeof markStageLyricsPlaybackResume === 'function') markStageLyricsPlaybackResume(reason);
+  if (typeof requestStageLyricWarmup === 'function') requestStageLyricWarmup(reason, 0);
+  if (typeof scheduleStageLyricPrewarm === 'function') scheduleStageLyricPrewarm(reason, 0);
+  if (typeof scheduleStageLyricFullTrackWarmup === 'function') scheduleStageLyricFullTrackWarmup('track-ready', 24);
+  return true;
+}
+
+function refreshSonicWorkshopLyricStageAfterLyricsReady(reason) {
+  if (!lyricsLines || !lyricsLines.length) return false;
+  return refreshSonicWorkshopLyricStageAfterPresetChange(reason || 'lyrics-ready');
+}
+
+function lyricTransitionTransform(style, phase, direction, isOutgoing) {
+  phase = clampRange(Number(phase) || 0, 0, 1);
+  direction = Number(direction) < 0 ? -1 : 1;
+  var remaining = 1 - phase;
+  var result = { x: 0, y: 0, z: 0, scale: 1, rotationZ: 0, transitionBlur: 0 };
+  if (phase >= 1) return result;
+  if (style === 'rise') {
+    result.y = isOutgoing ? 0.12 * phase : -0.15 * remaining;
+    result.z = isOutgoing ? -0.026 * phase : -0.020 * remaining;
+    result.scale = isOutgoing ? 1 - phase * 0.018 : 0.990 + phase * 0.010;
+    result.transitionBlur = (isOutgoing ? phase : remaining) * 0.085;
+  } else if (style === 'slide') {
+    result.x = (isOutgoing ? direction : -direction) * (isOutgoing ? 0.16 * phase : 0.16 * remaining);
+    result.y = isOutgoing ? 0.040 * phase : -0.032 * remaining;
+    result.z = isOutgoing ? -0.035 * phase : -0.022 * remaining;
+    result.scale = isOutgoing ? 1 - phase * 0.012 : 0.992 + phase * 0.008;
+    result.rotationZ = (isOutgoing ? direction : -direction) * (isOutgoing ? 0.010 * phase : 0.008 * remaining);
+    result.transitionBlur = (isOutgoing ? phase : remaining) * 0.090;
+  } else if (style === 'focus') {
+    result.z = isOutgoing ? -0.060 * phase : 0.070 * remaining;
+    result.y = isOutgoing ? 0.020 * phase : -0.018 * remaining;
+    result.scale = isOutgoing ? 1 - phase * 0.024 : 1.026 - phase * 0.026;
+    result.transitionBlur = (isOutgoing ? phase : remaining) * 0.110;
+  }
+  return result;
+}
+
+function setLyricTransitionBlur(data, transitionBlur, focusOnly) {
+  if (!data) return;
+  var value = clampRange(Number(transitionBlur) || 0, 0, 1);
+  var setMaterialBlur = function (mat) {
+    if (mat && mat.uniforms && mat.uniforms.uTransitionBlur) mat.uniforms.uTransitionBlur.value = value;
+  };
+  setMaterialBlur(data.textMat);
+  if (!focusOnly) (data.rowLayers || []).forEach(function (row) { setMaterialBlur(row && row.mat); });
 }
 
 function updateStageLyrics3D(dt) {
@@ -1046,6 +1193,10 @@ function updateStageLyrics3D(dt) {
   stageLyrics.glowFollowY *= 0.92;
   stageLyrics.glowFollowRoll *= 0.90;
   var layoutScale = clampRange(Number(fx.lyricScale) || 1, 0.35, 1.65);
+  var stageLyricCameraDistance = camera && stageLyrics.group
+    ? camera.position.distanceTo(stageLyrics.group.position)
+    : (orbit && Number(orbit.radius) || STAGE_LYRIC_REFERENCE_DISTANCE);
+  layoutScale *= stageLyricPresetScale(fx.preset, stageLyricCameraDistance, STAGE_LYRIC_REFERENCE_DISTANCE, orbit && orbit.baselineRadius);
   var layoutX = clampRange(Number(fx.lyricOffsetX) || 0, -4.0, 4.0);
   var layoutY = clampRange(Number(fx.lyricOffsetY) || 0, -2.4, 2.7);
   var layoutZ = clampRange(Number(fx.lyricOffsetZ) || 0, -3.2, 3.2);
@@ -1074,6 +1225,8 @@ function updateStageLyrics3D(dt) {
     easeDown: 0.16
   };
   var shelfLyricAvoid = shouldAvoidStageLyricsForShelf();
+  var voxelLyricLock = !!((typeof voxelCityActive === 'function' && voxelCityActive()) && camera);
+  var voxelShelfMix = typeof voxelShelfCompositionMixValue === 'function' ? voxelShelfCompositionMixValue() : 0;
   var wallpaperLyricLock = shouldUseWallpaperLyricCameraLock();
   var wallpaperShelfLyrics = wallpaperLyricLock && shouldDimWallpaperForShelf();
   if (wallpaperLyricLock) {
@@ -1081,6 +1234,17 @@ function updateStageLyrics3D(dt) {
     layoutX = clampRange(layoutX + (wallpaperShelfLyrics ? -1.34 : 0), -4.0, 4.0);
     layoutY = clampRange(layoutY + (wallpaperShelfLyrics ? -0.04 : 0.08), -2.4, 2.7);
     layoutZ = clampRange(layoutZ + (wallpaperShelfLyrics ? 1.02 : 1.15), -3.2, 3.2);
+  } else if (!skullMouthLyrics && shelfDetailOpen && normalShelfDetailOpen && voxelLyricLock && voxelShelfMix > 0) {
+    // Win 的歌架详情优先级高于普通 camera-lock:歌词缩小并让到左侧。
+    layoutScale *= 1 - voxelShelfMix * (1 - 0.56);
+    layoutX = clampRange(layoutX - voxelShelfMix * 1.78, -4.0, 4.0);
+    layoutY = clampRange(layoutY + voxelShelfMix * 0.18, -2.4, 2.7);
+    layoutZ = clampRange(layoutZ + voxelShelfMix * 0.84, -3.2, 3.2);
+  } else if (!skullMouthLyrics && shelfLyricAvoid && voxelLyricLock && voxelShelfMix > 0) {
+    layoutScale *= 1 - voxelShelfMix * 0.28;
+    layoutX = clampRange(layoutX - voxelShelfMix * 1.36, -4.0, 4.0);
+    layoutY = clampRange(layoutY + voxelShelfMix * 0.06, -2.4, 2.7);
+    layoutZ = clampRange(layoutZ + voxelShelfMix * 0.72, -3.2, 3.2);
   } else if (!skullMouthLyrics && shelfLyricAvoid && fx.lyricCameraLock) {
     layoutScale *= 0.72;
     layoutX = clampRange(layoutX - 1.36, -4.0, 4.0);
@@ -1106,8 +1270,6 @@ function updateStageLyrics3D(dt) {
   }
   var lockBaseDistance = wallpaperShelfLyrics ? 5.58 : 4.85;
   var lockDistance = lockBaseDistance + layoutZ;
-  // 体素城市预设会接管相机绕城市飞,歌词若留在世界空间会被城市吞掉;强制相机锁定让歌词浮在镜头前
-  var voxelLyricLock = !!((typeof voxelCityActive === 'function' && voxelCityActive()) && camera);
   var cameraLockedLyrics = (fx.lyricCameraLock || wallpaperLyricLock || voxelLyricLock) && camera;
   var skullLyricEdgeGuard = !!(fx && fx.preset === SKULL_PRESET_INDEX && (orbit.centerLocked || orbit.recentering));
   var lockFit = (cameraLockedLyrics || skullLyricEdgeGuard || skullMouthLyrics) ? lyricCameraLockFit(layoutScale, layoutX, layoutY, skullMouthLyrics ? Math.max(2.2, 4.4 + layoutZ) : lockDistance) : 1;
@@ -1175,11 +1337,17 @@ function updateStageLyrics3D(dt) {
   function tickMesh(mesh, isCurrent) {
     if (!mesh) return false;
     mesh.userData.age += dt;
-    var a = Math.min(1, mesh.userData.age / (isCurrent ? lyricMotion.enter : lyricMotion.exit));
+    var lyricTransition = typeof lyricTransitionProfile === 'function' ? lyricTransitionProfile(lyricMotion) : { style: 'crossfade', enter: lyricMotion.enter, exit: lyricMotion.exit, reduced: false };
+    var a = Math.min(1, mesh.userData.age / (isCurrent ? lyricTransition.enter : lyricTransition.exit));
     a = a * a * (3 - 2 * a);
     var data = mesh.userData.lyric || {};
     var lineStepWorld = clampRange(Number(data.lineWorldStep) || lyricMotion.slide, 0.20, 0.94);
     var singleLineSwap = stageLyricUsesSingleLineSwap(mesh);
+    var enterDir = mesh.userData.enterDirection || 0;
+    var transitionStyle = lyricTransition.style;
+    var preserveTrackLayout = stageLyricUsesTrackLayout(mesh) && transitionStyle !== 'original';
+    var enterTransform = lyricTransitionTransform(transitionStyle, a, enterDir, false);
+    setLyricTransitionBlur(data, lyricTransition.reduced ? 0 : enterTransform.transitionBlur, preserveTrackLayout);
     var style = mesh.userData.motionStyle || lyricMotion.style;
     var seed = mesh.userData.floatSeed || 0;
     // glitch 歪斜/旋转幅度系数:用户嫌 glitch 歌词歪,把旋转/歪斜类分量砍到 ~40%(抖动/切片/色差是 glitch 的魂,不动);想再调改这个数
@@ -1328,6 +1496,13 @@ function updateStageLyrics3D(dt) {
         targetVirtualIndex: data.trackTargetVirtualIndex,
         rowGlow: currentLineGlow,
         rowGlowBeat: lyricBeatGlow,
+        transition: preserveTrackLayout ? {
+          style: transitionStyle,
+          phase: a,
+          direction: enterDir,
+          isOutgoing: false,
+          reduced: lyricTransition.reduced
+        } : null,
         renderBase: stageLyricRenderBase,
         ease: contextIntro < 0.98 ? 0.19 : 0.135
       });
@@ -1387,16 +1562,37 @@ function updateStageLyrics3D(dt) {
         mesh.scale.setScalar(0.96 + a * 0.055 + breathe + bass * 0.038 + beatPulse * 0.014 + _userScalePulse);
         var _bob = lyricMotion.bob == null ? 1 : lyricMotion.bob, _bobR = lyricMotion.bobRate == null ? 1 : lyricMotion.bobRate;   // 竖向漂浮幅度/频率:漂浮档拉大放慢、柔滑档近乎归零(默认 1 逐位不变)
         if (singleLineSwap) {
-          mesh.position.y += ((0.18 + (verticalFloatOn ? Math.sin(t * 0.55 * _bobR + seed) * 0.055 * _bob + Math.sin(t * 1.35 * _bobR + seed) * 0.014 * _bob : 0)) - mesh.position.y) * 0.075;
-          mesh.position.z += ((1.48 + (verticalFloatOn ? Math.cos(t * 0.48 + seed) * 0.080 * _bob : 0)) - mesh.position.z) * 0.080;
+      if (transitionStyle === 'original' || transitionStyle === 'crossfade' || lyricTransition.reduced) {
+            mesh.position.y += ((0.18 + (verticalFloatOn ? Math.sin(t * 0.55 * _bobR + seed) * 0.055 * _bob + Math.sin(t * 1.35 * _bobR + seed) * 0.014 * _bob : 0)) - mesh.position.y) * 0.075;
+            mesh.position.z += ((1.48 + (verticalFloatOn ? Math.cos(t * 0.48 + seed) * 0.080 * _bob : 0)) - mesh.position.z) * 0.080;
+          } else {
+            mesh.position.x += (enterTransform.x - mesh.position.x) * 0.16;
+            mesh.position.y += ((0.18 + enterTransform.y + (verticalFloatOn ? Math.sin(t * 0.55 * _bobR + seed) * 0.055 * _bob + Math.sin(t * 1.35 * _bobR + seed) * 0.014 * _bob : 0)) - mesh.position.y) * 0.075;
+            mesh.position.z += ((1.48 + enterTransform.z + (verticalFloatOn ? Math.cos(t * 0.48 + seed) * 0.080 * _bob : 0)) - mesh.position.z) * 0.080;
+            mesh.scale.setScalar(mesh.scale.x * enterTransform.scale);
+          }
         } else {
-          var enterDir = mesh.userData.enterDirection || 0;
-          var enterOffsetY = enterDir * lineStepWorld * (1 - a);
-          var progressLift = -shownProgress * 0.026;
-          mesh.position.y += ((0.20 + enterOffsetY + progressLift + (verticalFloatOn ? Math.sin(t * 0.55 * _bobR + seed) * 0.046 * _bob + Math.sin(t * 1.35 * _bobR + seed) * 0.012 * _bob : 0)) - mesh.position.y) * (enterDir ? 0.115 : 0.080);
-          mesh.position.z += ((1.48 - Math.abs(enterDir) * 0.045 * (1 - a) + (verticalFloatOn ? Math.cos(t * 0.48 + seed) * 0.070 * _bob : 0)) - mesh.position.z) * 0.090;
+          if (preserveTrackLayout) {
+            var trackProgressLift = -shownProgress * 0.026;
+            mesh.position.x += (0 - mesh.position.x) * 0.16;
+            mesh.position.y += ((0.20 + trackProgressLift + (verticalFloatOn ? Math.sin(t * 0.55 * _bobR + seed) * 0.046 * _bob + Math.sin(t * 1.35 * _bobR + seed) * 0.012 * _bob : 0)) - mesh.position.y) * 0.080;
+            mesh.position.z += ((1.48 + (verticalFloatOn ? Math.cos(t * 0.48 + seed) * 0.070 * _bob : 0)) - mesh.position.z) * 0.090;
+          } else if ((transitionStyle === 'original' || transitionStyle === 'crossfade') && !lyricTransition.reduced) {
+            var enterOffsetY = enterDir * lineStepWorld * (1 - a);
+            var progressLift = -shownProgress * 0.026;
+            mesh.position.y += ((0.20 + enterOffsetY + progressLift + (verticalFloatOn ? Math.sin(t * 0.55 * _bobR + seed) * 0.046 * _bob + Math.sin(t * 1.35 * _bobR + seed) * 0.012 * _bob : 0)) - mesh.position.y) * (enterDir ? 0.115 : 0.080);
+            mesh.position.z += ((1.48 - Math.abs(enterDir) * 0.045 * (1 - a) + (verticalFloatOn ? Math.cos(t * 0.48 + seed) * 0.070 * _bob : 0)) - mesh.position.z) * 0.090;
+          } else {
+            var transitionDistance = lyricTransition.reduced ? 0 : (1 - a);
+            var customOffsetY = enterDir * lineStepWorld * transitionDistance + (lyricTransition.reduced ? 0 : enterTransform.y);
+            var customProgressLift = -shownProgress * 0.026;
+            mesh.position.x += ((lyricTransition.reduced ? 0 : enterTransform.x) - mesh.position.x) * 0.16;
+            mesh.position.y += ((0.20 + customOffsetY + customProgressLift + (verticalFloatOn ? Math.sin(t * 0.55 * _bobR + seed) * 0.046 * _bob + Math.sin(t * 1.35 * _bobR + seed) * 0.012 * _bob : 0)) - mesh.position.y) * (enterDir ? 0.115 : 0.080);
+            mesh.position.z += ((1.48 - Math.abs(enterDir) * 0.045 * (1 - a) + (lyricTransition.reduced ? 0 : enterTransform.z) + (verticalFloatOn ? Math.cos(t * 0.48 + seed) * 0.070 * _bob : 0)) - mesh.position.z) * 0.090;
+            if (!lyricTransition.reduced) mesh.scale.setScalar(mesh.scale.x * enterTransform.scale);
+          }
         }
-        mesh.rotation.z = Math.sin(t * 0.34 + seed) * 0.018 * (style === 'glitch' ? GLITCH_TILT_SCALE : 1);   // 纯 ±1° 呼吸摆;glitch 再压到 40%(用户嫌歪),其它样式不变
+        mesh.rotation.z = Math.sin(t * 0.34 + seed) * 0.018 * (style === 'glitch' ? GLITCH_TILT_SCALE : 1) + (preserveTrackLayout || lyricTransition.reduced ? 0 : enterTransform.rotationZ);   // 纯 ±1° 呼吸摆;glitch 再压到 40%(用户嫌歪),其它样式不变
       }
       if (data.sparks && data.sparkMat) data.sparks.visible = fx.lyricGlowParticles || getLyricSparkOpacity(data) > 0.015;
       // 火花不可见时跳过整段逐顶点重算 + VBO 重传(位置每帧由 base+时间重建,恢复可见无残影)
@@ -1419,6 +1615,11 @@ function updateStageLyrics3D(dt) {
       return true;
     }
     opacity = (1 - a) * 0.72 * shelfDetailLyricProfile.outgoing;
+    var exitDir = mesh.userData.exitDirection || 0;
+    var exitTransition = typeof lyricTransitionProfile === 'function' ? lyricTransitionProfile() : { style: 'crossfade', reduced: false };
+    var exitTransform = lyricTransitionTransform(exitTransition.style, a, exitDir, true);
+    var trackOutgoingTransition = stageLyricUsesTrackLayout(mesh) && exitTransition.style !== 'original';
+    setLyricTransitionBlur(data, exitTransition.reduced ? 0 : exitTransform.transitionBlur, trackOutgoingTransition);
     if (data.textMat) data.textMat.uniforms.uOpacity.value = opacity;
     if (data.readabilityMat) data.readabilityMat.opacity = Math.min(1, opacity * (shelfDetailOpen ? shelfDetailLyricProfile.readability : 0.58) * lyricReadabilityBoost());   // 自定义背景加实背衬(离场行)
     if (data.contextMat) data.contextMat.opacity = opacity * (shelfDetailOpen ? shelfDetailLyricProfile.readability * 0.72 : clampRange(0.46 + lyricContextOpacityValue() * 0.26, 0.54, 0.76));
@@ -1435,6 +1636,13 @@ function updateStageLyrics3D(dt) {
       jitterY: textJitterY,
       glitchPulse: glitchPulse,
       targetIndex: data.trackTargetIndex,
+      transition: trackOutgoingTransition ? {
+        style: exitTransition.style,
+        phase: a,
+        direction: exitDir,
+        isOutgoing: true,
+        reduced: exitTransition.reduced
+      } : null,
       renderBase: stageLyricRenderBase,
       ease: 0.22
     });
@@ -1447,17 +1655,49 @@ function updateStageLyrics3D(dt) {
     }
     if (data.sunMat) data.sunMat.opacity = (!data.suppressStaticGlow && lyricGlowStrength > 0 && !shelfDetailOpen) ? opacity * 0.08 * lyricGlowStrength : 0;
     if (singleLineSwap) {
+      if (exitTransition.style !== 'original' && exitTransition.style !== 'crossfade' && !exitTransition.reduced) {
+        if (!isFinite(mesh.userData.exitStartX)) mesh.userData.exitStartX = mesh.position.x;
+        if (!isFinite(mesh.userData.exitStartY)) mesh.userData.exitStartY = mesh.position.y;
+        if (!isFinite(mesh.userData.exitStartZ)) mesh.userData.exitStartZ = mesh.position.z;
+        mesh.position.x += ((mesh.userData.exitStartX + exitTransform.x) - mesh.position.x) * 0.18;
+        mesh.position.y += ((mesh.userData.exitStartY + exitTransform.y) - mesh.position.y) * 0.18;
+        mesh.position.z += ((mesh.userData.exitStartZ - 0.24 * a + exitTransform.z) - mesh.position.z) * 0.16;
+        mesh.scale.setScalar((0.98 - a * 0.06) * exitTransform.scale);
+        mesh.rotation.z = exitTransform.rotationZ;
+        return a < 1;
+      }
       mesh.position.z -= dt * 0.26;
       mesh.position.y += dt * 0.08;
       mesh.scale.setScalar(0.98 - a * 0.06);
       return a < 1;
     }
+    if (trackOutgoingTransition) {
+      if (!isFinite(mesh.userData.exitStartX)) mesh.userData.exitStartX = mesh.position.x;
+      if (!isFinite(mesh.userData.exitStartY)) mesh.userData.exitStartY = mesh.position.y;
+      if (!isFinite(mesh.userData.exitStartZ)) mesh.userData.exitStartZ = mesh.position.z;
+      if (!isFinite(mesh.userData.exitStartScale)) mesh.userData.exitStartScale = mesh.scale.x;
+      mesh.position.x += (mesh.userData.exitStartX - mesh.position.x) * 0.18;
+      mesh.position.y += (mesh.userData.exitStartY - mesh.position.y) * 0.18;
+      mesh.position.z += (mesh.userData.exitStartZ - mesh.position.z) * 0.16;
+      mesh.scale.setScalar(mesh.userData.exitStartScale);
+      return a < 1;
+    }
     if (!isFinite(mesh.userData.exitStartY)) mesh.userData.exitStartY = mesh.position.y;
     if (!isFinite(mesh.userData.exitStartZ)) mesh.userData.exitStartZ = mesh.position.z;
-    var exitDir = mesh.userData.exitDirection || 0;
-    mesh.position.y += ((mesh.userData.exitStartY + exitDir * lineStepWorld * 1.02 * a + 0.050 * a) - mesh.position.y) * (lyricMotion.style === 'quick' ? 0.24 : 0.18);
-    mesh.position.z += ((mesh.userData.exitStartZ - 0.24 * a) - mesh.position.z) * 0.16;
-    mesh.scale.setScalar(0.98 - a * 0.06);
+    if ((exitTransition.style === 'original' || exitTransition.style === 'crossfade') && !exitTransition.reduced) {
+      mesh.position.y += ((mesh.userData.exitStartY + exitDir * lineStepWorld * 1.02 * a + 0.050 * a) - mesh.position.y) * (lyricMotion.style === 'quick' ? 0.24 : 0.18);
+      mesh.position.z += ((mesh.userData.exitStartZ - 0.24 * a) - mesh.position.z) * 0.16;
+      mesh.scale.setScalar(0.98 - a * 0.06);
+    } else {
+      if (!isFinite(mesh.userData.exitStartX)) mesh.userData.exitStartX = mesh.position.x;
+      var exitDistance = exitTransition.reduced ? 0 : a;
+      var exitY = exitDir * lineStepWorld * 1.02 * exitDistance + 0.050 * exitDistance + (exitTransition.reduced ? 0 : exitTransform.y);
+      mesh.position.x += (mesh.userData.exitStartX + (exitTransition.reduced ? 0 : exitTransform.x) - mesh.position.x) * 0.18;
+      mesh.position.y += ((mesh.userData.exitStartY + exitY) - mesh.position.y) * (lyricMotion.style === 'quick' ? 0.24 : 0.18);
+      mesh.position.z += ((mesh.userData.exitStartZ - 0.24 * a + (exitTransition.reduced ? 0 : exitTransform.z)) - mesh.position.z) * 0.16;
+      mesh.scale.setScalar((0.98 - a * 0.06) * (exitTransition.reduced ? 1 : exitTransform.scale));
+      mesh.rotation.z = exitTransition.reduced ? 0 : exitTransform.rotationZ;
+    }
     return a < 1;
   }
   tickMesh(stageLyrics.current, true);
@@ -1718,7 +1958,6 @@ function lyricMeshTrackWindow(index, mode, options) {
   var hasTranslations = translationMode !== 'off';
   var total = last + 1;
   var lightweightTrack = !!options.lightweightTrack;
-  var preferLightweight = stageLyricPreferLightweightTrack();
   if (lightweightTrack) {
     var denseMultiLine = mode !== 'single' || translationMode === 'multi' || translationMode === 'dual';
     var lightFullTrackLimit = hasTranslations ? (denseMultiLine ? 6 : 10) : (denseMultiLine ? 10 : 14);
@@ -1727,11 +1966,6 @@ function lyricMeshTrackWindow(index, mode, options) {
     if (mode === 'cinema' || mode === 'custom') lightPageSize += Math.ceil(lineCount * 0.30);
     var lightMin = denseMultiLine ? Math.max(lineCount + 2, hasTranslations ? 8 : 9) : (hasTranslations ? 9 : 10);
     var lightMax = denseMultiLine ? Math.max(lightMin, hasTranslations ? lineCount + 4 : lineCount + 6) : (hasTranslations ? 18 : 24);
-    if (preferLightweight && denseMultiLine) {
-      lightPageSize = Math.max(lightPageSize, Math.ceil(lineCount * (hasTranslations ? 2.8 : 2.4)) + (hasTranslations ? 16 : 14));
-      lightMin = Math.max(lightMin, hasTranslations ? 20 : 18);
-      lightMax = Math.max(lightMax, hasTranslations ? 38 : 44);
-    }
     lightPageSize = Math.max(lightMin, Math.min(total, lightPageSize));
     lightPageSize = Math.min(lightPageSize, lightMax);
     var lightOverlap = Math.max(2, Math.ceil(lineCount * (hasTranslations ? (denseMultiLine ? 0.30 : 0.45) : (denseMultiLine ? 0.26 : 0.35))) + 2);
@@ -1970,7 +2204,6 @@ function resetStageLyricResumeFrameGates() {
 
 function markStageLyricsPlaybackResume(reason) {
   reason = reason || 'playback-resume';
-  stageLyricTrackSwitchBootstrapUntil = 0;
   if (stageLyrics.current && stageLyrics.current.userData) {
     stageLyrics.current.userData.state = 'in';
     stageLyrics.current.userData.age = Math.max(Number(stageLyrics.current.userData.age) || 0, 0.18);
@@ -2004,7 +2237,20 @@ function tickLyricsParticles() {
     return;
   }
   var previewingSeek = stageLyricProgressPreviewActive();
-  if ((!playing && !previewingSeek) || !audio || !lyricsLines.length) {
+  var holdLyricsOnPause = !fx || fx.lyricPauseHold !== false;
+  var pausedWithTrack = !!(holdLyricsOnPause && audio && audio.src && audio.paused && !audio.ended && lyricsLines && lyricsLines.length);
+  if (!audio || !lyricsLines.length || audio.ended) {
+    retireCurrentStageLyricForIdle();
+    return;
+  }
+  if (!playing && !previewingSeek) {
+    if (pausedWithTrack) {
+      if (stageLyrics.current && stageLyrics.current.userData) {
+        stageLyrics.current.userData.state = 'in';
+        stageLyrics.current.userData.age = Math.max(Number(stageLyrics.current.userData.age) || 0, 0.18);
+      }
+      return;
+    }
     if (stageLyrics.current) {
       // 停车位:照旧淡出,但网格不销毁——恢复播放同一句时直接复活,避免同步重建的 ~500ms 卡顿
       if (stageLyrics.parked && stageLyrics.parked.mesh) { stageLyrics.parked.mesh.userData.parked = false; disposeLyricMesh(stageLyrics.parked.mesh); }
@@ -2117,6 +2363,10 @@ function tickLyricsParticles() {
     }
     stageLyrics.currentIdx = newIdx;
     displayedNewLine = true;
+    if (typeof scheduleStageLyricPrewarmForIndex === 'function' && lyricsLines && lyricsLines.length) {
+      var nextIndex = newIdx + (stageLyrics.transitionLineStep < 0 ? -1 : 1);
+      if (nextIndex >= 0 && nextIndex < lyricsLines.length) scheduleStageLyricPrewarmForIndex(nextIndex, 'track-demand-light', stageLyricCrossfadePrewarmDelay());
+    }
   }
   if (stageLyrics.current) {
     var curLine = lyricsLines[newIdx] || { t: lyricT };

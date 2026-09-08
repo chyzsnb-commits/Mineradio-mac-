@@ -137,6 +137,7 @@ function videoBgAddFile(file) {
   var kind = /^image\//i.test(file.type || '') ? 'image' : 'video';
   var id = 'bg-' + kind + '-' + Date.now() + '-' + Math.random().toString(16).slice(2);
   putCustomBackgroundBlob(id, file, { name: file.name || '', mime: file.type || '', size: file.size || 0 }).then(function () {
+    if (typeof mirrorCustomBackgroundBlob === 'function') mirrorCustomBackgroundBlob(file, { id: id, name: file.name || '', mime: file.type || '', size: file.size || 0 });
     if (typeof setCustomBackgroundMedia === 'function') setCustomBackgroundMedia({ type: kind, id: id, name: file.name || '', mime: file.type || '', size: file.size || 0 });
     renderVideoBgGrid();
   }).catch(function (err) {

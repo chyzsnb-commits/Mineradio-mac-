@@ -7,6 +7,175 @@
 - 移除搜索栏、主页推荐和音源切换器中的汽水（QS）适配入口；主页磨砂玻璃改为中性黑灰，保留封面原色。降低玻璃模糊与饱和度合成开销，并修正限帧余量与空闲降帧误判，减少前台卡顿。
 
 - 本机启动故障确认为安装包把 ASAR 整包哈希误填到归档头校验字段；已整体恢复 8 月 15 日验收包并保留 QQ 登录。源码按 Mac 项目规定重新关闭内置更新并添加配置断言；本次未安装最近界面改动。
+- 对齐 Windows 2.1.0 的音乐社交与订阅收藏能力（后端 API 全量 + 汽水红心接入现有喜欢按钮）：新增汽水歌曲点赞/查点赞、评论读取/发评论、歌单收藏、歌单加歌、专辑收藏、最近播放上报、专辑/歌单订阅检查（网易云/ Spotify 专辑喜欢）、平台能力声明共 17 个端点；`qishui-api.js` 以 Mac 版为基底合并 Windows 版的 8 个社交 handle 与 6 个依赖函数（保留 Mac 的扫码 PcQr 段与取流诊断契约），`spotify-api.js` 同法合并专辑库检查/设置依赖链；歌曲红心按钮现对汽水歌曲生效（未登录引导登录）。移除两个 Windows 侧本身即为半成品的 Cuefield 反馈端点（其调用的函数在 Windows 源码中不存在）。`npm run check` 5/5+39/39+333/333 全绿；17 端点冒烟 7/7 通过（未登录态返回 LOGIN_REQUIRED/COOKIE_REQUIRED 而非报错）。
+
+- 入库此前滞留在本地工作树未提交的 63 项改动（歌词切换动效与速度设置、多行歌词转场首帧落位、封面 URL 注入防护 safeMarkupAttr、封面深度 Worker 化、异步生命周期竞态回归、导出下载有界流与超时等），使此前仅在本地可用的歌词视觉与安全防护能力进入仓库主链。导入时以三方合并解决与主链的 7 处文件交叉，并额外修复导出下载在目标目录不存在时直接报写失败的问题（现自动创建目录）；`npm run check` 前置 5/5+39/39、主套件 333/333 全部通过。
+
+- 修复右上角残留的 DIY 红色引导框：视觉引导两组步骤里各有一条指向已不存在的 `#fullscreen-diy-btn`（DIY 按钮已在早前改版中移除），且引导定位逻辑为该死元素写了"找不到就画在右上角固定坐标"的兜底，导致引导打开时高亮环永远残留在右上角空白处。现删除两条死步骤（DIY 组剩余步骤编号顺延重排），移除 fullscreen-diy 特判与右上角兜底，改为目标不存在时回屏幕中央兜底；真实 Electron 验证引导环 opacity=0、无残留、`npm run check` 347/347。
+
+- 新增软件内更新检查（自研轻量方案）：启动 30 秒后与每 6 小时读取公开清单（`Mineradio-release` 仓库的 `version.json`），semver 对比发现新版本在右下角提示"发现新版本"，一键下载 dmg 到 `~/Downloads`（带进度与 `.part` 半截文件防护），完成后自动打开安装器。主进程走 Electron `net.fetch` 遵循系统代理；下载源流错误、HTTP 失败、超时均清理不留伪包；清单解析对坏 JSON/非法版本/非 https 全部静默降级，检查失败绝不影响主功能。因无 Developer ID 证书，macOS 不允许后台静默替换应用（系统限制），本方案为现实可行的"检查 + 一键下载安装"。新增 `scripts/test-update-checker.js` 回归（semver/清单解析/四路径检查/下载落盘与中断清理）并接入 `npm run check`（主套件 347/347）；真实 Electron 实测经系统代理拉取真实 GitHub 清单返回 `ok:true, hasUpdate:false`，卡片无误弹。发布新版本时需同步更新 `Mineradio-release` 的 `version.json` 与 Release dmg。
+
+- 修复 Windows 壁纸库缩略图媒体类型误判：缩略图标签此前只按 `record.type` 决定，视频壁纸的服务端静态图片预览（`preview.jpg/gif/png/webp`）被塞进 `<video>`，真实 Electron 复现为 `readyState=0`、`videoWidth=0` 的黑屏缩略图。现按 `previewUrl` 实际媒体类型选择标签（仅 URL 本身为 mp4/webm/ogg/mov/m4v 才用 video），详情页仍按 `record.type` 用 `record.fileUrl` 播放真实视频，Scene 实时 MJPEG 预览路径不变。新增 `scripts/test-wallpaper-library-thumb-media-type.js` 回归并接入 `npm run check`（主套件 342/342）；隔离 Electron 于真实 Windows 服务（246 条记录、动态端口 8137）实测：修复后图片预览加载成功（`naturalWidth=1024`）、视频预览正常解码（`videoWidth=1920`）、246 条记录 0 错标、连续抽屉开合与滚动后 DOM 无增长。
+## 2026-08-24
+
+- 完成本轮正确工作树收口验证：`npm run precheck` `38/38`、`npm run check` `351/351`，语法与 `git diff --check` 通过；Electron 从当前源码树启动，`127.0.0.1:3000` 返回 200，CDP `9223` 可连接。歌词转场 Electron 探针通过，逐帧不重建歌词网格。
+- 当前仍明确保留未覆盖边界：汽水没有可确认播放流时不能宣称真实播放；Windows 跨机发现/MJPEG/Scene 导出、真实输出设备和长期温度趋势需要对应设备验收。
+
+## 2026-08-19
+
+- 修复主页异步刷新后底部播放控制条重新出现：主页进入时已有隐藏锁，但通用控制条恢复函数会在后续异步渲染中无条件清掉它。现在通用恢复函数尊重主页锁定；主页保持无底栏，只有“展开播放器控制台”会显式展示，返回听歌页则恢复既有控制条。`scripts/test-home-playlist-panel-gate.js` `4/4`、完整 `npm run check` `346/346` 与真实 Electron/CDP 状态验证通过；未构建 DMG、未提交、未推送。
+
+- 修复 Windows 壁纸库无 UDP、无 ARP 时动态端口被慢探测饿死的问题。主动回退提前到 `250ms` 启动，并在完整受限范围 `8123–8155` 内优先验证历史自动避让端口 `8128` 与标准端口 `8130`；主动探测并发上限为 `48`，仍只枚举活跃私网网段。新增无 ARP + 慢失败的回归，实际确认 `192.168.1.107:8128/api/ping` 会在截止时间内发出并连接。
+- 修复远程封面、搜索结果、队列、歌单收藏、评论头像和详情封面把 URL 直接拼入 `innerHTML` 的 DOM XSS 风险。统一使用惰性属性编码，保留现有图片加载行为；新增 URL 注入回归，并在真实 Electron 中确认恶意 URL 不生成 `onerror` 属性且脚本执行计数为 `0`。
+- 本轮 `npm run check` 为 `344/344`；Electron 页面 `http://127.0.0.1:3000/` 返回 `200`。
+- 壁纸媒体下载改为有界流读取；未知 `Content-Length` 超过 `256MB` 时主动取消，不再先构造完整 `ArrayBuffer` 再复制为 `Buffer`。Scene 导出下载增加来源校验、视频类型/大小校验、可取消超时和半截文件清理；新增未知长度超限与永不结束流回归。
+
+## 2026-08-15
+
+- 修复多行歌词新增动效的首帧与次帧抢位。入场焦点原文/当前译文此前在已可见后才补写局部 transform，译文还会在第二个 `16ms` 帧补算深度和尺度，横向分层的预置又误用常规帧缓动。现在在 `opacity=0` 时复用既有行布局完整预置，并仅对该不可见预置使用直接横向落位；正常播放插值、默认原始切换和单行体验不变。Electron 20 组转场验证新增多行效果首帧最大轴向差为 `0.0001`、逐帧不新建 mesh。
+- 修正多行歌词新增动效“参数存在但肉眼无差别”的回归。真实 Electron 采样显示原有局部位移仅约 `0.02`、缩放约 `0.5%`，被共同的交叉透明度掩盖；现仅增大当前原文及当前译文的局部行程，上浮淡入、分层掠过、镜头推进分别具有可辨识的纵向、横向和缩放/景深差。轨道 root、上下文、字号、单行和 PR #111 的原始切换均不变；Electron 探针新增效果可辨识阈值。
+- 优化多行歌词的四种切换效果。根因是多行轨道滚动与外层歌词组转场同时移动，导致焦点、上下文与译文叠加跳动；现在多行由轨道独立完成换行，经典叠化仅交叉透明度，上浮淡入、分层掠过、镜头推进只轻触当前原文与当前译文。上下文保持轨道位置和清晰度，单行效果及“原始切换”路径不变。Electron CDP 覆盖单行、双行、三行、自定义多行和多译文 20 组，逐帧不建图；`npm run check` `341/341` 通过。
+- 纠正歌词切换默认基线：PR #111 `2c33fff` 初始体验是 `lyricMotionStyle: 'float'` 的原始轨道复用路径，不是“经典叠化”。默认切换现为“原始切换”；多行歌词可由当前轨道 mesh 原地更新，保留 #111 的布局、字体比例和 motion 公式。
+- “经典叠化”、上浮淡入、分层掠过、镜头推进保留为用户主动选择的新增效果。仅这些效果在跨句时构造 outgoing/incoming；所有效果仍逐帧复用现有 mesh/材质，不重建歌词纹理或 WebGL 资源。
+- 未标记为用户明确选择的历史自动保存与 DIY 存档会回到“原始切换”；已有明确选择保持不变。Electron CDP 验证 `original/dual` 换句复用当前 mesh、`outgoing=false`、边界与逐帧构建均为 `0`；新增效果保持双 mesh 可见交叉。`npm run check` `341/341`、`git diff --check` 通过。
+
+## 2026-08-14
+
+- 歌词切换动效收敛为经典叠化、上浮淡入、分层掠过和镜头推进；删除硬切与重复缩放选项，旧 `quick`/`scale` 配置自动迁移。
+- 经典叠化保留 PR #111 的原始交叉时序与位移；新效果只修改既有歌词 mesh/材质，不在换句帧重建纹理或 WebGL 资源。
+- 新增 Electron CDP 探针，覆盖四种效果的单行和双行双 mesh 交叉窗口与零逐帧构建断言。
+
+- 恢复并锁定 PR #111 歌词可见层基线：可见歌词重新使用原始 `2048px` 栅格、原始封面全画布取色，以及首帧即时的逐行光晕和可读性层；删除会在播放首段延后这些可见层的无调用调度器。默认“经典叠化”继续复用 PR #111 的进入/离场时序与位移，新增动效仅在用户主动选择时改变 mesh 的 transform/opacity。补充网格销毁资源所有权回归，避免清理遮罩纹理时引用丢失。真实 Electron 与 PR #111 干净配置对照的长英文歌词参数逐值一致：`56px`、`2106×384`、`1885.743px`、`6.1×1.11225`、`0.96`；当前用户资料保存的 `kai-song` 字体会按不同字形度量得到不同字号，属于用户偏好而非默认渲染回归。`npm run check` 前置 `24/24`、主套件 `341/341` 通过，语法及 `git diff --check` 通过。
+
+- 恢复歌词跨句体验并补齐可配置切换动效：多行歌词跨句时不再复用正在显示的轨道 mesh，旧句进入 `outgoing` 并以约 `0.72` 起始透明度渐隐，新句使用独立 incoming mesh 淡入；交叉窗口结束后才安排后续预热，避免切词时同步栅格化。默认是 PR #111 风格的“经典叠化”，控制台新增快速切换、上浮淡入、横向推入、柔和缩放、聚焦溶解和速度控制，且接入自动保存、DIY 存档、导入导出与减少动态偏好。普通舞台修正上下文缩放未落到 row mesh 的问题，原文/译文/上下文恢复明确层级；“关闭/当前/双行/多行”归入“歌词翻译 / 译文显示”。主页在 1366×838、1247×702、1000×700 的 Electron 运行时测量中最近播放可显示约 4/5/5 行，今日聆听、下一首、发现均处于右侧首屏且无重叠。`npm run check` 前置 `23/23`、主套件 `341/341` 通过，`git diff --check` 通过。隔离 Electron 已验证双 mesh 透明度连续交叉、设置重启与 DIY 回放；没有真实播放曲目时无法完成用户曲库的前台触控板手感/温度验收，不能将后台节流采样冒充通过。
+
+- 性能治理（切歌/歌词/隐藏歌架）：新歌多行歌词继续在前 `12s` 只构建轻量可见轨道，随后以每次一行的空闲切片补回上下文可读性层与逐行光晕。真实 Electron 证据表明连续音频播放时 `requestIdleCallback` 常仅给出 `1.4–3.5ms`，原 `12ms` 门槛会使 deferred 层永久不执行；现在接受 `>=1ms`，单项构建实测约 `0–0.2ms`，`0ms` 片仍跳过。切歌后隐藏的右侧歌架只记录待刷新，实际唤起后才渐进建卡。Electron 实测多行轻量歌词最终为 `8/8` 可读性层、`8/8` 光晕且 deferred 为 `0`；隐藏歌架切歌为 `0` 张新卡、唤起后渐进生成 `11` 张。完整 `npm run check` 前置 `19/19`、主套件 `340/340` 通过。首轮重载后的长动画帧未能在重复切歌中稳定复现，故不将其归因为本轮歌词代码或宣称温度验收通过。
+
+- 性能治理（方案 A）：完全移除“云瀑共振”预设、其运行时模块、控制台控件和相关绑定，避免持续维护一条未使用的视觉链；为不让旧 DIY/自动保存误指向“声波地形”，保留退役索引 `11` 并统一迁移到雨境 `9`，后续预设仍为 `12/13`。雨境玻璃保留主场景、水滴场和合成的全帧渲染，但将两次模糊纹理 pass 限为 `30Hz`，首次、尺寸变化及 WebGL 恢复仍强制刷新，避免黑纹理。P10 音域回响的专用 512-bin 频谱分析同样限制为 `30Hz`，画面、镜头与城市更新仍按主渲染帧率运行。新增每个雨境 pass 的 CPU/GPU 诊断标签和 P10 分析探针；专项 `6/6`、完整 `npm run check` 前置专项 `5/5`、主套件 `340/340` 通过，当前 Electron 从本工作树启动且 `127.0.0.1:3000` 返回 `200`。本轮优先级固定为“流畅性 > Bug 风险 > 温度”；实际不同显卡上的温度和帧时间仍须用户在常用曲目与预设中复验。
+
+- 修复主页误唤起左侧“歌单 / 队列”面板：主页状态下统一拒绝左边缘停留、直接队列打开、常开歌单和歌单 tab 的唤起请求，并在进入 Home 时清除已排队的边缘计时与已有面板显示状态；常开偏好保留，离开 Home 回到听歌页后恢复原有行为。3D 歌单架、队列数据、播放和听歌页右键逻辑均未修改。新增主页歌单守卫回归；完整 `npm run check` 前置专项 `5/5`、主套件 `350/350` 通过。独立浏览器会话验证主页左边缘停留 `450ms` 仍不可交互，离开 Home 后按原 `300ms` 停留与后续移动可正常打开。
+
+- 接入协作者 PR #111 的原生滚动、右上角单状态卡与登录退出入口，并继续修复播放器和切歌热路径：超长歌名下收藏/加歌按钮固定为同一行；连续上一首/下一首输入在 `64ms` 内合并到最终目标，过期的换源、重试和自动降级不能回放旧曲或覆盖新状态；远程音源先预取再提交，节拍磁盘缓存改为播放成功后异步读取；队列当前项与 3D 歌架改为增量更新，播放输出路由按设备与 epoch 去重串行。PR #111 基线 `npm run check` 为前置专项 `5/5`、主套件 `327/327`，新增 21 条回归后为 `5/5`、`348/348`。隔离 Electron 实测首页、搜索、歌单、视觉控制台各 40 次滚动均无 long task，处理器 p95 分别约 `0.1/0.2/0.2/0.2ms`；长标题按钮同排、登录页“退出 网易云音乐”可见、连续状态更新只保留最新一张。真实汽水可播流、真实账号退出和实际曲库的触控板/切歌手感仍需用户验收。
+
+- 修复登录接入弹窗的两处回归：新增“退出当前平台”后，`.login-panel-head > div { display:none }` 错误隐藏了动作区，导致退出和关闭按钮不可见；现只隐藏旧标题节点。已登录状态下还会调用不存在的 `loginProviderDisplayName()`，触发运行时错误并中断后续登录 UI 更新；现复用已有平台名称元数据。登录弹窗开场不再对整块半透明玻璃面板施加 `blur(12px)`，避免短暂发白。Chrome 本地页验证“退出 网易云音乐”可见、面板 `filter:none`；专项与完整 `npm run check` `321/321` 通过。
+
+- 修复 macOS 汽水音乐播放诊断丢失上游元数据的问题：已登录会话搜索“蝴蝶 / 陶喆”命中准确曲目 `6705032260845832194`，但本机服务未获得可播放流，故不将自动切换视为汽水播放成功。`track_v2` 在上游以 2xx 返回非 JSON 内容时现保留 HTTP 状态、Content-Type 和 `QISHUI_INVALID_JSON`，界面会说明“无法确认可播放流（可能需要重新登录、接口变更或被上游拦截）”；不读取、不记录 Cookie、Token、签名 URL，也不绕过登录、版权、地区或访问控制。新增回归覆盖该 2xx 非 JSON 分支；真实 Chrome `canplay`、`playing` 与持续 10 秒播放尚未获得证据。
+
+- 修复 macOS 汽水音乐“歌单入口存在但无法真实使用”的完整前端链路：已登录时歌单面板会请求并渲染 `/api/qishui/user/playlists`，详情和“播放歌单”会走 `/api/qishui/playlist/tracks`；首次播放、无缝预取与当前歌曲切音质统一请求 `/api/qishui/song/url`，不再错误请求网易云接口。新增列表/详情/队列/音频路由回归以及本地假上游正向契约测试；未登录、空歌单和无可播地址均返回明确失败状态。完整 `npm run check` `315/315` 通过。真实已登录汽水账号的受保护音频解密和浏览器播放仍需用户在 Electron 中验收。
+
+- 修复 Windows 壁纸库“读取 Windows IP”在 UDP 广播未抵达 Mac 时完全没有候选的问题：主进程现在记录 UDP `45678` 的监听、最后消息、解析失败和每个 `/api/ping` 结果；无广播时先查本机 ARP 邻居，再受限地在活跃私网接口的同段渐进探测 `8123–8155`，优先 `8130`，全局最多 `32` 个短超时请求。只接受私网地址和 `/api/ping` 返回 `ok: true` 的服务；大网段只从本机 `/24` 渐进，绝不扫描公网或完整端口空间。界面会区分未收到广播、广播格式错误、ping 超时/拒绝/连接失败，并说明 Windows 应监听 `0.0.0.0`、防火墙需放行 UDP `45678` 与 TCP 服务端口。模拟无 UDP + ARP `192.168.1.107` + `8130` 已自动回填完整地址；专项 `27/27`、完整检查 `306/306` 通过。当前实网 `192.168.1.107:8130` 返回连接拒绝，故真实跨机正向链路仍待 Windows 服务恢复后验收。
+
+- 播放器音质选择同步为 Windows 的歌曲信息内联样式：音源、会员标签与当前音质胶囊均在标题旁紧凑显示，移除底栏独立大入口。无歌曲时入口禁用并说明原因；换流时展示加载状态；当前档位、曲目上限与 SVIP 限制保留明确的选中/锁定状态。原位换流、失败恢复旧流与播放进度续播链路未改；真实会员和各平台实际档位仍待 Electron 人工验收。
+
+- 修复 Windows 壁纸库的动态端口前端回填：不再把 `8123` 显示成固定地址，手动连接提示改为要求完整 `http://Windows-IP:端口号`（1024-65535）。UDP 发现或缓存直连成功后，输入框、状态文本和本地存储都保留实际完整 base URL，例如 `http://192.168.1.107:8130`。新增端到端回归，覆盖 `8130` 广播、缓存优先请求和界面显示；真实 Windows 服务联机验收仍待执行。
+
+- Windows 壁纸库改为动态端口发现：UDP 45678 广播携带的合法端口优先通过 /api/ping 验证；广播无端口或该端口失败时，只扫描该广播 IP 的 8123 至 8155，最多四并发、短超时。移除旧的整段私有子网扫描；手动地址必须明确提供 1024 至 65535 端口。已保存地址仍优先直连，成功后持久化。壁纸专项 21/21、前置专项 5/5、主套件 300/300 通过（合计 305/305）；真实 Windows 广播和防火墙仍待双机人工验收。
+
+- 新增本地歌词与云盘无词回退：本地曲库继续使用同名 LRC 和音频内嵌歌词；播放器可在“自动 / 本地歌词”间切换，歌词弹窗可导入不超过 512 KiB 的 LRC/TXT，兼容 UTF-8、UTF-16、GB18030。自动模式优先可信平台歌词，无词时才回退已保存的本地歌词。跨源借词必须同时匹配标题、歌手、时长（差值不超过 3 秒）和候选唯一性；当前或候选为翻唱/Remix、时长缺失、歌词为空或候选不唯一都拒绝，不缓存也不覆盖当前歌词。专项 3/3、前置专项 5/5、主套件 298/298 通过（合计 303/303）；真实云盘账号、版权歌词仍待 Electron 人工验收。
+
+- 修复每首新歌播放初期的周期性卡顿：根因是未命中节拍缓存时，切歌后约 `0.9s + 0.8s + 1.4s` 就会强制启动完整音频解码、四段 `OfflineAudioContext` 渲染与 PCM 分析；缓存命中时，下一首预热也可能在 `2.6s` 后启动同类工作。现在当前曲目的重分析至少等待 `12s` 稳定播放，队列预热至少等待 `24s`；用户交互活跃或浏览器 idle 预算不足 `18ms` 时重排而不强制执行，磁盘/内存缓存命中和实时频谱保持即时。新增回归测试；前置专项 `5/5` 与主套件 `295/295` 通过（合计 `300/300`）。[来源: `public/js/modules/00-state/03-beat-dj-state.js`、`public/js/modules/03-beat/00-tempo-worker-cache-prefetch.js`、`scripts/test-beat-startup-protection.js`]
+
+- 新增本地壁纸文件夹与 macOS 缓存管理：背景媒体区可在 Finder 打开 `~/Library/Application Support/Mineradio/Wallpapers`，上传或从 Windows 壁纸库导入的图片/视频同步镜像到该目录；系统「缓存与存储」可按歌词、网络、节奏分析和人声分离临时文件显示占用、执行安全清理，或在二次确认后清除本地壁纸。安全清理不移除 Cookie、登录态、设置或壁纸。修复背景裁切拖动卡顿：拖动只更新 CSS 裁切变量，静止 `280ms` 后才保存，不再逐事件重读 IndexedDB、重建 Blob/Object URL 或 `video.load()`。`npm run check` 的前置专项 `5/5` 与主套件 `294/294` 均通过（合计 `299/299`）；浏览器运行探针连续 12 次裁切最大 `0.2ms`，完整背景应用 token 未变化。Finder 与真实媒体解码仍需用户在 Electron 中人工确认。[来源: `desktop/cache-manager.js`、`desktop/main.js`、`public/js/modules/07-fx/02-accent-background-controls.js`、`scripts/test-macos-cache-wallpaper-manager.js`]
+
+- 恢复底栏音质与汽水音源选择的真实入口：简约模式及 `≤1180px` 的 DIY 模式不再隐藏音质胶囊，既有同曲无缝换流、失败恢复旧音频和播放进度逻辑保持不变。底栏音源菜单现在把当前来源置顶并补回 QS；汽水匹配直连本机 `/api/qishui/search`，不会回落网易云；没有官方可播源的 Spotify 明确显示为不可用而不能误点。专项 `23/23`、完整 `npm run check` `294/294`、`1000×700` 实际页面边界检查通过。未用真实汽水授权曲目完成跨源播放验收。[来源: `public/css/index.css`、`public/js/modules/05-playback/07-search.js`、`scripts/test-quality-switch-stability.js`、`scripts/test-qishui-mac-integration.js`]
+
+- Windows 壁纸库新增默认关闭的“壁纸鼠标视差”，独立于封面鼠标视角并接入正常设置、DIY 存档与导入导出。Scene 详情先显示真实静态缩略图，释放旧 MJPEG 后再延迟连接实时预览；单客户端占用或加载失败会保留静态图、有限重试并给出“重试实时预览”。Scene 导出完成后“保存 MP4 到文件夹”与“应用 MP4 到 Mineradio”在同一操作行，应用中会明确禁用。专项 `19/19`、完整 `npm run check` `294/294` 通过；真实 Windows 服务已确认静态兜底在 `409` 实时流占用时仍可用。[来源: `public/js/modules/07-fx/10-wallpaper-library-panel.js`、`public/js/modules/07-fx/02-accent-background-controls.js`、`scripts/test-windows-wallpaper-library.js`]
+
+- 优化 Windows 壁纸库的打开与浏览性能，并增加多选本地导入：已保存的 Windows 地址现在优先直连，成功后不再重复扫描局域网；卡片选择与关闭详情只切换已有节点状态，不再重建数百张远程缩略图。工具栏新增卡片勾选、“全选当前结果”和“导入选中到 Mineradio”；图片、视频及已完成导出的 Scene MP4 按顺序写入 Mac 本地背景库，批量过程不切换当前背景，未导出的 Scene 会明确列为待导出。专项 `16/16`、完整 `npm run check` `289/289` 通过；304 条模拟记录动态检查确认详情节点保留、图片筛选全选 `152/152`，缓存直连为 `connect=1/discover=0`，直连失败才回退发现。真实 Windows 网络吞吐与下载耗时仍待在线服务人工验收。[来源: `public/js/modules/07-fx/10-wallpaper-library-panel.js`、`public/index.html`、`public/css/index.css`、`scripts/test-windows-wallpaper-library.js`]
+
+- 修复 Windows 壁纸库把 Wallpaper Engine Scene 的 `preview.jpg` / `preview.gif` 当成普通图片下载的问题：读取 `sceneNeedsEngine` 后按项目目录将其归类为 Scene，复用已有 Windows 离屏渲染和 MP4 导出，再下载并应用到 Mac 本地背景库。视频项目若同时提供预览图与真实视频，列表只保留真实视频。没有新增或修改 Windows HTTP 接口。专项 `14/14`、完整 `npm run check` `287/287` 通过；本轮 Windows 服务只读请求超时，真实导出待人工验收。[来源: `desktop/wallpaper-library-bridge.js`、`scripts/test-windows-wallpaper-library.js`]
+
+- 优化 Windows 壁纸库的大列表滚动：图片改为原生懒加载与异步解码，视频首屏不预读；网格以可视区为根按需挂载媒体，并在滚动中临时关闭卡片位移和重阴影以降低重绘。保留既有滚动条、网格、搜索、详情和预览逻辑。专项 `13/13`、完整 `npm run check` `286/286` 通过；304 条模拟记录首屏仅挂载 `20` 个媒体，滚动后渐进至 `40` 个。真实 Windows 服务下的远程网络和实际手感仍待人工验收。[来源: `public/js/modules/07-fx/10-wallpaper-library-panel.js`、`public/css/index.css`、`scripts/test-windows-wallpaper-library.js`]
+
+- 修复 Windows 壁纸库详情在中等窗口宽度被网格覆盖、右侧内容显示不全的问题：内容区在详情打开时改为独立“缩略图网格 + 详情”双列，详情不再绝对覆盖网格；视口 `≤920px` 自动切为完整全宽详情，关闭后恢复网格。详情仍在自身区域内滚动，预览、下载和导出逻辑未改。新增布局回归断言；专项 `12/12`、完整 `npm run check` `285/285`、真实浏览器宽屏零重叠和窄屏完整边界检查通过。真实 Windows 服务的远程媒体传输仍待人工验收。[来源: `public/css/index.css`、`scripts/test-windows-wallpaper-library.js`]
+
+- Windows 壁纸库新增“下载并应用到 Mineradio”本地化链路：图片、视频和已完成导出的 Scene MP4 现在通过已验证的 Windows 服务下载，写入既有 IndexedDB 背景媒体库后立即应用；重启或 Windows 断线后继续使用 Mac 本地副本，同一项目再次选择会直接复用本地媒体而不重复下载。新增 MIME、来源验证、空文件与 `256 MiB` 上限保护，失败态可重试且不会改变当前背景。Scene 仍须先由 Windows 完成导出，原“保存 MP4 到文件夹”保留为次级操作。专项 `12/12`、完整 `npm run check`、语法和 `git diff --check` 通过；真实 Windows 服务正向下载/导出待人工验收。[来源: `desktop/wallpaper-library-bridge.js`、`desktop/main.js`、`desktop/preload.js`、`public/js/modules/07-fx/10-wallpaper-library-panel.js`、`scripts/test-windows-wallpaper-library.js`]
+
+- 修复 Windows 壁纸库在卡片媒体绝对定位、比例计算意外失效时的网格堆叠：四列列表现在显式保留 `128px` 最小行高，卡片固定占满网格单元并继续优先采用 `16:9`。详情抽屉改为与可视内容区等高的独立滚动层，预览、导出状态和操作不再被弹窗底部裁掉。新增布局回归断言；壁纸库专项 `9/9`、完整 `npm run check` `282/282`、`git diff --check` 通过。未构建 DMG，待用户在真实 Windows 服务与实际窗口尺寸下验收。[来源: `public/css/index.css`、`scripts/test-windows-wallpaper-library.js`]
+
+- Windows 壁纸库按 Windows 端信息层级重排：保留宽幅深色弹窗、四列 `16:9` 真实缩略图网格和覆盖式详情抽屉；搜索与筛选成为主工具栏行，Mac 专属的自动读取 Windows IP、手动地址、连接和刷新改为独立次行，避免挤占搜索区域。不会伪造 Windows 本机的收藏、隐藏或项目设置按钮，因为局域网 HTTP 协议没有这些写接口。发现链路维持 UDP `45678` 广播、私网 `/24` ping 回退、UDP 异常回退与 `/api/ping` 认证；Windows 服务离线时不误报在线。专项 9/9、完整 `npm run check` 282/282、语法和 `git diff --check` 通过；本次检查时 `192.168.1.121:8123` 与 `192.168.1.107:8123` 均 TCP 超时，尚未声称真实 Windows 卡片/Scene 正向验收完成。[来源: `desktop/wallpaper-library-bridge.js`、`public/index.html`、`public/css/index.css`、`public/js/modules/07-fx/10-wallpaper-library-panel.js`、`scripts/test-windows-wallpaper-library.js`]
+
+- 修复 P10 音域回响一级歌架投到右下远景：P10 的体素世界比例、相机前方锚点和方位旋转会把普通预设的局部布局投错位置。一级固定态现以相机局部前方 `10`、左移 `1.2`、上移 `0.4` 锚定，并把局部中心 `sideX` 收至约 `1.08`；真实 Electron 投影的中心卡为 `467×265px`、包围盒 `x=465..933,y=206..471`（`1134×638` 视口），形成图一的中部偏右竖向卡组。普通预设、原生镜头保护、右键仅一级、歌词让位和冷色玻璃卡面不变；真实右键验证只打开一级（`pinned=true`、`detail=null`）。专项 `21/21` 通过。[来源: `public/js/modules/04-shelf/00-layout-hover.js`、`public/js/modules/04-shelf/05-card-interactions.js`、`scripts/test-p10-voxel-interactions.js`]
+
+- 修复 P10 音域回响一级歌架角度回归：保留体素远景相机的半径/高度保护，恢复图二所需的 `0.28` 卡片斜切。
+- 修复 P10 一级歌架纯黑问题：增强歌词色板驱动的冷色玻璃底色，透明度限制在 `0.34..0.62`，普通预设和二级详情逻辑不变。P10 专项回归测试 `19/19` 通过。
+
+- 修复 p10「音域回响」右键偶发没有一级 3D 歌架：恢复右键作为显式渲染交互时的主循环唤醒。此前恢复“右键只打开一级歌架”时误删这一步，空闲降帧下虽然已写入固定打开状态，但歌架管理器不会及时计算可见度和世界变换，画面看起来无反应。现只恢复 1.2 秒渲染唤醒，不改变一级/二级层级、p10 构图、歌词或歌单数据回退。新增回归断言；P10 专项 `16/16`、完整 `npm run check` `266/266`、语法和 `git diff --check` 通过；Electron 已从正确工作副本启动，待真实右键人工验收。[来源: `public/js/modules/04-shelf/05-card-interactions.js`、`scripts/test-p10-voxel-interactions.js`]
+
+- 修复 Mac「系统 → 播放输出」的可用性与失败回退：恢复“路由”弹窗承载实际设备选择；主输出或虚拟麦克风桥接只有 `setSinkId` 成功后才显示已连接，真实失败会恢复此前主输出、桥接和镜像偏好；无播放器时仅保存为“播放时连接”。设备权限未授予时产生的空 `deviceId` 不再重复渲染为两个“系统默认”节点。移除 Mac 端“关闭窗口行为/后台托盘”设置，关闭窗口固定退出；软件内自动更新仍禁用，升级方式为下载签名 DMG 覆盖安装。专项对抗性 `8/8`、完整 `npm run check` `264/264`、隔离 Electron 路由弹窗验收和 `git diff --check` 通过；未构建 DMG。[来源: `public/js/modules/05-playback/00-api-quality-output.js`、`public/index.html`、`public/js/modules/00-state/02-preferences-ui-modes.js`、`scripts/test-system-output-close-cleanup.js`]
+
+- 修复 p10「音域回响」右键歌架将镜头推入音柱：体素场不再把通用歌架的近景半径和负仰角映射到 p10 大世界，右键仍保留右侧歌架的方位与视线偏移；用户先滚轮缩放或调整高度后，右键也会保持当时的完整柱体构图。左侧歌单边缘停留由 `600ms` 调整为 `300ms`，左键拖动抑制、顶部/底部安全带与双屏保护保持不变。专项 `16/16`、完整 `npm run check` `256/256`、语法检查和 `git diff --check` 通过；未构建 DMG。[来源: `public/js/modules/02-visual/16-voxel-echo.js`、`public/js/modules/10-shell/02-peek-panels-upload.js`、`scripts/test-p10-voxel-interactions.js`]
+- 修复视觉控制台“其他设置”混入歌词和性能控件：缩放脉动归入“歌词 → 歌词动画”，渲染分辨率归入“系统 → 性能与后台”，颜色弹窗内部控件不再被整理器误判为独立设置。左侧歌单边缘持续停留从 `1000ms` 调整为 `600ms`，仍保留左键拖动抑制和顶部/底部安全带。专项 `22/22`、完整 `npm run check` `256/256`、语法检查和 `git diff --check` 通过；未构建 DMG。[来源: `public/js/modules/07-fx/09-console-workspace.js`、`public/js/modules/10-shell/02-peek-panels-upload.js`、`scripts/test-fx-preset-motion-ownership.js`、`scripts/test-p10-voxel-interactions.js`]
+- 明确项目级 AI 工作流：任何问题先检查前提、缺失信息和逻辑链，从至少两个角度分析根因并给出依据、反证条件和最小验证方式，完成分析后才能提出或实施方案；功能验收以命令行为主。同步收紧左侧歌单边缘唤醒：左键按住或拖动期间左右歌单栏均不唤醒，左边缘需连续停留 `1000ms`；p10 右键唤起歌架前清除 hover 选中态，避免卡片带着抬升偏移进入固定构图。p12/p13 歌词改为仅以初始机位补偿，滚轮缩放不再被实时距离抵消，p13 音柱同步主相机比例。专项 `20/20`、歌词/音域布局 `16/16`、完整 `npm run check` `255/255`、相关脚本语法检查和 `git diff --check` 均通过；未构建 DMG。[来源: `AGENTS.md`、`public/js/modules/10-shell/02-peek-panels-upload.js`、`public/js/modules/04-shelf/05-card-interactions.js`、`public/js/modules/07-fx/04-preset-grid-uniforms.js`、`scripts/test-p10-voxel-interactions.js`、`scripts/test-sonic-series-layout.js`]
+- Spotify 账户互动同步：Spotify 歌曲现在可读取喜欢状态、收藏/取消收藏，并加入已有的自建 Spotify 歌单。OAuth 默认新增 Spotify 库和歌单写权限，同时保留既有自定义 scope；旧 token 需在账户面板重新连接 Spotify 才会获得新权限。写请求与 token 均留在本机服务端，虚拟“喜欢的歌曲”和订阅歌单不会作为加歌目标。专项 12/12、`npm run check` 217/217 通过；未做真实账号人工验收，未构建 DMG。[来源: `spotify-api.js`、`server.js`、`public/js/modules/05-playback/06-track-detail-lyrics-actions.js`、`scripts/test-spotify-account-write-sync.js`]
+- 修复 p12「音域地形」与 p13「音域回响·WE」歌词在屏幕上偏小：舞台歌词按实际相机距离相对普通预设的参考距离动态补偿世界空间缩放，用户设置的歌词字号、位置、字体和颜色保持不变；p13 异步歌词到达后会重新唤醒共用歌词舞台。专项 12/12、`npm run check` 217/217 通过，仍待真实窗口观感验收。[来源: `public/js/modules/02-visual/02-lyrics-state-layout.js`、`public/js/modules/02-visual/14-stage-lyrics-rendering.js`、`scripts/test-sonic-series-layout.js`]
+
+- 修复背景媒体区的可用性和排版：将上传、封面、裁切、清除归为一排等宽操作，新增状态提示与封面鼠标视角说明；上传图片/视频会保持固定视角。没有可用封面时，“封面”不会再进入空状态或遗留鼠标绑定。真实 Electron 已验证上传图片、封面视差和清除回退；全量 `npm run check` **203/203** 通过。[来源: `public/index.html`、`public/css/index.css`、`public/js/modules/07-fx/02-accent-background-controls.js`、`public/js/modules/07-fx/07-bindings-shelf-immersive.js`、`scripts/test-rain-glass-speed-and-album-mouse-bind.js`]
+
+## 2.0.0
+
+- 修复雨境玻璃水珠后半程自行减速：原滑落状态把阻力从 `4.2` 持续增至 `16.7`，即使“水珠流速”滑条不变，水珠也会在后半段被逐渐刹慢。现在阻力只与水珠尺寸相关，滑落全过程持续使用同一流速系数驱动加速度与终端速度，保留原有弯道、融合、停靠和重挂壁状态。新增“封面鼠标视角”开关（默认关闭），开启后当前歌曲的 `#album-bg` 双层封面背景复用既有画布鼠标坐标做轻微视差；不影响上传图片、视频背景、歌词或任何预设。专项 8/8、`npm run check` **200/200** 通过；当前自动化环境无法取得 Electron 可见窗口，仍待人工确认实际观感。[来源: `public/js/modules/02-visual/19-rain-glass.js`、`public/js/modules/03-beat/05-cover-loading-crop.js`、`public/js/modules/02-visual/00-pointer-cover-particles.js`、`public/css/index.css`、`scripts/test-rain-glass-speed-and-album-mouse-bind.js`]
+
+- 修复视觉控制台错误搬走底栏入口：`shelf-toggle-btn` 与“词”按钮不再被控制台整理器 `appendChild()` 到设置页，底栏恢复原来的 3D 歌单架开关与歌词校准入口；桌面歌词恢复为“歌词”页内独立的开关、锁定、动效、高亮、大小、透明度、高度与帧率设置，不复用底栏按钮。音域回响系列卡移除重复说明，三个版本按钮增至等高 `36px`，标题/副标题保持单行省略，避免遮挡。新增回归测试，`npm run check` **198/198** 通过。[来源: `public/index.html`、`public/js/modules/07-fx/09-console-workspace.js`、`public/js/modules/07-fx/04-preset-grid-uniforms.js`、`public/css/index.css`、`scripts/test-bottom-controls-and-sonic-card.js`]
+- 修复预设 10「音域回响」的歌词异步竞态：切入 p10 时如果歌词请求尚未完成，原逻辑会因 `lyricsLines` 为空提前结束，歌词随后到达也不会再唤醒舞台，导致一直看不到歌词。现在原歌词和自定义歌词应用完成后都会通知 p10 重新恢复歌词组、当前行与预热；仅对 p10 生效，不强开用户关闭的歌词，也不改变歌词角度、位置、字体、动画或其他预设。新增异步回归测试，专项 5/5、`npm run check` **221/221**；真实 Electron/CDP 注入延迟歌词后确认舞台可见且显示新歌词。[来源: `public/js/modules/02-visual/14-stage-lyrics-rendering.js`、`public/js/modules/05-playback/06-track-detail-lyrics-actions.js`、`scripts/test-sonic-series-layout.js`]
+- 统一视觉预设入口卡片尺寸：普通预设卡与音域回响系列外卡固定为 `94px` 高并使用 `border-box`，避免内容差异导致网格行高跳动；音域回响的原版、Sonic-Topography、Wallpaper Engine 三个按钮压缩为同高 `30px` 的横向三选一，长标题在按钮内部省略，不改变预设索引或切换逻辑。删除仅在 `≤520px` 生效的重复横向规则，保留 `≤720px` 系列卡整行回退。新增尺寸回归断言，专项 4/4、`npm run check` **220/220** 通过；待真实 Electron 窗口验收不同尺寸下的视觉密度与三项点击切换。
+- 修复预设 10「音域回响」切换后歌词舞台偶发不唤醒，并按用户截图重排视觉预设入口：emily 与音域回响系列在桌面网格中并列，雨境/云瀑等预设从下一行继续双列；窄面板自动让系列卡跨整行，三个版本继续互斥三选一。切入 p10 时只在用户未关闭歌词的情况下恢复歌词组、当前播放行和预热，不覆盖歌词位置、字体、动画、倾角或其他预设。新增 `scripts/test-sonic-series-layout.js`，真实 Electron 验收 p9→p10 歌词恢复与桌面/窄面板几何布局；`npm run check` **219/219**。
+- 修复音域回响设置页的歌单错位，并整理三套音域预设入口：体素歌单宿主现在只挂到「歌单架」页，不再追加到 FX 控制台根节点，因此预设 10 的「动效」页不会再显示「歌单 / 队列」；预设 10/12/13 在「常用 → 预设与存档」合并为一张「音域回响」卡片，卡片内用互斥三选一按钮切换原版、Sonic-Topography 与 Wallpaper Engine，内部索引与存档格式保持不变。频谱面板拆为所有预设通用的「频谱面板」组，八段音域权重仍只在预设 12 显示。新增 3 项回归断言，真实 Electron 验收 14 个预设、三选一点击和动效页零歌单；`npm run check` **216/216**。
+- 修复 FX 控制台「动效」tab 的预设专属设置归位生命周期：`updateFxInputs()` 与控制台首次完成分组归位后现在都会刷新 `updateMineradioMotionGroupVisibility()`，避免启动恢复预设或打开面板后残留上一个预设的设置；`setPreset()` 同时去除重复刷新。旧分页雨境/云瀑/音域回响与体素的 CSS 过滤规则改为仅作用于非 `task-first-v2` 控制台，防止体素预设把重组后的分组全部隐藏。新增 `scripts/test-fx-preset-motion-ownership.js`，并更新雨境兼容选择器断言。真实 Electron 逐一切换 14 个预设：p0–8=`base+particles`、p9=`base+rain-mood`、p10=`base+vox-echo`、p11=`base+rain-resonance`、p12=`base+sonic-terrain+sonic-audio+sonic-blocks`、p13=`base+sonic-we`，专属组未出现在其他 tab；`npm run check` **213/213**。
+- 动效 tab 预设专属过滤完善（每个预设只显示有效动效）：粒子参数（fx-point/fx-speed/fx-bloom/封面清晰度等）在雨境/云瀑/音域回响/声波地形/声波工坊激活时**粒子层被隐藏（hidePoints）根本不生效**，之前作为「通用组」显示是噪音。现将「粒子与光影」组改为**仅粒子类预设（0-8）显示**，`fx-coverres` 从「基础画面」移入粒子组；「基础画面」精简为所有预设真正通用的 4 项（律动强度/景深/电影镜头/电影开关）。最终映射（无头 Chrome 全量实测 14 预设）：p0-8=[base,particles]、p9 雨境=[base,rain-mood]、p10 音域回响=[base,vox-echo]、p11 云瀑=[base,rain-resonance]、p12 声波地形=[base,sonic-terrain,sonic-audio,sonic-blocks]、p13 声波工坊=[base,sonic-we]。`npm run check` **228/228**。
+- 动效 tab 预设专属过滤（修复「不同预设动效参杂太乱」）：现在每个预设的动效 tab **只显示自己的动效组 + 通用组**，不再混杂其他预设——预设 9 雨境（雨境组）、预设 10 音域回响（音域回响组）、预设 11 云瀑（云瀑组）、预设 12 声波地形（音域地形/频谱响应/音域方块组）、预设 13 声波工坊（音域回响·WE 组），其余预设只显示基础画面/粒子与光影通用组。实现：新增 `updateMineradioMotionGroupVisibility()`（05-fx-panel-performance），按 `fx.preset` 给动效 tab 的 `.fx-console-group` 切换 `fx-sonic-hidden`，setPreset 与 updateFxInputs 双路调用。无头 Chrome 实测 6 组预设映射全部正确。`npm run check` **228/228**。
+- 修复 FX 控制台动效 tab 全黑（续）：上一轮加了雨境/云瀑/音域回响组后用户反馈「动效里面都是黑的什么都没有」——根因是旧分页时代的「预设专属过滤」规则 `body.rain-on [data-fx-page="motion"] > *:not(#rain-fx-section){display:none}`（及 rain-resonance-on/vox-on 同款）仍生效：FX 控制台 organize 后 motion page 的直接子元素是 `.fx-console-group` 折叠块，不是 `#rain-fx-section`，导致**预设激活时动效 tab 所有分组全被隐藏**。修复：删除这三条 `> *` 过滤规则；`body:not(.rain-on) #rain-fx-section` 等区块显隐改为**仅旧分页生效**（`:not([data-console-layout="task-first-v2"])` 前缀），FX 控制台接管后动效 tab 展示全部预设的设置（用户可随时查看，不受当前预设限制）。无头 Chrome 实测：动效 tab 9 个 group（基础画面/粒子/音域地形/频谱/方块/工坊/雨境/云瀑/音域回响）全部可见，雨量/律动敏感控件 display 正常。更新 `test-rain-mood-visual.js` 断言。`npm run check` **228/228**。
+- 修复 FX 控制台动效 tab 缺 Mac 预设控件：雨境（预设 9）、云瀑共振（预设 11）、音域回响（预设 10 体素）的全部控件在迁移 FX 控制台时未纳入 `FX_CONSOLE_LAYOUT`，organize 后被归入兜底「其他设置」导致动效 tab 空白。现动效 tab 新增 3 组：雨境（湿玻璃封面/玻璃水珠/雨量/打雷模式/打雷阈值/随机频率/水珠数量流速尺寸/风向偏移/雨幕浓度）、云瀑共振（雨幕强度/旋律起伏/拍点爆发）、音域回响（自转/封面取色/流星/封面图/悬浮方块/闪烁点/柱体数量/律动敏感/自转速度/体素颜色/冲击波颜色/背景颜色）。另按建议新增 2 个雨境动效设置：**风向偏移**（fx.rainWindOffset -1~1，雨丝水平飘移叠加在音乐驱动风向上）与**雨幕浓度**（fx.rainDensity 0.3~1.5，缩放雨丝整体强度）——fx-defaults/持久化（saveRainToggles）/渲染层/HTML 控件/FX layout/updateFxInputs 全部接线，不碰雨境玻璃水珠（硬约束）。`npm run check` **228/228**。
+- 壁纸库接入（续）：**Scene 场景壁纸「Win 端录制 mp4 → Mac 播放」方案**——共享脚本 `tools/wallpaper-share-server.js` 新增场景导出能力：① `/export.html` 录制引导页（Win 端浏览器打开，用 `getDisplayMedia` 捕获 WE 场景窗口 → `MediaRecorder` 录 15/30/60 秒 mp4 → POST 回服务保存到壁纸库 `_exported/` 目录）；② `/api/exported-videos` 列出已导出视频、`/api/exported-file` 下载。Mac 端 `wallpaper-library-bridge.js` 的 HTTP 源扫描自动合并 `_exported` 视频（「Scene 导出 · xxx.mp4」条目），Mac 壁纸库面板即可浏览播放。实测：导出页 200、导出视频列表返回、mp4 下载 200 video/mp4。测试断言更新，`npm run check` **228/228**。待人工验收：Win 端真实 WE 场景录制后 Mac 端播放。
+- 新增壁纸库接入（macOS，从另一台 Windows 电脑读取 Wallpaper Engine 壁纸库）：Mac 本地没有 WE 软件/库，本功能让 Mac 版直接读取 Win 电脑上的 WE 壁纸库——两条通道：① 目录扫描（SMB 挂载 `/Volumes/...` 或拷贝的 WE 库目录，主进程 `desktop/wallpaper-engine-library.js` 扫描器为纯 Node 跨平台实现，仅注册表发现为 win32 专属且 Mac 安全返回空）；② HTTP 壁纸源（Win 端运行 `tools/wallpaper-share-server.js` 可选共享脚本，Mac 输入 `http://WinIP:8123` 拉取壁纸列表与文件流）。首页快捷区新增「壁纸库」入口，弹窗支持扫描目录/连接源/列表浏览/图片视频预览。**图片/视频壁纸在 Mac 直接播放；Scene 场景壁纸（PKGV）需 WE 软件实时引擎，Mac 无法播放，标注「需 WE 软件」**。主进程 IPC：`mineradio-wallpaper-library-scan-dir`/`scan-http`/`list`/`media`，preload 暴露 4 个 API。新增 `scripts/test-wallpaper-library.js`（2 项）纳入 `npm run check`；专项 2/2、全量 **228/228** 通过；共享脚本实测（假壁纸库：列表返回、图片流 200 image/jpeg、scene 标注）。待人工验收：真实 Win 电脑 SMB 挂载/HTTP 源下浏览与播放图片/视频壁纸。
+- 修复首页响应式排版重叠（PR #61 后续修复）：根因一是 `≤1120px` 洞察 dock 改成单列后仍保留旧的显式第 2 列定位，生成隐式列导致「今日聆听/为你挑选/平台推荐」被压到窄列；根因二是 `home-grid` 的 2 列三行高度挤占洞察 rail；根因三是最近播放 hero 的固定内容块被 `flex-shrink` 压扁，封面和多行热评溢出到相邻区块。现在中等宽度使用 3 列快捷卡 + 两列洞察（推荐条跨整行、两个入口并列），极窄宽度显式归回单列并由首页滚动；hero 顶部信息和下一首/热评保持自身最小高度，只让歌曲列表滚动，≤760px 窄宽隐藏简报/下一首。新增 `scripts/test-home-layout-responsive.js`（3 项）纳入 `npm run check`；真实 Electron CSS viewport `1440×900`、`998×1098`、`998×700`、`760×850` 几何检查均为 hero/dock 零交叠，截图人工复核通过；全量 **226/226** 通过。仅改首页布局 CSS、测试和检查脚本，不改播放/登录/视觉预设。
+- 修复首页洞察 dock 卡片重叠：用户反馈首页排版「很多都显示不了」——洞察 dock（今日聆听/接下来播放/为你挑选/榜单/平台推荐 5 个卡片 + 为你准备 tile 行）是 2 列 grid 但子元素无显式定位，CSS Grid 自动布局在窗口较小时把卡片挤叠。修复：dock 子元素显式分配行列（listen(1,1)/next(2,1)/discovery(1,2)/ranking(2,2)/radio 整行(1/-1,3)）+ `align-items:start`，`home-grid`/`home-rail` 补 `grid-column:2` 显式定位。无头 Chrome 实测 600/700/800px 窗口 dock 5 卡片零重叠。
+- 修复首页小窗口布局重叠：窗口高度不足（未全屏）时，「最近播放」hero 内的每日热评（Daily Review）与歌曲列表重叠——根因是 `.home-recent-inner`（flex column）里固定内容不收缩，列表 `flex:1` 收缩到 0 后热评溢出被 `overflow:hidden` 裁剪。修复：固定区块（kicker/title/stats/热评/接下来播放/快捷行）允许收缩 + 列表保底 `min-height:48px`，并在小窗口（≤760px 高）隐藏次要元素（stats/每日简报/接下来播放/时间），≤640px 进一步精简。无头 Chrome 实测 700px 窗口下 `review_bottom < list_top` 不重叠。
+- 升级 listen-stats 本地每日聚合（Windows v2.1.0 v2 rollup）：新增 `HOME_LISTEN_ROLLUP_V2_KEY` 每日收听聚合（totalListenMs/sessions/daily 按天统计，含完成数），`finalizeListenSession` 写入；**纯本地**，不迁移上游的 `/api/listen/report` 服务端上报（平台收听同步为上游 `experimental-unverified` 能力，Mac 不迁移避免数据外发）。
+- 修复三个 review 发现的 bug：① `setFxPanelTab` 旧分页 fallback 白屏——现按面板实际 `data-console-layout` 选择 key 集合（FX 布局用 home/interface/...，旧分页用 presets/appearance/...），并加 `newToLegacy` 反向映射，旧分页不再映射到不存在的页面；同步修复 `16-voxel-echo.js` 的 `fxPanelTab === 'playlist'` 检查兼容 'shelf'。② 音源切换竞态——`switchCurrentSongSource` 在等待匹配结果期间用户切歌会覆盖新选歌曲索引，现 await 后用歌曲引用比对中止切换，catch 分支同样保护。③ 工坊预设降级循环——超时降级用 `noSave:true` 导致持久化仍停在预设 13、每次启动白等 9 秒再被降级，现改为正常持久化 + `state.degraded` 防重复 + removeLayer 重置允许重试。新增测试断言，`npm run check` **223/223** 通过。
+- 修复 FX 控制台搜索栏无响应：根因是 `initFxConsoleSearchAndHistory`（绑定搜索输入/撤销/历史事件）被误加到 `resetFx`（恢复默认时才走），**启动入口 `bindFxPanel` 里没有调用**——导致启动后搜索框无事件绑定、输入无搜索结果。现按上游在 `bindFxPanel` 尾部补上调用（organize 之后），并保留 `resetFx` 里的调用（幂等保护 `_fxConsoleSearchHistoryBound` 保证只绑定一次）。`npm run check` **223/223** 通过。待人工验收：打开视觉控制台，搜索框输入「粒子」应出现「粒子尺寸」等结果。
+- 补全播放标题音源切换（Windows v2.1.0 对齐）：播放器标题旁新增当前音源 chip（NE/QQ/KG/SP 标签，随歌曲来源显示），点击弹出「切换音源」面板——列出网易云/QQ/酷狗/Spotify 四个平台，显示「当前音源 / 自动换源 / 可切换 / 不可用」状态，点击即搜索同名同歌手版本并原地切换（保留播放进度）。Mac 的 `07-search.js` 切换逻辑与 CSS 此前已存在（死代码），缺的是 `15-ripples-cover-depth.js` 的 `updateControlTrackInfo` 挂载点——现按上游补齐 `control-title-badges` 容器 + 音源 chip + VIP 标签渲染（保留 Mac 的 `syncTouchBarTrack`）。新增测试断言，`npm run check` **223/223** 通过。待人工验收：播放任意歌曲看标题旁音源标签，点开切换面板换到另一平台。
+- 修复 FX 控制台「常用/界面/歌单」等 tab 空白：两个根因——① `setFxPanelTab` 只认旧 tab key（presets/appearance/...）而 FX 控制台用新 key（home/interface/lyrics/motion/shelf/system），匹配不上导致所有 page 隐藏；现换成上游版（新 key + 滚动记忆）并加旧 key→新 key 映射。② `FX_CONSOLE_LAYOUT` 引用的 24 个控件 id 在 Mac index.html 不存在（上游 layout 是写给 Windows 的，Mac 控件 id 不同或没有）；现全部对齐 Mac 实际结构——背景媒体改用 `background-image-input`/`bg-album-toggle-btn`/`fx-windowbgopacity`，性能改用 `performance-mode-seg`/`max-fps-seg`，歌单架改用 `shelf-toggle-btn`，桌面歌词改用 Mac 底栏入口 `lyrics-toggle-btn`，移除 Mac 没有的项（译文字号/透明度、歌词清晰度、浮动/暂停保留、背景星河、Wallpaper Engine）。修复后 layout 全部 168 个控件引用 + 3 个选择器引用均可在 index.html 定位（测试断言零缺失），`npm run check` **223/223** 通过。
+- 修复预设 13「音域回响·Wallpaper Engine」在 macOS 白屏：根因是 macOS 的 WebGL canvas 透明合成与 Windows 不同——即使 `alpha:true`，合成器也可能把 canvas 当不透明层盖住底下的 `#sonic-workshop-layer` iframe。现在工坊激活时隐藏 `#canvas-container` 让 iframe 完全透出；另加 React 未就绪 9 秒超时自动提示并回退上一预设（WebGL 受限环境下不再白屏挂死）。
+- 迁移 Windows v2.1.0「FX 控制台 + 界面配色 + 缓存设置（Mac 只读版）」：fx 面板升级为任务优先布局——「常用/界面/歌词/动效/歌单架/系统」6 个分类 tab + 顶部搜索框（支持别名如「粒子/缓存/歌词」搜索定位）+ 撤销/最近操作历史（会话内最多 40 条、滑条拖动合并、可回退到任一项之前）；「界面配色」新增界面高亮/视觉主色/Home 填充/主页图标/视觉图标 5 个取色行（Mac 端控件函数此前已存在，随 UI 注入激活）；「本地缓存」面板只读显示歌词磁盘缓存占用（条数/体积/路径）+ 手动清理，不迁移 Chromium 缓存目录搬迁（macOS 动 sessionData 会破坏登录态，AGENTS.md 硬约束）。登录彩蛋按用户决定跳过（上游解锁前清空全部登录凭据，与 Mac 登录态约束冲突）。新增 `scripts/test-sonic-series-migration.js` 第 7 项（FX/缓存/配色断言）纳入 `npm run check`；专项 7/7、全量 **223/223** 通过。
+- 迁移 Windows v2.1.0「声波监视器 + 音域地形 + 音域回响·WE」三件套：新增声波监视器模块（`03-beat/06-sonic-audio-monitor.js`，512 频段实时频谱、kick 自动跟踪、触发阈值/力度检测，主循环播放中喂频域数据、暂停时衰减；fx 面板新增「音域频谱」可折叠频谱面板），新增预设 12「音域回响·Sonic-Topography」（声波地形：地形起伏/密度/范围/自转、浮空方块、流星拖尾、封面取色或自定义配色）与预设 13「音域回响·Wallpaper Engine」（声波工坊：iframe 桥接 vendor 独立渲染，音频/媒体/主题属性持续推送，10 套主题 + 封面取色分区配色）。索引避开 Mac 既有 7=黑洞/8=极光/10=体素音域回响/11=云瀑共振，`SONIC_PRESET_INDEX=12`、`SONIC_WORKSHOP_PRESET_INDEX=13`。主循环按 sonic 预设隐藏粒子/封面层并降背景暗度，星河 alpha 对齐上游（地形 0、工坊 0.28）。fx 默认值/持久化/面板控件（地面起伏等 20 滑条 + 频谱面板 + 颜色行 + 主题 seg）/显隐联动（非对应预设自动隐藏 sonic 控件）全部接入。vendor 只搬运行时必需 4 文件（bridge+assets JS/CSS+project.json），跳过 preview.gif 省 914KB。新增 `scripts/test-sonic-series-migration.js` 6 项并纳入 `npm run check`；专项 6/6、全量 **222/222** 通过；Electron 本地服务冒烟全部资源 200。需人工验收：预设 12/13 真实歌曲下的地形律动、频谱面板、工坊 iframe 渲染与主题切换。
+- 首页继续对齐 Windows v2.1.0（本批，洞察 dock + 平台推荐中心）：右侧「为你准备」上方新增洞察 dock——今日聆听（时长/曲数/常听歌手 + 连续聆听天数）、接下来播放（优先队列下一首，空队列回退每日推荐/本地音乐）、为你挑选（每日推荐/歌单/队列/本地混合去重选 3 首）、音乐发现与平台推荐两个入口；「平台推荐」弹窗提供网易云/汽水/QQ/酷狗/Spotify 五个标签页，只读取平台可验证的推荐数据（网易云每日推荐与推荐歌单、酷狗猜你喜欢、Spotify 常听/喜欢、汽水/QQ 有接口才展示），不用关键词搜索补位。服务端新增 `/api/kugou/recommendations` 与 `/api/spotify/recommendations`，`spotify-api.js` 移植 `handleSpotifyRecommendations`（未登录明确返回 `mode:'unavailable'`）。保留 Mac 首页全部既有入口（最近播放/天气/歌单/「为你准备」tile 行），未迁移 Windows 的 MP4 视频 Hero 与 quick-grid 布局（Mac 功耗与既有双列首页不破坏）。新增 `scripts/test-home-dashboard-dock.js` 并纳入 `npm run check`；专项 5/5、全量 **216/216** 通过；Electron 本地服务冒烟：首页 200、新模块 200、两个推荐接口未登录返回预期。
+- 补全 Windows v2.1.0 的窗口恢复与歌词磁盘缓存：主进程新增缺失的 `desktop-window-restore` handler（preload 早已暴露调用，此前最小化/隐藏窗口无法恢复）；歌词请求结果按曲目写入 `userData/cache/lyrics`（单条 ≤1MB、总量 ≤96MB、自动淘汰最旧条目），再次播放同曲直接读缓存、不再重复请求；渲染层 `fetchLyric` 改为先读缓存后走网络。不迁移 Windows 的 Chromium 缓存目录搬迁（避免影响 macOS 登录态与会话）。专项 6/6、`npm run check` **211/211** 通过。
+- 本地曲库面板（Windows v2.1.0 对齐）：首页快捷区与导入面板新增“本地曲库”入口，弹窗支持浏览、搜索（标题/歌手/专辑）、逐首播放、全部播放与从曲库移除；移除只删除索引与封面缓存，不删除源文件，若正在播放被移除曲目会自动切到下一首。主进程新增 `mineradio-local-library-remove` IPC，preload 暴露 `removeLocalMusicLibraryTracks`。专项 5/5、`npm run check` **210/210** 通过。
+- 对齐 Windows v2.1.0 的持久化本地曲库：新增主进程 `desktop/local-music-library.js`（`music-metadata` 解析标题/歌手/专辑/时长/内嵌封面与 LRC 侧车/内嵌歌词，`mineradio-local://` 特权协议按字节范围流式播放，索引加密键值持久化在 userData）；拖拽/文件选择/整文件夹导入自动走持久化索引并立即进队播放，导入失败时回退原对象 URL 路径；启动时自动恢复索引中的本地曲目与断点（含歌词进度），本地歌播放时按需读取内嵌/侧车歌词走既有歌词管线。新增 `scripts/test-v210-migration-lite.js` 并纳入 `npm run check`。
+- 首页继续对齐 Windows v2.1.0：新增“每日热评”卡片（每日一条、可换一条、支持 localStorage 自定义热评列表）与生成封面回退（无封面卡片自动生成品牌渐变 SVG 封面），保留 Mac 最近播放/天气/歌单/视觉入口；不迁移 Windows MP4 视频 Hero（Mac 功耗考虑）。
+- QQ/酷狗登录状态字段对齐 v2.1.0：新增 `qqMembershipNeedsSync` 区分“播放授权未完成”与“权益待同步”，酷狗登录归一化同时接受 `playbackReady` / `playbackKeyReady`。
+- 完整验证：`npm run check` **209/209** 通过；Electron 以独立 userData 启动、首页新元素与模块由本地服务正常下发、无渲染错误。
+- 将不可用的汽水服务端扫码登录替换为 PR #56 的 macOS 官方客户端会话桥：主进程只读 `~/Library/Containers/com.soda.music/.../SodaMusic/Cookies` 中已登录会话，直接交给本地服务校验并通过 macOS `safeStorage` 加密保存；Cookie 不会暴露给渲染层。已删除二维码创建/轮询路由和页面逻辑，汽水入口不再跳转网易云。新增专项回归，`npm run check` 205/205 通过；需先在本机汽水音乐客户端登录后人工验收。
+- 首页保留 Mac 的最近播放、天气电台、歌单、视觉入口和跨音源推荐，同时补入 Windows 首页的“每日内容”和“接下来播放”：前者复用每日推荐，后者优先显示当前播放队列，不新增请求、播放器或 Windows 依赖。新增首页回归，`npm run check` 205/205 通过。
+- 从 Windows Cuefield 同步 macOS 安全版“智能混音 Lite”：播放器交叉淡入区新增默认关闭、可持久化的开关。只有当前曲和下一曲都命中本地节拍缓存，且 BPM 与能量接近时，才把既有交叉淡入缩至用户设定时长的 85%；没有缓存、播客、本地歌曲、随机播放和内存紧张时全部保留原播放路径。没有新增音频链、下载或 Windows 依赖。新增专项测试，`npm run check` 206/206 通过。
+- 补全 macOS 内部实验的汽水音乐 PC 扫码登录：本地服务创建/轮询汽水二维码，短时会话只留在服务端；扫码成功后的 Cookie 直接使用 macOS `safeStorage` 加密保存，渲染层只获得二维码和脱敏登录状态。登录面板不再把汽水“登录”退化为匹配搜索或手动导入；汽水登录成功只同步汽水账号、歌单与播放能力，不会跳转网易云。新增专项回归，`npm run check` 201/201 通过；二维码创建与未扫码轮询已本机冒烟验证，真实账号扫码与受保护歌曲仍需用户手测。
+- 彻底修复 macOS 内部实验的汽水音乐误跳网易云：顶部账户按钮在当前汽水搜索源时保持汽水；汽水“登录”入口只进入汽水公共搜索或本地 Token/Cookie 授权；汽水搜索请求明确指向 `/api/qishui/search`，不再落到网易云默认接口。专项测试 6/6、`npm run check` 200/200 通过；真实账号仍需用户手测。
+- 从 Windows 2.0.3 迁移“跨音源搜索历史”：网易、QQ、酷狗、汽水、Spotify 和综合搜索标签均展示并复用同一份本地历史，播客仍保持热门内容页。新增回归测试并纳入 `npm run check`。
+- 雨境打雷改为“关闭打雷 / 跟随音乐 / 随机打雷”三选一，彻底消除随机雷与节奏雷叠加的歧义；新增独立“随机频率（秒）”滑条（4-40 秒，默认 15 秒，附带随机扰动），而“打雷阈值”只在跟随音乐模式生效。旧版随机开关存档自动迁移。专项 8/8、`npm run check` 198/198 通过。
+- 雨境动态面板新增默认关闭的“随机打雷”开关：开启后不依赖音乐播放或节拍，首次随机等待 4-10 秒、后续每 6-20 秒触发一次。雷击随机呈现单闪或 2-3 次短促连续闪，并以复用的 Three.js 分叉折线、冷色全场提亮、雨丝与湿玻璃封面反光营造云层照明；关闭会立即清空未发生的连闪。专项 7/7、`npm run check` 197/197 通过。
+- 修复汽水入口误跳网易云：preload 现在向渲染进程显式传递 macOS 汽水实验开关，账户、登录和搜索入口不再把用户选中的汽水静默改写为网易或全音源；不可用时保持当前选择并明确提示。新增回归测试，`npm run check` 195/195 通过。
+- 恢复 macOS 内部实验用的汽水音乐播放桥：QS 搜索/授权入口重新接入，Cookie 和 access-token 均经 macOS `safeStorage` 加密落盘；带 `#auth` 的本地音频代理只在服务端解密并以受限内存缓存返回，渲染层不会读取密钥。未登录、非法 Cookie、无可播地址均返回明确状态并保留现有换源回退；新增专项测试并纳入 `npm run check`。真实账号、付费曲目及受保护音频播放仍需用户手测。
+- 云瀑共振底部改为连续暗湖面：移除会形成白色点阵的可见水花粒子和线段涟漪，雨滴只写入高度场并通过湖面法线表现入水细波、反射与高光。云瀑默认以 `1.42` 倍局部构图展示，且平滑跟随“歌词大小”缩放；专项 14/14、全量检查 190/190 通过。
+- 云瀑共振继续向 Rainform 官网视觉收敛：移除独立顶部波形，改由真实 FFT 频段驱动分层雨链自身形成峰谷；底部改用双 RenderTarget 高度场接收雨点击入，生成衰减扩散的暗色水面波纹、法线高光和列状倒影。开场珍珠与瀑布雨珠分别缩至原尺寸的 `0.62`、`0.56`，音乐能量升高时才显著变大；专项 13/13、全量检查 189/189 通过。
+- 优化预设 11「云瀑共振」的 Rainform 派生雨景：底部改为真实水平水面而非竖直光板，25 点音乐曲线同步驱动水面位移、反射和雾带；新增 256 段顶部雨幕包络，使雨峰随旋律沿横向移动。保留既有主场景/主循环，不创建第二个 Canvas 或动画循环；专项测试 9/9、全量检查 185/185 通过。
+- 重做预设 11「云瀑共振」的 Rainform 视觉层：恢复官网比例的 2000 条基础雨链、800 条环境雨链、1400 条暴雨雨链和 1900 条实例化细丝；加入 256 点雨量 LUT、数据驱动雨幕高度、零雨抑制、底部水线和雾带。预设 9 雨境玻璃水珠逻辑未改动。
+- 云瀑共振珍珠材质改为多频 procedural liquid metal：珠面 band、镜面反射、球面法线、Fresnel 和高光参数统一进入 shader；不创建第二个 Canvas 或动画循环。专项测试 7/7，Three r128 runtime smoke 和 `npm run check` 183/183 通过。
+- 新增独立预设「云瀑共振」（索引 11）：在 Mineradio 主 Three.js 场景和主循环中接入经授权的 Rainform 派生分层雨景，保留雨链、珍珠雨滴、暴雨瀑布、撞击水花和涟漪结构；低频驱动雨势，中频驱动横向旋律起伏，高频增加细雨亮点，拍点触发短促爆发。动态面板提供雨幕强度、旋律起伏、拍点爆发三个独立持久化控件。保留 Rainform 的 Required Notice 和 PolyForm Noncommercial 许可归属。
+- 云瀑共振新增 25 点音乐雨量曲线，将频谱沿横向雨景分布，避免单一雨柱与音乐脱节；专项测试 5/5，`npm run check` 181/181 通过。
+- 项目协作规则要求每次完成改动的交付回复附上针对本次变更、可直接复制运行的命令行测试代码与预期结果。
+- 修复高流速水珠只短滑一段便重新黏住的问题：单次连续滑落距离现在随流速和水珠尺寸增长；滑落后重新附着的黏附门槛会随速度降低，`16` 下可持续完成多段滑落。
+- 雨境“水珠流速”范围扩大到 `0.2–16.0`，新默认值设为 `5.0`；UI、输入、存档恢复与物理速度上限同步更新，`16` 相比 `8` 仍会继续加速。
+- 修复雨境“水珠流速”滑条只改变数值、已附着水珠却未明显提早滑落的问题：流速现在同时缩短附着等待时间，并提高破裂、停靠过渡速率；现有水珠调高流速后会更快开始滑落。
+- 雨境“水珠流速”上限继续扩到 `8.0`，运行时读取、持久化恢复与物理终端速度同步放宽；打雷阈值默认值调整为 `0.70`，已保存的用户自定义值不受影响。
+- 雨境“水珠流速”上限从 `2.2` 扩大到 `4.0`；持久化钳位、滑动速度系数和大水珠终端速度同步放宽，最大值不再被旧物理限制吞掉。
+- 雨境玻璃水珠取消雨量对水珠尺寸和额外撞击频率的隐式控制；“水珠尺寸”和“水珠数量”保持各自独立，新增水珠统一由雨点击中后的微小冲击点铺展形成。
+- 修复雨境玻璃水珠内部出现规则像素点阵：将合成着色器的高频边缘噪声收敛为低频平滑微表面，降低法线扰动，并移除水滴外逐像素动态颗粒；背景与水珠外部继续保持锐利。新增回归断言，`npm run check` 176/176 通过。
+- 雨境玻璃水珠提高为原生分辨率 RG 场（最大 2048×1280、`highp` 片元精度），扩大雨量至 `0.05–4`、水珠数量至 `0.15–2.5`；雨量会独立放大水珠尺度，新增雨丝撞击后从半透明小珠铺展为附着水珠的凝结态，持续替换旧微珠而不突破用户数量上限。`npm run check` 175/175 通过。
+- 雨境预设（索引 9）接入独立雨窗的照片级玻璃水珠后处理：复用主 renderer/scene/camera，不创建第二个 Canvas 或动画循环；支持 Metaball 融合、沿玻璃滑落、折射、菲涅尔边缘、接触阴影与局部高光。
+- 雨境动态面板新增玻璃水珠开关、水珠数量、流速和尺寸设置；尺寸调节不改变数量，参数独立持久化，关闭或切出雨境会释放 GPU render target、材质和几何资源，后处理失败自动回退原始雨丝渲染。
+- 新增 `scripts/test-rain-glass-postprocess.js` 与迁移设计文档；`npm run check` 全量 174 项通过。
+- 修复玻璃水珠后处理把整幅雨境背景一起模糊的问题；水滴外改用锐利场景采样，模糊仅保留在水滴内部折射层。
 
 - 本机融合候选完成 Electron 包安全收口：主入口改为最小 `desktop/bootstrap.js`，关闭 RunAsNode、`NODE_OPTIONS` 与 CLI inspector，开启 ASAR integrity 与 OnlyLoadAppFromAsar；Safe Storage 原生交接模块保持 packed 并锁定哈希，手势 helper 改为 universal arm64+x64、最低 macOS 12。
 - 新增只用于本机 ad-hoc 包切换的可恢复安装链：完整 App/userData 备份、持久 journal、进程静止检查、旧/新签名 Keychain 交接、provider 前后对账和失败自动回滚均在无凭据明文落盘的前提下完成。最终 `/Applications/Mineradio.app` 的 `app.asar` 为 `7dac0a…c024`，QQ 登录与播放密钥保留，Spotlight 只索引这一份 App。
@@ -246,7 +415,8 @@
   - 用户偏好持久化在 `userData/telemetry-consent`（`accepted`/`declined`）。
   - 移除了原 `setInterval(ping, 5 * 60 * 1000)` 固定间隔定时器。
 
-## v1.1.3（内部测试版基线 — 2026-07-12 入库）
+- 更新克劳德：创建 .claude/agents/claude-code-guide.md，包含 Claude Code 完整指南、工具调用、slash commands、快捷键、Agent SDK、API 集成等内容。
+- 保持 Mineradio 协作规则：不直接修改 main，使用 codex/mineradio-source 推送。
 
 > 本版本是从 `Mineradio-1.1.3-arm64.dmg` 提取并入库的内部测试版。相对于 v1.1.0 正式版，新增了多音源、手势、壁纸、遥测等功能，但也引入了若干待优化项（见 GitHub Issues）。
 
@@ -274,6 +444,12 @@
 - DMG 原始包无完整构建配置（仅运行时目录）。已补齐 `package.json` 的 `scripts`/`build`/`devDependencies`。
 - Electron 42.4.1，electron-builder ^26，macOS arm64 dmg，最低系统 12.0。
 
+## 2026-08-10
+
+- 修复 P10 音域回响右键一级歌架：按参考图恢复右侧中部的纵向卡架、完整卡距与轻微斜切，并隔离普通封面旋转，避免卡架扭到右上角。
+- 修复 P10 一级卡面过黑：改为歌词色板驱动的冷色玻璃，并限制背景 alpha；切换预设时强制重绘卡面。
+- 新增 P10 构图和玻璃卡面回归测试；`npm run check` 268/268 通过。
+
 ## v1.1.0（正式版参考基线）
 
 - 纯净正式版，体积 126MB，main.js 1958 行，server.js 4795 行。
@@ -281,3 +457,15 @@
 - DMG 有完整视觉包装（背景图、卷图标、布局）。
 - 无遥测、无平台死代码。
 - 本次工作流的优化方向即"照着 v1.1.0 的克制改 v1.1.3"。
+
+## 2026-08-10
+
+- 追加修复 P10 一级歌架黑屏根因：固定 P10 独立歌架比例，不再读取会在预设初始化中变化的普通 `orbit.baselineRadius`；右键一级歌架锚到相机前方安全空间，并校准到用户标注的中部构图。Electron 实截图确认封面、文字和玻璃卡面可读；P10 专项 21/21，完整检查 271/271。
+
+## 2026-08-11
+
+- 修复播放状态通知堆叠和全局滚动抢帧：同一播放链的“切换中 / 取流失败 / 切换结果”现在同步替换为唯一一张当前状态卡，避免多张 `backdrop-filter` 卡片长期叠在右上角。搜索、歌单、FX 设置、迷你队列和歌词详情不再在每个 `wheel` 事件阻止默认滚动并创建 GSAP `scrollTop` 动画，改回浏览器原生合成滚动；任一滚动期间 3D 渲染预算暂降至 20 FPS。首页最近播放封面改为可视区附近才加载，避免首屏同时解码全部封面。新增回归测试；`npm run check` 327/327、语法和差异检查通过。真实歌曲播放时的主观滚动手感仍需 Electron 验收。[来源: `public/js/modules/05-playback/11-provider-fallback.js`、`public/js/modules/06-lyrics/01-playlist-panel-shell.js`、`public/js/modules/05-playback/03-home-discover-weather.js`、`public/js/modules/11-main-loop.js`、`scripts/test-account-logout-and-qishui-diagnostics.js`、`scripts/test-recent-scroll-performance.js`]
+
+- 修复 Windows 壁纸库自动发现的真实失效：macOS `arp -an` 的 `(incomplete)` 项此前被误当作可达邻居，导致动态端口 `8128` 从未被请求。
+- 仅保留真实 ARP 邻居；弹窗自动、读取和刷新复用单飞发现事务，手动、缓存、UDP、子网来源分开显示。
+- 实机无 UDP 条件下，主进程已自动返回 `http://192.168.1.107:8128` 且记录 `PING_OK`。专项 31/31，完整检查 310/310。

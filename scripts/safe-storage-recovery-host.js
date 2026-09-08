@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const RECOVERY_ADDON_SHA256 = '6185d2a0f8716be185d2c95f3b489200cf4af297dee3fcdb19351c12d34462c8';
+const RECOVERY_ADDON_SHA256 = 'f11b043d430f808447ac62d58300e3a9db38f5bd39fe2f48499860bbe25d19b2';
 
 const ACTIONS = new Set([
   'prepare',

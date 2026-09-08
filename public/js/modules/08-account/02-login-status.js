@@ -160,10 +160,17 @@ function qqLoginNeedsAuthorizationRefresh(status) {
   status = status || qqLoginStatus;
   return !!(status && status.loggedIn && (status.authorizationIncomplete || status.membershipStale || status.playbackKeyReady === false));
 }
+function qqMembershipNeedsSync(status) {
+  status = status || qqLoginStatus;
+  if (!status || !status.loggedIn) return false;
+  if (status.authorizationIncomplete && status.playbackKeyReady === false) return false;
+  return !!(status.membershipStale || status.vipSyncState === 'stale' || status.vipSyncState === 'pending' || status.vipSyncState === 'profile');
+}
 function qqLoginStatusText(info) {
   info = normalizeQQLoginStatus(info || qqLoginStatus);
   if (!info.loggedIn) return '点击“扫码登录”打开 QQ 音乐官方窗口';
-  if (qqLoginNeedsAuthorizationRefresh(info)) return 'QQ 会话需要重新授权';
+  if (info.authorizationIncomplete && info.playbackKeyReady === false) return 'QQ 播放授权未完成 · 需要重新授权';
+  if (qqMembershipNeedsSync(info)) return 'QQ 会话已保存 · 权益信息待同步';
   return '已保存 QQ 音乐会话 · ' + (info.nickname || 'QQ 音乐');
 }
 
@@ -237,7 +244,7 @@ function normalizeKugouLoginStatus(info) {
     isVip: normalizedLevel !== 'none' || !!(info && info.isVip),
     isSvip: normalizedLevel === 'svip' || !!(info && info.isSvip),
     stale: !!(info && info.stale),
-    playbackKeyReady: !!(info && info.playbackKeyReady)
+    playbackKeyReady: !!(info && (info.playbackReady || info.playbackKeyReady))
   });
   return Object.assign({}, fallback, info, {
     provider: 'kugou',
@@ -250,7 +257,7 @@ function normalizeKugouLoginStatus(info) {
     vipLevel: normalizedLevel,
     isVip: normalizedLevel !== 'none' || !!info.isVip,
     isSvip: normalizedLevel === 'svip' || !!info.isSvip,
-    playbackKeyReady: !!info.playbackKeyReady,
+    playbackKeyReady: !!(info.playbackReady || info.playbackKeyReady),
     stale: !!info.stale
   });
 }
@@ -399,7 +406,9 @@ async function refreshQishuiLoginStatus() {
 }
 function startQishuiLoginStatusAutoRefresh() {
   if (qishuiLoginAutoRefreshTimer) clearInterval(qishuiLoginAutoRefreshTimer);
-  qishuiLoginAutoRefreshTimer = null;
+  qishuiLoginAutoRefreshTimer = MINERADIO_QISHUI_ENABLED ? setInterval(function () {
+    refreshQishuiLoginStatus().catch(function (e) { console.warn('Qishui login auto refresh failed:', e); });
+  }, 45000) : null;
 }
 
 function normalizeSpotifyLoginStatus(info) {

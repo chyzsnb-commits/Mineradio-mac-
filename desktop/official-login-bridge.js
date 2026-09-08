@@ -1,6 +1,6 @@
 'use strict';
 
-const OFFICIAL_LOGIN_PROVIDERS = new Set(['netease', 'qq', 'kugou']);
+const OFFICIAL_LOGIN_PROVIDERS = new Set(['netease', 'qq', 'kugou', 'qishui']);
 const SAFE_LOGIN_INFO_FIELDS = new Set([
   'provider',
   'loggedIn',

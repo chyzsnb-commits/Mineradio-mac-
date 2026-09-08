@@ -1,6 +1,7 @@
 function queueSong(song, opts) {
   opts = opts || {};
   if (!song) return -1;
+  if (typeof cancelTrackNavigationRequest === 'function') cancelTrackNavigationRequest('queue-structure-change');
   var cloned = cloneSong(song);
   var insertAt = playQueue.length;
   if (opts.position === 'next') {

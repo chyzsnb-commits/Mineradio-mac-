@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const SAFE_STORAGE_HANDOFF_SHA256 = 'ea421bf27e24501fa55e565254ab970bdd62a44191aa93f7b4abb553acebce9c';
+const SAFE_STORAGE_HANDOFF_SHA256 = 'f6287f804e6eac153457902cfdbb733fbaa15caa060a87624edd590b18d7e273';
 
 const HANDOFF_MODES = new Set([
   '--mineradio-safe-storage-install',

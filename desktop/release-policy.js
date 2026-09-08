@@ -20,10 +20,14 @@ function providerEnabled(provider) {
   return !disabledProviders.has(String(provider || '').trim().toLowerCase());
 }
 
+const qishuiEnabled = metadata.qishuiExperimental === true && process.platform === 'darwin'
+  ? true
+  : providerEnabled('qishui');
+
 module.exports = Object.freeze({
   publicRelease,
   internalBeta: metadata.internalBeta === true,
-  allowCredentialImport: !publicRelease && metadata.allowCredentialImport !== false,
+  allowCredentialImport: (qishuiEnabled && metadata.allowCredentialImport === true) || (!publicRelease && metadata.allowCredentialImport !== false),
   allowCredentialExport: !publicRelease && metadata.allowCredentialExport !== false,
   qishuiCatalogEnabled: metadata.qishuiCatalogEnabled === true,
   qishuiEnabled: providerEnabled('qishui'),

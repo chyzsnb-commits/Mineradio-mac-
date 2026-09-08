@@ -14,15 +14,15 @@ const MIGRATION_ROOT = path.join(os.homedir(), 'Library', 'Application Support',
 const CONTROLLER_LOCK = path.join(MIGRATION_ROOT, '.installer-controller.lock');
 const GUARD_PATH = path.join(MIGRATION_ROOT, '.installer-active.json');
 const BACKUP_ROOT = path.join(MIGRATION_ROOT, 'backups.noindex');
-const OLD_ASAR_SHA256 = 'a88eb92933e2718ac3e2c3c7135f4ab2ef773d1458e2ac7996f217686b3f7761';
-const OLD_CDHASH = '2fc37115a5c7fd7eb8c140cb320256a06a502fd4';
-const CANDIDATE_ASAR_SHA256 = '7dac0a781edf167689930d0ea050323fc9af38d005a83cba11f73eb40676c024';
-const CANDIDATE_CDHASH = '96919e2fc469fa0ea4568bd794cdb8068633d1d7';
-const HANDOFF_ADDON_SHA256 = 'ea421bf27e24501fa55e565254ab970bdd62a44191aa93f7b4abb553acebce9c';
-const RECOVERY_ADDON_SHA256 = '6185d2a0f8716be185d2c95f3b489200cf4af297dee3fcdb19351c12d34462c8';
-const RECOVERY_HOST_SHA256 = 'b4a04ac4109db0ca6eb2c23aa7d80a429274d888d83651dde1bc10873eb00f46';
+const OLD_ASAR_SHA256 = '7dac0a781edf167689930d0ea050323fc9af38d005a83cba11f73eb40676c024';
+const OLD_CDHASH = '96919e2fc469fa0ea4568bd794cdb8068633d1d7';
+const CANDIDATE_ASAR_SHA256 = 'b55bb63df8733af2258d814d4695ab6da6fc784000f9bfadb00eb326e98477ed';
+const CANDIDATE_CDHASH = 'deb77952eb6e4bbb097f087dc7d98f2e772a6278';
+const HANDOFF_ADDON_SHA256 = 'f6287f804e6eac153457902cfdbb733fbaa15caa060a87624edd590b18d7e273';
+const RECOVERY_ADDON_SHA256 = 'f11b043d430f808447ac62d58300e3a9db38f5bd39fe2f48499860bbe25d19b2';
+const RECOVERY_HOST_SHA256 = '6c746983cb9db7eec0b4cb5cbf64808ffdfa2f950696060cf4e5be2a58502902';
 const PIPELINE_SHA256 = '744a83eb92dbc6004099e60b9f704dc4c2378baffd32e214ca6fd02142410519';
-const BOOTSTRAP_SHA256 = '88549d4a3f14bac8979b188d51b1d83e108a91715c48b6451662c42bc8dcb38d';
+const BOOTSTRAP_SHA256 = 'd4c95f7e289127731210192541b3796ee9aab2c7215e083e133876265c8b3adf';
 const REQUIRED_FUSES = Object.freeze({
   0: 48,
   1: 48,
@@ -715,7 +715,10 @@ function assertMigrationQuiescent() {
 }
 
 function recoveryEnvironment() {
-  return cleanEnvironment({ ELECTRON_RUN_AS_NODE: '1' });
+  return cleanEnvironment({
+    ELECTRON_RUN_AS_NODE: '1',
+    MINERADIO_MIGRATION_VERIFY_NONCE: activeJournal && activeJournal.guardNonce,
+  });
 }
 
 function runRecovery(action, args = []) {

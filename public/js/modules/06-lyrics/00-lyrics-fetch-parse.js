@@ -5,9 +5,116 @@ function hasUsableLyricLines(lines) {
 }
 var lyricTranslationFallbackCache = {};
 var lyricTranslationFallbackMissCache = {};
+var strictLyricFallbackMemoryCache = {};
+var strictLyricFallbackMissCache = {};
 function lyricTranslationTextFromAliases(source) {
   source = source || {};
   return source.tlyric || source.trans || source.translatedLyric || source.translation || source.translated_lyric || '';
+}
+function lyricDurationMsForMatch(song) {
+  var duration = Number(song && (song.duration || song.dt)) || 0;
+  return duration > 0 ? Math.round(duration) : 0;
+}
+// 自动借词与“换源播放”不同：这里不能为了有词放宽规则。云盘 ID 失效时，
+// 只有标题、主要歌手与时长同时能够佐证同一录音，才允许使用候选歌词。
+function strictLyricCandidateScore(song, candidate) {
+  if (!song || !candidate) return -1;
+  if (typeof searchLooksLikeDerivative === 'function' && searchLooksLikeDerivative((song.name || song.title || '') + ' ' + (song.artist || '') + ' ' + (song.album || ''))) return -1;
+  var songTitle = simpleSearchNorm(song.name || song.title || '');
+  var candidateTitle = simpleSearchNorm(candidate.name || candidate.title || '');
+  if (!songTitle || songTitle !== candidateTitle) return -1;
+  if (typeof searchLooksLikeDerivative === 'function' && searchLooksLikeDerivative((candidate.name || '') + ' ' + (candidate.artist || '') + ' ' + (candidate.album || ''))) return -1;
+  if (typeof sourceSwitchArtistParts !== 'function' || typeof sourceSwitchPartsOverlap !== 'function') return -1;
+  var songArtists = sourceSwitchArtistParts(song);
+  var candidateArtists = sourceSwitchArtistParts(candidate);
+  if (!songArtists.length || !candidateArtists.length || !sourceSwitchPartsOverlap(songArtists, candidateArtists)) return -1;
+  var songDuration = lyricDurationMsForMatch(song);
+  var candidateDuration = lyricDurationMsForMatch(candidate);
+  if (!songDuration || !candidateDuration) return -1;
+  var difference = Math.abs(songDuration - candidateDuration);
+  if (difference > 3000) return -1;
+  return 100 + Math.round((3000 - difference) / 150);
+}
+function selectStrictLyricCandidate(song, candidates) {
+  var ranked = (Array.isArray(candidates) ? candidates : []).map(function (candidate) {
+    return { candidate: candidate, score: strictLyricCandidateScore(song, candidate) };
+  }).filter(function (item) { return item.candidate && item.candidate.id && item.score >= 100; })
+    .sort(function (a, b) { return b.score - a.score; });
+  if (!ranked.length) return null;
+  if (ranked.length > 1 && ranked[0].score - ranked[1].score < 15) return null;
+  return ranked[0].candidate;
+}
+function strictLyricFallbackCacheKey(song) {
+  song = song || {};
+  return 'strict-lyric:' + [
+    simpleSearchNorm(song.name || song.title || ''),
+    (typeof sourceSwitchArtistParts === 'function' ? sourceSwitchArtistParts(song).slice(0, 2).join('/') : simpleSearchNorm(song.artist || '')),
+    lyricDurationMsForMatch(song)
+  ].join('|');
+}
+function canAttemptStrictLyricFallback(song, state) {
+  if (!song || !state || state.usableLyric) return false;
+  if (song.type === 'local' || song.source === 'local' || song.localUrl || song.type === 'podcast') return false;
+  if (!String(song.name || song.title || '').trim() || !lyricDurationMsForMatch(song)) return false;
+  if (typeof sourceSwitchArtistParts !== 'function' || !sourceSwitchArtistParts(song).length) return false;
+  var missedAt = strictLyricFallbackMissCache[strictLyricFallbackCacheKey(song)] || 0;
+  return !missedAt || Date.now() - missedAt > 10 * 60 * 1000;
+}
+async function readLyricDiskCacheByKey(key) {
+  if (!canUseLyricDiskCache()) return null;
+  try {
+    var result = await window.desktopWindow.readLyricCache(String(key || ''));
+    return result && result.ok === true && result.hit === true && result.payload ? result.payload : null;
+  } catch (_) { return null; }
+}
+async function writeLyricDiskCacheByKey(key, response) {
+  if (!canUseLyricDiskCache() || !response || !(response.lyric || response.yrc || response.lrc)) return;
+  try { await window.desktopWindow.writeLyricCache(String(key || ''), response); } catch (_) {}
+}
+async function fetchStrictLyricFallback(song, token) {
+  var key = strictLyricFallbackCacheKey(song);
+  try {
+    var cached = strictLyricFallbackMemoryCache[key] || await readLyricDiskCacheByKey(key);
+    var response = cached;
+    if (!response) {
+      var artist = (typeof sourceSwitchArtistParts === 'function' ? sourceSwitchArtistParts(song)[0] : '') || String(song.artist || '').split(/\s*\/\s*/)[0];
+      var query = [song.name || song.title || '', artist].filter(Boolean).join(' ').trim();
+      var result = await apiJson('/api/search?keywords=' + encodeURIComponent(query) + '&limit=8', { timeoutMs: 4800 });
+      if (token !== trackSwitchToken) return false;
+      var candidate = selectStrictLyricCandidate(song, result && (result.songs || result.result || []));
+      if (!candidate) {
+        strictLyricFallbackMissCache[key] = Date.now();
+        return false;
+      }
+      response = await apiJson('/api/lyric?id=' + encodeURIComponent(candidate.id), { timeoutMs: 5200 });
+      if (token !== trackSwitchToken) return false;
+      var parsed = parseLyricResponseToOriginalState(song, response || {});
+      if (!parsed.usableLyric) {
+        strictLyricFallbackMissCache[key] = Date.now();
+        return false;
+      }
+      strictLyricFallbackMemoryCache[key] = response;
+      writeLyricDiskCacheByKey(key, response).catch(function () {});
+    }
+    if (token !== trackSwitchToken) return false;
+    var state = parseLyricResponseToOriginalState(song, response);
+    if (!state.usableLyric) return false;
+    setOriginalLyricsState(state.lines, state.hasNativeKaraoke, 'verified-fallback', state.translationLines, state.translationSource);
+    applyPreferredLyricsForCurrent(true);
+    return true;
+  } catch (_) {
+    strictLyricFallbackMissCache[key] = Date.now();
+    return false;
+  }
+}
+function scheduleStrictLyricFallback(song, token, state) {
+  if (!canAttemptStrictLyricFallback(song, state)) return;
+  setTimeout(function () {
+    if (token !== trackSwitchToken) return;
+    var run = function () { if (token === trackSwitchToken) fetchStrictLyricFallback(song, token); };
+    if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 1800 });
+    else run();
+  }, 360);
 }
 // YT durationText("3:45" / "1:02:33")→秒;分段 split(':') 逐段累乘 60
 function ytDurationTextToSeconds(text) {
@@ -283,12 +390,40 @@ function scheduleTrackSwitchFallbackLyrics(song, token, delay) {
     applyPreferredLyricsForCurrent(true);
   }, Math.max(multiLineDelay, Number(delay) || 720));
 }
+// Windows v2.1.0 对齐: 歌词磁盘缓存(userData/cache/lyrics, 主进程读写)
+function canUseLyricDiskCache() {
+  return !!(window.desktopWindow
+    && typeof window.desktopWindow.readLyricCache === 'function'
+    && typeof window.desktopWindow.writeLyricCache === 'function');
+}
+function lyricDiskCacheKeyForSong(songOrId) {
+  return lyricEndpointForSong(songOrId || '');
+}
+async function readCachedLyricResponse(songOrId) {
+  if (!canUseLyricDiskCache()) return null;
+  try {
+    var result = await window.desktopWindow.readLyricCache(lyricDiskCacheKeyForSong(songOrId));
+    if (result && result.ok === true && result.hit === true && result.payload) return result.payload;
+  } catch (e) { }
+  return null;
+}
+async function writeCachedLyricResponse(songOrId, response) {
+  if (!canUseLyricDiskCache() || !response) return;
+  if (!(response.lyric || response.yrc || response.lrc)) return;
+  try {
+    await window.desktopWindow.writeLyricCache(lyricDiskCacheKeyForSong(songOrId), response);
+  } catch (e) { }
+}
 async function fetchLyric(songOrId, token, attempt) {
   attempt = Math.max(0, Number(attempt) || 0);
   var song;
   try {
     song = (songOrId && typeof songOrId === 'object') ? songOrId : null;
-    var r = await apiJson(lyricEndpointForSong(song || songOrId));
+    var r = await readCachedLyricResponse(song || songOrId);
+    if (!r) {
+      r = await apiJson(lyricEndpointForSong(song || songOrId));
+      writeCachedLyricResponse(song || songOrId, r).catch(function (e) { console.warn('[LyricCache] write failed', e); });
+    }
     if (token !== trackSwitchToken) return;
     r = mergeInlineLyricResponseForSong(song, r);
     cancelPendingTrackFallbackLyrics();
@@ -296,6 +431,7 @@ async function fetchLyric(songOrId, token, attempt) {
     setOriginalLyricsState(state.lines, state.hasNativeKaraoke, state.timingSource, state.translationLines, state.translationSource);
     applyPreferredLyricsForCurrent(true);
     scheduleNeteaseLyricTranslationFallback(song, token, state);
+    scheduleStrictLyricFallback(song, token, state);
     if (!state.usableLyric && shouldRetryStartupLyricFetch(song, token, attempt)) scheduleStartupLyricFetchRetry(song, token, attempt);
   } catch (e) {
     if (token !== trackSwitchToken) return;

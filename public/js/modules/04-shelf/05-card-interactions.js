@@ -149,12 +149,15 @@ renderer.domElement.addEventListener('contextmenu', function (e) {
   if (isPointerOverUi(e)) return;
   e.preventDefault();
   e.stopPropagation();
+  // 右键是显式的视觉交互；空闲降帧时先唤醒主循环，确保 P10 当帧计算并绘制一级歌架。
+  if (typeof markRenderInteraction === 'function') markRenderInteraction('shelf-context', 1200);
+  else if (typeof wakeMainLoopFromBackground === 'function') wakeMainLoopFromBackground();
   if (typeof suppressBottomControlsForShelf === 'function') suppressBottomControlsForShelf(980);
   if (!shelfManager) return;
   var mode = shelfManager.getMode && shelfManager.getMode();
   if (mode === 'off') {
     setShelfMode('side');
-    mode = 'side';
+    mode = shelfManager.getMode && shelfManager.getMode();
   }
   if (mode !== 'side') return;
   if (shelfManager.hasOpenContent && shelfManager.hasOpenContent()) {
@@ -170,8 +173,14 @@ renderer.domElement.addEventListener('contextmenu', function (e) {
     setShelfPinnedOpen(true, true);
     return;
   }
-  setShelfPinnedOpen(!shelfPinnedOpen, true);
-  if (!shelfPinnedOpen && typeof setFocusZone === 'function') setFocusZone(null, true);
+  var shouldOpen = shelfHardHidden || !shelfPinnedOpen;
+  if (shouldOpen) {
+    shelfHardHidden = false;
+    // 右键只负责唤起歌架；不应把鼠标移动留下的悬停抬升状态带进固定构图。
+    if (shelfManager.clearSelected) shelfManager.clearSelected();
+    if (typeof syncShelfToggleBtn === 'function') syncShelfToggleBtn();
+  }
+  setShelfPinnedOpen(shouldOpen, true);
 });
 
 // 滚轮: 在真实卡片或右侧窄热区内滚卡片; 否则保留给封面粒子/视角

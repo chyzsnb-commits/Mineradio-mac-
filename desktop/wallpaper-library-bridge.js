@@ -1,6 +1,7 @@
 'use strict';
 // macOS 壁纸库桥接：从另一台 Windows 电脑上的 Mineradio / Wallpaper Engine 库
 // 读取图片、视频与 Scene 导出。远端媒体先在主进程限额落盘，再经私有协议流给渲染层。
+// 自包含：仅通过 init(refs) 接入主进程的 protocol / ipcMain / app，不侵入式改 main.js。
 const path = require('path');
 const fs = require('fs');
 const dgram = require('dgram');
@@ -22,8 +23,8 @@ const WINDOWS_PORT_PROBE_MIN = 8123;
 const WINDOWS_PORT_PROBE_MAX = 8155;
 const WINDOWS_PORT_PROBE_TIMEOUT_MS = 900;
 const WINDOWS_PORT_PROBE_CONCURRENCY = 4;
-const WINDOWS_ACTIVE_PROBE_CONCURRENCY = 32;
-const WINDOWS_ACTIVE_FALLBACK_DELAY_MS = 900;
+const WINDOWS_ACTIVE_PROBE_CONCURRENCY = 48;
+const WINDOWS_ACTIVE_FALLBACK_DELAY_MS = 250;
 const WINDOWS_ACTIVE_SUBNET_MAX_HOSTS = 512;
 const WINDOWS_MEDIA_MAX_BYTES = 256 * 1024 * 1024;
 const WINDOWS_MEDIA_TIMEOUT_MS = 2 * 60 * 1000;
@@ -154,13 +155,16 @@ function exportMimeForName(name) {
   return '';
 }
 
-async function streamResponseToFile(response, destination, maxBytes, tooLargeCode) {
+async function streamResponseToFile(response, destination, maxBytes, tooLargeCode, signal) {
   const source = responseNodeStream(response);
   if (!source) throw byteLimitError('MEDIA_RESPONSE_BODY_MISSING');
   const limit = Math.max(1, Number(maxBytes) || 1);
   const declared = responseContentLength(response);
   if (declared < 0) throw byteLimitError('HTTP_INVALID_CONTENT_LENGTH');
   if (declared > limit) throw byteLimitError(tooLargeCode);
+  if (signal && signal.aborted) { source.destroy(); throw byteLimitError('ABORTED'); }
+  const onAbort = () => source.destroy(byteLimitError('ABORTED'));
+  if (signal) signal.addEventListener('abort', onAbort, { once: true });
   let size = 0;
   const limiter = new Transform({
     transform(chunk, _encoding, callback) {
@@ -169,7 +173,11 @@ async function streamResponseToFile(response, destination, maxBytes, tooLargeCod
       callback(null, chunk);
     },
   });
-  await pipeline(source, limiter, fs.createWriteStream(destination, { flags: 'wx', mode: 0o600 }));
+  try {
+    await pipeline(source, limiter, fs.createWriteStream(destination, { flags: 'wx', mode: 0o600 }));
+  } finally {
+    if (signal) signal.removeEventListener('abort', onAbort);
+  }
   if (!size) throw byteLimitError('MEDIA_EMPTY');
   return size;
 }
@@ -283,7 +291,7 @@ function normalizeWindowsWallpaperRecord(rawRecord, baseUrl, index) {
   const videoValue = typeof raw.video === 'string' ? raw.video : '';
   const imageValue = typeof raw.image === 'string' ? raw.image : '';
   const type = sceneId || declared === 'scene' ? 'scene' : (declared === 'video' || raw.video === true || videoValue ? 'video' : 'image');
-  const previewValue = raw.previewUrl || raw.preview || raw.thumbnail || raw.cover || imageValue || videoValue || '';
+  const previewValue = raw.previewUrl || raw.preview || raw.thumbnail || raw.cover || imageValue || videoValue || raw.url || raw.file || '';
   const directValue = raw.fileUrl || raw.url || raw.file || '';
   const encodedId = encodeURIComponent(id);
   const fileUrl = type === 'scene' ? '' : (resolveWindowsAssetUrl(baseUrl, directValue) || serviceUrl(baseUrl, '/api/wallpaper-file?id=' + encodedId));
@@ -312,6 +320,12 @@ function windowsWallpaperIsPreview(rawRecord) {
   return /^preview\.(jpe?g|png|webp|gif)$/i.test(id.split('/').pop() || '');
 }
 
+function wallpaperRecordWithSiblingPreview(record, previewEntry) {
+  if (!record || !previewEntry || !previewEntry.record || !previewEntry.record.previewUrl) return record;
+  if (record.previewUrl && record.previewUrl !== record.fileUrl) return record;
+  return Object.assign({}, record, { previewUrl: previewEntry.record.previewUrl });
+}
+
 function normalizeWindowsWallpaperRecords(rawRecords, baseUrl) {
   const groups = new Map();
   (Array.isArray(rawRecords) ? rawRecords : []).forEach((rawRecord, index) => {
@@ -324,7 +338,9 @@ function normalizeWindowsWallpaperRecords(rawRecords, baseUrl) {
     const scene = entries.find((entry) => entry.record.type === 'scene');
     if (scene) return [scene.record];
     const originals = entries.filter((entry) => !entry.preview);
-    return (originals.length ? originals : entries).map((entry) => entry.record);
+    const preview = entries.find((entry) => entry.preview && entry.record.previewUrl);
+    return (originals.length ? originals : entries).map((entry) =>
+      wallpaperRecordWithSiblingPreview(entry.record, preview));
   });
 }
 
@@ -337,6 +353,7 @@ class WindowsWallpaperClient {
     this.neighborHosts = opts.neighborHosts || defaultNeighborHosts;
     this.maxListBytes = Math.max(1, Number(opts.maxListBytes) || HTTP_SOURCE_MAX_LIST_BYTES);
     this.maxMediaBytes = Math.max(1, Number(opts.maxMediaBytes) || WINDOWS_MEDIA_MAX_BYTES);
+    this.exportDownloadTimeoutMs = Number(opts.exportDownloadTimeoutMs) || WINDOWS_MEDIA_TIMEOUT_MS;
     this.tempRoot = path.resolve(String(opts.tempRoot || path.join(os.tmpdir(), 'mineradio-wallpaper-downloads')));
     this.trustedBases = new Set();
     this.temporaryAssets = new Map();
@@ -554,7 +571,10 @@ class WindowsWallpaperClient {
     diagnostics.subnetScan.candidates = neighborHosts.length + progressiveOnlyHosts.length;
     if (!diagnostics.subnetScan.candidates) return null;
     const ports = Array.from({ length: WINDOWS_PORT_PROBE_MAX - WINDOWS_PORT_PROBE_MIN + 1 }, (_, index) => WINDOWS_PORT_PROBE_MIN + index);
-    const orderedPorts = [8130].concat(ports.filter((port) => port !== 8130));
+    // Windows 自动避让后的常见实际端口是 8128；先验证这两个合法高概率端口，
+    // 再进入完整受限范围，避免 /24 上 8130 的慢失败把 8128 饿死到截止时间之后。
+    const priorityPorts = [8128, 8130];
+    const orderedPorts = priorityPorts.concat(ports.filter((port) => !priorityPorts.includes(port)));
     const probeCandidates = async (candidates) => {
       let service = null;
       let next = 0;
@@ -573,12 +593,19 @@ class WindowsWallpaperClient {
     // 先只验证 ARP 邻居的 8130；可用时不再请求整段 /24 或同一主机的其余端口。
     let service = await probeCandidates(neighborHosts.map((host) => 'http://' + host + ':8130'));
     if (!service && (!deadline || Date.now() < deadline)) {
-      const neighborFallbackCandidates = orderedPorts.slice(1).flatMap((port) => neighborHosts.map((host) => 'http://' + host + ':' + port));
+      const neighborFallbackCandidates = orderedPorts.filter((port) => port !== 8130)
+        .flatMap((port) => neighborHosts.map((host) => 'http://' + host + ':' + port));
       service = await probeCandidates(neighborFallbackCandidates);
     }
     if (!service && (!deadline || Date.now() < deadline)) {
-      // 无 ARP 命中才展开渐进扫描，且全体主机始终先探测最常见的 8130。
-      const progressiveCandidates = orderedPorts.flatMap((port) => progressiveOnlyHosts.map((host) => 'http://' + host + ':' + port));
+      // 无 ARP 命中才展开渐进扫描。两个高概率端口按端口波次优先，
+      // 其余端口按主机推进，保证动态端口不会被整段 8130 慢失败阻塞。
+      const priorityCandidates = priorityPorts.flatMap((port) => progressiveOnlyHosts.map((host) => 'http://' + host + ':' + port));
+      service = await probeCandidates(priorityCandidates);
+    }
+    if (!service && (!deadline || Date.now() < deadline)) {
+      const remainingPorts = orderedPorts.filter((port) => !priorityPorts.includes(port));
+      const progressiveCandidates = progressiveOnlyHosts.flatMap((host) => remainingPorts.map((port) => 'http://' + host + ':' + port));
       service = await probeCandidates(progressiveCandidates);
     }
     diagnostics.subnetScan.completed = !!service || (!deadline || Date.now() < deadline);
@@ -795,8 +822,12 @@ class WindowsWallpaperClient {
     const expectedMime = exportMimeForName(name);
     if (!expectedMime) return { ok: false, error: 'INVALID_DOWNLOAD_REQUEST' };
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), WINDOWS_MEDIA_TIMEOUT_MS) : null;
+    const timer = controller ? setTimeout(() => controller.abort(), this.exportDownloadTimeoutMs) : null;
     const temporary = target + '.mineradio-part-' + crypto.randomBytes(8).toString('hex');
+    try {
+      // 目标目录不存在时先补齐，避免落盘直接 WRITE_FAILED（HEAD 侧 bugfix）。
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+    } catch (_) {}
     try {
       const response = await this.fetchImpl(serviceUrl(base, '/api/exported-file?name=' + encodeURIComponent(name)), {
         signal: controller ? controller.signal : undefined,
@@ -804,15 +835,16 @@ class WindowsWallpaperClient {
       });
       if (!response || !response.ok || !response.body) return { ok: false, error: 'DOWNLOAD_FAILED' };
       if (normalizedContentType(response) !== expectedMime) return { ok: false, error: 'MEDIA_TYPE_REJECTED' };
-      await streamResponseToFile(response, temporary, this.maxMediaBytes, 'MEDIA_TOO_LARGE');
+      await streamResponseToFile(response, temporary, this.maxMediaBytes, 'MEDIA_TOO_LARGE', controller ? controller.signal : undefined);
       await fs.promises.rename(temporary, target);
       return { ok: true, filePath: target };
     } catch (error) {
       try { await fs.promises.unlink(temporary); } catch (_) {}
+      const aborted = (error && error.name === 'AbortError') || (error && error.code === 'ABORTED');
       return {
         ok: false,
-        error: error && error.name === 'AbortError'
-          ? 'MEDIA_DOWNLOAD_TIMEOUT'
+        error: aborted
+          ? 'DOWNLOAD_TIMEOUT'
           : (error && error.code || 'DOWNLOAD_WRITE_FAILED'),
       };
     } finally {

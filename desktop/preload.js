@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, clipboard } = require('electron');
+const { contextBridge, ipcRenderer, clipboard, webUtils } = require('electron');
 const RELEASE_POLICY = require('./release-policy');
 
 const desktopWindowApi = {
@@ -6,6 +6,7 @@ const desktopWindowApi = {
   releasePolicy: {
     publicRelease: RELEASE_POLICY.publicRelease,
     disabledProviders: RELEASE_POLICY.disabledProviders,
+    qishuiEnabled: RELEASE_POLICY.qishuiEnabled,
     qishuiCatalogEnabled: RELEASE_POLICY.qishuiCatalogEnabled,
     allowCredentialImport: RELEASE_POLICY.allowCredentialImport,
     allowCredentialExport: RELEASE_POLICY.allowCredentialExport,
@@ -41,6 +42,8 @@ const desktopWindowApi = {
   clearQQMusicLogin: () => ipcRenderer.invoke('qq-music-clear-login'),
   openKugouMusicLogin: () => ipcRenderer.invoke('kugou-music-open-login'),
   clearKugouMusicLogin: () => ipcRenderer.invoke('kugou-music-clear-login'),
+  openQishuiMusicLogin: () => ipcRenderer.invoke('qishui-music-open-login'),
+  clearQishuiMusicLogin: () => ipcRenderer.invoke('qishui-music-clear-login'),
   openSpotifyMusicLogin: () => ipcRenderer.invoke('spotify-music-open-login'),
   clearSpotifyMusicLogin: () => ipcRenderer.invoke('spotify-music-clear-login'),
   requestCameraAccess: () => ipcRenderer.invoke('mineradio-camera-permission-request'),
@@ -58,6 +61,34 @@ const desktopWindowApi = {
     return { ok: true };
   },
   readText: () => ({ ok: true, text: clipboard.readText() || '' }),
+  listLocalMusicLibrary: () => ipcRenderer.invoke('mineradio-local-library-list'),
+  readLocalMusicLyric: (localFileId) => ipcRenderer.invoke('mineradio-local-library-lyric', String(localFileId || '')),
+  importLocalMusicFiles: async (files) => {
+    const entries = [];
+    for (const file of Array.from(files || [])) {
+      let filePath = '';
+      try {
+        filePath = webUtils && typeof webUtils.getPathForFile === 'function' ? webUtils.getPathForFile(file) : '';
+      } catch (_) {}
+      if (!filePath) continue;
+      entries.push({
+        path: filePath,
+        relativePath: String(file && (file.webkitRelativePath || file.name) || ''),
+      });
+    }
+    if (!entries.length) return { ok: false, count: 0, tracks: [], error: 'NO_AUTHORIZED_LOCAL_AUDIO' };
+    const authorization = await ipcRenderer.invoke('mineradio-local-library-authorize', { files: entries });
+    if (!authorization || authorization.ok !== true || !authorization.token) return authorization;
+    return ipcRenderer.invoke('mineradio-local-library-import', { token: authorization.token });
+  },
+  removeLocalMusicLibraryTracks: (ids) => ipcRenderer.invoke('mineradio-local-library-remove', Array.isArray(ids) ? ids : [ids]),
+  readLyricCache: (key) => ipcRenderer.invoke('mineradio-cache-read-lyric', String(key || '')),
+  writeLyricCache: (key, payload) => ipcRenderer.invoke('mineradio-cache-write-lyric', String(key || ''), payload || {}),
+  getCacheUsage: () => ipcRenderer.invoke('mineradio-cache-get-usage'),
+  clearLyricCache: () => ipcRenderer.invoke('mineradio-cache-clear-lyrics'),
+  clearCacheCategories: (categories) => ipcRenderer.invoke('mineradio-cache-clear-selected', { categories: Array.isArray(categories) ? categories : [] }),
+  openLocalWallpaperFolder: () => ipcRenderer.invoke('mineradio-wallpaper-local-open'),
+  storeLocalWallpaperMedia: (payload) => ipcRenderer.invoke('mineradio-wallpaper-local-store', payload || {}),
   wallpaperWindowsDiscover: () => ipcRenderer.invoke('mineradio-wallpaper-windows-discover'),
   wallpaperWindowsConnect: (baseUrl) => ipcRenderer.invoke('mineradio-wallpaper-windows-connect', String(baseUrl || '')),
   wallpaperWindowsLiveStatus: (baseUrl) => ipcRenderer.invoke('mineradio-wallpaper-windows-live-status', String(baseUrl || '')),
@@ -126,6 +157,15 @@ const desktopWindowApi = {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on('desktop-window-state', listener);
     return () => ipcRenderer.removeListener('desktop-window-state', listener);
+  },
+  // 软件内更新（检查 + 一键下载，见 desktop/update-checker.js）
+  updateCheckNow: () => ipcRenderer.invoke('mineradio-update-check-now'),
+  updateDownload: (downloadUrl) => ipcRenderer.invoke('mineradio-update-download', String(downloadUrl || '')),
+  onUpdateEvent: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => { try { callback(payload); } catch (_) {} };
+    ipcRenderer.on('mineradio-update-event', listener);
+    return () => ipcRenderer.removeListener('mineradio-update-event', listener);
   },
 };
 

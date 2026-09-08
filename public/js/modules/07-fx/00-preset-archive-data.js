@@ -9,9 +9,11 @@ var presetMeta = [
   { name: '安魂', desc: '骷髅·YUI7W', descHtml: '骷髅·<span class="pc-yui7w">YUI7W</span>' },
   { name: '黑洞', desc: '吸积盘 · 引力漩涡' },
   { name: '极光', desc: '丝带翻涌 · 中频流动' },
-  { name: '声波走廊', desc: '穿过声音 · 隧道流动' },
+  { name: '雨境', desc: '节奏雨丝 · 频段风向' },
   { name: '音域回响', desc: '频谱方块 · 反应堆核心' },
-  { name: '词境穿行', desc: '景深歌词 · 封面漫游' },
+    { name: '词境穿行', desc: '景深歌词 · 封面漫游' },
+{ name: '音域回响', nameHtml: '音域回响 <span class="pc-name-en">Sonic-Topography</span>', desc: '作者 Ajin', descHtml: '作者 <span class="pc-author-ajin">Ajin</span>' },
+  { name: '音域回响', nameHtml: '音域回响 <span class="pc-name-en">Wallpaper Engine</span>', desc: '作者 CmzYa' },
 ];
 var presetIcons = [
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 14c3-2 5-2 8 0s5 2 8 0M3 10c3-2 5-2 8 0s5 2 8 0M3 18c3-2 5-2 8 0s5 2 8 0"/></svg>',
@@ -23,11 +25,13 @@ var presetIcons = [
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.2h4v6.2h4.2v3.8H14v7.6h-4v-7.6H5.8V9.4H10z"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="9" ry="3.4"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>',
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M2.5 9c3-3.5 6-1 9-4M3 14c3-3.5 6-1 9-4M4 19c3-3.5 6-1 9-4"/><path d="M14 5c2.5-2 5-1 7.5-2M15 10c2.5-2 5-1 7.5-2"/></svg>',
-  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7.6" y="7.6" width="8.8" height="8.8" rx="1.4"/><path d="M3 3l4.6 4.6M21 3l-4.6 4.6M3 21l4.6-4.6M21 21l-4.6-4.6"/></svg>',
-  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 21h18"/><rect x="4.5" y="11" width="3" height="10"/><rect x="9.5" y="6" width="3" height="15"/><rect x="14.5" y="13" width="3" height="8"/><rect x="19" y="9" width="0.1" height="12"/></svg>',
-  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5h8.5M7 12h11M3.5 16.5h8"/><circle cx="17.5" cy="6.5" r="2.5"/><path d="M13.5 18.5l3-2.2 3 2.2"/></svg>',
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M7 3v10M12 5v12M17 2v11"/><path d="M7 15c0 1.7 1.1 3 2.5 3S12 16.7 12 15M12 19c0 1.5.9 2.6 2.1 2.6S16.2 20.5 16.2 19M17 15c0 1.2.8 2.2 1.8 2.2"/></svg>',
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 20c3-6 5-6 8 0s5 6 10 0"/><path d="M3 14c3-6 5-6 8 0s5 6 10 0"/><path d="M3 8c3-6 5-6 8 0s5 6 10 0"/></svg>',
+  // 12=声波地形(Sonic-Topography) 13=声波工坊(Wallpaper Engine)
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18c2-3 4-3 6 0s4 3 6 0 4-3 6 0"/><path d="M3 12c2-2.5 4-2.5 6 0s4 2.5 6 0 4-2.5 6 0"/><path d="M3 6c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><circle cx="18" cy="5" r="1.2" fill="currentColor"/></svg>',
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M5 15c1.4-4 2.8-4 4.2 0s2.8 4 4.2 0 2.8-4 4.6 0"/><path d="M4 10c2-2 4-2 6 0s4 2 6 0 3-2 4 0"/><path d="M7 6h10"/><circle cx="18.2" cy="5.8" r="1.35" fill="currentColor"/></svg>',
 ];
-var presetDisplayOrder = [0, 11, 10, 6, 5, 4, 2, 1, 3, 8];   // 9=声波走廊 7=黑洞 已按用户要求下架(索引保留,存档遇 7/9 回落 0);11=词境穿行
+var presetDisplayOrder = [0, 10, 9, 6, 5, 4, 2, 1, 3, 8, 11, 12, 13];   // 7=黑洞 已下架(索引保留,存档遇 7 回落 0);9=雨境(原声波走廊位置复用);12/13=声波地形/工坊
 var lyricColorPresets = [
   { name: '雾蓝', color: '#a9b8c8' },
   { name: '银蓝', color: '#9db8cf' },
@@ -90,6 +94,12 @@ var USER_FX_SHARE_KEYS = [
   'lyricDisplayMode',
   'lyricTranslationMode',
   'lyricMotionStyle',
+  'lyricTransitionStyle',
+  'lyricTransitionExplicit',
+  'lyricTransitionSpeed',
+  'lyricRasterQuality',
+  'lyricVerticalFloat',
+  'lyricPauseHold',
   'lyricCustomLineCount',
   'lyricGlitchCameraBind',
   'lyricGlitchIntensity',
@@ -118,6 +128,7 @@ var USER_FX_SHARE_KEYS = [
   'backgroundColor',
   'backgroundOpacity',
   'backgroundAlbumCover',
+  'wallpaperMouseParallax',
   'backgroundMediaCropX',
   'backgroundMediaCropY',
   'backgroundMediaZoom',
@@ -137,6 +148,9 @@ var USER_FX_SHARE_KEYS = [
   'lyricGlow',
   'lyricGlowBeat',
   'lyricGlowParticles',
+  'lyricVerticalFloat',
+  'backgroundStarRiver',
+  'lyricPauseHold',
   'desktopLyrics',
   'desktopLyricsSize',
   'desktopLyricsOpacity',
@@ -195,10 +209,7 @@ var USER_FX_SHARE_KEYS = [
   'shelfCameraEnterSpeed',
   'shelfCameraExitSpeed',
   'cam',
-  // 新键只能追加，避免改变 v1 紧凑分享码的既有字段位置。
-  'lyricDepthKaraokeHighlight',
-  'lyricDepthInteraction',
-  'lyricDepthWordSweep'
+  'pointerDragFollowMode'
 ];
 function defaultUserFxArchiveName(index) {
   return '存档 ' + (index + 1);
@@ -220,8 +231,10 @@ function archiveMode(raw, key, pattern, fallback) {
 function normalizeFxArchiveSnapshot(raw) {
   if (!raw || typeof raw !== 'object') return null;
   var savedPreset = clampRange(Number(raw.preset) || 0, 0, presetMeta.length - 1);
-  if (savedPreset === 9 || savedPreset === 7) savedPreset = 0;   // 9=声波走廊 7=黑洞 已下架
+  if (savedPreset === 7) savedPreset = 0;   // 7=黑洞 已下架(9 在本地为雨境,保留)
   if (savedPreset === 3 && raw.visualPresetSchema !== VISUAL_PRESET_SCHEMA) savedPreset = 5;
+  // 已退役预设的旧存档/导入档落到雨境。
+  if (isPresetHidden(savedPreset)) savedPreset = HIDDEN_PRESET_FALLBACK;
   var archiveShelfMode = archiveMode(raw, 'shelf', /^(side|stage|both)$/, fxDefaults.shelf);
   var archiveShelfPresence = archiveShelfMode === 'off' ? 'auto' : archiveMode(raw, 'shelfPresence', /^(auto|always)$/, fxDefaults.shelfPresence);
   var archiveShelfPinnedOpen = archiveShelfMode === 'side' && archiveShelfPresence === 'always' && raw.shelfPinnedOpen === true;
@@ -257,6 +270,14 @@ function normalizeFxArchiveSnapshot(raw) {
     lyricDisplayMode: normalizeLyricDisplayMode(raw.lyricDisplayMode || fxDefaults.lyricDisplayMode),
     lyricTranslationMode: normalizeLyricTranslationMode(raw.lyricTranslationMode || fxDefaults.lyricTranslationMode),
     lyricMotionStyle: normalizeLyricMotionStyle(raw.lyricMotionStyle || fxDefaults.lyricMotionStyle),
+    lyricTransitionStyle: raw.lyricTransitionExplicit === true
+      ? normalizeLyricTransitionStyle(raw.lyricTransitionStyle || fxDefaults.lyricTransitionStyle)
+      : fxDefaults.lyricTransitionStyle,
+    lyricTransitionExplicit: raw.lyricTransitionExplicit === true,
+    lyricTransitionSpeed: archiveNumber(raw, 'lyricTransitionSpeed', fxDefaults.lyricTransitionSpeed, 0.55, 1.65),
+    lyricRasterQuality: normalizeLyricRasterQuality(raw.lyricRasterQuality),
+    lyricVerticalFloat: raw.lyricVerticalFloat !== false,
+    lyricPauseHold: raw.lyricPauseHold !== false,
     lyricCustomLineCount: archiveNumber(raw, 'lyricCustomLineCount', fxDefaults.lyricCustomLineCount, 1, 10),
     lyricGlitchCameraBind: !!raw.lyricGlitchCameraBind,
     lyricGlitchIntensity: archiveNumber(raw, 'lyricGlitchIntensity', fxDefaults.lyricGlitchIntensity, 0, 1.5),
@@ -275,9 +296,6 @@ function normalizeFxArchiveSnapshot(raw) {
     lyricLetterSpacing: archiveNumber(raw, 'lyricLetterSpacing', fxDefaults.lyricLetterSpacing, -0.04, 0.18),
     lyricLineHeight: archiveNumber(raw, 'lyricLineHeight', fxDefaults.lyricLineHeight, 0.72, 1.80),
     lyricWeight: archiveNumber(raw, 'lyricWeight', fxDefaults.lyricWeight, 500, 900),
-    lyricDepthKaraokeHighlight: raw.lyricDepthKaraokeHighlight !== false,
-    lyricDepthInteraction: raw.lyricDepthInteraction === true,
-    lyricDepthWordSweep: raw.lyricDepthWordSweep !== false,
     visualTintMode: raw.visualTintMode === 'custom' ? 'custom' : 'auto',
     visualTintColor: normalizeHexColor(raw.visualTintColor || fxDefaults.visualTintColor),
     uiAccentColor: normalizeHexColor(raw.uiAccentColor || fxDefaults.uiAccentColor, fxDefaults.uiAccentColor),
@@ -288,6 +306,7 @@ function normalizeFxArchiveSnapshot(raw) {
     backgroundColor: normalizeHexColor(raw.backgroundColor || fxDefaults.backgroundColor, fxDefaults.backgroundColor),
     backgroundOpacity: archiveNumber(raw, 'backgroundOpacity', fxDefaults.backgroundOpacity, 0, 1),
     backgroundAlbumCover: raw.backgroundAlbumCover === true,
+    wallpaperMouseParallax: raw.wallpaperMouseParallax === true,
     backgroundMediaCropX: archiveNumber(raw, 'backgroundMediaCropX', fxDefaults.backgroundMediaCropX, 0, 100),
     backgroundMediaCropY: archiveNumber(raw, 'backgroundMediaCropY', fxDefaults.backgroundMediaCropY, 0, 100),
     backgroundMediaZoom: archiveNumber(raw, 'backgroundMediaZoom', fxDefaults.backgroundMediaZoom, 1, 2.8),
@@ -365,6 +384,7 @@ function normalizeFxArchiveSnapshot(raw) {
     shelfCameraEnterSpeed: archiveNumber(raw, 'shelfCameraEnterSpeed', fxDefaults.shelfCameraEnterSpeed, 0.2, 1.5),
     shelfCameraExitSpeed: archiveNumber(raw, 'shelfCameraExitSpeed', fxDefaults.shelfCameraExitSpeed, 0.2, 1.5),
     cam: archiveMode(raw, 'cam', /^(off|gesture)$/, fxDefaults.cam),
+    pointerDragFollowMode: archiveMode(raw, 'pointerDragFollowMode', /^(light|medium|medium-strong|strong)$/, fxDefaults.pointerDragFollowMode),
     voxRes: archiveMode(raw, 'voxRes', /^(low|mid|high)$/, fxDefaults.voxRes)
   };
 }

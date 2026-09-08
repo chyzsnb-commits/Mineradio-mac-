@@ -67,7 +67,7 @@ test('official login bridge rejects missing sessions and unsupported providers',
   assert.equal(missing.ok, false);
   assert.equal(missing.error, 'OFFICIAL_LOGIN_COOKIE_MISSING');
 
-  const unsupported = await applyOfficialProviderLogin(server, 'qishui', {
+  const unsupported = await applyOfficialProviderLogin(server, 'apple-music', {
     ok: true,
     cookie: 'sessionid=secret',
   });

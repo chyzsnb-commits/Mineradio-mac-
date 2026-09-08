@@ -1,4 +1,65 @@
 var homeWaveTrackState = { bars: 0, smooth: [] };
+
+// ---- 声波系列(预设 12 声波地形 / 13 声波工坊)fx 面板显隐 —— Windows v2.1.0 迁移 ----
+var SONIC_ORIGINAL_FX_CONTROL_IDS = [
+  'fx-sonic-ground-section', 'fx-sonicamp', 'fx-sonicspeed', 'fx-sonicdensity', 'fx-sonicrange', 'fx-soniclower', 'fx-sonicdepth', 'fx-sonicautorotate',
+  'fx-sonicsubbass', 'fx-sonicbass', 'fx-soniclowmid', 'fx-sonicmid', 'fx-sonichighmid', 'fx-sonicpresence', 'fx-sonicbrilliance', 'fx-sonicair',
+  'fx-sonic-color-section', 'sonic-ground-base-row', 'sonic-ground-cool-row', 'sonic-ground-warm-row', 'sonic-ground-accent-row', 'fx-sonicglow',
+  'fx-sonic-floating-section', 'sonic-floating-toggle-grid', 'fx-sonicfloatcount', 'fx-sonicfloatintensity', 'fx-sonicfloatmin', 'fx-sonicfloatmax', 'fx-sonicfloatspeed'
+];
+var SONIC_WORKSHOP_FX_CONTROL_IDS = [
+  'fx-sonic-workshop-section', 'fx-sonicwegain', 'fx-sonicweaudio', 'fx-sonicwerange', 'fx-sonicwepeak',
+  'sonic-workshop-color-row', 'sonic-workshop-base-row', 'sonic-workshop-warm-row', 'sonic-workshop-cool-row',
+  'sonic-workshop-ripple-row', 'sonic-workshop-peak-row', 'sonic-workshop-theme-seg'
+];
+function fxPanelControlBlockById(id) {
+  var el = document.getElementById(id);
+  if (!el) return null;
+  if (el.classList && (el.classList.contains('fx-section-label') || el.classList.contains('fx-slider') || el.classList.contains('fx-toggle-grid') || el.classList.contains('sonic-audio-monitor') || el.classList.contains('lyric-color-row') || el.classList.contains('fx-seg'))) return el;
+  return el.closest ? el.closest('.fx-slider,.fx-toggle-grid,.sonic-audio-monitor,.lyric-color-row,.fx-seg,.fx-section-label') : null;
+}
+function setFxPanelControlsHidden(ids, hidden) {
+  ids.forEach(function (id) {
+    var node = fxPanelControlBlockById(id);
+    if (node) node.classList.toggle('fx-sonic-hidden', !!hidden);
+  });
+}
+function updateSonicSeriesControlVisibility() {
+  var preset = Number(fx && fx.preset) || 0;
+  var original = preset === SONIC_PRESET_INDEX;
+  var workshop = preset === SONIC_WORKSHOP_PRESET_INDEX;
+  setFxPanelControlsHidden(SONIC_ORIGINAL_FX_CONTROL_IDS, !original);
+  setFxPanelControlsHidden(SONIC_WORKSHOP_FX_CONTROL_IDS, !workshop);
+  setFxPanelControlsHidden(['fx-lyricbgadapt-row', 'fx-lyricbgadapt'], false);
+}
+
+// 动效 tab 预设专属分组:每个预设只显示自己的动效组 + 通用组,不混杂其他预设。
+// 通用组: base(基础画面,所有预设) particles(粒子与光影,仅粒子类预设 0-8)
+//         audio-spectrum(频谱面板,所有预设)
+// 专属组: rain-mood(预设9雨境) vox-echo(预设10音域回响)
+//         sonic-terrain/sonic-audio/sonic-blocks(预设12声波地形) sonic-we(预设13声波工坊)
+// 粒子层在雨境/音域回响/声波地形/声波工坊激活时隐藏(hidePoints),粒子参数不生效,故不显示。
+function updateMineradioMotionGroupVisibility() {
+  var preset = Number(fx && fx.preset) || 0;
+  var nonParticlePreset = preset === 9 || preset === 10 || preset === 12 || preset === 13;
+  var groups = document.querySelectorAll('#fx-panel [data-fx-page="motion"] .fx-console-group');
+  var visibleMap = {
+    'particles': !nonParticlePreset,
+    'audio-spectrum': true,
+    'rain-mood': preset === 9,
+    'vox-echo': preset === 10,
+    'sonic-terrain': preset === SONIC_PRESET_INDEX,
+    'sonic-audio': preset === SONIC_PRESET_INDEX,
+    'sonic-blocks': preset === SONIC_PRESET_INDEX,
+    'sonic-we': preset === SONIC_WORKSHOP_PRESET_INDEX,
+  };
+  groups.forEach(function (group) {
+    var key = group.getAttribute('data-fx-console-group') || '';
+    var visible = visibleMap[key] !== false;   // 未在映射里的组(base 等)= 通用组,始终显示
+    group.classList.toggle('fx-sonic-hidden', !visible);
+  });
+}
+
 function ensureHomeWaveTrackBars() {
   var el = document.getElementById('home-wave-track');
   if (!el) return;
@@ -226,8 +287,7 @@ function updatePerfHud() {
   var hud = document.getElementById('perf-hud');
   if (!hud || hud.style.display === 'none') return;
   var fps = (typeof renderPerfState !== 'undefined' && renderPerfState) ? (renderPerfState.fps || 0) : 0;
-  // 显示「真实绘制缓冲」= innerWidth×getRenderPixelRatio(含治理器 scaleMul + 绝对缓冲上限),这样降档/封顶肉眼可见;
-  // 括号内附滑块天花板。用户报「满屏 9fps 但分辨率显示没降」正是因为旧标签只显示滑块值、不反映实际缓冲。
+  // 显示实际绘制缓冲；自动治理不会改用户的分辨率滑块，括号仅在显示缓冲与手动滑块不同才出现。
   var pr = (typeof getRenderPixelRatio === 'function') ? getRenderPixelRatio() : 1;
   var bufLabel = Math.round(innerWidth * pr) + ' × ' + Math.round(innerHeight * pr);
   var scaleLabel = (typeof renderScaleResLabel === 'function') ? renderScaleResLabel() : (innerWidth + '×' + innerHeight);
@@ -243,7 +303,7 @@ function updatePerfHud() {
   var freeGB = (d && typeof d.memFreeMB === 'number' && isFinite(d.memFreeMB)) ? (d.memFreeMB / 1024).toFixed(1) + ' GB' : '--';
   var appMem = (d && typeof d.appMemMB === 'number' && isFinite(d.appMemMB)) ? Math.round(d.appMemMB) + ' MB' : '--';
   var memLine = memPct + '(剩余 ' + freeGB + ')· 播放器 ' + appMem;
-  // auto 档:保留自适应治理器态(如「自适应 ×0.84 · 高」),移到独立小行;非 auto 不显示该行
+  // auto 档只展示实际生效的品质 rank；不把不存在的分辨率或帧率降档伪装成状态。
   var adaptRow = '';
   var isAutoQuality = (typeof normalizePerformanceQuality === 'function')
     && normalizePerformanceQuality(fx && fx.performanceQuality) === 'auto';
@@ -251,8 +311,7 @@ function updatePerfHud() {
     var gs = autoGovState();
     if (gs) {
       var govRankName = ['低', '均衡', '高', '超高'][gs.rank] || '高';
-      var govFps = (gs.fgFps && gs.fgFps < 60) ? (' · ' + gs.fgFps + 'fps') : '';   // P1:治理器把前台帧率降到 45/30 时显示,便于确认降档
-      adaptRow = '<div class="ph-r"><span>自适应</span><b>×' + (Math.round(gs.scaleMul * 100) / 100).toFixed(2) + ' · ' + govRankName + govFps + '</b></div>';
+      adaptRow = '<div class="ph-r"><span>自适应</span><b>' + govRankName + '</b></div>';
     }
   }
   hud.innerHTML =
@@ -376,6 +435,7 @@ function updateFxInputs() {
   setRange('fx-lyriclineheight', fx.lyricLineHeight);
   setRange('fx-lyricweight', fx.lyricWeight);
   setRange('fx-lyriccustomlines', fx.lyricCustomLineCount);
+  setRange('fx-lyrictransitionspeed', fx.lyricTransitionSpeed);
   setRange('fx-lyricscalepulse', fx.lyricScalePulse);
   setRange('fx-lyricglitchintensity', fx.lyricGlitchIntensity);
   setRange('fx-lyricglitchslice', fx.lyricGlitchSlice);
@@ -402,6 +462,55 @@ function updateFxInputs() {
   setRange('fx-bloom', fx.bloomStrength);
   setRange('fx-scatter', fx.scatter);
   setRange('fx-bgfade', fx.bgFade);
+  // 声波地形(预设 12)控件
+  setRange('fx-sonicamp', fx.sonicGroundAmplitude);
+  setRange('fx-sonicspeed', fx.sonicGroundMotionSpeed);
+  setRange('fx-sonicdensity', fx.sonicGroundDensity);
+  setRange('fx-sonicrange', fx.sonicGroundRange);
+  setRange('fx-soniclower', fx.sonicGroundLower);
+  setRange('fx-sonicdepth', fx.sonicGroundDepth);
+  setRange('fx-sonicautorotate', fx.sonicGroundAutoRotate);
+  setRange('fx-sonicglow', fx.sonicGroundGlow);
+  setRange('fx-sonicsubbass', fx.sonicGroundSubBass);
+  setRange('fx-sonicbass', fx.sonicGroundBass);
+  setRange('fx-soniclowmid', fx.sonicGroundLowMid);
+  setRange('fx-sonicmid', fx.sonicGroundMid);
+  setRange('fx-sonichighmid', fx.sonicGroundHighMid);
+  setRange('fx-sonicpresence', fx.sonicGroundPresence);
+  setRange('fx-sonicbrilliance', fx.sonicGroundBrilliance);
+  setRange('fx-sonicair', fx.sonicGroundAir);
+  setRange('fx-sonicfloatcount', fx.sonicGroundFloatingCount);
+  setRange('fx-sonicfloatintensity', fx.sonicGroundFloatingIntensity);
+  setRange('fx-sonicfloatmin', fx.sonicGroundFloatingMinSize);
+  setRange('fx-sonicfloatmax', fx.sonicGroundFloatingMaxSize);
+  setRange('fx-sonicfloatspeed', fx.sonicGroundFloatingSpeed);
+  // 声波频谱(监视器)控件
+  setRange('fx-sonicaudiosensitivity', fx.sonicAudioSensitivity);
+  setRange('fx-sonicaudiobandstart', fx.sonicAudioBandStart);
+  setRange('fx-sonicaudiobandend', fx.sonicAudioBandEnd);
+  setRange('fx-sonicaudiothreshold', fx.sonicAudioThreshold);
+  setRange('fx-sonicaudiopulse', fx.sonicAudioPulseStrength);
+  // 声波工坊(预设 13)控件
+  setRange('fx-sonicwegain', fx.sonicWorkshopInputGain);
+  setRange('fx-sonicweaudio', fx.sonicWorkshopAudioIntensity);
+  setRange('fx-sonicwerange', fx.sonicWorkshopResponseRange);
+  setRange('fx-sonicwepeak', fx.sonicWorkshopPeakIntensity);
+  var sonicMonitorToggle = document.getElementById('t-sonicAudioMonitorEnabled');
+  if (sonicMonitorToggle) sonicMonitorToggle.classList.toggle('on', fx.sonicAudioMonitorEnabled !== false);
+  var sonicAutoToggle = document.getElementById('t-sonicAudioAutoTrack');
+  if (sonicAutoToggle) sonicAutoToggle.classList.toggle('on', fx.sonicAudioAutoTrack !== false);
+  var sonicFloatingToggle = document.getElementById('t-sonicGroundFloatingEnabled');
+  if (sonicFloatingToggle) sonicFloatingToggle.classList.toggle('on', fx.sonicGroundFloatingEnabled !== false);
+  if (typeof updateSonicGroundColorControls === 'function') updateSonicGroundColorControls();
+  if (typeof updateSonicWorkshopColorControls === 'function') updateSonicWorkshopColorControls();
+  if (typeof updateSonicSeriesControlVisibility === 'function') updateSonicSeriesControlVisibility();
+  if (typeof updateMineradioMotionGroupVisibility === 'function') updateMineradioMotionGroupVisibility();
+  if (typeof refreshSonicAudioMonitorUi === 'function') refreshSonicAudioMonitorUi();
+  var albumBackgroundMouseBindToggle = document.getElementById('t-albumBackgroundMouseBind');
+  if (albumBackgroundMouseBindToggle) albumBackgroundMouseBindToggle.classList.toggle('on', fx.albumBackgroundMouseBind === true);
+  var wallpaperMouseParallaxToggle = document.getElementById('t-wallpaperMouseParallax');
+  if (wallpaperMouseParallaxToggle) wallpaperMouseParallaxToggle.classList.toggle('on', fx.wallpaperMouseParallax === true);
+  if (typeof updateCustomBackgroundMouseParallax === 'function') updateCustomBackgroundMouseParallax();
   updateLyricGlowControls();
   applyPlaylistPanelFxSettings();
   // 同步开关
@@ -453,12 +562,33 @@ function updateFxInputs() {
   if (typeof setRange === 'function') setRange('fx-voxsens', fx.voxSensitivity == null ? 1 : fx.voxSensitivity);
   if (typeof setRange === 'function') setRange('fx-voxrotspeed', fx.voxRotateSpeed == null ? 0.5 : fx.voxRotateSpeed);
   if (typeof setRange === 'function') setRange('fx-voxfloatblockscale', fx.voxFloatBlockScale == null ? 1 : fx.voxFloatBlockScale);
+  if (typeof setRange === 'function') setRange('fx-rainamount', fx.rainAmount == null ? 1 : fx.rainAmount);
+  if (typeof setRange === 'function') setRange('fx-rainthunder', fx.rainThunder == null ? 0.55 : fx.rainThunder);
+  if (typeof setRange === 'function') setRange('fx-rainrandomfrequency', fx.rainRandomFrequency == null ? 15 : fx.rainRandomFrequency);
+  var rainThunderMode = typeof rainThunderModeValue === 'function' ? rainThunderModeValue() : ((fx && fx.rainThunderMode) || 'music');
+  var rainThunderModeSeg = document.getElementById('rain-thunder-mode-seg');
+  if (rainThunderModeSeg) rainThunderModeSeg.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b.dataset.rainthundermode === rainThunderMode); });
+  var musicThunderControl = document.getElementById('rain-thunder-music-control');
+  if (musicThunderControl) musicThunderControl.hidden = rainThunderMode !== 'music';
+  var randomThunderControl = document.getElementById('rain-thunder-random-control');
+  if (randomThunderControl) randomThunderControl.hidden = rainThunderMode !== 'random';
+  var randomThunderOutput = document.querySelector('#rain-thunder-random-control output');
+  if (randomThunderOutput) randomThunderOutput.textContent = Math.round(fx.rainRandomFrequency == null ? 15 : fx.rainRandomFrequency) + ' 秒';
+  if (typeof setRange === 'function') setRange('fx-rainglassamount', fx.rainGlassAmount == null ? 0.70 : fx.rainGlassAmount);
+  if (typeof setRange === 'function') setRange('fx-rainglassspeed', fx.rainGlassSpeed == null ? 5.00 : fx.rainGlassSpeed);
+  if (typeof setRange === 'function') setRange('fx-rainglasssize', fx.rainGlassSize == null ? 1.00 : fx.rainGlassSize);
+  if (typeof setRange === 'function') setRange('fx-rainwindoffset', fx.rainWindOffset == null ? 0 : fx.rainWindOffset);
+  if (typeof setRange === 'function') setRange('fx-rainDensity', fx.rainDensity == null ? 1 : fx.rainDensity);
   var voxCoverColorToggle = document.getElementById('t-voxCoverColor');
   if (voxCoverColorToggle) voxCoverColorToggle.classList.toggle('on', fx.voxCoverColor !== false);
   var voxMeteorsToggle = document.getElementById('t-voxMeteors');
   if (voxMeteorsToggle) voxMeteorsToggle.classList.toggle('on', fx.voxMeteors !== false);
   var voxGhostCoverToggle = document.getElementById('t-voxGhostCover');
   if (voxGhostCoverToggle) voxGhostCoverToggle.classList.toggle('on', fx.voxGhostCover !== false);
+  var rainGhostCoverToggle = document.getElementById('t-rainGhostCover');
+  if (rainGhostCoverToggle) rainGhostCoverToggle.classList.toggle('on', fx.rainGhostCover !== false);
+  var rainGlassToggle = document.getElementById('t-rainGlassEnabled');
+  if (rainGlassToggle) rainGlassToggle.classList.toggle('on', fx.rainGlassEnabled !== false);
   var voxFloatBlocksToggle = document.getElementById('t-voxFloatBlocks');
   if (voxFloatBlocksToggle) voxFloatBlocksToggle.classList.toggle('on', fx.voxFloatBlocks !== false);
   updateVoxFloatBlockScaleControl();
@@ -473,6 +603,7 @@ function updateFxInputs() {
   updateLyricDisplayModeControls();
   updateLyricTranslationModeControls();
   updateLyricMotionStyleControls();
+  updateLyricTransitionControls();
   updateLyricFontControls();
   updateUiAccentControls();
   updateHomeAccentControls();
@@ -597,6 +728,7 @@ var fxPanelTab = (function () {
   } catch (_) {}
   return 'presets';
 })();
+var fxPanelTabScroll = {};
 function updateFxConsoleStatus() {
   var status = document.getElementById('fx-console-status');
   if (!status) return;
@@ -611,27 +743,49 @@ function updateFxConsoleStatus() {
 }
 function setFxPanelTab(tab, opts) {
   opts = opts || {};
-  var allowed = { presets: 1, appearance: 1, lyrics: 1, motion: 1, advanced: 1, playlist: 1 };
-  var next = allowed[tab] ? tab : 'presets';
-  var changed = next !== fxPanelTab;
-  fxPanelTab = next;
-  try { localStorage.setItem(FX_PANEL_TAB_STORE_KEY, fxPanelTab); } catch (_) {}
+  // 兼容两种布局: FX 控制台(task-first-v2)用新 key;旧分页用旧 key。
+  // 根据面板实际 data-console-layout 决定 key 集合,避免旧分页下映射到不存在的页面。
+  var legacyToNew = { presets: 'home', appearance: 'interface', advanced: 'system', playlist: 'shelf' };
+  var newToLegacy = { home: 'presets', interface: 'appearance', shelf: 'playlist', system: 'advanced' };
+  var newAllowed = { home: 1, interface: 1, lyrics: 1, motion: 1, shelf: 1, system: 1 };
+  var legacyAllowed = { presets: 1, appearance: 1, lyrics: 1, motion: 1, advanced: 1, playlist: 1 };
   var panel = document.getElementById('fx-panel');
+  var isConsole = !!(panel && panel.getAttribute('data-console-layout') === 'task-first-v2');
+  var allowed = isConsole ? newAllowed : legacyAllowed;
+  var raw = String(tab || '');
+  if (isConsole && legacyToNew[raw]) raw = legacyToNew[raw];
+  if (!isConsole && newToLegacy[raw]) raw = newToLegacy[raw];
+  var nextTab = allowed[raw] ? raw : (isConsole ? 'home' : 'presets');
+  var previousTab = fxPanelTab;
+  var changed = nextTab !== previousTab;
+  if (panel && changed && isConsole) {
+    fxPanelTabScroll[previousTab] = panel.scrollTop;
+  }
+  fxPanelTab = nextTab;
+  try { localStorage.setItem(FX_PANEL_TAB_STORE_KEY, fxPanelTab); } catch (_) {}
   if (panel) panel.setAttribute('data-active-tab', fxPanelTab);
   document.querySelectorAll('#fx-panel-tabs [data-fx-tab]').forEach(function (btn) {
-    var on = btn.getAttribute('data-fx-tab') === fxPanelTab;
-    btn.classList.toggle('active', on);
-    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    var active = btn.getAttribute('data-fx-tab') === fxPanelTab;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    btn.setAttribute('tabindex', active ? '0' : '-1');
+    if (active && changed) btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   });
   document.querySelectorAll('#fx-panel .fx-tab-page').forEach(function (page) {
-    var on = page.getAttribute('data-fx-page') === fxPanelTab;
-    page.classList.toggle('active', on);
-    if (on && changed && !opts.silent) {
+    var active = page.getAttribute('data-fx-page') === fxPanelTab;
+    page.classList.toggle('active', active);
+    page.setAttribute('aria-hidden', active ? 'false' : 'true');
+    if (active && changed && !opts.silent) {
       page.classList.remove('fx-page-enter');
       void page.offsetWidth;
       page.classList.add('fx-page-enter');
     }
   });
+  if (panel && changed && isConsole) {
+    requestAnimationFrame(function () {
+      panel.scrollTop = Object.prototype.hasOwnProperty.call(fxPanelTabScroll, fxPanelTab) ? fxPanelTabScroll[fxPanelTab] : 0;
+    });
+  }
   var title = document.getElementById('fx-page-title');
   var hint = document.getElementById('fx-page-hint');
   var meta = fxTabMeta(fxPanelTab);
@@ -683,7 +837,8 @@ function fxPanelTargetForNode(node, current) {
   var id = node.id || '';
   var inputId = fxPanelInputId(node);
   if (id === 'preset-grid' || id === 'user-archive-grid') return 'presets';
-  if (id === 'vox-fx-section' || id === 'lyric-depth-fx-section') return 'motion';   // 预设专属控件 → 动态 tab
+  if (id === 'vox-fx-section' || id === 'lyric-depth-fx-section') return 'motion';   // 预设专属控件(音域回响 / 词境穿行)→ 动态 tab
+  if (id === 'rain-fx-section') return 'motion';  // 雨境控件 → 动态 tab
   if (id === 'app-bg-section') return 'appearance';   // 全局背景 → 外观 tab
   if (id === 'fx-lyric-fold') return 'lyrics';
   if (id === 'fx-overlay-fold' || id === 'fx-stage-fold') return 'motion';
@@ -695,6 +850,10 @@ function fxPanelTargetForNode(node, current) {
   return current || 'presets';
 }
 function organizeFxPanel() {
+  if (typeof organizeFxConsoleWorkspace === 'function') {
+    organizeFxConsoleWorkspace();
+    return;
+  }
   var panel = document.getElementById('fx-panel');
   if (!panel) return;
   if (panel._fxPanelOrganized) {
@@ -770,6 +929,15 @@ function organizeFxPanel() {
     var fold = document.getElementById(id);
     if (fold) fold.classList.add('open');
   });
+  // 动态 tab:雨境/音域回响自定义区固定置顶,避免被镜头/粒子滑条挤到下面
+  var motionPage = panel.querySelector('[data-fx-page="motion"]');
+  if (motionPage) {
+    var rainFxSection = document.getElementById('rain-fx-section');
+    var voxFxSection = document.getElementById('vox-fx-section');
+    // 顺序:雨境 → 音域回响 → 其余(摄像头/粒子等)
+    if (voxFxSection) motionPage.insertBefore(voxFxSection, motionPage.firstChild);
+    if (rainFxSection) motionPage.insertBefore(rainFxSection, motionPage.firstChild);
+  }
   // 外观 tab:默认「界面与背景」控件包进 wrap(体素预设时 CSS 隐藏);背景移出 wrap 置顶(体素/非体素通用)。音域回响(#vox-fx-section)已改由路由进「动态」tab
   var appearancePage = panel.querySelector('[data-fx-page="appearance"]');
   if (appearancePage) {
@@ -913,7 +1081,9 @@ function relabelFxPanelControls() {
   setFxSectionBefore('lyric-glow-row', '歌词溢光颜色');
   setFxSectionBefore('lyric-source-seg', '歌词来源');
   setFxSectionBefore('lyric-display-mode-seg', '歌词行数');
+  setFxSectionBefore('lyric-translation-mode-seg', '歌词翻译 / 译文显示');
   setFxSectionBefore('lyric-motion-style-seg', '歌词动画');
+  setFxSectionBefore('lyric-transition-style-seg', '歌词切换动效');
   setFxSectionBefore('lyric-font-grid', '字体与字距');
   setFxSectionBefore('fx-lyricscale', '位置与角度');
   setFxSectionBefore('fx-desktoplyricssize', '桌面歌词');
@@ -946,6 +1116,7 @@ function relabelFxPanelControls() {
   setFxSliderLabel('fx-lyriclineheight', '行距');
   setFxSliderLabel('fx-lyricweight', '字重');
   setFxSliderLabel('fx-lyriccustomlines', '显示行数');
+  setFxSliderLabel('fx-lyrictransitionspeed', '切换速度');
   setFxSliderLabel('fx-lyricglitchintensity', '故障强度');
   setFxSliderLabel('fx-lyricglitchslice', '切片幅度');
   setFxSliderLabel('fx-lyricglitchchroma', '色散强度');

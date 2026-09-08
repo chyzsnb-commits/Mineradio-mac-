@@ -387,16 +387,19 @@ async function retryTrackSwitchAudioPlayOnce(opts, originalErr) {
   var retrySrc = mediaPlaybackTargetSrc(retryAudio);
   if (!retryAudio || !retrySrc) throw originalErr;
   await waitForAudioReadyToPlay(retryAudio, opts.manual ? 650 : 900);
-  if (!isSameAudioPlaybackTarget(retryAudio, retrySrc)) return null;
+  if (!audioPlayRequestCurrent(opts, retryAudio, retrySrc)) return null;
   if (retryAudio.readyState === 0 || retryAudio.networkState === retryAudio.NETWORK_EMPTY) {
     try { retryAudio.load(); } catch (e) { }
   }
   if (!audioGraphHealthy()) initAudio();
   await applyAudioOutputDevice(retryAudio);
+  if (!audioPlayRequestCurrent(opts, retryAudio, retrySrc)) return null;
   await ensurePlaybackAudioGraph('track-switch-retry-before-play');
+  if (!audioPlayRequestCurrent(opts, retryAudio, retrySrc)) return null;
   var retryPlay = retryAudio.play();
   await ensurePlaybackAudioGraph('track-switch-retry-after-play-request');
   await retryPlay;
+  if (!audioPlayRequestCurrent(opts, retryAudio, retrySrc)) return null;
   return await completeAudioPlayStart(opts, 'track-switch-retry-started');
 }
 
@@ -472,7 +475,7 @@ async function attemptAudioPlay(opts) {
 }
 async function playAudio(opts) {
   opts = opts || {};
-  return attemptAudioPlay({ manual: !!opts.manual, silent: !!opts.silent || !!opts.startupAutoplay || !!opts.trackSwitch, startupAutoplay: !!opts.startupAutoplay, fade: opts.fade, trackSwitch: !!opts.trackSwitch, resumeRecovery: !!opts.resumeRecovery });
+  return attemptAudioPlay({ manual: !!opts.manual, silent: !!opts.silent || !!opts.startupAutoplay || !!opts.trackSwitch, startupAutoplay: !!opts.startupAutoplay, fade: opts.fade, trackSwitch: !!opts.trackSwitch, resumeRecovery: !!opts.resumeRecovery, playRequestCurrent: opts.playRequestCurrent });
 }
 async function togglePlay() {
   if (playToggleBusy) return;
@@ -553,43 +556,85 @@ function trackNavigationTargetIndex(startIndex, delta, length) {
   return ((Number(startIndex) + Number(delta)) % length + length) % length;
 }
 
-async function drainTrackNavigation() {
-  while (playQueue.length && trackNavigationState.pendingDelta) {
-    var delta = trackNavigationState.pendingDelta;
-    var manual = trackNavigationState.manual;
-    trackNavigationState.pendingDelta = 0;
-    trackNavigationState.manual = false;
-    var targetIndex = trackNavigationTargetIndex(currentIdx, delta, playQueue.length);
-    if (targetIndex < 0) break;
-    currentIdx = targetIndex;
-    var opts = manual ? { manual: true, suppressPlayFailureNotice: true } : { suppressPlayFailureNotice: true };
-    if (playMode === 'shuffle') opts.skipShuffleOrder = true;
-    try {
-      await playQueueAt(targetIndex, opts);
-    } catch (err) {
-      console.warn('[TrackNavigation]', err);
-    } finally {
-      forcePlaybackControlsInteractive();
+async function drainTrackNavigation(serial) {
+  if (!playQueue.length || serial !== trackNavigationState.serial) return false;
+  var targetIndex = trackNavigationTargetIndex(trackNavigationState.desiredIndex, 0, playQueue.length);
+  var manual = trackNavigationState.manual;
+  trackNavigationState.pendingDelta = 0;
+  trackNavigationState.manual = false;
+  if (targetIndex < 0) return false;
+  var opts = manual ? { manual: true, suppressPlayFailureNotice: true } : { suppressPlayFailureNotice: true };
+  if (playMode === 'shuffle') opts.skipShuffleOrder = true;
+  opts.playRequestCurrent = function () { return serial === trackNavigationState.serial; };
+  trackNavigationState.inProgress = true;
+  var completed = false;
+  try {
+    if (targetIndex === currentIdx) {
+      completed = true;
+      return true;
     }
+    var targetSong = playQueue[targetIndex];
+    var isLocalTarget = !!(targetSong && (targetSong.type === 'local' || targetSong.source === 'local' || targetSong.localUrl));
+    if (!isLocalTarget && typeof resolveAlbumGaplessPlaybackData === 'function') {
+      // 预解析只是为了让旧歌继续响到新地址就绪，不能把一次切歌额外拖到完整取链超时。
+      // 短窗口未命中就交回 playQueueAt 的标准请求与错误处理。
+      var navigationPreloadTimeoutMs = 2200;
+      var sourceRequest = beginPlaybackSourceRequest(trackSwitchToken + 1, navigationPreloadTimeoutMs);
+      try {
+        opts.preloadedData = await resolveAlbumGaplessPlaybackData(targetSong, {
+          signal: sourceRequest.signal,
+          timeoutMs: navigationPreloadTimeoutMs,
+        });
+      } catch (preloadErr) {
+        if (serial !== trackNavigationState.serial || (sourceRequest && sourceRequest.abortReason === 'superseded')) return false;
+        console.warn('[TrackNavigationPreload]', preloadErr);
+        delete opts.preloadedData;
+      } finally {
+        finishPlaybackSourceRequest(sourceRequest);
+      }
+      if (serial !== trackNavigationState.serial) return false;
+    }
+    completed = await playQueueAt(targetIndex, opts) === true;
+    return completed;
+  } catch (err) {
+    if (serial !== trackNavigationState.serial || (err && err.name === 'AbortError')) return false;
+    console.warn('[TrackNavigation]', err);
+    return false;
+  } finally {
+    if (serial === trackNavigationState.serial) {
+      trackNavigationState.inProgress = false;
+      trackNavigationState.desiredIndex = -1;
+      trackNavigationState.promise = null;
+      var settle = trackNavigationState.settle;
+      trackNavigationState.settle = null;
+      if (settle) settle(completed);
+    }
+    forcePlaybackControlsInteractive();
   }
-  return true;
 }
 
 function requestTrackNavigation(delta, userInitiated) {
   if (!playQueue.length) return Promise.resolve(false);
   playToggleBusy = false;
   forcePlaybackControlsInteractive();
-  trackNavigationState.pendingDelta += Number(delta) || 0;
+  var step = Number(delta) || 0;
+  var baseIndex = trackNavigationState.desiredIndex >= 0 ? trackNavigationState.desiredIndex : currentIdx;
+  trackNavigationState.desiredIndex = trackNavigationTargetIndex(baseIndex, step, playQueue.length);
+  trackNavigationState.pendingDelta += step;
   trackNavigationState.manual = trackNavigationState.manual || !!userInitiated;
-  if (trackNavigationState.inProgress) return trackNavigationState.promise || Promise.resolve(true);
-  trackNavigationState.inProgress = true;
-  trackNavigationState.promise = Promise.resolve(drainTrackNavigation()).finally(function () {
-    trackNavigationState.inProgress = false;
-    trackNavigationState.pendingDelta = 0;
-    trackNavigationState.manual = false;
-    trackNavigationState.promise = null;
-    forcePlaybackControlsInteractive();
-  });
+  trackNavigationState.serial += 1;
+  cancelPlaybackSourceRequest('superseded');
+  if (trackNavigationState.timer) clearTimeout(trackNavigationState.timer);
+  trackNavigationState.scheduled = true;
+  if (!trackNavigationState.promise) {
+    trackNavigationState.promise = new Promise(function (resolve) { trackNavigationState.settle = resolve; });
+  }
+  var serial = trackNavigationState.serial;
+  trackNavigationState.timer = setTimeout(function () {
+    trackNavigationState.timer = 0;
+    trackNavigationState.scheduled = false;
+    drainTrackNavigation(serial);
+  }, 64);
   return trackNavigationState.promise;
 }
 
@@ -601,10 +646,12 @@ function prevTrack(userInitiated) {
   return requestTrackNavigation(-1, userInitiated);
 }
 function shuffleQueue() {
+  if (typeof cancelTrackNavigationRequest === 'function') cancelTrackNavigationRequest('shuffle-queue');
   reorderQueueForShufflePlaybackOrder(currentIdx, { reason: 'shuffle-queue' });
   showToast('队列已随机');
 }
 function clearQueue() {
+  if (typeof cancelTrackNavigationRequest === 'function') cancelTrackNavigationRequest('clear-queue');
   playQueue = []; currentIdx = -1;
   currentLocalSong = null;
   startupRestoreHomePending = false;
@@ -619,6 +666,7 @@ function clearQueue() {
 }
 function removeFromQueue(idx) {
   if (idx < 0 || idx >= playQueue.length) return;
+  if (typeof cancelTrackNavigationRequest === 'function') cancelTrackNavigationRequest('remove-queue-item');
   playQueue.splice(idx, 1);
   if (currentIdx >= playQueue.length) currentIdx = playQueue.length - 1;
   safeRenderQueuePanel('remove-queue-item');
@@ -680,6 +728,7 @@ function cyclePlayMode() {
   var prevMode = playMode;
   playMode = modes[(idx + 1) % modes.length];
   if (playMode === 'shuffle' && prevMode !== 'shuffle') {
+    if (typeof cancelTrackNavigationRequest === 'function') cancelTrackNavigationRequest('play-mode-shuffle');
     reorderQueueForShufflePlaybackOrder(currentIdx, { reason: 'play-mode-shuffle' });
   }
   updatePlayModeButton(true);

@@ -20,6 +20,11 @@ on:
     paths:
       - 'desktop/**'
       - 'public/**'
+      - '.github/workflows/build-mac.yml'
+      - '.github/workflows/diff-on-release.yml'
+      - 'build/**'
+      - 'scripts/**'
+      - 'package-lock.json'
       - '*.js'
       - 'package.json'
 
@@ -32,12 +37,12 @@ jobs:
         include:
           # arm64 用 Apple Silicon runner
           - arch: arm64
-            runner: macos-14
+            runner: macos-15
             build_cmd: npm run build:mac:arm64
             build_dir_cmd: ./node_modules/.bin/electron-builder --mac --arm64 --dir
           # x64 用 Intel runner（原生模块兼容性更好）
           - arch: x64
-            runner: macos-13
+            runner: macos-15-intel
             build_cmd: npm run build:mac:x64
             build_dir_cmd: ./node_modules/.bin/electron-builder --mac --x64 --dir
     runs-on: ${{ matrix.runner }}

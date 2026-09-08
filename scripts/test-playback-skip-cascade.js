@@ -24,11 +24,15 @@ function readFunction(source, name) {
 
 test('整队失败计数只在当前歌曲确认播放后清零', () => {
   const source = read('public/js/modules/05-playback/11-provider-fallback.js');
+  let scheduledSnapshot = null;
+  const snapshots = [];
   const sandbox = {
     playbackSkipCascade: 3,
     trackSwitchToken: 7,
     currentIdx: 2,
     audio: { paused: false, ended: false },
+    setTimeout(fn, delay) { scheduledSnapshot = { fn, delay }; return 1; },
+    saveLastPlaybackSnapshot(force, reason) { snapshots.push([force, reason]); },
   };
   vm.runInNewContext([
     readFunction(source, 'resetPlaybackSkipCascade'),
@@ -37,6 +41,9 @@ test('整队失败计数只在当前歌曲确认播放后清零', () => {
 
   assert.equal(vm.runInNewContext('confirmQueuePlaybackStarted(2, 7)', sandbox), true);
   assert.equal(sandbox.playbackSkipCascade, 0);
+  assert.equal(scheduledSnapshot.delay, 80);
+  scheduledSnapshot.fn();
+  assert.deepEqual(snapshots, [[true, 'track-started']]);
 
   sandbox.playbackSkipCascade = 3;
   sandbox.audio.paused = true;
@@ -77,7 +84,7 @@ test('手动点歌自动换源最多一次，失败后不继续跳整队', async
     skipFailedQueueItem() { calls.skip += 1; },
   };
   const fallbackFunction = readFunction(source, 'tryAutoPlaybackFallback').replace(/^function /, 'async function ');
-  vm.runInNewContext(`${fallbackFunction};`, sandbox);
+  vm.runInNewContext(`${readFunction(source, 'playbackFallbackOutcome')}; ${fallbackFunction};`, sandbox);
 
   await vm.runInNewContext("tryAutoPlaybackFallback({ name: '测试歌曲' }, { url: '' }, 0, 1, { fallbackDepth: 1, startupAutoplay: false })", sandbox);
   assert.deepEqual(calls, { skip: 0, failed: 1, unavailable: 1 }, '手动点歌的替代源失败后必须停住');

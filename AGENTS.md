@@ -1,6 +1,6 @@
 # Mineradio Project Rules (macOS / arm64 + x64)
 
-> 这是给所有 AI agent（Codex、ZCode、以及未来的接手者）的项目规则文件。**新对话开始处理 Mineradio 前，先读本文件和 `AI_HANDOFF.md`。**
+> 这是给所有 AI agent（Codex、ZCode、以及未来的接手者）的项目规则文件。**新对话/首次接手处理 Mineradio 前，必须按顺序先读：① 本文件（AGENTS.md）→ ② `AI_HANDOFF.md`（当前状态）→ ③ 本地 Obsidian 项目记忆（`/Users/chy/菜鸡的仓库/菜鸡的仓库/Codex Memory/10 项目记忆/Mineradio/` 下的 `当前进度.md` 与 `项目约束.md`）。三处都读完并向用户复述接手状态后，才能开始改代码。**
 
 ---
 
@@ -11,6 +11,17 @@
 ### 1. 沟通
 - **默认中文沟通**，语气直接、偏实干。希望主动完成任务，不要只给方案。
 - **用英文技术词时必须顺手解释中文**：commit（存档点）/ branch（分支）/ PR（合并请求）/ issue（任务单）/ repo（仓库）/ main（主分支/正本）/ merge（合并）/ rollback（回滚）/ diff（改动差异）/ CI（自动检查）。
+- **每次完成改动的最终回复必须附“命令行测试”代码块**：给出用户可直接粘贴执行的命令，命令须针对本次实际改动，并写明通过时的预期结果；即使已由 AI 执行过自动检查，也不能省略。
+
+### 1.1 独立分析与判断
+- **先检查问题有没有错误前提、逻辑错误和信息缺失**，确认分析对象、版本、范围和验收条件后再下结论。
+- **不要迎合用户，要独立判断**；发现前提不成立、目标冲突或方案不合理时，直接说明。
+- **区分事实、推测和主观观点**，分别标明依据、置信度和仍需验证的部分。
+- **涉及数字、人物和结论时尽量核实来源**，优先使用仓库、测试结果、提交记录和可复现的外部资料，不把未经核实的信息当成事实。
+- **不同意时直接指出**，同时给出依据、风险和替代解释，说明哪些证据可能改变判断。
+- **主动提醒容易忽略的变量、成本和偏差**，包括兼容性、性能、数据安全、维护成本、样本偏差和验证盲区。
+- **分析先于方案**：收到问题后不得直接给出解决方案、结论性答复或开始改代码；必须先检查错误前提、逻辑错误和信息缺失，并从至少两个角度列出合理的根因/解释，标明各自依据、反证条件和最小验证方式。只有完成这一步，才能提出或实施方案。
+- **命令行优先验收**：项目功能测试必须提供可直接执行的命令行测试，并以命令行结果作为主要验收依据；浏览器操作、截图或手工点击只能作为辅助观察，不能单独声明功能已验证。
 
 ### 2. 必须同步 Obsidian（重要！）
 - **每次完成任务后，必须更新 Obsidian 笔记**，不能只改代码不记笔记。
@@ -23,6 +34,7 @@
 
 ### 4. 分支和 PR 规则
 - **不要直接改 main**。所有改动新建分支（`codex/任务名`、`glm/任务名`），开 PR（合并请求），等审查后合并。
+- **每次更新必须开新的 PR 线**：每批功能/修复/文档更新都新建独立分支并开新 PR，**不要往已经开过的 PR 上继续追加 commit**（用户 2026-08-01 明确要求；PR #58 已封线，不再往上推）。新 PR 的 head 从最近一次已推送的远端 head 创建，更新时以该 head 为 parent、`force:false`，不使用 `git push`。
 - PR 描述四要素：变更（改了什么）/ 验证（怎么确认没问题）/ 未验证（哪些没测到）/ 是否需要用户手动操作。
 - commit（存档点）信息用中文，清楚说明改了什么。一任务可以多个小 commit，方便回滚。
 
@@ -30,9 +42,27 @@
 - 仓库有真人协作者（不只是 AI）。协作者也走 PR 流程（开 PR → 仓库主人审查 → 合并）。协作者的操作说明见 `COLLABORATOR_QUICKSTART.md`。
 - 仓库主人（用户）会审查所有 PR 后才合并。AI 开的 PR 同样等用户点头。
 
-### 6. 功能约束
-- **不要自动更新功能**（Mac 版从 Windows 迁移，不需要 electron-updater）。
-- 仓库是**私有**的，不能开源。`chyzsnb-commits/Mineradio-mac-` 是独立开源仓库，**绝对不要碰**。
+### 6. 转交提示词（每次完成任务必须输出）
+- **每次完成任务后，最终回复必须附一段「转交提示词」**，供用户直接复制给下一位 AI（Codex/GLM/其他）或下一次会话使用。转交提示词最少包含：
+  - 当前工作树/分支/HEAD 和仓库地址
+  - 本次完成了什么、改了哪些文件
+  - 怎么验证（可直接粘贴的命令行）
+  - 未验证/待办事项
+  - 提醒下一位：先读 AGENTS.md + AI_HANDOFF.md + Obsidian 项目记忆再动手
+- AI_HANDOFF.md 与 Obsidian 同步更新不能替代转交提示词——前者是仓库状态，后者是给用户的"接力棒"。
+
+### 7. 功能约束
+- **软件内更新**：使用自研轻量更新检查（`desktop/update-checker.js`，检查公开 version.json → 提示 → 下载 dmg → 打开安装器）。**不用 electron-updater**（无 Developer ID 证书，macOS 禁止后台静默替换，系统限制）。清单地址在 `package.json` 的 `mineradio.updateManifestUrl`。
+- **发布新版本流程（必须完整执行，顺序不可颠倒）**：
+  1. 确认 `npm run check` 全绿后构建 dmg：`CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:mac:arm64`（及需要时 `build:mac:x64`）。
+  2. 上传 dmg 到公开发布仓库的 Release（tag 用新版本号）：
+     ```bash
+     gh release create vX.Y.Z dist/Mineradio-X.Y.Z-arm64.dmg        -R chyzsnb-commits/Mineradio-mac- --title "Mineradio vX.Y.Z" --notes "更新说明"
+     ```
+  3. 更新 `chyzsnb-commits/Mineradio-mac-` 仓库 main 分支根目录的 `version.json`（三个字段：`version` 新版本号、`notes` 更新说明、`url` 该 dmg 的 Release 下载直链），推送到 main。
+  4. 验证清单直链可访问：`curl https://raw.githubusercontent.com/chyzsnb-commits/Mineradio-mac-/main/version.json`。
+  完成后，所有已安装实例会在 30 秒~6 小时内收到更新提示。**只改 version.json 与 Release 资产，不改该仓库其他内容**。
+- 仓库 `mr` 是**私有**的，源码不能开源。`chyzsnb-commits/Mineradio-mac-` 是独立开源仓库：**仅授权用于发布资产**（按上方发版流程更新 version.json 与 Release dmg），**不得改动它的源码、文档或其他内容**。
 
 ---
 

@@ -2,6 +2,7 @@ function pauseCurrentAudioForTrackSwitch() {
   playToggleBusy = false;
   if (!audio) return;
   try {
+    markPlaybackTrackTeardown(audio, trackSwitchToken);
     audioFadeSerial++;
     clearAudioFadeTimers();
     audio.onended = null;
@@ -12,11 +13,56 @@ function pauseCurrentAudioForTrackSwitch() {
   playing = false;
   setPlayIcon(false);
   syncPlaybackStateFromAudioEvent('track-switch');
+  if (typeof syncAudioOutputMirrors === 'function') syncAudioOutputMirrors('track-switch');
+}
+
+function markPlaybackTrackTeardown(media, token) {
+  if (!media) return false;
+  media._mineradioTrackTeardown = true;
+  media._mineradioTrackTeardownToken = Number(token) || 0;
+  return true;
+}
+
+function isPlaybackTrackTeardownEvent(media, name) {
+  if (!media || (name !== 'pause' && name !== 'abort' && name !== 'emptied')) return false;
+  return media._mineradioTrackTeardown === true;
+}
+
+function clearPlaybackTrackTeardown(media) {
+  if (!media) return;
+  media._mineradioTrackTeardown = false;
+  media._mineradioTrackTeardownToken = -1;
+}
+
+function cancelTrackNavigationRequest(reason) {
+  if (!trackNavigationState) return false;
+  var hadPending = !!(
+    trackNavigationState.timer ||
+    trackNavigationState.scheduled ||
+    trackNavigationState.inProgress ||
+    trackNavigationState.promise
+  );
+  if (!hadPending) return false;
+  if (trackNavigationState.timer) clearTimeout(trackNavigationState.timer);
+  trackNavigationState.timer = 0;
+  trackNavigationState.scheduled = false;
+  trackNavigationState.inProgress = false;
+  trackNavigationState.desiredIndex = -1;
+  trackNavigationState.pendingDelta = 0;
+  trackNavigationState.manual = false;
+  trackNavigationState.serial += 1;
+  cancelPlaybackSourceRequest(reason || 'direct-play');
+  var settle = trackNavigationState.settle;
+  trackNavigationState.settle = null;
+  trackNavigationState.promise = null;
+  if (settle) settle(false);
+  return true;
 }
 
 function clearFailedPlaybackAudioSource(token) {
   if (token !== trackSwitchToken || !audio) return false;
   try {
+    markPlaybackTrackTeardown(audio, token);
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
@@ -24,7 +70,65 @@ function clearFailedPlaybackAudioSource(token) {
   playing = false;
   setPlayIcon(false);
   syncPlaybackStateFromAudioEvent('track-failed');
+  if (typeof syncAudioOutputMirrors === 'function') syncAudioOutputMirrors('track-failed');
   return true;
+}
+
+function cancelPlaybackSourceRequest(reason) {
+  var active = playbackSourceRequestState;
+  if (!active) return false;
+  if (active.timer) clearTimeout(active.timer);
+  active.timer = 0;
+  var controller = active.controller;
+  var request = active.request;
+  active.controller = null;
+  active.request = null;
+  active.token = 0;
+  if (!controller || !controller.abort) return false;
+  if (request) request.abortReason = reason || 'superseded';
+  try { controller.abort(request && request.abortReason); } catch (e) { try { controller.abort(); } catch (ignored) { } }
+  return true;
+}
+
+function beginPlaybackSourceRequest(token, timeoutMs) {
+  cancelPlaybackSourceRequest();
+  var controller = typeof AbortController === 'function' ? new AbortController() : null;
+  var request = {
+    token: Number(token) || 0,
+    controller: controller,
+    signal: controller ? controller.signal : null,
+    abortReason: '',
+    timer: 0,
+  };
+  playbackSourceRequestState.token = request.token;
+  playbackSourceRequestState.controller = controller;
+  playbackSourceRequestState.request = request;
+  if (controller && timeoutMs > 0) {
+    request.timer = setTimeout(function () {
+      if (playbackSourceRequestState.controller !== controller) return;
+      playbackSourceRequestState.timer = 0;
+      request.abortReason = 'timeout';
+      try { controller.abort('timeout'); } catch (e) { try { controller.abort(); } catch (ignored) { } }
+    }, timeoutMs);
+    playbackSourceRequestState.timer = request.timer;
+  }
+  return request;
+}
+
+function finishPlaybackSourceRequest(request) {
+  if (!request) return false;
+  if (request.timer) clearTimeout(request.timer);
+  request.timer = 0;
+  if (playbackSourceRequestState.request !== request || playbackSourceRequestState.controller !== request.controller || playbackSourceRequestState.token !== request.token) return false;
+  playbackSourceRequestState.timer = 0;
+  playbackSourceRequestState.controller = null;
+  playbackSourceRequestState.request = null;
+  playbackSourceRequestState.token = 0;
+  return true;
+}
+
+function playbackSourceRequestWasSuperseded(request, err) {
+  return !!(request && request.abortReason === 'superseded' && err && err.name === 'AbortError');
 }
 
 function commitPlaybackTrackUi(song, token) {

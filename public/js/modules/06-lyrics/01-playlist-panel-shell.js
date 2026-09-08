@@ -1,4 +1,6 @@
 // ============================================================
+var playlistRefreshToken = 0;
+
 function animateListItems(container, selector, opts) {
   if (!container || !window.gsap) return;
   opts = opts || {};
@@ -40,45 +42,10 @@ function smoothScrollToItem(scroller, item, opts) {
 function bindSmoothWheelScroll(scroller) {
   if (!scroller || scroller.__smoothWheelBound) return;
   scroller.__smoothWheelBound = true;
-  var targetTop = scroller.scrollTop;
-  var tween = null;
-  scroller.__syncSmoothWheelTarget = function (top) {
-    if (tween) {
-      tween.kill();
-      tween = null;
-    }
-    targetTop = isFinite(top) ? top : scroller.scrollTop;
-  };
-  scroller.addEventListener('wheel', function (e) {
-    if (!window.gsap || e.ctrlKey) return;
-    var max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-    if (max <= 0 || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-    var delta = e.deltaY;
-    if (e.deltaMode === 1) delta *= 18;
-    else if (e.deltaMode === 2) delta *= scroller.clientHeight;
-    var current = tween ? targetTop : scroller.scrollTop;
-    var next = Math.max(0, Math.min(max, current + delta));
-    if (next === current && ((delta < 0 && scroller.scrollTop <= 0) || (delta > 0 && scroller.scrollTop >= max - 1))) {
-      targetTop = scroller.scrollTop;
-      return;
-    }
-    e.preventDefault();
-    targetTop = next;
-    if (tween) tween.kill();
-    tween = window.gsap.to(scroller, {
-      scrollTop: targetTop,
-      duration: 0.24,
-      ease: 'power2.out',
-      overwrite: true,
-      onComplete: function () {
-        tween = null;
-        targetTop = scroller.scrollTop;
-      }
-    });
-  }, { passive: false });
-  scroller.addEventListener('scroll', function () {
-    if (!tween) targetTop = scroller.scrollTop;
-  }, { passive: true });
+  // 触控板的滚动应由浏览器合成器直接完成。此前每个 wheel 都 preventDefault 后
+  // 创建/销毁一个 GSAP scrollTop tween，使搜索、歌单、设置和歌词详情回到主线程。
+  // 保留该标记供已有调用方去重；点击“定位当前歌曲”仍由 smoothScrollToItem 动画。
+  scroller.__nativeWheelScrolling = true;
 }
 function bindSmoothQueueScrolling() {
   if (smoothWheelScrollBound) return;
@@ -107,6 +74,10 @@ function miniQueueSkeleton() {
 }
 function togglePlaylistPanel(force) {
   var el = document.getElementById('playlist-panel');
+  if (force !== false && typeof canOpenPlaylistPanel === 'function' && !canOpenPlaylistPanel()) {
+    if (typeof hidePlaylistPanelOutsideListeningPage === 'function') hidePlaylistPanelOutsideListeningPage();
+    return false;
+  }
   if (force === false) el.classList.remove('show');
   else if (force === true) el.classList.add('show');
   else el.classList.toggle('show');
@@ -136,9 +107,11 @@ function applyPlaylistPanelPinState(openPanel) {
   var btn = document.getElementById('playlist-pin-btn');
   if (panel) {
     panel.classList.toggle('pinned', !!playlistPanelPinned);
-    if (playlistPanelPinned || openPanel) {
+    if ((playlistPanelPinned || openPanel) && (typeof canOpenPlaylistPanel !== 'function' || canOpenPlaylistPanel())) {
       panel.dataset.preserveTabOnOpen = '1';
       setPeek(panel, true, 'pl');
+    } else if (typeof hidePlaylistPanelOutsideListeningPage === 'function') {
+      hidePlaylistPanelOutsideListeningPage();
     }
   }
   if (btn) {
@@ -209,6 +182,15 @@ function switchPlaylistTab(tab, opts) {
   if (podcastPane) podcastPane.style.display = tab === 'podcasts' ? '' : 'none';
   var toplistPane = document.getElementById('toplist-pane');
   if (toplistPane) toplistPane.style.display = tab === 'toplist' ? '' : 'none';
+  if (tab === 'queue') {
+    var queueList = document.getElementById('queue-list');
+    if (queuePanelDirty && typeof flushDeferredQueuePanel === 'function') {
+      flushDeferredQueuePanel('playlist-queue-tab');
+    } else if (queueList && queueList.dataset && queueList.dataset.currentMarkerDirty === '1' && typeof safeRenderQueuePanel === 'function') {
+      delete queueList.dataset.currentMarkerDirty;
+      safeRenderQueuePanel('playlist-queue-tab-current', { animate: false, scrollCurrent: false, deferWhenHidden: false });
+    }
+  }
   if ((tab === 'playlists' || tab === 'podcasts') && opts.refresh !== false) refreshUserPlaylists();
   if (tab === 'toplist' && opts.refresh !== false && typeof loadToplists === 'function') loadToplists();
   if (opts.animate !== false) animatePlaylistPanelCurrentTab(document.getElementById('playlist-panel'));
@@ -236,11 +218,16 @@ function closeMiniQueue() {
   setMiniQueueOpen(false);
 }
 function openPlaylistPanelTab(tab, preserve) {
+  if (typeof canOpenPlaylistPanel === 'function' && !canOpenPlaylistPanel()) {
+    if (typeof hidePlaylistPanelOutsideListeningPage === 'function') hidePlaylistPanelOutsideListeningPage();
+    return false;
+  }
   tab = normalizePlaylistPanelTab(tab);
   var panel = document.getElementById('playlist-panel');
   if (panel && panel.dataset && preserve !== false) panel.dataset.preserveTabOnOpen = '1';
   switchPlaylistTab(tab);
   setPeek(panel, true, 'pl');
+  return true;
 }
 function renderMiniQueuePanel(opts) {
   opts = opts || {};
@@ -258,8 +245,8 @@ function renderMiniQueuePanel(opts) {
   var visibleQueue = playQueue.slice(0, renderLimit);
   $list.innerHTML = visibleQueue.map(function (song, i) {
     var thumb = songCoverSrc(song, 60);
-    var imgTag = thumb ? '<img src="' + thumb + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div class="mini-queue-cover"></div>';
-    return '<div class="mini-queue-item' + (i === currentIdx ? ' now' : '') + '" onclick="playQueueAt(' + i + ')">' +
+    var imgTag = thumb ? '<img src="' + coverMarkupSrc(thumb) + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div class="mini-queue-cover"></div>';
+    return '<div class="mini-queue-item' + (i === currentIdx ? ' now' : '') + '" data-queue-index="' + i + '" onclick="playQueueAt(' + i + ')">' +
       imgTag +
       '<div class="mini-queue-info"><div class="mini-queue-name">' + escHtml(song.name) + '</div><div class="mini-queue-sub">' + escHtml(song.artist || '') + '</div></div>' +
       '<button class="mini-queue-remove mini-queue-next" onclick="event.stopPropagation();queueIndexNext(' + i + ')" title="下一首播放">下</button>' +
@@ -298,8 +285,8 @@ function renderQueuePanel(opts) {
   var visibleQueue = playQueue.slice(0, renderLimit);
   $ql.innerHTML = visibleQueue.map(function (song, i) {
     var thumb = songCoverSrc(song, 60);
-    var imgTag = thumb ? '<img src="' + thumb + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:38px;height:38px;border-radius:6px;background:rgba(255,255,255,.06);flex-shrink:0"></div>';
-    return '<div class="queue-item' + (i === currentIdx ? ' now' : '') + '" onclick="playQueueAt(' + i + ')">' +
+    var imgTag = thumb ? '<img src="' + coverMarkupSrc(thumb) + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:38px;height:38px;border-radius:6px;background:rgba(255,255,255,.06);flex-shrink:0"></div>';
+    return '<div class="queue-item' + (i === currentIdx ? ' now' : '') + '" data-queue-index="' + i + '" onclick="playQueueAt(' + i + ')">' +
       imgTag +
       '<div class="qi-info"><div class="qi-name">' + escHtml(song.name) + '</div><div class="qi-sub"><button class="queue-artist-link" type="button" onclick="event.stopPropagation();openQueueArtist(' + i + ')">' + escHtml(song.artist || '未知歌手') + '</button></div></div>' +
       '<div class="qi-act">' +
@@ -317,6 +304,7 @@ function renderQueuePanel(opts) {
   renderMiniQueuePanel({ scrollCurrent: opts.scrollCurrent !== false && miniQueueOpen });
 }
 async function refreshUserPlaylists(force) {
+  var refreshToken = ++playlistRefreshToken;
   if (!loginStatus.loggedIn && !qqLoginStatus.loggedIn && !kugouLoginStatus.loggedIn && !qishuiLoginStatus.loggedIn && !spotifyLoginStatus.loggedIn) {
     resetPlaylistPanelRenderLimit();
     document.getElementById('pl-list').innerHTML = '<div style="text-align:center;padding:24px 0;color:rgba(255,255,255,.32);font-size:11.5px">登录后显示个人歌单</div>';
@@ -351,14 +339,16 @@ async function refreshUserPlaylists(force) {
       loginStatus.loggedIn ? apiJson('/api/podcast/my') : Promise.resolve({ collections: [], loggedIn: false }),
       qqLoginStatus.loggedIn ? apiJson('/api/qq/user/playlists') : Promise.resolve({ playlists: [] }),
       kugouLoginStatus.loggedIn ? apiJson('/api/kugou/user/playlists') : Promise.resolve({ playlists: [] }),
+      qishuiLoginStatus.loggedIn ? apiJson('/api/qishui/user/playlists') : Promise.resolve({ playlists: [] }),
       spotifyLoginStatus.loggedIn ? apiJson('/api/spotify/user/playlists') : Promise.resolve({ playlists: [] })
     ]);
+    if (refreshToken !== playlistRefreshToken) return;
     var neteaseLists = (result[0].playlists || []).map(function (pl) { pl.provider = 'netease'; pl.source = 'netease'; return pl; });
     qqPlaylists = (result[2].playlists || []).map(function (pl) { pl.provider = 'qq'; pl.source = 'qq'; return pl; });
     kugouPlaylists = (result[3].playlists || []).map(function (pl) { pl.provider = 'kugou'; pl.source = 'kugou'; return pl; });
-    qishuiPlaylists = [];
-    spotifyPlaylists = (result[4].playlists || []).map(function (pl) { pl.provider = 'spotify'; pl.source = 'spotify'; return pl; });
-    userPlaylists = neteaseLists.concat(qqPlaylists).concat(kugouPlaylists).concat(spotifyPlaylists);
+    qishuiPlaylists = (result[4].playlists || []).map(function (pl) { pl.provider = 'qishui'; pl.source = 'qishui'; return pl; });
+    spotifyPlaylists = (result[5].playlists || []).map(function (pl) { pl.provider = 'spotify'; pl.source = 'spotify'; return pl; });
+    userPlaylists = neteaseLists.concat(qqPlaylists).concat(kugouPlaylists).concat(qishuiPlaylists).concat(spotifyPlaylists);
     myPodcastCollections = result[1].collections || [];
     var animatePanel = isPlaylistPanelVisibleForRender();
     renderUserPlaylistsList({ animate: animatePanel, reset: true });

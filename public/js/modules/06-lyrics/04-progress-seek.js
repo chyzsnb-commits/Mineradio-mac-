@@ -220,11 +220,15 @@ function bindPlaybackProgressEvents(audioEl) {
   });
   ['play', 'playing', 'pause', 'ended', 'emptied', 'abort', 'error'].forEach(function (name) {
     audioEl.addEventListener(name, function () {
+      var internalTrackTeardown = typeof isPlaybackTrackTeardownEvent === 'function' && isPlaybackTrackTeardownEvent(audioEl, name);
       updatePlaybackProgressUi();
       syncPlaybackProgressTimerForEvent(audioEl, name);
       if (typeof syncAlbumGaplessMonitorForPlaybackEvent === 'function') syncAlbumGaplessMonitorForPlaybackEvent(audioEl, name);
-      syncPlaybackStateFromAudioEvent(name);
-      saveLastPlaybackSnapshot(name === 'pause' || name === 'ended', name);
+      if (!internalTrackTeardown) {
+        syncPlaybackStateFromAudioEvent(name);
+        saveLastPlaybackSnapshot(name === 'pause' || name === 'ended', name);
+      }
+      if ((name === 'play' || name === 'playing') && typeof clearPlaybackTrackTeardown === 'function') clearPlaybackTrackTeardown(audioEl);
     });
   });
   syncPlaybackProgressTimerForCurrentMedia(audioEl);

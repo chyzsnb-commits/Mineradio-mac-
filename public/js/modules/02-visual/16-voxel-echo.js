@@ -1161,8 +1161,12 @@ function _voxUpdateCamera(dt) {                            // 原作机位:对�
   var _vsc = (voxelCity && voxelCity.scale) ? voxelCity.scale : 1.0;
   var horiz = Math.sqrt(Math.max(0, _voxCam.radius * _voxCam.radius - _voxCam.height * _voxCam.height));
   camera.up.set(0, 1, 0);
-  camera.position.set(horiz * Math.sin(_voxCam.azimuth) * _vsc, _voxCam.height * _vsc, horiz * Math.cos(_voxCam.azimuth) * _vsc);
-  camera.lookAt(0, VOX_CAM_DEF_LOOKY * _vsc, 0);   // 看向中心上方(用户机位构图:地形居下、封面居中)
+  camera.position.set(
+    horiz * Math.sin(_voxCam.azimuth) * _vsc,
+    _voxCam.height * _vsc,
+    horiz * Math.cos(_voxCam.azimuth) * _vsc
+  );
+  camera.lookAt(0, 0, 0);
   camera.fov = clampRange(45 + pinchFovDelta, 20, 75);
   camera.updateProjectionMatrix();
 }
@@ -1432,6 +1436,8 @@ function loadVoxToggles() {
 }
 function loadVoxBg() { try { var raw = JSON.parse(localStorage.getItem(VOX_BG_STORE_KEY) || '{}') || {}; if (raw.image) fx.voxBgImage = raw.image; if (raw.color) fx.voxBgColor = raw.color; if (raw.playlist) fx.voxPlaylistColor = raw.playlist; } catch (e) {} }
 
+// p10 保留与其它预设一致的左边缘歌单面板；3D 歌架仍由统一 shelf 事件处理。
+// 旧版把 #playlist-panel 迁进控制台，导致左边缘触发失效且无法同时使用右键 3D 歌架。
 // P10/P11 共用同一张普通 DOM 歌单。原宿主和当前接管者只能有一份状态，
 // 避免预设直接切换时把另一个视觉预设的临时 host 误记为“原位置”。
 var _visualPlaylistDockState = { owner: '', home: null };
@@ -1484,23 +1490,6 @@ function _voxToggleParticleSliders(hide) {
   var firstRow = first && first.closest ? first.closest('.fx-slider') : null;
   var label = firstRow ? firstRow.previousElementSibling : null;
   if (label && label.classList && label.classList.contains('fx-section-label')) label.style.display = hide ? 'none' : '';
-}
-function _voxDockPlaylist(dock) {
-  var fxp = document.getElementById('fx-panel');
-  if (!fxp) return;
-  if (dock) {
-    if (typeof organizeFxPanel === 'function') organizeFxPanel();
-    var host = document.getElementById('vox-playlist-host');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'vox-playlist-host';
-      var firstPage = fxp.querySelector('[data-fx-page="playlist"]');
-      if (firstPage) firstPage.appendChild(host); else fxp.appendChild(host);
-    }
-    if (_dockVisualPlaylist('voxel', host, true)) {
-      _voxApplyPlaylistColor();   // 应用自定义歌单颜色(若设)
-    }
-  } else _dockVisualPlaylist('voxel', null, false);
 }
 
 function voxResDims() {
@@ -1657,12 +1646,14 @@ function ensureVoxelCity() {
     uTextureSize: { value: new THREE.Vector2(512.0, 512.0) },
     uTime: { value: 0 }, uPulse: { value: 0 }, uBgLight: { value: 0 }
   };
-  var _coverMat = new THREE.ShaderMaterial({ uniforms: _coverUniforms, vertexShader: VOX_COVER_VERT, fragmentShader: VOX_COVER_FRAG, transparent: true, depthWrite: false });
+  // 地形改不透明写深度后(b8c557e),远端柱体把远景 z 全写满 → 封面平面(110,24,-110)
+  // 若仍开 depthTest 会被整块剔除。幽灵封面本就是叠层氛围,不参与物理遮挡。
+  var _coverMat = new THREE.ShaderMaterial({ uniforms: _coverUniforms, vertexShader: VOX_COVER_VERT, fragmentShader: VOX_COVER_FRAG, transparent: true, depthWrite: false, depthTest: false });
   var _coverPlane = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), _coverMat);
   _coverPlane.position.set(110, 24, -110);
   _coverPlane.rotation.set(0, -Math.PI / 4, 0);
-  _coverPlane.frustumCulled = false; _coverPlane.renderOrder = 3; _coverPlane.visible = false;
-  contentRoot.add(_coverPlane);
+  _coverPlane.frustumCulled = false; _coverPlane.renderOrder = 6; _coverPlane.visible = false;
+  contentRoot.add(_coverPlane);   // 进 contentRoot 承接双手直缩;仍不入转盘组 → 不随转盘自转
 
   // 原作无地板:柱体透明处直接露出 app 背景(voxBg 系统 / scene.background),行为等同原作叠 HTML 背景。
   voxelCity = { mesh: mesh, uniforms: uniforms, scale: _vscale, grid: gridSize, contentRoot: contentRoot, platter: platter, coverPlane: _coverPlane, coverUniforms: _coverUniforms };
@@ -1704,7 +1695,7 @@ function updateVoxelCity(dt) {
     if (_voxSeamFloor) _voxSeamFloor.visible = false; // 缝隙封底盘同理
     if (voxelCity && voxelCity.coverPlane) voxelCity.coverPlane.visible = false;
     if (_voxFogSet) { scene.fog = _voxPrevFog; _voxFogSet = false; _voxApplyBg(); if (_voxPrevFar && camera) { camera.far = _voxPrevFar; camera.updateProjectionMatrix(); _voxPrevFar = 0; } }   // 还原雾+far;背景按自定义重设
-    if (document.body && document.body.classList.contains('vox-on')) { document.body.classList.remove('vox-on'); _voxDockPlaylist(false); _voxToggleParticleSliders(false); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); }   // 退出体素:歌单移回原位 + 恢复 DPR/帧率
+    if (document.body && document.body.classList.contains('vox-on')) { document.body.classList.remove('vox-on'); _voxToggleParticleSliders(false); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); _dockVisualPlaylist('voxel', null, false); }   // 退出体素:恢复通用歌单入口、DPR和帧率
     return;
   }
   // voxRes 可经预设快照直写(applyFxArchiveSnapshot 直改 fx.voxRes,不走 setVoxRes/rebuild)变更:与已建网格不一致时重建
@@ -1712,7 +1703,7 @@ function updateVoxelCity(dt) {
   var vc = ensureVoxelCity(); if (!vc) return;
   vc.mesh.visible = true;
   if (_voxFbMesh) _voxFbMesh.visible = !(fx && fx.voxFloatBlocks === false);   // 「悬浮方块」开关(蓝色方块+白色线框方块)
-  if (document.body && !document.body.classList.contains('vox-on')) { document.body.classList.add('vox-on'); _voxDockPlaylist(true); _voxToggleParticleSliders(true); _voxApplyBg(); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); }   // 体素预设:歌单迁进视觉控制台 + 应用自定义背景 + 触发 DPR/限帧重算
+  if (document.body && !document.body.classList.contains('vox-on')) { document.body.classList.add('vox-on'); _voxToggleParticleSliders(true); _voxApplyBg(); if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode(); var host = document.getElementById('vox-playlist-host'); if (host) _dockVisualPlaylist('voxel', host, true); }   // 体素预设:应用专属控件、背景和性能策略
   var fdt = dt || 0.016;
   _voxClock += fdt;     // 原作:时钟始终推进(暂停时 idle 海面继续起伏,不冻结)
   // 转盘自转(原作 MapScene.tsx:366-369 + sceneDefaults.ts:19-21 rotationSpeed 0.15):旋转整组(地形+悬浮块+流星+粒子),涟漪/流星局部坐标不受影响。
@@ -1943,5 +1934,8 @@ function updateVoxelCity(dt) {
   }
   _voxUpdateMeteors(fdt, u.uWarmCore.value);
   _voxUpdateParticles(fdt);
+  if (typeof _voxDrag !== 'undefined' && typeof tickVoxelPointerDragState === 'function') {
+    tickVoxelPointerDragState(_voxCam, fdt, _voxCam.radius, _voxDrag);
+  }
   _voxUpdateCamera(fdt);
 }

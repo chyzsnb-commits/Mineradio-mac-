@@ -15,10 +15,23 @@ const systemMemory = process.platform === 'win32'
 const { readSystemGpuUsage } = require('./gpu-usage');
 const { createAiStemService } = require('./ai-stem-separator');
 const { createCrashDiagnostics } = require('./crash-diagnostics');
+const { LocalMusicLibrary, registerLocalMusicScheme } = require('./local-music-library');
 const { applyOfficialProviderLogin } = require('./official-login-bridge');
+const { clearDirectoryContents, safeWallpaperLibraryFileName, scanDirectoryUsage } = require('./cache-manager');
 const { createCameraPermissionController } = require('./camera-permission');
 const { registerWallpaperLibraryScheme } = require('./wallpaper-library-bridge');
+// Electron 的 registerSchemesAsPrivileged 全局只允许调用一次,后一次调用会覆盖前一次
+// (实测两次分别注册会让先注册的 mineradio-local 丢失 supportFetchAPI,
+//  渲染进程报 "URL scheme is not supported")。先收集两次注册,再合并成一次真正注册。
+const mineradioPrivilegedSchemes = [];
+const collectPrivilegedSchemes = (schemes) => { mineradioPrivilegedSchemes.push(...schemes); };
+const registerSchemesAsPrivileged = protocol.registerSchemesAsPrivileged.bind(protocol);
+protocol.registerSchemesAsPrivileged = collectPrivilegedSchemes;
+registerLocalMusicScheme(protocol);
 registerWallpaperLibraryScheme(protocol);
+protocol.registerSchemesAsPrivileged = registerSchemesAsPrivileged;
+registerSchemesAsPrivileged(mineradioPrivilegedSchemes);
+
 
 const RELEASE_POLICY = require('./release-policy');
 const cameraPermissionController = createCameraPermissionController({
@@ -36,9 +49,22 @@ const {
   clearSpotifyToken,
 } = require('../spotify-api');
 
+// Electron 42's development-only security warning handler calls `new URL()`
+// on empty Resource Timing names produced by intentionally source-less media
+// elements. It rejects in the isolated world before the app is usable. The
+// packaged app does not run that handler; disable only this dev-only advisory.
+if (!app.isPackaged) process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = '1';
+
 let mainWindow = null;
+let createWindowInFlight = null;
 let localServer = null;
 let mainServerPort = 0;
+let localMusicLibrary = null;
+const localMusicImportCapabilities = new Map();
+// Windows v2.1.0 对齐: 歌词磁盘缓存(userData/cache/lyrics, 不搬 Chromium 缓存/登录态)
+const LYRIC_CACHE_VERSION = 1;
+const LYRIC_CACHE_MAX_BYTES = 96 * 1024 * 1024;
+const LYRIC_CACHE_ENTRY_MAX_BYTES = 1024 * 1024;
 let desktopLyricsWindow = null;
 let desktopLyricsState = {};
 let desktopLyricsUserBounds = null;
@@ -54,6 +80,7 @@ let wallpaperState = {};
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
+let mainWindowActivationTimers = [];
 let appMemoryTrimTimer = null;
 let appMemoryTrimInFlight = false;
 let lastAppMemoryTrimAt = 0;
@@ -107,6 +134,7 @@ const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
 const KUGOU_LOGIN_PARTITION = 'persist:mineradio-kugou-login';
 const KUGOU_LOGIN_URL = 'https://www.kugou.com/';
 const KUGOU_LOGIN_WARMUP_URL = 'https://www.kugou.com/newuc/user/uc/type=edit';
+const QISHUI_LOGIN_PARTITION = 'persist:mineradio-qishui-login';
 const SPOTIFY_LOGIN_PARTITION = 'persist:mineradio-spotify-login';
 
 const CHROMIUM_SAFE_PERFORMANCE_SWITCHES = [
@@ -184,6 +212,10 @@ const KUGOU_LOGIN_COOKIE_PRIORITY = [
   'kg_dfid',
   'Kugou',
   'NickName',
+];
+const QISHUI_LOGIN_COOKIE_PRIORITY = [
+  'sessionid', 'sessionid_ss', 'sid_guard', 'sid_tt', 'uid_tt', 'uid_tt_ss',
+  'passport_csrf_token', 'passport_csrf_token_default', 's_v_web_id', 'odin_tt', 'ttwid',
 ];
 const NETEASE_LOGIN_COOKIE_PRIORITY = [
   'MUSIC_U',
@@ -322,6 +354,23 @@ function flushMainWindowFxAutosave(reason) {
 }
 
 const LOCAL_APP_PERMISSION_ALLOWLIST = new Set(['media', 'speaker-selection', 'pointerLock', 'pointer-lock']);
+const SAFE_EXTERNAL_URL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
+function safeOpenExternalUrl(value) {
+  const raw = String(value || '').trim();
+  let target;
+  try {
+    target = new URL(raw);
+  } catch (_) {
+    return Promise.resolve({ ok: false, error: 'INVALID_EXTERNAL_URL' });
+  }
+  if (!SAFE_EXTERNAL_URL_PROTOCOLS.has(target.protocol)) {
+    return Promise.resolve({ ok: false, error: 'EXTERNAL_URL_PROTOCOL_REJECTED' });
+  }
+  return Promise.resolve(shell.openExternal(target.toString()))
+    .then(() => ({ ok: true }))
+    .catch(() => ({ ok: false, error: 'EXTERNAL_URL_OPEN_FAILED' }));
+}
 
 function isLocalAppUrl(value) {
   try {
@@ -774,14 +823,34 @@ function isZoomShortcutInput(input) {
     || code === 'NumpadSubtract' || code === 'Digit0' || code === 'Numpad0';
 }
 
+function activateMainWindow() {
+  if (process.platform !== 'darwin') return;
+  try { app.focus({ steal: true }); } catch (e) {}
+}
+
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (mainWindow.isMinimized()) mainWindow.restore();
+  activateMainWindow();
   if (!mainWindow.isVisible()) mainWindow.show();
   resetMainWindowZoom();
   mainWindow.focus();
+  try { if (typeof mainWindow.moveTop === 'function') mainWindow.moveTop(); } catch (e) {}
+  activateMainWindow();
   sendWindowState(mainWindow);
   return true;
+}
+
+// macOS 从终端启动时，Electron 可能在页面加载完成前仍被终端保持为后台进程。
+// 只在启动/恢复窗口时短暂重试，避免常驻计时器影响正常的应用切换。
+function scheduleMainWindowActivation() {
+  if (process.platform !== 'darwin' || !mainWindow || mainWindow.isDestroyed()) return;
+  mainWindowActivationTimers.forEach((timer) => clearTimeout(timer));
+  mainWindowActivationTimers = [0, 160, 420].map((delay) => setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isFocused()) return;
+    focusMainWindow();
+  }, delay));
 }
 
 function createOrUpdateTray() {
@@ -1291,6 +1360,76 @@ async function clearNeteaseMusicLoginSession() {
   await cookieSession.clearStorageData({
     storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
   });
+  return { ok: true };
+}
+
+function qishuiOfficialClientDataDirCandidates() {
+  const candidates = [];
+  const add = (value) => {
+    if (!value) return;
+    const resolved = path.resolve(value);
+    if (!candidates.includes(resolved)) candidates.push(resolved);
+  };
+  if (process.platform === 'darwin') {
+    const support = path.join(app.getPath('home'), 'Library', 'Containers', 'com.soda.music', 'Data', 'Library', 'Application Support');
+    add(path.join(support, 'SodaMusic'));
+    add(path.join(support, 'sodaMusic'));
+  }
+  return candidates;
+}
+
+function readQishuiCookieDatabase(databasePath) {
+  return new Promise((resolve) => {
+    const sql = "SELECT value FROM cookies WHERE host_key LIKE '%qishui.com' AND name IN ('sessionid', 'sessionid_ss') AND value != '' LIMIT 1;";
+    execFile('/usr/bin/sqlite3', ['-readonly', '-noheader', databasePath, sql], { timeout: 3500, maxBuffer: 16 * 1024 }, (error, stdout) => {
+      const sessionId = String(stdout || '').trim();
+      if (!error && sessionId) return resolve({ cookie: 'sessionid=' + sessionId + ';', source: databasePath });
+      resolve({
+        cookie: '',
+        source: databasePath,
+        locked: !!(error && /locked|busy|EBUSY/i.test(String(error.message || ''))),
+      });
+    });
+  });
+}
+
+async function readQishuiOfficialClientCookieHeader() {
+  let last = null;
+  for (const dir of qishuiOfficialClientDataDirCandidates()) {
+    for (const databasePath of [path.join(dir, 'Cookies'), path.join(dir, 'Network', 'Cookies')]) {
+      if (!fs.existsSync(databasePath)) continue;
+      const result = await readQishuiCookieDatabase(databasePath);
+      if (result.cookie) return result;
+      last = result;
+    }
+  }
+  return last || { cookie: '', source: '' };
+}
+
+async function openQishuiMusicLoginWindow() {
+  const imported = await readQishuiOfficialClientCookieHeader();
+  if (imported.cookie) {
+    return {
+      ok: true,
+      provider: 'qishui',
+      cookie: imported.cookie,
+      importedOfficialClient: true,
+      source: imported.source,
+    };
+  }
+  return {
+    ok: false,
+    provider: 'qishui',
+    error: imported.locked ? 'QISHUI_LOCAL_COOKIE_DB_LOCKED' : 'QISHUI_LOCAL_COOKIE_NOT_FOUND',
+    message: imported.locked
+      ? '汽水音乐正在占用登录数据。请完全退出汽水音乐后重试。'
+      : '请先在 macOS 汽水音乐客户端登录一次，再回到这里点击“读取本地汽水”。',
+  };
+}
+
+async function clearQishuiMusicLoginSession() {
+  const cookieSession = session.fromPartition(QISHUI_LOGIN_PARTITION);
+  await cookieSession.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'] });
   return { ok: true };
 }
 
@@ -2103,6 +2242,14 @@ ipcMain.handle('desktop-window-get-state', (event) => {
   return getWindowState(getSenderWindow(event));
 });
 
+ipcMain.handle('desktop-window-restore', (event) => {
+  const win = getSenderWindow(event);
+  if (!win || win.isDestroyed()) return null;
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) win.show();
+  return getWindowState(win);
+});
+
 ipcMain.handle('mineradio-get-gpu-diagnostics', () => {
   return getGpuDiagnostics();
 });
@@ -2370,12 +2517,360 @@ ipcMain.handle('kugou-music-clear-login', async () => {
   return clearKugouMusicLoginSession();
 });
 
+ipcMain.handle('qishui-music-open-login', async (event) => {
+  const result = await openQishuiMusicLoginWindow(getSenderWindow(event));
+  return applyOfficialProviderLogin(localServer, 'qishui', result);
+});
+
+ipcMain.handle('qishui-music-clear-login', async () => {
+  return clearQishuiMusicLoginSession();
+});
+
+ipcMain.handle('mineradio-local-library-list', async () => {
+  if (!localMusicLibrary) return { ok: false, count: 0, tracks: [], error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  try {
+    return await localMusicLibrary.listTracks();
+  } catch (error) {
+    return { ok: false, count: 0, tracks: [], error: error.message || 'LOCAL_LIBRARY_READ_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-library-lyric', async (_event, localFileId) => {
+  if (!localMusicLibrary) return { ok: false, lyric: '', lyricSource: '', error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  try {
+    return localMusicLibrary.lyricForTrack(localFileId);
+  } catch (error) {
+    return { ok: false, lyric: '', lyricSource: '', error: error.message || 'LOCAL_LYRIC_READ_FAILED' };
+  }
+});
+
+function pruneLocalMusicImportCapabilities() {
+  const now = Date.now();
+  for (const [token, capability] of localMusicImportCapabilities) {
+    if (!capability || capability.expiresAt <= now) localMusicImportCapabilities.delete(token);
+  }
+  while (localMusicImportCapabilities.size > 8) {
+    const oldest = localMusicImportCapabilities.keys().next().value;
+    if (!oldest) break;
+    localMusicImportCapabilities.delete(oldest);
+  }
+}
+
+ipcMain.handle('mineradio-local-library-authorize', async (_event, payload = {}) => {
+  if (!localMusicLibrary) return { ok: false, count: 0, error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  const files = [];
+  const seen = new Set();
+  for (const item of (Array.isArray(payload && payload.files) ? payload.files : []).slice(0, 50000)) {
+    const requestedPath = String(item && item.path || '').trim();
+    if (!requestedPath || /^[\/]{2}/.test(requestedPath) || !path.isAbsolute(requestedPath)) continue;
+    if (!/\.(mp3|flac|wav|ogg|m4a|aac|opus)$/i.test(requestedPath)) continue;
+    let filePath = '';
+    try {
+      filePath = fs.realpathSync.native ? fs.realpathSync.native(requestedPath) : fs.realpathSync(requestedPath);
+      if (/^[\/]{2}/.test(filePath) || !fs.statSync(filePath).isFile()) continue;
+    } catch (_) { continue; }
+    const identity = filePath;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    files.push({
+      path: filePath,
+      relativePath: String(item && item.relativePath || path.basename(filePath)).replace(/\0/g, '').slice(0, 2000),
+    });
+  }
+  if (!files.length) return { ok: false, count: 0, error: 'NO_AUTHORIZED_LOCAL_AUDIO' };
+  pruneLocalMusicImportCapabilities();
+  const token = crypto.randomBytes(24).toString('hex');
+  localMusicImportCapabilities.set(token, {
+    senderId: _event && _event.sender && _event.sender.id,
+    files,
+    expiresAt: Date.now() + 3 * 60 * 1000,
+  });
+  return { ok: true, count: files.length, token };
+});
+
+ipcMain.handle('mineradio-local-library-import', async (event, payload = {}) => {
+  if (!localMusicLibrary) return { ok: false, count: 0, tracks: [], error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  pruneLocalMusicImportCapabilities();
+  const token = String(payload && payload.token || '').trim().toLowerCase();
+  const capability = /^[a-f0-9]{48}$/.test(token) ? localMusicImportCapabilities.get(token) : null;
+  if (!capability || (event && event.sender && capability.senderId !== event.sender.id) || capability.expiresAt <= Date.now()) {
+    return { ok: false, count: 0, tracks: [], error: 'LOCAL_IMPORT_CAPABILITY_INVALID' };
+  }
+  localMusicImportCapabilities.delete(token);
+  try {
+    return await localMusicLibrary.importFiles(capability.files, { replace: false });
+  } catch (error) {
+    return { ok: false, count: 0, tracks: [], error: error.code || error.message || 'LOCAL_LIBRARY_IMPORT_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-library-remove', async (_event, ids) => {
+  if (!localMusicLibrary) return { ok: false, count: 0, tracks: [], error: 'LOCAL_LIBRARY_UNAVAILABLE' };
+  try {
+    const before = localMusicLibrary.listTracksSync().count || 0;
+    const result = await localMusicLibrary.removeTracks(ids);
+    return { ...result, removed: Math.max(0, before - (result.count || 0)) };
+  } catch (error) {
+    return { ok: false, count: 0, tracks: [], removed: 0, error: error.message || 'LOCAL_LIBRARY_REMOVE_FAILED' };
+  }
+});
+
+// ---- 壁纸库：本地库与 Windows Mineradio 服务（固定 HTTP 协议） ----
+let wallpaperLibraryBridge = null;
+function getWallpaperLibraryBridge() {
+  if (!wallpaperLibraryBridge) {
+    const bridge = require('./wallpaper-library-bridge');
+    // 必须传 protocol:bridge 靠它安装 mineradio-wallpaper:// 下载协议处理器,
+    // 缺了会让"下载并应用到 Mineradio"一律报 WALLPAPER_PROTOCOL_UNAVAILABLE
+    wallpaperLibraryBridge = bridge.init({ userDataPath: app.getPath('userData'), protocol });
+  }
+  return wallpaperLibraryBridge;
+}
+
+function wallpaperLibraryTrustedSender(event) {
+  const senderUrl = event && event.sender && !event.sender.isDestroyed() ? event.sender.getURL() : '';
+  if (!isLocalAppUrl(senderUrl)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  return { ok: true, senderUrl };
+}
+
+ipcMain.handle('mineradio-wallpaper-windows-discover', async () => {
+  return getWallpaperLibraryBridge().discoverWindowsSources();
+});
+ipcMain.handle('mineradio-wallpaper-windows-connect', async (_event, baseUrl) => {
+  return getWallpaperLibraryBridge().connectWindowsSource(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-windows-live-status', async (_event, baseUrl) => {
+  return getWallpaperLibraryBridge().getWindowsLiveStatus(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-windows-export-start', async (_event, baseUrl, sceneId, seconds) => {
+  return getWallpaperLibraryBridge().startWindowsSceneExport(baseUrl, sceneId, seconds);
+});
+ipcMain.handle('mineradio-wallpaper-windows-export-status', async (_event, baseUrl, jobId) => {
+  return getWallpaperLibraryBridge().getWindowsExportJob(baseUrl, jobId);
+});
+ipcMain.handle('mineradio-wallpaper-windows-exported-videos', async (_event, baseUrl) => {
+  return getWallpaperLibraryBridge().listWindowsExportedVideos(baseUrl);
+});
+ipcMain.handle('mineradio-wallpaper-windows-download-media', async (_event, baseUrl, payload) => {
+  const request = payload && typeof payload === 'object' ? payload : {};
+  if (request.kind === 'scene-export') {
+    return getWallpaperLibraryBridge().downloadWindowsExportedMedia(baseUrl, String(request.fileName || ''));
+  }
+  return getWallpaperLibraryBridge().downloadWindowsWallpaperMedia(baseUrl, String(request.recordId || ''), String(request.type || ''));
+});
+ipcMain.handle('mineradio-wallpaper-windows-export-download', async (_event, baseUrl, fileName) => {
+  const safeName = path.basename(String(fileName || '')).replace(/[^a-z0-9._ -]/gi, '_') || 'wallpaper-scene.mp4';
+  const owner = BrowserWindow.getFocusedWindow() || mainWindow;
+  const selected = await dialog.showSaveDialog(owner, {
+    title: '保存导出的壁纸视频',
+    defaultPath: safeName,
+    filters: [{ name: '视频', extensions: ['mp4', 'webm', 'mov'] }],
+  });
+  if (selected.canceled || !selected.filePath) return { ok: false, error: 'DOWNLOAD_CANCELLED' };
+  return getWallpaperLibraryBridge().downloadWindowsExport(baseUrl, fileName, selected.filePath);
+});
+
+function lyricCacheDirectoryPath() {
+  return path.join(app.getPath('userData'), 'cache', 'lyrics');
+}
+function wallpaperLibraryDirectoryPath() {
+  return path.join(app.getPath('userData'), 'Wallpapers');
+}
+function mineradioCacheDirectories() {
+  const userData = app.getPath('userData');
+  return {
+    lyrics: lyricCacheDirectoryPath(),
+    beatmaps: path.join(userData, 'beatmaps'),
+    aiStems: path.join(userData, 'ai-stems'),
+    wallpapers: wallpaperLibraryDirectoryPath(),
+  };
+}
+function wallpaperMirrorPayload(payload) {
+  const value = payload && typeof payload === 'object' ? payload : {};
+  const mime = String(value.mime || '').toLowerCase();
+  const bytes = value.bytes;
+  if (!/^image\/(png|jpe?g|webp|gif)$/i.test(mime) && !/^video\/(mp4|webm|quicktime)$/i.test(mime)) {
+    throw new Error('WALLPAPER_MIME_NOT_ALLOWED');
+  }
+  if (!(Buffer.isBuffer(bytes) || bytes instanceof Uint8Array || bytes instanceof ArrayBuffer)) {
+    throw new Error('WALLPAPER_BYTES_INVALID');
+  }
+  const buffer = Buffer.from(bytes);
+  if (!buffer.length || buffer.length > 256 * 1024 * 1024) throw new Error('WALLPAPER_SIZE_INVALID');
+  return {
+    buffer,
+    mime,
+    id: String(value.id || 'wallpaper').slice(0, 160),
+    name: String(value.name || '').slice(0, 180),
+  };
+}
+ipcMain.handle('mineradio-wallpaper-local-store', async (_event, payload) => {
+  try {
+    const data = wallpaperMirrorPayload(payload);
+    const dir = wallpaperLibraryDirectoryPath();
+    await fs.promises.mkdir(dir, { recursive: true });
+    const filename = safeWallpaperLibraryFileName(data.name, data.mime, data.id);
+    const target = path.join(dir, filename);
+    if (path.dirname(target) !== dir) throw new Error('WALLPAPER_PATH_INVALID');
+    await fs.promises.writeFile(target, data.buffer);
+    return { ok: true, path: target, name: filename, bytes: data.buffer.length };
+  } catch (error) {
+    return { ok: false, error: error && error.message || 'WALLPAPER_STORE_FAILED' };
+  }
+});
+ipcMain.handle('mineradio-wallpaper-local-open', async () => {
+  try {
+    const dir = wallpaperLibraryDirectoryPath();
+    await fs.promises.mkdir(dir, { recursive: true });
+    const error = await shell.openPath(dir);
+    return error ? { ok: false, error } : { ok: true, path: dir };
+  } catch (error) {
+    return { ok: false, error: error && error.message || 'WALLPAPER_FOLDER_OPEN_FAILED' };
+  }
+});
+function lyricCacheFilePath(key) {
+  const digest = crypto.createHash('sha256').update(String(key || '')).digest('hex');
+  return path.join(lyricCacheDirectoryPath(), `${digest}.json`);
+}
+async function pruneLyricCache() {
+  let entries = [];
+  try {
+    entries = await fs.promises.readdir(lyricCacheDirectoryPath(), { withFileTypes: true });
+  } catch (_) {
+    return;
+  }
+  const files = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !/^[a-f0-9]{64}\.json$/i.test(entry.name)) continue;
+    const file = path.join(lyricCacheDirectoryPath(), entry.name);
+    try {
+      const stat = await fs.promises.stat(file);
+      files.push({ file, size: Math.max(0, Number(stat.size) || 0), time: Number(stat.mtimeMs) || 0 });
+    } catch (_) { }
+  }
+  let total = files.reduce((sum, item) => sum + item.size, 0);
+  files.sort((a, b) => a.time - b.time);
+  for (const item of files) {
+    if (total <= LYRIC_CACHE_MAX_BYTES) break;
+    try {
+      await fs.promises.unlink(item.file);
+      total -= item.size;
+    } catch (_) { }
+  }
+}
+ipcMain.handle('mineradio-cache-read-lyric', async (_event, key) => {
+  try {
+    const file = lyricCacheFilePath(key);
+    if (!fs.existsSync(file)) return { ok: true, hit: false };
+    const stat = await fs.promises.stat(file);
+    if (stat.size <= 0 || stat.size > LYRIC_CACHE_ENTRY_MAX_BYTES) {
+      await fs.promises.unlink(file).catch(() => {});
+      return { ok: true, hit: false };
+    }
+    const parsed = JSON.parse(await fs.promises.readFile(file, 'utf8'));
+    if (!parsed || parsed.version !== LYRIC_CACHE_VERSION) return { ok: true, hit: false };
+    return { ok: true, hit: true, payload: parsed.payload };
+  } catch (e) {
+    return { ok: false, hit: false, error: e.message || 'LYRIC_CACHE_READ_FAILED' };
+  }
+});
+ipcMain.handle('mineradio-cache-write-lyric', async (_event, key, payload) => {
+  try {
+    const file = lyricCacheFilePath(key);
+    const text = JSON.stringify({
+      version: LYRIC_CACHE_VERSION,
+      savedAt: Date.now(),
+      key: String(key || '').slice(0, 500),
+      payload: payload || {},
+    });
+    if (Buffer.byteLength(text, 'utf8') > LYRIC_CACHE_ENTRY_MAX_BYTES) return { ok: true, skipped: true };
+    await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    const tempFile = `${file}.${process.pid}.${Date.now()}.tmp`;
+    await fs.promises.writeFile(tempFile, text, 'utf8');
+    await fs.promises.rename(tempFile, file);
+    await pruneLyricCache();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'LYRIC_CACHE_WRITE_FAILED' };
+  }
+});
+
 ipcMain.handle('spotify-music-open-login', async (event) => {
   return openSpotifyMusicLoginWindow(getSenderWindow(event));
 });
 
 ipcMain.handle('spotify-music-clear-login', async () => {
   return clearSpotifyMusicLoginSession();
+});
+
+// Windows v2.1.0 对齐（缓存设置 · Mac 只读版）: 只读歌词缓存占用 + 手动清理，
+// 不迁移 Chromium 缓存目录搬迁（避免破坏 macOS 登录态/会话，见 AGENTS.md 硬约束）。
+async function mineradioCacheUsageSnapshot() {
+  const dirs = mineradioCacheDirectories();
+  const [lyrics, beatmaps, aiStems, wallpapers, chromiumBytes] = await Promise.all([
+    scanDirectoryUsage(dirs.lyrics),
+    scanDirectoryUsage(dirs.beatmaps),
+    scanDirectoryUsage(dirs.aiStems),
+    scanDirectoryUsage(dirs.wallpapers),
+    session.defaultSession.getCacheSize().catch(() => 0),
+  ]);
+  return {
+    ok: true,
+    rootPath: app.getPath('userData'),
+    lyricsPath: dirs.lyrics,
+    lyricsBytes: lyrics.bytes,
+    lyricsCount: lyrics.files,
+    beatmapsPath: dirs.beatmaps,
+    beatmapsBytes: beatmaps.bytes,
+    beatmapsCount: beatmaps.files,
+    aiStemsPath: dirs.aiStems,
+    aiStemsBytes: aiStems.bytes,
+    aiStemsCount: aiStems.files,
+    wallpapersPath: dirs.wallpapers,
+    wallpapersBytes: wallpapers.bytes,
+    wallpapersCount: wallpapers.files,
+    chromiumBytes: Math.max(0, Number(chromiumBytes) || 0),
+    userDataPath: app.getPath('userData'),
+    restartRequired: false,
+  };
+}
+
+ipcMain.handle('mineradio-cache-get-usage', async () => {
+  try {
+    return await mineradioCacheUsageSnapshot();
+  } catch (e) {
+    return { ok: false, error: e.message || 'CACHE_USAGE_READ_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-cache-clear-lyrics', async () => {
+  try {
+    const removed = await clearDirectoryContents(lyricCacheDirectoryPath());
+    return Object.assign({ ok: true, removed: removed.files }, await mineradioCacheUsageSnapshot());
+  } catch (e) {
+    return { ok: false, error: e.message || 'CACHE_CLEAR_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-cache-clear-selected', async (_event, payload) => {
+  const allowed = new Set(['lyrics', 'beatmaps', 'aiStems', 'network', 'wallpapers']);
+  const categories = Array.from(new Set((payload && Array.isArray(payload.categories) ? payload.categories : [])
+    .map((item) => String(item || '')))).filter((item) => allowed.has(item));
+  try {
+    const dirs = mineradioCacheDirectories();
+    const cleared = {};
+    for (const category of categories) {
+      if (category === 'network') {
+        await session.defaultSession.clearCache();
+        cleared.network = true;
+      } else {
+        cleared[category] = await clearDirectoryContents(dirs[category]);
+      }
+    }
+    return Object.assign({ ok: true, cleared }, await mineradioCacheUsageSnapshot());
+  } catch (error) {
+    return { ok: false, error: error && error.message || 'CACHE_CLEAR_FAILED' };
+  }
 });
 
 function loginCookieExportMeta(provider) {
@@ -2548,69 +3043,6 @@ ipcMain.on('mineradio-wallpaper-control', (_e, payload) => {
   }
 });
 
-// Windows Wallpaper Engine library bridge: verified LAN service access.
-let wallpaperLibraryBridge = null;
-function getWallpaperLibraryBridge() {
-  if (!wallpaperLibraryBridge) {
-    const bridge = require('./wallpaper-library-bridge');
-    wallpaperLibraryBridge = bridge.init({ userDataPath: app.getPath('userData'), protocol });
-  }
-  return wallpaperLibraryBridge;
-}
-
-function wallpaperLibraryTrustedSender(event) {
-  const senderUrl = event && event.sender && !event.sender.isDestroyed() ? event.sender.getURL() : '';
-  return isLocalAppUrl(senderUrl);
-}
-
-function wallpaperLibraryRejected() {
-  return { ok: false, error: 'UNTRUSTED_SENDER' };
-}
-
-ipcMain.handle('mineradio-wallpaper-windows-discover', async (event) => {
-  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
-  return getWallpaperLibraryBridge().discoverWindowsSources();
-});
-ipcMain.handle('mineradio-wallpaper-windows-connect', async (event, baseUrl) => {
-  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
-  return getWallpaperLibraryBridge().connectWindowsSource(baseUrl);
-});
-ipcMain.handle('mineradio-wallpaper-windows-live-status', async (event, baseUrl) => {
-  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
-  return getWallpaperLibraryBridge().getWindowsLiveStatus(baseUrl);
-});
-ipcMain.handle('mineradio-wallpaper-windows-export-start', async (event, baseUrl, sceneId, seconds) => {
-  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
-  return getWallpaperLibraryBridge().startWindowsSceneExport(baseUrl, sceneId, seconds);
-});
-ipcMain.handle('mineradio-wallpaper-windows-export-status', async (event, baseUrl, jobId) => {
-  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
-  return getWallpaperLibraryBridge().getWindowsExportJob(baseUrl, jobId);
-});
-ipcMain.handle('mineradio-wallpaper-windows-exported-videos', async (event, baseUrl) => {
-  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
-  return getWallpaperLibraryBridge().listWindowsExportedVideos(baseUrl);
-});
-ipcMain.handle('mineradio-wallpaper-windows-download-media', async (event, baseUrl, payload) => {
-  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
-  const request = payload && typeof payload === 'object' ? payload : {};
-  if (request.kind === 'scene-export') {
-    return getWallpaperLibraryBridge().downloadWindowsExportedMedia(baseUrl, String(request.fileName || ''));
-  }
-  return getWallpaperLibraryBridge().downloadWindowsWallpaperMedia(baseUrl, String(request.recordId || ''), String(request.type || ''));
-});
-ipcMain.handle('mineradio-wallpaper-windows-export-download', async (event, baseUrl, fileName) => {
-  if (!wallpaperLibraryTrustedSender(event)) return wallpaperLibraryRejected();
-  const safeName = path.basename(String(fileName || '')).replace(/[^a-z0-9._ -]/gi, '_') || 'wallpaper-scene.mp4';
-  const owner = BrowserWindow.getFocusedWindow() || mainWindow;
-  const selected = await dialog.showSaveDialog(owner, {
-    title: '保存导出的壁纸视频',
-    defaultPath: safeName,
-    filters: [{ name: '视频', extensions: ['mp4', 'webm', 'mov'] }],
-  });
-  if (selected.canceled || !selected.filePath) return { ok: false, error: 'DOWNLOAD_CANCELLED' };
-  return getWallpaperLibraryBridge().downloadWindowsExport(baseUrl, fileName, selected.filePath);
-});
 
 // ── 手部姿态原生桥接(v12):Swift 助手用 Vision 在 ANE 上跑手部姿态(不碰 GPU,不与体素渲染抢核显)──
 // 渲染层采集摄像头(已有权限)→ 送 256×192 RGBA 帧到助手 stdin;助手回 21 点关键点 JSON → 转发渲染层。
@@ -2660,7 +3092,19 @@ ipcMain.on('mineradio-handpose-frame', (_e, buf) => {
 ipcMain.on('mineradio-handpose-stop', () => killHandpose());
 app.on('before-quit', () => killHandpose());
 
-async function createWindow() {
+function createWindow() {
+  if (createWindowInFlight) return createWindowInFlight;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    focusMainWindow();
+    return Promise.resolve(mainWindow);
+  }
+  createWindowInFlight = createWindowInternal().finally(() => {
+    createWindowInFlight = null;
+  });
+  return createWindowInFlight;
+}
+
+async function createWindowInternal() {
   htmlFullscreenActive = false;
   windowFullscreenActive = false;
   const port = await findOpenPort(3000);
@@ -2689,7 +3133,10 @@ async function createWindow() {
   // 音源状态文件（酷狗 VIP 凭据、Spotify 凭据与 token）必须落 userData：
   // mac 的 app bundle 视为只读且随更新被整体覆盖, provider 模块保持与上游零差异, 路径全走环境变量注入
   const providerStateDir = app.getPath('userData');
+  if (!localMusicLibrary) localMusicLibrary = new LocalMusicLibrary({ userDataPath: providerStateDir });
   if (!process.env.KUGOU_VIP_EVIDENCE_FILE) process.env.KUGOU_VIP_EVIDENCE_FILE = path.join(providerStateDir, 'kugou-vip-evidence.json');
+  if (!process.env.QISHUI_TOKEN_FILE) process.env.QISHUI_TOKEN_FILE = path.join(providerStateDir, 'qishui-token.json');
+  if (!process.env.QISHUI_COOKIE_FILE) process.env.QISHUI_COOKIE_FILE = path.join(providerStateDir, '.qishui-cookie');
   if (!process.env.SPOTIFY_CONFIG_FILE) process.env.SPOTIFY_CONFIG_FILE = path.join(providerStateDir, 'spotify-credentials.json');
   if (!process.env.SPOTIFY_TOKEN_FILE) process.env.SPOTIFY_TOKEN_FILE = path.join(providerStateDir, 'spotify-token.json');
 
@@ -2698,7 +3145,6 @@ async function createWindow() {
 
   const initialBounds = getWindowedBounds();
   const initialMinimum = getAdaptiveWindowMinimumSize(screen.getPrimaryDisplay());
-
   mainWindow = new BrowserWindow({
     ...initialBounds,
     minWidth: initialMinimum.width,
@@ -2739,7 +3185,7 @@ async function createWindow() {
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    safeOpenExternalUrl(url);
     return { action: 'deny' };
   });
 
@@ -2763,9 +3209,13 @@ async function createWindow() {
   mainWindow.once('ready-to-show', () => {
     resetMainWindowZoom();
     mainWindow.show();
+    activateMainWindow();
+    mainWindow.focus();
+    try { if (typeof mainWindow.moveTop === 'function') mainWindow.moveTop(); } catch (e) {}
     if (process.platform === 'darwin' && typeof mainWindow.setWindowButtonVisibility === 'function') {
       mainWindow.setWindowButtonVisibility(true);
     }
+    scheduleMainWindowActivation();
     sendWindowState(mainWindow);
   });
 
@@ -2851,6 +3301,8 @@ async function createWindow() {
     }
   });
   mainWindow.on('closed', () => {
+    mainWindowActivationTimers.forEach((timer) => clearTimeout(timer));
+    mainWindowActivationTimers = [];
     mainWindowCloseFlushArmed = false;
     if (mainWindowStateTimer) {
       clearTimeout(mainWindowStateTimer);
@@ -2880,12 +3332,8 @@ async function createWindow() {
     setTimeout(() => applyWindowedBounds(mainWindow), 50);
   });
 
-  try {
-    await mainWindow.webContents.session.clearCache();
-  } catch (e) {
-    console.warn('Main window cache clear skipped:', e.message);
-  }
   await mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  scheduleMainWindowActivation();
 }
 
 app.setName(APP_NAME);
@@ -2997,12 +3445,43 @@ if (!gotSingleInstanceLock) {
     screen.on('display-metrics-changed', handleDisplayLayoutChanged);
     screen.on('display-added', handleDisplayLayoutChanged);
     screen.on('display-removed', handleDisplayLayoutChanged);
+    if (localMusicLibrary) {
+      try { await localMusicLibrary.installProtocol(protocol); } catch (e) { console.warn('[LocalMusic] media protocol unavailable:', e && e.message || e); }
+    }
     // 壁纸库下载协议必须先于窗口创建安装:protocol.handle 若等首次 IPC 才懒安装,
     // 页面 frame 的 URLLoaderFactory 已生成、不含该 scheme,渲染进程 fetch 临时资源
     // 会一直报 net::ERR_UNKNOWN_URL_SCHEME(表现为"Failed to fetch"),重载页面才能恢复
     try { getWallpaperLibraryBridge(); } catch (e) { console.warn('[WallpaperLibrary] protocol unavailable:', e && e.message || e); }
     await createWindow();
     try { require('./telemetry').startTelemetry(); } catch (e) {}
+    // 软件内更新检查（自研轻量方案：无 Developer ID 证书，不做后台静默替换，
+    // 只做"检查清单 → 提示 → 下载 dmg → 打开安装器"，见 desktop/update-checker.js）
+    try {
+      const appVersion = app.getVersion();
+      const updater = require('./update-checker');
+      updater.startUpdateChecker({
+        mainWindow,
+        manifestUrl: APP_METADATA.updateManifestUrl || '',
+        currentVersion: appVersion,
+      });
+      ipcMain.handle('mineradio-update-check-now', async () => {
+        return updater.checkForUpdate({ manifestUrl: APP_METADATA.updateManifestUrl || '', currentVersion: appVersion });
+      });
+      ipcMain.handle('mineradio-update-download', async (_event, downloadUrl) => {
+        const result = await updater.downloadUpdateDmg({
+          url: downloadUrl,
+          onProgress: (loaded, total) => {
+            try {
+              if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+                mainWindow.webContents.send('mineradio-update-event', { type: 'download-progress', loaded, total });
+              }
+            } catch (_) {}
+          },
+        });
+        if (result.ok) result.opened = updater.openDownloadedDmg(result.filePath);
+        return result;
+      });
+    } catch (e) { console.warn('[UpdateChecker] 初始化跳过:', e && e.message || e); }
   });
 
   app.on('activate', () => {

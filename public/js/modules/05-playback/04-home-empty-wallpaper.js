@@ -156,6 +156,8 @@ function deactivateHomeWallpaperPreview(playback) {
   }
 }
 function switchPlaybackVisualToEmily() {
+  var hadHomeVisual = !!(homeVisualPresetActive || startupVisualPreviewActive || document.body.classList.contains('home-wallpaper-preview'));
+  if (!hadHomeVisual) return false;
   if (homeVisualPresetActive) {
     deactivateHomeWallpaperPreview(true);
   }
@@ -169,6 +171,7 @@ function switchPlaybackVisualToEmily() {
   }
   if (typeof updateRenderPowerClasses === 'function') updateRenderPowerClasses();
   if (typeof recoverVisualsAfterBackground === 'function' && !isDeepBackgroundMode()) recoverVisualsAfterBackground('playback-visual');
+  return true;
 }
 function applyStartupStarfieldPreset() {
   if (playing || currentIdx >= 0 || hasRestoredPlaybackCandidate()) return;
@@ -179,12 +182,33 @@ function applyStartupStarfieldPreset() {
     syncFxUniforms();
   }
 }
+function canOpenPlaylistPanel() {
+  return !emptyHomeActive && !document.body.classList.contains('splash-active');
+}
+function hidePlaylistPanelOutsideListeningPage() {
+  if (canOpenPlaylistPanel()) return false;
+  if (typeof resetSecondaryPlaylistEdgeGuard === 'function') resetSecondaryPlaylistEdgeGuard();
+  if (typeof peekTimers !== 'undefined' && peekTimers && peekTimers.pl) {
+    clearTimeout(peekTimers.pl);
+    peekTimers.pl = null;
+  }
+  var panel = document.getElementById('playlist-panel');
+  if (!panel) return false;
+  panel.__playlistMotionUntil = 0;
+  panel.classList.remove('peek', 'show', 'playlist-panel-closing');
+  return true;
+}
 function updateEmptyHomeVisibility(opts) {
   opts = opts || {};
   var show = shouldShowEmptyHome();
   emptyHomeActive = show;
   document.body.classList.toggle('empty-home-active', show);
-  if (!show) setHomeControlsLocked(false);
+  if (show) hidePlaylistPanelOutsideListeningPage();
+  else if (playlistPanelPinned && typeof applyPlaylistPanelPinState === 'function') applyPlaylistPanelPinState(true);
+  // Home is a browsing surface, so keep the listening-page player bar out of
+  // the way until the user explicitly opens the player console.
+  if (show) setHomeControlsLocked(true);
+  else setHomeControlsLocked(false);
   if (show) activateHomeWallpaperPreview();
   else deactivateHomeWallpaperPreview(false);
   if (show) {

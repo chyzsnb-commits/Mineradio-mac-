@@ -30,7 +30,7 @@ var gestureHudIdleAt = 0;   // 无手超时后 HUD 已归位的时间戳(防止�
 // 捏合拖动(单手旋转)状态; slot = 正在拖动的那只手(换手需重新捏合, 防瞬跳)
 var pinchState = { active: false, slot: -1, lastX: 0, lastY: 0, lastT: 0 };
 // 物理旋转: 给 particles 一个角速度, 每帧衰减
-var particleSpin = { vx: 0, vy: 0, damping: 0.90 };
+  var particleSpin = { vx: 0, vy: 0, damping: POINTER_ROTATION_DAMPING };
 // 手势驱动的总旋转 (累计角度), 输出到 particles / 骷髅
 var gestureRotation = { x: 0, y: 0, z: 0 };
 var gestureGrip = { value: 0, target: 0, openness: 1, lastState: 'open', pulse: 0 };

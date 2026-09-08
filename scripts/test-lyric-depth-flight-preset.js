@@ -13,7 +13,7 @@ test('registers 词境穿行 as a separate preset without reviving retired visua
   const presets = read('public/js/modules/07-fx/00-preset-archive-data.js');
   const controls = read('public/js/modules/07-fx/04-preset-grid-uniforms.js');
 
-  assert.match(state, /MAX_VISUAL_PRESET_INDEX = 11/);
+  assert.match(state, /MAX_VISUAL_PRESET_INDEX = 13/);
   assert.match(presets, /name: '词境穿行'/);
   assert.match(presets, /desc: '景深歌词 · 封面漫游'/);
   assert.match(presets, /presetDisplayOrder = \[[^\]]*11/);
@@ -56,7 +56,7 @@ test('loads and updates the lyric theatre inside the existing single render loop
   assert.ok(loader.indexOf(modulePath) > loader.indexOf('js/modules/02-visual/16-voxel-echo.js'));
   assert.ok(loader.indexOf(modulePath) < loader.indexOf('js/modules/11-main-loop.js'));
   assert.match(loop, /var lyricDepthPresetActive = typeof lyricDepthFlightActive === 'function' && lyricDepthFlightActive\(\)/);
-  assert.match(loop, /hidePoints = skullPresetActive \|\| voxelActive \|\| lyricDepthPresetActive/);
+  assert.match(loop, /hidePoints = skullPresetActive \|\| voxelActive \|\| rainActive \|\| sonicTopoActive \|\| sonicWorkshopActive \|\| lyricDepthPresetActive/);
   assert.match(loop, /updateLyricDepthFlight\(dt\)/);
   assert.doesNotMatch(module, /renderMainSceneWithGpuSample|renderer\.render/);
 });
