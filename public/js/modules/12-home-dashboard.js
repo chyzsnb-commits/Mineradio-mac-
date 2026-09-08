@@ -1689,7 +1689,10 @@ function homeBoardApplyHidden() {
   var hidden = homeBoardHidden();
   homeBoardWidgets().forEach(function (node, index) { node.classList.toggle('home-widget-hidden', hidden.indexOf(homeBoardWidgetId(node, index)) >= 0); });
 }
-function homeBoardExit() { homeBoardEditState.active = false; var root = document.getElementById('empty-home'); if (root) root.classList.remove('home-board-editing'); }
+function homeBoardExit() {
+  homeBoardEditState.active = false; var root = document.getElementById('empty-home'); if (root) root.classList.remove('home-board-editing');
+  homeBoardWidgets().forEach(function (node) { node.draggable = false; });
+}
 function homeBoardDelete(node) {
   var id = node.dataset.homeWidgetId; var hidden = homeBoardHidden(); if (hidden.indexOf(id) < 0) hidden.push(id); homeBoardSetHidden(hidden); homeBoardApplyHidden();
 }
@@ -1698,6 +1701,7 @@ function homeBoardResize(node) { if (!node) return; var size = Number(node.datas
 function homeBoardEnter() {
   var root = document.getElementById('empty-home'); if (!root) return;
   homeBoardEditState.active = true; root.classList.add('home-board-editing'); homeBoardApplyHidden();
+  homeBoardWidgets().forEach(function (node) { node.draggable = true; });
   var tools = root.querySelector('.home-board-edit-tools');
   if (!tools) { tools = document.createElement('div'); tools.className = 'home-board-edit-tools'; tools.innerHTML = '<strong>编辑首页</strong><button type="button" data-home-board-add>＋ 添加组件</button><button type="button" data-home-board-done>完成</button>'; root.appendChild(tools); }
 }
@@ -1718,7 +1722,7 @@ function bindHomeBoardEditing() {
   root.addEventListener('drop', function (event) { var target = event.target.closest('[data-home-widget]'); if (!homeBoardEditState.active || !target || !homeBoardEditState.dragged || target === homeBoardEditState.dragged) return; event.preventDefault(); target.parentNode.insertBefore(homeBoardEditState.dragged, target); homeBoardEditState.dragged = null; });
 }
 function decorateHomeBoardWidgets() {
-  homeBoardWidgets().forEach(function (node, index) { node.dataset.homeWidget = 'true'; node.dataset.homeWidgetId = homeBoardWidgetId(node, index); node.setAttribute('data-home-widget', 'true'); node.draggable = true; if (!node.querySelector('[data-home-widget-delete]')) { var button = document.createElement('button'); button.type = 'button'; button.className = 'home-widget-delete'; button.dataset.homeWidgetDelete = 'true'; button.setAttribute('aria-label', '删除组件'); button.textContent = '−'; node.appendChild(button); } if (!node.querySelector('[data-home-widget-resize]')) { var resize = document.createElement('button'); resize.type = 'button'; resize.className = 'home-widget-resize'; resize.dataset.homeWidgetResize = 'true'; resize.setAttribute('aria-label', '调整组件大小'); resize.textContent = '↗'; node.appendChild(resize); } });
+  homeBoardWidgets().forEach(function (node, index) { node.dataset.homeWidget = 'true'; node.dataset.homeWidgetId = homeBoardWidgetId(node, index); node.setAttribute('data-home-widget', 'true'); node.draggable = false; if (!node.querySelector('[data-home-widget-delete]')) { var button = document.createElement('button'); button.type = 'button'; button.className = 'home-widget-delete'; button.dataset.homeWidgetDelete = 'true'; button.setAttribute('aria-label', '删除组件'); button.textContent = '−'; node.appendChild(button); } if (!node.querySelector('[data-home-widget-resize]')) { var resize = document.createElement('button'); resize.type = 'button'; resize.className = 'home-widget-resize'; resize.dataset.homeWidgetResize = 'true'; resize.setAttribute('aria-label', '调整组件大小'); resize.textContent = '↗'; node.appendChild(resize); } });
   homeBoardApplyHidden();
 }
 

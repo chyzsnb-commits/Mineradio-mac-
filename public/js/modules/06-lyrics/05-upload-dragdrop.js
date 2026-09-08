@@ -346,8 +346,9 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') closeUploadPanel();
 });
 var dropOv = document.getElementById('drop-overlay'), dragCount = 0;
-document.addEventListener('dragenter', function (e) { e.preventDefault(); dragCount++; dropOv.classList.add('show'); });
-document.addEventListener('dragleave', function (e) { e.preventDefault(); dragCount--; if (dragCount <= 0) { dragCount = 0; dropOv.classList.remove('show'); } });
+function dragHasFiles(e) { return !!(e.dataTransfer && e.dataTransfer.types && Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') >= 0); }
+document.addEventListener('dragenter', function (e) { if (!dragHasFiles(e)) return; e.preventDefault(); dragCount++; dropOv.classList.add('show'); });
+document.addEventListener('dragleave', function (e) { if (!dragHasFiles(e)) return; dragCount--; if (dragCount <= 0) { dragCount = 0; dropOv.classList.remove('show'); } });
 document.addEventListener('dragover', function (e) { e.preventDefault(); });
 document.addEventListener('drop', function (e) {
   e.preventDefault(); dragCount = 0; dropOv.classList.remove('show');
